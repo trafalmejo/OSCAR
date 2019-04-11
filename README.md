@@ -9,7 +9,7 @@ You can find a little video of OSCar sending OSC to TouchDESIGNER: https://www.y
 
 ## App Setup
 
-Created with node.js/express
+Created with node.js/express. Main libraries: Grapesjs, socket.io.js
 
 I also added [nodemon](https://nodemon.io/) to develop with greater ease locally.
 
