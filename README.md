@@ -2,7 +2,7 @@
 
 OSCar is a tool to create GUI that sends OSC messages to control interactive software (Resolume arena, Touch Designer, Ableton, Processing, PD, UNITY, Unreal, etc)
 This way you can create beautiful, responsive and touchable interfaces.
-![](readme-data/OSCar.jpg)
+![](readme-data/OSCar.png)
 
 ## App Setup
 
