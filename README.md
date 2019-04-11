@@ -4,7 +4,11 @@ OSCar is a tool to create GUI that sends OSC messages to control interactive sof
 This way you can create beautiful, responsive and touchable interfaces.
 ![](readme-data/OSCar.png)
 
-You can find a little video of OSCar sending OSC to TouchDESIGNER: https://www.youtube.com/watch?v=ZcW8zBWRLf0
+You can find a little video of OSCar sending OSC to TouchDESIGNER: 
+
+https://www.youtube.com/watch?v=ZcW8zBWRLf0
+
+https://www.youtube.com/watch?v=8qewT1OmMdo
 
 
 ## App Setup
