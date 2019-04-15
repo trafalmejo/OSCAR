@@ -17,16 +17,39 @@ var oscServer;
 var oscClient = [];
 var isConnected = [];
 
+function getSocket(hpp){
+	for (let i = 0; i < oscClient.length; i++) {
+		var socket = oscClient[i];
+		var h = oscClient[i].host;
+		var p = oscClient[i].port;
+		//ID will be represented by the IP and PORT concatenated (host + port)
+		var hp = h + "" + p;
+		if(hp == hpp){
+			return socket;
+		}
+	}
+	return null;
+}
 io.sockets.on('connection', function (socket) {
 	console.log('Connection');
 	socket.on("config", function (obj) {
+
 		//if (!isConnected) {
-			console.log('log', obj);
+			//console.log('log', obj);
 			oscServer = new osc.Server(obj.server.port, obj.server.host);
-			var client = new osc.Client(obj.client.host, obj.client.port);
-			oscClient.push(client);
-			isConnected.push(true);
-			client.send('/status', socket.sessionId + ' connected');
+			var existingSocket = getSocket(obj.client.host +""+ obj.client.port);
+			if(existingSocket == null){
+				console.log("Socket existed before");
+				var client = new osc.Client(obj.client.host, obj.client.port);
+				oscClient.push(client);
+				isConnected.push(true);
+				client.send('/status', socket.sessionId + ' connected');
+			}
+			else{
+				console.log("New socket created");
+				existingSocket.send('/status', socket.sessionId + ' connected');
+			}
+			console.log("Number of Client: ",oscClient.length);
 			oscServer.on('message', function(msg, rinfo) {
 				socket.emit("message", msg);
 			});
@@ -39,26 +62,22 @@ io.sockets.on('connection', function (socket) {
 			// oscClient[i].send.apply(oscClient[i], obj);
 			// }
  		// }
- 		console.log("socket: ", oscClient[0]);
- 		for (var i = 0; i < oscClient.length; i++) {
+		 //console.log("socket: ", oscClient[0]);
+		var sent = false;
+ 		for (var i = 0; i < oscClient.length && !sent; i++) {
  			var h = oscClient[i].host;
- 			var p = oscClient[i].port;
- 			var hp = h + "" + p;
- 			console.log("hp: ", hp);
- 			console.log("id: ", id);
+			 var p = oscClient[i].port;
+			 //ID will be represented by the IP and PORT concatenated (host + port)
+ 			var hp = h + "" + p;;
  			if(hp == id){
- 				console.log('socket in position: ', i);
- 				oscClient[i].send.apply(oscClient[i], obj);
- 			}else{
- 				console.log("not")
+				 console.log('Socket in position: ', i);
+				 console.log("hp: ", hp);
+				 console.log("id: ", id);
+				 oscClient[i].send.apply(oscClient[i], obj);
+				 sent = true;
  			}
  		}
- 		
-
  	});
-	socket.on('daniel', function(id){
-		console.log('Daniel');
-	});
 	socket.on('disconnect', function(socket){
 		console.log("Disconnect all");
 		for (var i = 0; i < oscClient.length; i++) {
@@ -66,7 +85,6 @@ io.sockets.on('connection', function (socket) {
 				oscClient[i].kill();
 			}
 		}
-
 	});
 	socket.on('disconnectme', function(id){
 		for (var i = 0; i < oscClient.length; i++) {
@@ -75,7 +93,7 @@ io.sockets.on('connection', function (socket) {
 			var hp = h + "" + p;
 			if (isConnected[i] && id == hp) {
 				console.log("Disconnect");
-				oscClient[i].kill();
+				//oscClient[i].kill();
 				isConnected[i] = false;
 			}
 			//oscServer.kill();
@@ -96,6 +114,8 @@ app.get('/', function (req, res) {
 app.listen(8080, config.ip, function () {
 	console.log('Example app listening on port 8080!')
 })
+
+
 
 
 
