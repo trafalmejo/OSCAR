@@ -1,0 +1,11 @@
+---
+---
+
+@import 'jekyll-theme-cayman';
+
+.page-header {
+    color: #fff;
+    text-align: center;
+    background-color: #ff2e63;
+    background-image: linear-gradient(120deg, #ff623a, #ff2e63);
+}
