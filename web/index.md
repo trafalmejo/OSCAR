@@ -2,122 +2,39 @@
 layout: default
 ---
 
-Text can be **bold**, _italic_, or ~~strikethrough~~.
+# OSCAR
 
-[Link to another page](./another-page.html).
+OSCAR is a tool to create beautiful graphic user interaces (GUIs) to send OSC messages and control interactive installations (Resolume arena, Touch Designer, Ableton, Processing, PD, UNITY, Unreal, etc).
+Let's create beautiful, responsive and touchable interfaces.
 
-There should be whitespace between paragraphs.
+We are still under construction and this is a quick video DEMO of what the tool is currently able to do, but is up to you to support with feedback, documentation, suggestions, bugs detection to create a better tool. 
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=ZcW8zBWRLf0
+" target="_blank"><img src="http://img.youtube.com/vi/ZcW8zBWRLf0/0.jpg" 
+alt="OSCAR tool to create GIUS to control interactive installations" width="1200" height="600" border="10" /></a>
 
-There should be whitespace between paragraphs. We recommend including a README, or a file with information about your project.
+Please Sign Up in the BETA user test list to keep you posted about the next release.
+<iframe src="https://docs.google.com/forms/d/e/1FAIpQLSdVnwJ9l5JzyjN2PP9OrZx5by7lDniyIJPSCUpp-5EfKDMrsQ/viewform?embedded=true" width="640" height="1628" frameborder="0" marginheight="0" marginwidth="0">Loading...</iframe>
 
-# Header 1
-
-This is a normal paragraph following a header. GitHub is a code hosting platform for version control and collaboration. It lets you and others work together on projects from anywhere.
-
-## Header 2
-
-> This is a blockquote following a header.
->
-> When something is important enough, you do it even if the odds are not in your favor.
-
-### Header 3
-
-```js
-// Javascript code with syntax highlighting.
-var fun = function lang(l) {
-  dateformat.i18n = require('./lang/' + l)
-  return true;
-}
-```
-
-```ruby
-# Ruby code with syntax highlighting
-GitHubPages::Dependencies.gems.each do |gem, version|
-  s.add_dependency(gem, "= #{version}")
-end
-```
-
-#### Header 4
-
-*   This is an unordered list following a header.
-*   This is an unordered list following a header.
-*   This is an unordered list following a header.
-
-##### Header 5
-
-1.  This is an ordered list following a header.
-2.  This is an ordered list following a header.
-3.  This is an ordered list following a header.
-
-###### Header 6
-
-| head1        | head two          | three |
-|:-------------|:------------------|:------|
-| ok           | good swedish fish | nice  |
-| out of stock | good and plenty   | nice  |
-| ok           | good `oreos`      | hmm   |
-| ok           | good `zoute` drop | yumm  |
-
-### There's a horizontal rule below this.
-
-* * *
-
-### Here is an unordered list:
-
-*   Item foo
-*   Item bar
-*   Item baz
-*   Item zip
-
-### And an ordered list:
-
-1.  Item one
-1.  Item two
-1.  Item three
-1.  Item four
-
-### And a nested list:
-
-- level 1 item
-  - level 2 item
-  - level 2 item
-    - level 3 item
-    - level 3 item
-- level 1 item
-  - level 2 item
-  - level 2 item
-  - level 2 item
-- level 1 item
-  - level 2 item
-  - level 2 item
-- level 1 item
-
-### Small image
-
-![Octocat](https://assets-cdn.github.com/images/icons/emoji/octocat.png)
-
-### Large image
-
-![Branching](https://guides.github.com/activities/hello-world/branching.png)
+https://forms.gle/1pGiDJDh3jur8Tq68
 
 
-### Definition lists can be used with HTML syntax.
+## App Setup
 
-<dl>
-<dt>Name</dt>
-<dd>Godzilla</dd>
-<dt>Born</dt>
-<dd>1952</dd>
-<dt>Birthplace</dt>
-<dd>Japan</dd>
-<dt>Color</dt>
-<dd>Green</dd>
-</dl>
+Created with node.js/express, Grapesjs, socket.io.js javascript libraries
 
-```
-Long, single-line code blocks should not wrap. They should horizontally scroll if they are too long. This line should be long enough to demonstrate this.
-```
+We also added [nodemon](https://nodemon.io/) to develop with greater ease locally.
 
-```
-The final element.
-```
+If you want to use this implementation for your own purposes try the following steps:
+
+  1. Clone or download this [repository](https://github.com/trafalmejo/OSCar/)
+  2. Go into the folder you just download
+  2. run `npm install`
+  3. run `nodemon server.js`
+  4. Open a browser on `http://localhost:8080/` (Preferibly Google Chrome)
+
+## Tutorial
+
+
+## License
+
+BSD 3-clause
