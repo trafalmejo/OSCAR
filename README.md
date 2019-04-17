@@ -11,7 +11,11 @@ We are still under construction and this is a quick video DEMO of what the tool 
 
 <a href="http://www.youtube.com/watch?feature=player_embedded&v=ZcW8zBWRLf0
 " target="_blank"><img src="http://img.youtube.com/vi/ZcW8zBWRLf0/0.jpg" 
-alt="OSCAR tool to create GIUS to control interactive installations" width="1200" height="400" border="10" /></a>
+alt="OSCAR tool to create GIUS to control interactive installations" width="1200" height="600" border="10" /></a>
+
+<figure class="video_container">
+  <iframe src="https://www.youtube.com/embed/ZcW8zBWRLf0" frameborder="0" allowfullscreen="true"> </iframe>
+</figure>
 
 Please Sign Up in the BETA user test list to keep you posted about the next release.
 <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSdVnwJ9l5JzyjN2PP9OrZx5by7lDniyIJPSCUpp-5EfKDMrsQ/viewform?embedded=true" width="640" height="1628" frameborder="0" marginheight="0" marginwidth="0">Loading...</iframe>
