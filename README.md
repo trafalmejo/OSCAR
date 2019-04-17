@@ -17,11 +17,10 @@ alt="OSCAR tool to create GIUS to control interactive installations" width="1200
   <iframe src="https://www.youtube.com/embed/ZcW8zBWRLf0" width="100%" frameborder="0" allowfullscreen="true"> </iframe>
 </figure>
 
-### Please Sign Up in the BETA user test list to keep you posted about the next release.
+### Please [Sign Up](https://forms.gle/1pGiDJDh3jur8Tq68) in the BETA user test list to keep you posted about the next release.
 
 <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSdVnwJ9l5JzyjN2PP9OrZx5by7lDniyIJPSCUpp-5EfKDMrsQ/viewform?embedded=true" width="640" height="1628" frameborder="0" marginheight="0" marginwidth="0">Loading...</iframe>
 
-[Sign Up Form](https://forms.gle/1pGiDJDh3jur8Tq68)
 
 ## App Setup
 
