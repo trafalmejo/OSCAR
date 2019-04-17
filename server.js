@@ -34,11 +34,7 @@ io.sockets.on('connection', function (socket) {
 		//}
 	});
 	socket.on("message", function (id, obj) {
- 		// for (var i = oscClient.length - 1; i >= 0; i--) {
- 		// 	if(oscClient[i].port == id){
-			// oscClient[i].send.apply(oscClient[i], obj);
-			// }
- 		// }
+
  		console.log("socket: ", oscClient[0]);
  		for (var i = 0; i < oscClient.length; i++) {
  			var h = oscClient[i].host;
@@ -56,9 +52,6 @@ io.sockets.on('connection', function (socket) {
  		
 
  	});
-	socket.on('daniel', function(id){
-		console.log('Daniel');
-	});
 	socket.on('disconnect', function(socket){
 		console.log("Disconnect all");
 		for (var i = 0; i < oscClient.length; i++) {
@@ -78,11 +71,6 @@ io.sockets.on('connection', function (socket) {
 				oscClient[i].kill();
 				isConnected[i] = false;
 			}
-			//oscServer.kill();
-			// for (var i = oscClient.length - 1; i >= 0; i--) {
-			// 	oscClient[i].kill();
-			// }
-			//isConnected = false;
 		}
 	});
 });
