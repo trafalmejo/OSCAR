@@ -1,4 +1,4 @@
-# OSCAR [UNDER CONSTRUCTION]
+# OSCAR
 
 ![](assets/css/thumbnail.png)
 
