@@ -14,7 +14,7 @@ We are still under construction and this is a quick video DEMO of what the tool 
 alt="OSCAR tool to create GIUS to control interactive installations" width="1200" height="600" border="10" /></a>
 
 <figure class="video_container">
-  <iframe src="https://www.youtube.com/embed/ZcW8zBWRLf0" frameborder="0" allowfullscreen="true"> </iframe>
+  <iframe src="https://www.youtube.com/embed/ZcW8zBWRLf0" width="1200" height="600" frameborder="0" allowfullscreen="true"> </iframe>
 </figure>
 
 Please Sign Up in the BETA user test list to keep you posted about the next release.
