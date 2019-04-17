@@ -479,9 +479,10 @@ a:hover {
  background-image: url("https://raw.githubusercontent.com/trafalmejo/OSCar/master/assets/css/logo.png");
  background-repeat: no-repeat;
  margin: auto;
- background-size: cover;
+ background-size: auto;
  background-position: center;
  height: 200px;
+ text-indent: -9999px;                 /* sends the text off-screen */
 }
 @media screen and (min-width: 64em) {
  .project-name {
