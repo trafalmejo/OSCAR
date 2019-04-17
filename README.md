@@ -1,6 +1,6 @@
 # OSCAR [UNDER CONSTRUCTION]
 
-![](assets/thumbnail.png)
+![](assets/css/thumbnail.png)
 
 [Web Version](https://trafalmejo.github.io/OSCar/)
 
