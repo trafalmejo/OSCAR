@@ -476,8 +476,12 @@ a:hover {
  }
 }
 .project-name {
- margin-top:0;
- margin-bottom:0.1rem
+ background-image: url("https://raw.githubusercontent.com/trafalmejo/OSCar/master/assets/css/logo.png");
+ background-repeat: no-repeat;
+ margin: auto;
+ background-size: cover;
+ background-position: center;
+ height: 200px;
 }
 @media screen and (min-width: 64em) {
  .project-name {
