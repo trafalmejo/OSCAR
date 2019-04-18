@@ -1,6 +1,14 @@
+
  var editor = grapesjs.init({
   height: '100%',
- 	showOffsets: 1,
+   // Show paddings and margins
+  showOffsets: false,
+ // Show paddings and margins on selected component
+  showOffsetsSelected: true, 
+  // Show a toolbar when the component is selected
+  showToolbar: 1, 
+  // If true render a select of available devices
+  showDevices: 1,  
  	noticeOnUnload: 0,
  	storageManager: { autoload: 0 },
  	container: '#gjs',
@@ -31,34 +39,7 @@
      },
      ],
    },
-// styleManager : {	
-// 	sectors: [{
-// 		name: 'General',
-// 		open: false,
-// 		buildProps: ['float', 'display', 'position', 'top', 'right', 'left', 'bottom']
-// 	},{
-// 		name: 'Flex',
-// 		open: false,
-// 		buildProps: ['flex-direction', 'flex-wrap', 'justify-content', 'align-items', 'align-content', 'order', 'flex-basis', 'flex-grow', 'flex-shrink', 'align-self']
-// 	},{
-// 		name: 'Dimension',
-// 		open: false,
-// 		buildProps: ['width', 'height', 'max-width', 'min-height', 'margin', 'padding'],
-// 	},{
-// 		name: 'Typography',
-// 		open: false,
-// 		buildProps: ['font-family', 'font-size', 'font-weight', 'letter-spacing', 'color', 'line-height', 'text-shadow'],
-// 	},{
-// 		name: 'Decorations',
-// 		open: false,
-// 		buildProps: ['border-radius-c', 'background-color', 'border-radius', 'border', 'box-shadow', 'background'],
-// 	},{
-// 		name: 'Extra',
-// 		open: false,
-// 		buildProps: ['transition', 'perspective', 'transform'],
-// 	}
-// 	],
-// },
+   styleManager: {},
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
@@ -68,7 +49,8 @@
   		blocks: [],
   		formsOpts: false,
   		navbarOpts: false,
-  		countdownOpts: false,
+      countdownOpts: false,
+      showStylesOnChange: true,
   	},
   }
 });
@@ -82,7 +64,7 @@
 // 	})
 editor.BlockManager.add('sliderHorizontal', {
   label: 'Slider',
-  attributes: { class:'fa fa-sliders' },
+  attributes: { class:'fa fa-arrows-h' },
   category: 'Basic',
   content: `<input type="range" min="1" max="100">` 
 })
@@ -92,9 +74,6 @@ editor.BlockManager.add('sliderVertical', {
   category: 'Basic',
   content: `<input type="range" orient="vertical" min="1" max="100">` 
 })
- function myFunction(){
-  console.log(wasa);
- }
 //margin:auto to align on the center
 //inline-block to increase size depending on their children
 editor.BlockManager.add('button', {
