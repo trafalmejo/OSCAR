@@ -1,4 +1,4 @@
-![](assets/css/header.png)
+![](assets/css/headerColor.png)
 
 # OSCAR - [Web Version](https://trafalmejo.github.io/OSCar/)
 
