@@ -1,5 +1,3 @@
-# OSCAR
-
 OSCAR is a tool to create beautiful graphic user interaces (GUIs) to send OSC messages and control interactive installations (Resolume arena, Touch Designer, Ableton, Processing, PD, UNITY, Unreal, etc).
 Let's create beautiful, responsive and touchable interfaces.
 
