@@ -1,16 +1,8 @@
 
  var editor = grapesjs.init({
-  height: '100%',
-   // Show paddings and margins
-  showOffsets: false,
- // Show paddings and margins on selected component
-  showOffsetsSelected: true, 
-  // Show a toolbar when the component is selected
-  showToolbar: 1, 
-  // If true render a select of available devices
-  showDevices: 1,  
- 	noticeOnUnload: 0,
- 	storageManager: { autoload: 0 },
+  domComponents: { storeWrapper: 1 },
+  height: '100%', 
+ 	noticeOnUnload: 1,
  	container: '#gjs',
  	fromElement: true,
   canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
@@ -39,7 +31,27 @@
      },
      ],
    },
+   //Just draw on set of style options
    styleManager: {},
+     // Configurations for Block Manager
+   blockManager: {},
+   //Persistance
+     // Default configurations
+   storageManager: {
+    id: 'gjs-',             // Prefix identifier that will be used on parameters
+    type: 'local',          // Type of the storage
+    autosave: true,         // Store data automatically
+    autoload: true,         // Autoload stored data on init
+    stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+      //Enable/Disable components model (JSON format)
+    storeComponents: 1,
+    //Enable/Disable styles model (JSON format)
+    storeStyles: 1,
+    //Enable/Disable saving HTML template
+    storeHtml: 1,
+    //Enable/Disable saving CSS template
+    storeCss: 1,
+  },
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
@@ -54,22 +66,14 @@
   	},
   }
 });
-//  editor.BlockManager.add('testInput', {
-// 	label: 'Input',
-// 	attributes: { 
-// 		class:'gjs-fonts gjs-f-b2',
-// 		title: "testInput" },
-// 		category: 'Basic',
-// 		content:  '<input type="text" name="fname">'
-// 	})
 editor.BlockManager.add('sliderHorizontal', {
-  label: 'Slider',
+  label: 'Horizontal Slider',
   attributes: { class:'fa fa-arrows-h' },
   category: 'Basic',
   content: `<input type="range" min="1" max="100">` 
 })
 editor.BlockManager.add('sliderVertical', {
-  label: 'Slider',
+  label: 'Vertical Slider',
   attributes: { class:'fa fa-arrows-v' },
   category: 'Basic',
   content: `<input type="range" orient="vertical" min="1" max="100">` 
