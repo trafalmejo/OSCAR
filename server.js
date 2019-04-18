@@ -57,11 +57,6 @@ io.sockets.on('connection', function (socket) {
 		//}
 	});
 	socket.on("message", function (id, obj) {
-<<<<<<< HEAD
-
- 		console.log("socket: ", oscClient[0]);
- 		for (var i = 0; i < oscClient.length; i++) {
-=======
  		// for (var i = oscClient.length - 1; i >= 0; i--) {
  		// 	if(oscClient[i].port == id){
 			// oscClient[i].send.apply(oscClient[i], obj);
@@ -70,7 +65,6 @@ io.sockets.on('connection', function (socket) {
 		 //console.log("socket: ", oscClient[0]);
 		var sent = false;
  		for (var i = 0; i < oscClient.length && !sent; i++) {
->>>>>>> d5e048e99377cbbec38ca2061a93c2c04eac9dae
  			var h = oscClient[i].host;
 			 var p = oscClient[i].port;
 			 //ID will be represented by the IP and PORT concatenated (host + port)
