@@ -1,20 +1,12 @@
-# OSCAR index
-
-![](assets/css/thumbnail.png)
-
-[Web Version](https://trafalmejo.github.io/OSCar/)
+# OSCAR
 
 OSCAR is a tool to create beautiful graphic user interaces (GUIs) to send OSC messages and control interactive installations (Resolume arena, Touch Designer, Ableton, Processing, PD, UNITY, Unreal, etc).
 Let's create beautiful, responsive and touchable interfaces.
 
 We are still under construction and this is a quick video DEMO of what the tool is currently able to do, but is up to you to support with feedback, documentation, suggestions, bugs detection to create a better tool.
 
-<a href="http://www.youtube.com/watch?feature=player_embedded&v=ZcW8zBWRLf0
-" target="_blank"><img src="http://img.youtube.com/vi/ZcW8zBWRLf0/0.jpg" 
-alt="OSCAR tool to create GIUS to control interactive installations" width="1200" height="600" border="10" /></a>
-
 <figure class="video_container">
-  <iframe src="https://www.youtube.com/embed/ZcW8zBWRLf0" width="100%" frameborder="0" allowfullscreen="true"> </iframe>
+  <iframe src="https://www.youtube.com/embed/ZcW8zBWRLf0" width="100%" frameborder="0" allowfullscreen="true" height="500"> </iframe>
 </figure>
 
 ### Please [Sign Up](https://forms.gle/1pGiDJDh3jur8Tq68) in the BETA user test list to keep you posted about the next release.
