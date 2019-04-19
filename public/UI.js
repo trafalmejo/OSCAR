@@ -1,8 +1,7 @@
 
  var editor = grapesjs.init({
-  domComponents: { storeWrapper: 1 },
+  //domComponents: { storeWrapper: 0 },
   height: '100%', 
- 	noticeOnUnload: 1,
  	container: '#gjs',
  	fromElement: true,
   canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
@@ -399,7 +398,22 @@ comps.addType('input', {
 });
 //Slider finished
 
-//editor.on('component:add', model => console.log('added ', model))
+
+
+//EVENT WHEN THE EDITOR IS LOADER
+editor.on('load', function(model){
+  console.log('Model was loaded');
+  model.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
+});
+//Event is trigger for every loaded component
+editor.on('storage:load', function(object){
+  // console.log('Loaded Object: ', object);
+  // console.log('Loaded Components: ', object.components);
+  // console.log('Typeof: ', typeof(object.components));
+  // var jsonObject= JSON.parse(object.components);
+  // console.log('Loaded Object: ', jsonObject);
+  console.log('Js:', editor.getHtml());
+});
 editor.on('component:add', function(model){
 	//console.log('added ', model.prototype.defaults);
 	//console.log(this);
@@ -414,7 +428,6 @@ editor.on('component:add', function(model){
   console.log('Type: ', model.attributes.type);
 	if(model.attributes.type == "button" || model.attributes.type == "input"){
 		console.log("It is a Button or Input:", this);
-		model.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
 		if(true){
 			console.log("emitting config: " , model.attributes.port);
 			model.socket.emit('config', {
