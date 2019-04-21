@@ -78,26 +78,26 @@ io.sockets.on('connection', function (socket) {
  			}
  		}
  	});
-	socket.on('disconnect', function(socket){
-		console.log("Disconnect all");
-		for (var i = 0; i < oscClient.length; i++) {
-			if (isConnected[i]) {
-				oscClient[i].kill();
-			}
-		}
-	});
-	socket.on('disconnectme', function(id){
-		for (var i = 0; i < oscClient.length; i++) {
-			var h = oscClient[i].host;
-			var p = oscClient[i].port;
-			var hp = h + "" + p;
-			if (isConnected[i] && id == hp) {
-				console.log("Disconnect");
-				//oscClient[i].kill();
-				isConnected[i] = false;
-			}
-		}
-	});
+	// socket.on('disconnect', function(socket){
+	// 	console.log("Disconnect all");
+	// 	for (var i = 0; i < oscClient.length; i++) {
+	// 		if (isConnected[i]) {
+	// 			oscClient[i].kill();
+	// 		}
+	// 	}
+	// });
+	// socket.on('disconnectme', function(id){
+	// 	for (var i = 0; i < oscClient.length; i++) {
+	// 		var h = oscClient[i].host;
+	// 		var p = oscClient[i].port;
+	// 		var hp = h + "" + p;
+	// 		if (isConnected[i] && id == hp) {
+	// 			console.log("Disconnect");
+	// 			//oscClient[i].kill();
+	// 			isConnected[i] = false;
+	// 		}
+	// 	}
+	// });
 });
 
 
