@@ -24,6 +24,7 @@ comps.addType('button', {
       ip : 'localhost',
       port: 10000,
       message: '/push1',
+      toggle: false,
       traits: [ 
       {type: 'text',
       label: 'Ip',
@@ -36,11 +37,12 @@ comps.addType('button', {
       {type: 'text',
       label: 'Message',
       name: 'message',
-      changeProp: 1,},{
+      changeProp: 1,},
+      {
           // Can make it required for the form
           type: 'checkbox',
-          label: 'Push Button',
-          name: 'required',
+          label: 'Toggle Button',
+          name: 'toggle',
         }],
       }),
     init() {
@@ -51,6 +53,7 @@ comps.addType('button', {
     	this.listenTo(this, 'change:port', this.changePort);
     	this.listenTo(this, 'change:ip', this.changeIP);
     	this.listenTo(this, 'change:message', this.changeMessage);
+    	this.listenTo(this, 'change:toggle', this.changeToggle);
     },
     changeIP() {
     	console.log("IP Changed")
@@ -86,6 +89,11 @@ comps.addType('button', {
     	console.log("Message Changed")
     	var newMessage = this.changed.message;
     	this.attributes.message = newMessage;
+    },
+    changeToggle() {
+    	console.log("Toggle Changed")
+    	var toggleOption = this.changed.toggle;
+    	this.attributes.toggle = newMessage;
     },
     validateIPaddress(ipaddress) 
     {
