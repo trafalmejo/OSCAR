@@ -1,6 +1,6 @@
 
  var editor = grapesjs.init({
-  //domComponents: { storeWrapper: 0 },
+  domComponents: { storeWrapper: 0 },
   height: '100%', 
  	container: '#gjs',
  	fromElement: true,
@@ -112,7 +112,7 @@ comps.addType('button', {
       editable: true,
       // // Traits (Settings)
       ip : 'localhost',
-      port: 8000,
+      port: 10000,
       message: '/push1',
       traits: [ 
       {type: 'text',
@@ -162,8 +162,9 @@ comps.addType('button', {
     	if(!isNaN(parseInt(newPort))){
     		console.log("Is correct");
     		this.attributes.port = newPort;
-    		this.socket.emit('config', {
-    			server: { port: 4000,  host: config.ip},
+    		//this.socket.emit('config', {
+        editor.socket.emit('config', {            
+          server: { port: 4000,  host: config.ip},
     			client: { port: newPort, host: config.ip}
     		});
     	}else{
@@ -221,7 +222,8 @@ comps.addType('button', {
       console.log('Click');
       console.log("Click event owner: ", this);
     	var id = this.model.attributes.ip + "" + this.model.attributes.port
-    	this.model.socket.emit('message', id, [this.model.attributes.message].concat(1));
+      editor.socket.emit('message', id, [this.model.attributes.message].concat(1));
+      //this.model.socket.emit('message', id, [this.model.attributes.message].concat(1));
       //this.model.set('style', {color: this.randomHex()}); // <- Affects the final HTML code
       //this.el.style.backgroundColor = this.randomHex(); // <- Doesn't affect the final HTML code
       // Tip: updating the model will reflect the changes to the view, so, in this case,
@@ -231,7 +233,8 @@ comps.addType('button', {
     release: function(e){
       console.log('Release');
       var id = this.model.attributes.ip + "" + this.model.attributes.port
-      this.model.socket.emit('message', id, [this.model.attributes.message].concat(0));
+      //this.model.socket.emit('message', id, [this.model.attributes.message].concat(0));
+      editor.socket.emit('message', id, [this.model.attributes.message].concat(0));
     },
     // The render() should return 'this'
     render: function () {
@@ -314,7 +317,8 @@ comps.addType('input', {
     	if(!isNaN(parseInt(newPort))){
     		console.log("Is correct");
     		this.attributes.port = newPort;
-    		this.socket.emit('config', {
+    		// this.socket.emit('config', {
+        editor.socket.emit('config', {
     			server: { port: 4000,  host: config.ip},
     			client: { port: newPort, host: config.ip}
     		});
@@ -386,7 +390,9 @@ comps.addType('input', {
       console.log("Value: ", this.el.value);
       var inputValue = this.el.value;
       var id = this.model.attributes.ip + "" + this.model.attributes.port
-      this.model.socket.emit('message', id, [this.model.attributes.message].concat(parseInt(inputValue)));
+      //this.model.socket.emit('message', id, [this.model.attributes.message].concat(parseInt(inputValue)));
+      editor.socket.emit('message', id, [this.model.attributes.message].concat(parseInt(inputValue)));
+
    },
     // The render() should return 'this'
     render: function () {
@@ -401,9 +407,11 @@ comps.addType('input', {
 
 
 //EVENT WHEN THE EDITOR IS LOADER
-editor.on('load', function(model){
+editor.on('load', function(edit){
   console.log('Model was loaded');
-  model.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
+  edit.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
+  console.log('Model loaded:', edit);
+  console.log('Editor: ', editor);
 });
 //Event is trigger for every loaded component
 editor.on('storage:load', function(object){
@@ -430,8 +438,9 @@ editor.on('component:add', function(model){
 		console.log("It is a Button or Input:", this);
 		if(true){
 			console.log("emitting config: " , model.attributes.port);
-			model.socket.emit('config', {
-				server: { port: 4000,  host: config.ip},
+			//model.socket.emit('config', {
+      editor.socket.emit('config', {
+        server: { port: 4000,  host: config.ip},
 				client: { port: model.attributes.port, host: config.ip}
 			});
 		}
@@ -445,7 +454,8 @@ editor.on('component:remove', function(model){
 		var id = model.attributes.ip + "" + model.attributes.port
 		console.log('socket id: ', id);
 		console.log('model: ', model);
-		model.socket.emit('disconnectme', id);
+		//model.socket.emit('disconnectme', id);
+    editor.socket.emit('disconnectme', id);
 
 		//model.view.socket.disconnect(id);
 		//model.view.socket.disconnect(true);
