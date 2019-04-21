@@ -2,7 +2,7 @@ editor.BlockManager.add('sliderHorizontal', {
     label: 'Horizontal Slider',
     attributes: { class:'fa fa-arrows-h' },
     category: 'Basic',
-    content: `<input type="range" min="1" max="100">` 
+    content: `<input type="range">` 
   })
   editor.BlockManager.add('sliderVertical', {
     label: 'Vertical Slider',
@@ -22,8 +22,10 @@ comps.addType('input', {
         editable: true,
         // // Traits (Settings)
         ip : 'localhost',
-        port: 8000,
+        port: 10000,
         message: '/slider1',
+        min: '0',
+        max: 100,
         traits: [ 
         {type: 'text',
         label: 'Ip',
@@ -95,17 +97,22 @@ comps.addType('input', {
           this.attributes.message = newMessage;
       },
       changeMin() {
-        var min = this.changed.min;
-        if(!isNaN(max)){
-          this.attributes.min = min;
+        console.log("This changemin: ", this);
+        var mini = this.changed.min;
+        if(!isNaN(mini)){
+          this.attributes.min = mini;
+          this.setAttributes({'min': mini, 'max': this.attributes.max, 'type': 'range'});
+          //this.setAttribute('min', min);
+
         }else{
           alert("Min should be a number");
         }
       },
       changeMax() {
-        var max = this.changed.max;
-        if(!isNaN(max)){
-          this.attributes.max = max;
+        var maxi = this.changed.max;
+        if(!isNaN(maxi)){
+          this.attributes.max = maxi;
+          this.setAttributes({'min': this.attributes.min, 'max': maxi , 'type': 'range'});
         }else{
           alert("Max should be a number");
         }
