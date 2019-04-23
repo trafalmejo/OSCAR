@@ -34,6 +34,9 @@
    styleManager: {},
      // Configurations for Block Manager
    blockManager: {},
+   traitManager:{
+
+   },
    //Persistance
      // Default configurations
    storageManager: {
@@ -41,7 +44,7 @@
     type: 'local',          // Type of the storage
     autosave: true,         // Store data automatically
     autoload: true,         // Autoload stored data on init
-    stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+    stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
       //Enable/Disable components model (JSON format)
     storeComponents: 1,
     //Enable/Disable styles model (JSON format)
@@ -130,7 +133,7 @@ editor.on('component:add', function(model){
 	if(model.attributes.type == "button" || model.attributes.type == "input"){
 		console.log("It is a Button or Input:", this);
 		if(true){
-			console.log("emitting config: " , model.attributes.port);
+			//console.log("emitting config: " , model.attributes.port);
 			//model.socket.emit('config', {
       editor.socket.emit('config', {
         server: { port: 4000,  host: config.ip},
@@ -156,4 +159,11 @@ editor.on('component:remove', function(model){
 });
 //EXAMPLE OF SHORT FUNCTION
 editor.on('block:drag:stop', model => console.log('dropped ', model))
+
+
+
+window.onbeforeunload = function(event)
+{
+    return confirm("Confirm refresh");
+};
 
