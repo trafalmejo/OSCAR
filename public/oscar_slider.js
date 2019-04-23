@@ -66,6 +66,10 @@ comps.addType('input', {
           if(newIP == 'localhost' || this.validateIPaddress(newIP)){
               console.log("Is correct");
               this.attributes.ip = newIP;
+              editor.socket.emit('config', {
+                server: { port: 4000,  host: config.ip},
+                client: { port: this.attributes.port, host: newIP}
+            });
   
           }else{
               console.log(this);
@@ -83,7 +87,7 @@ comps.addType('input', {
               // this.socket.emit('config', {
           editor.socket.emit('config', {
                   server: { port: 4000,  host: config.ip},
-                  client: { port: newPort, host: config.ip}
+                  client: { port: newPort, host: this.attributes.ip}
               });
           }else{
               //NO WORK this.attributes.port = "";
