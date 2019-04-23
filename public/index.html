@@ -15,6 +15,11 @@
 <script src="https://unpkg.com/grapesjs"></script>
 <script src="dist/grapesjs-touch.min.js"></script>
 <script src="dist/grapesjs-preset-webpage.min.js"></script>
+<script>
+		window.addEventListener("beforeunload", function(event) {
+			event.returnValue = "Your custom message.";
+		});
+</script>
 <!-- <script src="dist/grapesjs-aviary.min.js"></script> -->
 <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway">

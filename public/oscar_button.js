@@ -46,7 +46,11 @@ comps.addType('button', {
         }],
       }),
     init() {
-    	console.log('init: ', this);    	
+      console.log('init: ', this); 
+      // this.attributes.traits.ip = this.attributes.ip;   	
+      // this.attributes.traits.port = this.attributes.port;   	
+      // this.attributes.traits.message = this.attributes.message;   	
+      // this.attributes.traits.toggle = this.attributes.toggle;   	
     	//this.view.ip = "";
     	//this.view.port = "";
     	//this.view.message = "";
@@ -60,7 +64,8 @@ comps.addType('button', {
     	var newIP = this.changed.ip;
     	if(newIP == 'localhost' || this.validateIPaddress(newIP)){
     		console.log("Is correct");
-    		this.attributes.ip = newIP;
+        this.attributes.ip = newIP;
+        this.attributes.traits.ip = newIP;
         editor.socket.emit('config', {            
           server: { port: 4000,  host: config.ip},
     			client: { port: this.attributes.port, host: newIP}
