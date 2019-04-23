@@ -61,7 +61,11 @@ comps.addType('button', {
     	if(newIP == 'localhost' || this.validateIPaddress(newIP)){
     		console.log("Is correct");
     		this.attributes.ip = newIP;
-
+        editor.socket.emit('config', {            
+          server: { port: 4000,  host: config.ip},
+    			client: { port: this.attributes.port, host: newIP}
+        });
+        
     	}else{
     		console.log(this);
     		alert("Your IP is incorrect");
@@ -77,7 +81,7 @@ comps.addType('button', {
     		//this.socket.emit('config', {
         editor.socket.emit('config', {            
           server: { port: 4000,  host: config.ip},
-    			client: { port: newPort, host: config.ip}
+    			client: { port: newPort, host: this.attributes.ip}
     		});
     	}else{
     		//NO WORK this.attributes.port = "";
@@ -126,8 +130,8 @@ comps.addType('button', {
 //     error: 'onError',
 //     dragstart: 'noDrag',
 //     mousedown: 'noDrag'
-       mousedown: 'handleClick',
-       mouseup: 'release',
+       click: 'handleClick',
+       //mouseup: 'release',
     },
 
     // It doesn't make too much sense this method inside the component
@@ -138,8 +142,10 @@ comps.addType('button', {
     handleClick: function(e) {
       console.log('Click');
       console.log("Click event owner: ", this);
-    	var id = this.model.attributes.ip + "" + this.model.attributes.port
+      var id = this.model.attributes.ip + "" + this.model.attributes.port
+      var message = this.model.attributes.message;
       editor.socket.emit('message', id, [this.model.attributes.message].concat(1));
+      setTimeout(function(){editor.socket.emit('message', id, [message].concat(0));},250);
       //this.model.socket.emit('message', id, [this.model.attributes.message].concat(1));
       //this.model.set('style', {color: this.randomHex()}); // <- Affects the final HTML code
       //this.el.style.backgroundColor = this.randomHex(); // <- Doesn't affect the final HTML code
@@ -152,6 +158,8 @@ comps.addType('button', {
       var id = this.model.attributes.ip + "" + this.model.attributes.port
       //this.model.socket.emit('message', id, [this.model.attributes.message].concat(0));
       editor.socket.emit('message', id, [this.model.attributes.message].concat(0));
+      alert("RELEASED");
+
     },
     // The render() should return 'this'
     render: function () {

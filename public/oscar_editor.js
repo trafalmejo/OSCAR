@@ -107,10 +107,10 @@ editor.on('storage:load', function(object){
   for (let i = 0; i < jsonObject.length; i++) {
     const component = jsonObject[i];
     if(component.type == "button" || component.type == "input"){
-        console.log("emitting config: " , component.port);
+      console.log('Componenent loaded: ', component);
         editor.socket.emit('config', {
           server: { port: 4000,  host: config.ip},
-          client: { port: component.port, host: config.ip}
+          client: { port: component.port, host: component.ip}
         });
     }
   }
@@ -134,7 +134,7 @@ editor.on('component:add', function(model){
 			//model.socket.emit('config', {
       editor.socket.emit('config', {
         server: { port: 4000,  host: config.ip},
-				client: { port: model.attributes.port, host: config.ip}
+				client: { port: model.attributes.port, host: model.attributes.ip}
 			});
 		}
 	}
