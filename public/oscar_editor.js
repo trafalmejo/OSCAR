@@ -4,6 +4,7 @@
   height: '100%', 
  	container: '#gjs',
  	fromElement: true,
+  allowScripts: 1,
   //canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
   assetManager: {
    assets: [
