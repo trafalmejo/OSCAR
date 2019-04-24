@@ -4,7 +4,7 @@
   height: '100%', 
  	container: '#gjs',
  	fromElement: true,
-  canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
+  //canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
   assetManager: {
    assets: [
    'http://placehold.it/350x250/78c5d6/fff/image1.jpg',
@@ -83,7 +83,7 @@ editor.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTr
   var dModel = dType.model;
   var dView = dType.view;
 
-//EVENT WHEN THE EDITOR IS LOADER
+//EVENT WHEN THE EDITOR IS LOADED
 editor.on('load', function(edit){
   console.log('Model was loaded');
   console.log('Model loaded:', edit);
@@ -96,27 +96,35 @@ editor.on('storage:load', function(object){
   // console.log('Loaded Object: ', object);
   // console.log('Loaded Components: ', object.components);
   // console.log('Typeof: ', typeof(object.components));
-  if(editor.socket == null){
-    //CHECK IF THIS IS STILL CONNECTED SOMEWAY
-    if(true){
-
-      // editor.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
-    }
-  }
 
   var jsonObject= JSON.parse(object.components);
   console.log('Loaded Object: ', jsonObject);
   console.log('Js:', editor.getHtml());
-  for (let i = 0; i < jsonObject.length; i++) {
-    const component = jsonObject[i];
-    if(component.type == "button" || component.type == "input"){
-      console.log('Componenent loaded: ', component);
-        editor.socket.emit('config', {
-          server: { port: 4000,  host: config.ip},
-          client: { port: component.port, host: component.ip}
-        });
+  //LOOP OVER ALL COMPONENTS
+  editor.DomComponents.getWrapper().onAll(component => {
+    if (component.is('button')) {
+     // do something
+     component.init()
+     console.log('Componenent loaded: ', component);
+     console.log('Port:', component.port)
+     if (typeof component.ip === 'undefined') {
+      // color is undefined
+      component.ip = 'localhost';
     }
-  }
+     if (typeof component.port === 'undefined') {
+      // color is undefined
+      component.port = 10000;
+    }
+    console.log('Port loaded: ', component.port)
+    //component.type = 'button';
+    console.log('Type loaded: ', component.type)
+       editor.socket.emit('config', {
+       server: { port: 4000,  host: config.ip},
+       client: { port: component.port, host: component.ip}
+     });
+    }
+   })
+
 });
 editor.on('component:add', function(model){
 	//console.log('added ', model.prototype.defaults);
@@ -126,11 +134,12 @@ editor.on('component:add', function(model){
 	// for (var i = 0; i < oscClient.length; i++) {
 	// 	if(oscClient[i])
 	// }
-	//TO READ: WE WANT TO CHECK ITS PROPERTIES / TRAITS
+  console.log('Component Added')
+	if(model.attributes.type == "button" || model.attributes.type == "input"){
+    	//TO READ: WE WANT TO CHECK ITS PROPERTIES / TRAITS
 	console.log('Model: ',model);
 	console.log('Traits: ',model.attributes.traits);
   console.log('Type: ', model.attributes.type);
-	if(model.attributes.type == "button" || model.attributes.type == "input"){
 		console.log("It is a Button or Input:", this);
 		if(true){
 			//console.log("emitting config: " , model.attributes.port);
@@ -162,8 +171,8 @@ editor.on('block:drag:stop', model => console.log('dropped ', model))
 
 
 
-window.onbeforeunload = function(event)
-{
-    return confirm("Confirm refresh");
-};
+// window.onbeforeunload = function(event)
+// {
+//     return confirm("Confirm refresh");
+// };
 

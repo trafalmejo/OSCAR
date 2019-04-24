@@ -57,7 +57,11 @@ comps.addType('button', {
     	this.listenTo(this, 'change:port', this.changePort);
     	this.listenTo(this, 'change:ip', this.changeIP);
     	this.listenTo(this, 'change:message', this.changeMessage);
-    	this.listenTo(this, 'change:toggle', this.changeToggle);
+      this.listenTo(this, 'change:toggle', this.changeToggle);
+      editor.socket.emit('config', {            
+        server: { port: 4000,  host: config.ip},
+        client: { port: this.attributes.port, host: this.attributes.ip}
+      });
     },
     changeIP() {
     	console.log("IP Changed")
@@ -178,3 +182,6 @@ comps.addType('button', {
   //view: defaultType.view,
 });
 //BUTTON finished
+
+
+
