@@ -40,25 +40,25 @@
    },
    //Persistance
      // Default configurations
-   storageManager: {
-    id: 'gjs-',             // Prefix identifier that will be used on parameters
-    type: 'local',          // Type of the storage
-    autosave: true,         // Store data automatically
-    autoload: true,         // Autoload stored data on init
-    stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
-      //Enable/Disable components model (JSON format)
-    storeComponents: 1,
-    //Enable/Disable styles model (JSON format)
-    storeStyles: 1,
-    //Enable/Disable saving HTML template
-    storeHtml: 1,
-    //Enable/Disable saving CSS template
-    storeCss: 1,
-  },
+  //  storageManager: {
+  //   id: 'gjs-',             // Prefix identifier that will be used on parameters
+  //   type: 'local',          // Type of the storage
+  //   autosave: true,         // Store data automatically
+  //   autoload: true,         // Autoload stored data on init
+  //   stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+  //     //Enable/Disable components model (JSON format)
+  //   storeComponents: 1,
+  //   //Enable/Disable styles model (JSON format)
+  //   storeStyles: 1,
+  //   //Enable/Disable saving HTML template
+  //   storeHtml: 1,
+  //   //Enable/Disable saving CSS template
+  //   storeCss: 1,
+  // },
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
-  plugins: ['gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
+  plugins: ['gjs-preset-webpage', 'grapesjs-tooltip', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
   pluginsOpts: {
   	'gjs-preset-webpage': {
   		blocks: [],
@@ -66,6 +66,11 @@
   		navbarOpts: false,
       countdownOpts: false,
       showStylesOnChange: true,
+      modalImportTitle: 'Import Template',
+      modalImportLabel: '<div style="margin-bottom: 10px; font-size: 13px;">Paste here your HTML/CSS and click Import</div>',
+      modalImportContent: function(editor) {
+        return editor.getHtml() + '<style>'+editor.getCss()+'</style>'
+      }
   	},
   }
 });
@@ -167,6 +172,48 @@ editor.on('component:remove', function(model){
 		//model.view.socket.disconnect(true);
 	}
 });
+//UPDATE TRAITS
+editor.on("component:update", function(component) {
+  // console.log("Component Update", component);
+  // console.log('ip: ', component.changed.ip);
+  var newIP = component.changed.ip;
+  if (typeof newIP !== 'undefined'){
+  //   console.log("href changed!", component);
+  if(newIP == 'localhost'){
+    console.log("Is correct");
+    component.attributes.ip = newIP;
+    editor.socket.emit('config', {            
+      server: { port: 4000,  host: config.ip},
+      client: { port: component.attributes.port, host: component.attributes.ip}
+    });
+  }else{
+    console.log('IP: ', component)
+    alert("Your IP is incorrect: " + component.attributes.ip);
+    var trait = component.getTrait('ip');
+    trait.view.$input[0].value = component._previousAttributes.ip;
+    component.attributes.ip = component._previousAttributes.ip;
+
+  }
+  }
+  var newPort = component.changed.port;
+   if(typeof newPort !== 'undefined'){
+    console.log("Port Changed: ", newPort);
+    if(!isNaN(parseInt(newPort))){
+      console.log("Is correct");
+      component.attributes.port = newPort;
+      editor.socket.emit('config', {            
+        server: { port: 4000,  host: config.ip},
+        client: { port: component.attributes.port, host: component.attributes.ip}
+      });
+    }else{
+      alert("Your port is incorrect");
+      var trait = component.getTrait('port');
+      trait.view.$input[0].value = component._previousAttributes.port;
+      component.attributes.port = component._previousAttributes.port;
+    }
+   }
+})
+
 //EXAMPLE OF SHORT FUNCTION
 editor.on('block:drag:stop', model => console.log('dropped ', model))
 
