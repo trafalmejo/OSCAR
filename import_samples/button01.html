@@ -1,0 +1,97 @@
+<style type="text/css">
+	@import url('https://fonts.googleapis.com/css?family=Coiny');
+
+
+.btn {
+  display: inline-block;
+
+  color: white;
+  background-color: transparent;
+  border: none;  
+  cursor: pointer;
+  z-index: 0;
+  padding: 0;
+}
+
+.btn:focus {
+  outline-color: transparent;
+}
+
+
+/* btn-blow */
+.btn-blow::after {
+  content: "";
+  width: 120px;
+  height: 120px;
+  background-color: rgba(0,0,0,.2);
+  position: absolute;
+  top: calc(50% - 60px);
+  left: calc(50% - 60px);
+  opacity: 0;
+  z-index: -4;
+  transition-duration: .4s;
+  pointer-events: none;
+}
+
+.btn-blow:focus::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.btn-blow:focus:hover::after {
+  transform: scale(1.2);
+}
+
+.btn-blow {
+  width: 100px;
+  height: 100px;  
+}
+
+.btn-blow * {
+  pointer-events: none;
+}
+
+.btn-blow span {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  left:-50px;
+  width: 200px;
+  height: 100px;
+  justify-content: center;
+  align-items: center;
+  border-radius: 0;
+  transition: transform .4s, border-radius .4s;  
+  font-family: 'Coiny', cursive;
+  transition-timing-function: cubic-bezier(.5,2.4,.7,.5);
+}
+.btn-blow span::before {
+  content: "";
+  position: absolute;
+  height: 100%;
+  width: 100%;
+  background-color: hotpink;
+  background-image: radial-gradient(circle, #ff69b4 0%, #e23a8e 30%, #e23a8e 100%);
+  background-size: 200% 200%;
+  background-repeat: no-repeat;
+  background-position: center;
+  top: 0;
+  left: 0;
+  transform: rotate(90deg);
+  z-index: -1;  
+  border-radius: 0;
+  transition: all .4s;
+  
+}
+.btn-blow:hover span {
+  transform: scale(1.3);
+  transition: transform .8s, border-radius .4s;  
+  border-radius: 50%;  
+}
+.btn-blow:hover span::before {
+  transition: background-size .8s, border-radius .4s; 
+  border-radius: 50%;
+  background-size: 120% 120%;
+}
+
+</style>
+<button class="btn btn-blow"><span class="">click me!</span></button>
