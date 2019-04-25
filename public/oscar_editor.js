@@ -58,7 +58,7 @@
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
-  plugins: ['gjs-preset-webpage', 'grapesjs-touch'],
+  plugins: ['gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
   pluginsOpts: {
   	'gjs-preset-webpage': {
   		blocks: [],
