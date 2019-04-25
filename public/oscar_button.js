@@ -53,11 +53,14 @@ comps.addType('button', {
       // this.attributes.traits.toggle = this.attributes.toggle;   	
     	//this.view.ip = "";
     	//this.view.port = "";
-    	//this.view.message = "";
-    	this.listenTo(this, 'change:port', this.changePort);
-    	this.listenTo(this, 'change:ip', this.changeIP);
-    	this.listenTo(this, 'change:message', this.changeMessage);
-      this.listenTo(this, 'change:toggle', this.changeToggle);
+      //this.view.message = "";
+      
+
+      //listeners
+    	//this.listenTo(this, 'change:port', this.changePort);
+    	//this.listenTo(this, 'change:ip', this.changeIP);
+    	//this.listenTo(this, 'change:message', this.changeMessage);
+      //this.listenTo(this, 'change:toggle', this.changeToggle);
       editor.socket.emit('config', {            
         server: { port: 4000,  host: config.ip},
         client: { port: this.attributes.port, host: this.attributes.ip}
