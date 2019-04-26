@@ -58,7 +58,7 @@
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
-  plugins: ['gjs-preset-webpage', 'grapesjs-tooltip', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
+  plugins: ['gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
   pluginsOpts: {
   	'gjs-preset-webpage': {
   		blocks: [],
@@ -218,9 +218,49 @@ editor.on("component:update", function(component) {
 editor.on('block:drag:stop', model => console.log('dropped ', model))
 
 
+editor.on('custom-code:open-modal', model => console.log('Modal: ', model))
 
 // window.onbeforeunload = function(event)
 // {
 //     return confirm("Confirm refresh");
 // };
+      var pn = editor.Panels;
+      var modal = editor.Modal;
+        var commands = editor.Commands;
 
+     // Add and beautify tooltips
+      [['sw-visibility', 'Show Borders'], ['preview', 'Preview'], ['fullscreen', 'Fullscreen'],
+       ['export-template', 'Export'], ['undo', 'Undo'], ['redo', 'Redo'],
+       ['gjs-open-import-webpage', 'Import'], ['canvas-clear', 'Clear canvas']]
+      .forEach(function(item) {
+        pn.getButton('options', item[0]).set('attributes', {title: item[1], 'data-tooltip-pos': 'bottom'});
+      });
+      [['open-sm', 'Style Manager'], ['open-layers', 'Layers'], ['open-blocks', 'Blocks']]
+      .forEach(function(item) {
+        pn.getButton('views', item[0]).set('attributes', {title: item[1], 'data-tooltip-pos': 'bottom'});
+      });
+      var titles = document.querySelectorAll('*[title]');
+
+      for (var i = 0; i < titles.length; i++) {
+        var el = titles[i];
+        var title = el.getAttribute('title');
+        title = title ? title.trim(): '';
+        if(!title)
+          break;
+        el.setAttribute('data-tooltip', title);
+        el.setAttribute('title', '');
+      }
+//editor.runCommand('custom-code:open-modal', {});
+// editor.on('component:add', (model, argument) => {
+//             model.trigger('active')
+//         })
+
+        // const target = editor.model;
+        // editor.runCommand('custom-code:open-modal', {target});
+
+        //editor.render();
+
+        //this.em.get('Commands').run(commandNameCustomCode, { target });
+// var myCommand = commands.get('custom-code:open-modal');
+// myCommand.run();
+// console.log('All commands: ', commands.getAll());
