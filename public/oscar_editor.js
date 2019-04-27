@@ -217,9 +217,25 @@ editor.on("component:update", function(component) {
 //EXAMPLE OF SHORT FUNCTION
 editor.on('block:drag:stop', model => console.log('dropped ', model))
 
+//FIXES MODAL FOR CUSTOM CODE PLUGIN
+editor.on('run:custom-code:open-modal', () =>
+  editor.once('modal:close', () => {
+    const { Commands } = editor;
+    if (Commands.isActive('custom-code:open-modal')) {
+      Commands.stop('custom-code:open-modal');
+    }
+  }),
+);
 
-editor.on('custom-code:open-modal', model => console.log('Modal: ', model))
-
+//FIXES MODAL FOR IMPORT HTML CODE
+editor.on('run:gjs-open-import-webpage', () =>
+  editor.once('modal:close', () => {
+    const { Commands } = editor;
+    if (Commands.isActive('gjs-open-import-webpage')) {
+      Commands.stop('gjs-open-import-webpage');
+    }
+  }),
+);
 // window.onbeforeunload = function(event)
 // {
 //     return confirm("Confirm refresh");
@@ -263,4 +279,4 @@ editor.on('custom-code:open-modal', model => console.log('Modal: ', model))
         //this.em.get('Commands').run(commandNameCustomCode, { target });
 // var myCommand = commands.get('custom-code:open-modal');
 // myCommand.run();
-// console.log('All commands: ', commands.getAll());
+console.log('All commands: ', commands.getAll());
