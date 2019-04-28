@@ -9,6 +9,7 @@
 	<link href="dist/grapesjs-preset-webpage.min.css" rel="stylesheet">
 	<script src="config.js"></script>
 	<script src="libraries/socket.io.js" type="text/javascript"></script>
+	<script src="libraries/getLocalIP.js" type="text/javascript"></script>
 <!-- 	<script src="//feather.aviary.com/imaging/v3/editor.js"></script>
 -->	
 <!-- <script src="https://static.filestackapi.com/v3/filestack-0.1.10.js"></script> -->
@@ -20,6 +21,8 @@
 <script src="dist/grapesjs-touch.min.js"></script>
 <script src="dist/grapesjs-preset-webpage.min.js"></script>
 <script>
+		var localIP = getLocalIP();
+	console.log('LocalIP: ', localIP)
 		// window.addEventListener("beforeunload", function(event) {
 		// 	event.returnValue = "Your custom message.";
 		// });
@@ -61,19 +64,67 @@
 </head>
 <body>	       
 	<div id="gjs" style="height:0px; overflow:hidden;">
-		<div style="display: none">
-			<div class="gjs-logo-cont">
-			  <a href="//grapesjs.com"><img class="gjs-logo" src="images/favicon_color.png"></a>
-			  <div class="gjs-logo-version"></div>
-			</div>
-		  </div>
 	</div>
 	<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
 	<script src="oscar_editor.js"></script>
 	<script src="oscar_slider.js"></script>
 	<script src="oscar_button.js"></script>
+	
+<script>
 
+var localIP;
+var globalIP;
+// NOTE: window.RTCPeerConnection is "not a constructor" in FF22/23
+var RTCPeerConnection = /*window.RTCPeerConnection ||*/ window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
+
+if (RTCPeerConnection) (function () {
+    var rtc = new RTCPeerConnection({iceServers:[]});
+    if (1 || window.mozRTCPeerConnection) {      // FF [and now Chrome!] needs a channel/stream to proceed
+        rtc.createDataChannel('', {reliable:false});
+    };
+    
+    rtc.onicecandidate = function (evt) {
+        // convert the candidate to SDP so we can run it through our general parser
+        // see https://twitter.com/lancestout/status/525796175425720320 for details
+        if (evt.candidate) grepSDP("a="+evt.candidate.candidate);
+    };
+    rtc.createOffer(function (offerDesc) {
+        grepSDP(offerDesc.sdp);
+        rtc.setLocalDescription(offerDesc);
+    }, function (e) { console.warn("offer failed", e); });
+    
+    
+    var addrs = Object.create(null);
+    addrs["0.0.0.0"] = false;
+    function updateDisplay(newAddr) {
+        if (newAddr in addrs) return;
+        else addrs[newAddr] = true;
+        var displayAddrs = Object.keys(addrs).filter(function (k) { return addrs[k]; });
+				localIP = displayAddrs[1];
+				globalIP = displayAddrs[0];
+				console.log('Local: ', localIP)
+    }
+    
+    function grepSDP(sdp) {
+        var hosts = [];
+        sdp.split('\r\n').forEach(function (line) { // c.f. http://tools.ietf.org/html/rfc4566#page-39
+            if (~line.indexOf("a=candidate")) {     // http://tools.ietf.org/html/rfc4566#section-5.13
+                var parts = line.split(' '),        // http://tools.ietf.org/html/rfc5245#section-15.1
+                    addr = parts[4],
+                    type = parts[7];
+                if (type === 'host') updateDisplay(addr);
+            } else if (~line.indexOf("c=")) {       // http://tools.ietf.org/html/rfc4566#section-5.7
+                var parts = line.split(' '),
+                    addr = parts[2];
+                updateDisplay(addr);
+            }
+        });
+    }
+})(); else {
+    alert('No IP found');
+}
+</script>
 
 </body>
 </html>

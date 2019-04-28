@@ -2,13 +2,13 @@ editor.BlockManager.add('sliderHorizontal', {
     label: 'Horizontal Slider',
     attributes: { class:'fa fa-arrows-h' },
     category: 'Basic',
-    content: `<input type="range">` 
+    content: `<input type="range" orient="horizontal">` 
   })
   editor.BlockManager.add('sliderVertical', {
     label: 'Vertical Slider',
     attributes: { class:'fa fa-arrows-v' },
     category: 'Basic',
-    content: `<input type="range" orient="vertical" min="1" max="100">` 
+    content: `<input type="range" orient="vertical">` 
   })
 //SLIDER
 // The `input` will be the Component type ID

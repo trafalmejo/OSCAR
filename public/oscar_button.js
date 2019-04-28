@@ -4,7 +4,7 @@ editor.BlockManager.add('button', {
   label: 'Button',
   attributes: { class:'fa fa-toggle-on'},
   category: 'Basic',
-  content: '<button type="button" style="display:inline-block"><p style="margin: auto; display: inline-block;">Insert your text</p></button>'
+  content: '<button type="button" style="width: 300px; height: 200px; display:inline-block"><p style="margin: auto; display: inline-block;">Insert your text</p></button>'
 })
 //button starttext
 // The `input` will be the Component type ID
@@ -12,10 +12,6 @@ comps.addType('button', {
   // Define the Model
   model: dModel.extend({
     defaults: Object.assign({}, dModel.prototype.defaults, {
-    	style: {
-    		width: '130px',
-    		height: '50px',
-    	},
       // Can't drop other elements inside it
       droppable: false,
       resizable: true,
@@ -144,12 +140,6 @@ comps.addType('button', {
 //     mousedown: 'noDrag'
        click: 'handleClick',
        //mouseup: 'release',
-    },
-
-    // It doesn't make too much sense this method inside the component
-    // but it's ok as an example
-    randomHex: function() {
-    	return '#' + Math.floor(Math.random()*16777216).toString(16);
     },
     handleClick: function(e) {
       console.log('Click');
