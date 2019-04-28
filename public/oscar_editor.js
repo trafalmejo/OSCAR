@@ -40,21 +40,21 @@
    },
    //Persistance
      // Default configurations
-  //  storageManager: {
-  //   id: 'gjs-',             // Prefix identifier that will be used on parameters
-  //   type: 'local',          // Type of the storage
-  //   autosave: true,         // Store data automatically
-  //   autoload: true,         // Autoload stored data on init
-  //   stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
-  //     //Enable/Disable components model (JSON format)
-  //   storeComponents: 1,
-  //   //Enable/Disable styles model (JSON format)
-  //   storeStyles: 1,
-  //   //Enable/Disable saving HTML template
-  //   storeHtml: 1,
-  //   //Enable/Disable saving CSS template
-  //   storeCss: 1,
-  // },
+   storageManager: {
+    id: 'gjs-',             // Prefix identifier that will be used on parameters
+    type: 'local',          // Type of the storage
+    autosave: true,         // Store data automatically
+    autoload: true,         // Autoload stored data on init
+    stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+      //Enable/Disable components model (JSON format)
+    storeComponents: 1,
+    //Enable/Disable styles model (JSON format)
+    storeStyles: 1,
+    //Enable/Disable saving HTML template
+    storeHtml: 1,
+    //Enable/Disable saving CSS template
+    storeCss: 1,
+  },
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
@@ -179,7 +179,7 @@ editor.on("component:update", function(component) {
   var newIP = component.changed.ip;
   if (typeof newIP !== 'undefined'){
   //   console.log("href changed!", component);
-  if(newIP == 'localhost'){
+  if(newIP == 'localhost' || validateIPaddress(newIP)){
     console.log("Is correct");
     component.attributes.ip = newIP;
     editor.socket.emit('config', {            
@@ -192,7 +192,6 @@ editor.on("component:update", function(component) {
     var trait = component.getTrait('ip');
     trait.view.$input[0].value = component._previousAttributes.ip;
     component.attributes.ip = component._previousAttributes.ip;
-
   }
   }
   var newPort = component.changed.port;
@@ -212,8 +211,47 @@ editor.on("component:update", function(component) {
       component.attributes.port = component._previousAttributes.port;
     }
    }
+   var newMin = component.changed.min;
+   if(typeof newMin !== 'undefined'){
+    console.log("Min Changed: ", newMin);
+    if(!isNaN(parseInt(newMin))){
+      console.log("Is correct");
+      component.attributes.min = newMin;
+      console.log('orient: ', component)
+      component.setAttributes({'min': newMin, 'max': component.attributes.max, 'type': 'range', 'orient': component.view.attr.orient});
+    }else{
+      alert("Your min is incorrect");
+      var trait = component.getTrait('min');
+      trait.view.$input[0].value = component._previousAttributes.min;
+      component.attributes.min = component._previousAttributes.min;
+    }
+   }
+   var newMax = component.changed.max;
+   if(typeof newMax !== 'undefined'){
+    console.log("Min Changed: ", newMax);
+    if(!isNaN(parseInt(newMax))){
+      console.log("Is correct");
+      component.attributes.max = newMax;
+      component.setAttributes({'min': component.attributes.min, 'max': newMax , 'type': 'range', 'orient': component.view.attr.orient});
+
+    }else{
+      alert("Your max is incorrect");
+      var trait = component.getTrait('max');
+      trait.view.$input[0].value = component._previousAttributes.max;
+      component.attributes.max = component._previousAttributes.max;
+    }
+   }
 })
 
+
+//VALIDATE IP
+function validateIPaddress(ipaddress) 
+{
+  if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress)) {
+    return (true)
+  }
+  return (false)
+}
 //EXAMPLE OF SHORT FUNCTION
 editor.on('block:drag:stop', model => console.log('dropped ', model))
 
@@ -236,13 +274,9 @@ editor.on('run:gjs-open-import-webpage', () =>
     }
   }),
 );
-// window.onbeforeunload = function(event)
-// {
-//     return confirm("Confirm refresh");
-// };
       var pn = editor.Panels;
       var modal = editor.Modal;
-        var commands = editor.Commands;
+      var commands = editor.Commands;
 
      // Add and beautify tooltips
       [['sw-visibility', 'Show Borders'], ['preview', 'Preview'], ['fullscreen', 'Fullscreen'],
@@ -266,17 +300,5 @@ editor.on('run:gjs-open-import-webpage', () =>
         el.setAttribute('data-tooltip', title);
         el.setAttribute('title', '');
       }
-//editor.runCommand('custom-code:open-modal', {});
-// editor.on('component:add', (model, argument) => {
-//             model.trigger('active')
-//         })
 
-        // const target = editor.model;
-        // editor.runCommand('custom-code:open-modal', {target});
-
-        //editor.render();
-
-        //this.em.get('Commands').run(commandNameCustomCode, { target });
-// var myCommand = commands.get('custom-code:open-modal');
-// myCommand.run();
-console.log('All commands: ', commands.getAll());
+//console.log('All commands: ', commands.getAll());
