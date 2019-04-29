@@ -4,7 +4,7 @@ editor.BlockManager.add('button', {
   label: 'Button',
   attributes: { class:'fa fa-toggle-on'},
   category: 'Basic',
-  content: '<button type="button" style="width: 300px; height: 200px; display:inline-block"><p style="margin: auto; display: inline-block;">Insert your text</p></button>'
+  content: '<button type="button" style="width: 250px; height: 50px; display:inline-block"><p style="margin: auto; display: inline-block;">Insert your text</p></button>'
 })
 //button starttext
 // The `input` will be the Component type ID
