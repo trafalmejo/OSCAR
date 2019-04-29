@@ -8,7 +8,13 @@
   //canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
   assetManager: {
    assets: [
-   'http://placehold.it/350x250/78c5d6/fff/image1.jpg',
+   'http://placehold.it/350x250/78c5d6/fff/image1.jpg', 'images/fruits/orange.png',
+   {
+    type: 'image',
+    src: 'images/fruits/orange.png',
+    height: 1920,
+    width: 1080
+  },
      // Pass an object with your properties
      {
      	type: 'image',
