@@ -4,6 +4,12 @@ Let's create beautiful, responsive and touchable interfaces.
 We are still under construction and this is a quick <a href="https://www.youtube.com/watch?v=ZcW8zBWRLf0" target="_blank">VIDEO</a> DEMO of what the tool is currently able to do, but is up to you to support with feedback, documentation, suggestions, bugs detection to create a better tool.
 
 <figure class="video_container">
+  <iframe src="https://www.youtube.com/watch?v=ZBBGbX43hbY&t=12s" width="100%" frameborder="0" allowfullscreen="true" height="500"> </iframe>
+</figure>
+<figure class="video_container">
+  <iframe src="https://www.youtube.com/watch?v=HfAO0a3Pe84&t=17s" width="100%" frameborder="0" allowfullscreen="true" height="500"> </iframe>
+</figure>
+<figure class="video_container">
   <iframe src="https://www.youtube.com/embed/ZcW8zBWRLf0" width="100%" frameborder="0" allowfullscreen="true" height="500"> </iframe>
 </figure>
 
