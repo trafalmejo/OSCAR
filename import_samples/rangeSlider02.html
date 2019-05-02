@@ -1,19 +1,12 @@
 <style type="text/css">
-	body, html {
-  background-color: #1d1c25;
-  margin: 0;
-  padding: 0;
-}
 
 .range {
   -webkit-appearance: none;
   -moz-appearance: none;
-  position: absolute;
   left: 50%;
   top: 50%;
   width: 200px;
   margin-top: 10px;
-  transform: translate(-50%, -50%);
 }
 
 input[type=range]::-webkit-slider-runnable-track {
@@ -27,6 +20,8 @@ input[type=range]::-webkit-slider-runnable-track {
   background: linear-gradient(45deg, rgba(59,173,227,1) 0%, rgba(87,111,230,1) 25%, rgba(152,68,183,1) 51%, rgba(255,53,127,1) 100%);
   filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#3bade3 ', endColorstr='#ff357f ', GradientType=1 );
   height: 2px;
+  border-color: rgb(59,173,227);
+
 }
 
 input[type=range]:focus {
@@ -44,6 +39,8 @@ input[type=range]::-moz-range-track {
   background: linear-gradient(45deg, rgba(59,173,227,1) 0%, rgba(87,111,230,1) 25%, rgba(152,68,183,1) 51%, rgba(255,53,127,1) 100%);
   filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#3bade3 ', endColorstr='#ff357f ', GradientType=1 );
   height: 2px;
+  border-color: rgb(59,173,227);
+
 }
 
 input[type=range]::-webkit-slider-thumb {
@@ -60,6 +57,8 @@ input[type=range]::-webkit-slider-thumb {
 
   -webkit-transition: border 1000ms ease;
   transition: border 1000ms ease;
+  border-color: rgb(59,173,227);
+
 }
 
 input[type=range]::-moz-range-thumb {
@@ -75,6 +74,8 @@ input[type=range]::-moz-range-thumb {
   cursor: -moz-grab;
   -moz-transition: border 1000ms ease;
   transition: border 1000ms ease;
+  border-color: rgb(59,173,227);
+
 }
 
 

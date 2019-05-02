@@ -51,7 +51,7 @@
     type: 'local',          // Type of the storage
     autosave: true,         // Store data automatically
     autoload: true,         // Autoload stored data on init
-    stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+    stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
       //Enable/Disable components model (JSON format)
     storeComponents: 1,
     //Enable/Disable styles model (JSON format)
@@ -64,7 +64,7 @@
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
-  plugins: ['gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
+  plugins: [oscar_button, oscar_slider,'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
   pluginsOpts: {
   	'gjs-preset-webpage': {
   		blocks: [],
@@ -94,7 +94,7 @@ editor.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTr
   var dType = comps.getType('default');
   var dModel = dType.model;
   var dView = dType.view;
-
+  
 //EVENT WHEN THE EDITOR IS LOADED
 editor.on('load', function(edit){
   console.log('Model was loaded');
@@ -116,7 +116,8 @@ editor.on('storage:load', function(object){
   editor.DomComponents.getWrapper().onAll(component => {
     if (component.is('button')) {
      // do something
-     component.init()
+     //component.init()
+     console.log('GetView: ', component.getView())
      console.log('Componenent loaded: ', component);
      console.log('Port:', component.port)
      if (typeof component.ip === 'undefined') {
@@ -128,8 +129,6 @@ editor.on('storage:load', function(object){
       component.port = 10000;
     }
     console.log('Port loaded: ', component.port)
-    //component.type = 'button';
-    console.log('Type loaded: ', component.type)
        editor.socket.emit('config', {
        server: { port: 4000,  host: config.ip},
        client: { port: component.port, host: component.ip}
@@ -145,10 +144,11 @@ editor.on('component:add', function(model){
 	// boolean clientExist = false;
 	// for (var i = 0; i < oscClient.length; i++) {
 	// 	if(oscClient[i])
-	// }
-  console.log('Component Added')
+  // }
 	if(model.attributes.type == "button" || model.attributes.type == "input"){
-    	//TO READ: WE WANT TO CHECK ITS PROPERTIES / TRAITS
+      //TO READ: WE WANT TO CHECK ITS PROPERTIES / TRAITS
+      var viewTemp = model.getView()
+ console.log('GetView Added: ', viewTemp)
 	console.log('Model: ',model);
 	console.log('Traits: ',model.attributes.traits);
   console.log('Type: ', model.attributes.type);

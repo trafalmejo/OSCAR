@@ -1,3 +1,9 @@
+function oscar_button(editor){
+  var comps = editor.DomComponents;
+  var dType = comps.getType('default');
+  var dModel = dType.model;
+  var dView = dType.view;
+
 //margin:auto to align on the center
 //inline-block to increase size depending on their children
 editor.BlockManager.add('button', {
@@ -57,10 +63,10 @@ comps.addType('button', {
     	//this.listenTo(this, 'change:ip', this.changeIP);
     	//this.listenTo(this, 'change:message', this.changeMessage);
       //this.listenTo(this, 'change:toggle', this.changeToggle);
-      editor.socket.emit('config', {            
-        server: { port: 4000,  host: config.ip},
-        client: { port: this.attributes.port, host: this.attributes.ip}
-      });
+      // editor.socket.emit('config', {            
+      //   server: { port: 4000,  host: config.ip},
+      //   client: { port: this.attributes.port, host: this.attributes.ip}
+      // });
     },
     changeIP() {
     	console.log("IP Changed")
@@ -175,6 +181,5 @@ comps.addType('button', {
   //view: defaultType.view,
 });
 //BUTTON finished
-
-
+}
 
