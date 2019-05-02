@@ -1,4 +1,9 @@
-editor.BlockManager.add('sliderHorizontal', {
+function oscar_slider(editor){
+  var comps = editor.DomComponents;
+  var dType = comps.getType('default');
+  var dModel = dType.model;
+  var dView = dType.view;
+  editor.BlockManager.add('sliderHorizontal', {
     label: 'Horizontal Slider',
     attributes: { class:'fa fa-arrows-h' },
     category: 'Basic',
@@ -54,15 +59,15 @@ comps.addType('input', {
           //this.view.ip = "";
           //this.view.port = "";
           //this.view.message = "";
-          this.listenTo(this, 'change:port', this.changePort);
-          this.listenTo(this, 'change:ip', this.changeIP);
-          this.listenTo(this, 'change:message', this.changeMessage);
-          this.listenTo(this, 'change:min', this.changeMin);
-          this.listenTo(this, 'change:max', this.changeMax);
-          editor.socket.emit('config', {            
-            server: { port: 4000,  host: config.ip},
-            client: { port: this.attributes.port, host: this.attributes.ip}
-          });
+          // this.listenTo(this, 'change:port', this.changePort);
+          // this.listenTo(this, 'change:ip', this.changeIP);
+          // this.listenTo(this, 'change:message', this.changeMessage);
+          // this.listenTo(this, 'change:min', this.changeMin);
+          // this.listenTo(this, 'change:max', this.changeMax);
+          // editor.socket.emit('config', {            
+          //   server: { port: 4000,  host: config.ip},
+          //   client: { port: this.attributes.port, host: this.attributes.ip}
+          // });
       },
       changeIP() {
           console.log("IP Changed")
@@ -179,3 +184,5 @@ comps.addType('input', {
     }),
   });
   //Slider finished
+}
+
