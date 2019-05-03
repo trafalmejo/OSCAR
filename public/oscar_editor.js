@@ -224,7 +224,7 @@ editor.on("component:update", function(component) {
       console.log("Is correct");
       component.attributes.min = newMin;
       console.log('orient: ', component)
-      component.setAttributes({'min': newMin, 'max': component.attributes.max, 'type': 'range', 'orient': component.view.attr.orient});
+      component.setAttributes({'min': newMin, 'max': component.attributes.max, 'type': 'range', 'step': '0.1', 'orient': component.view.attr.orient});
     }else{
       alert("Your min is incorrect");
       var trait = component.getTrait('min');
@@ -238,7 +238,7 @@ editor.on("component:update", function(component) {
     if(!isNaN(parseInt(newMax))){
       console.log("Is correct");
       component.attributes.max = newMax;
-      component.setAttributes({'min': component.attributes.min, 'max': newMax , 'type': 'range', 'orient': component.view.attr.orient});
+      component.setAttributes({'min': component.attributes.min, 'max': newMax , 'type': 'range', 'step': '0.1', 'orient': component.view.attr.orient});
 
     }else{
       alert("Your max is incorrect");

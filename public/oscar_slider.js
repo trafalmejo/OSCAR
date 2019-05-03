@@ -7,13 +7,13 @@ function oscar_slider(editor){
     label: 'Horizontal Slider',
     attributes: { class:'fa fa-arrows-h' },
     category: 'Basic',
-    content: `<input type="range" orient="horizontal">` 
+    content: `<input type="range" step="0.1" orient="horizontal">` 
   })
   editor.BlockManager.add('sliderVertical', {
     label: 'Vertical Slider',
     attributes: { class:'fa fa-arrows-v' },
     category: 'Basic',
-    content: `<input type="range" orient="vertical">` 
+    content: `<input type="range" step="0.1" orient="vertical">` 
   })
 //SLIDER
 // The `input` will be the Component type ID
@@ -172,7 +172,7 @@ comps.addType('input', {
         var inputValue = this.el.value;
         var id = this.model.attributes.ip + "" + this.model.attributes.port
         //this.model.socket.emit('message', id, [this.model.attributes.message].concat(parseInt(inputValue)));
-        editor.socket.emit('message', id, [this.model.attributes.message].concat(parseInt(inputValue)));
+        editor.socket.emit('message', id, [this.model.attributes.message].concat(parseFloat(inputValue)));
   
      },
       // The render() should return 'this'
