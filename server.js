@@ -1,3 +1,4 @@
+// $ npm run package-win  
 //import '/dist/css/grapes.min.css';
 // If you need plugins, put them below the main grapesjs script
 // import 'grapesjs-some-plugin';

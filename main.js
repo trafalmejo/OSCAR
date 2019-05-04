@@ -16,6 +16,7 @@ function createWindow () {
       nodeIntegration: true
     }
   })
+  mainWindow.maximize();
 
   // and load the index.html of the app.
   mainWindow.loadFile('public/index.html')
