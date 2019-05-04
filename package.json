@@ -1,5 +1,7 @@
 {
   "name": "oscar",
+  "productName": "OSCAR",
+  "version": "0.1.0",
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
   "main": "main.js",
   "scripts": {
@@ -27,7 +29,37 @@
   },
   "devDependencies": {
     "electron": "^5.0.0",
+    "electron-builder": "^20.39.0",
+    "electron-packager": "^13.1.1",
     "node-sass": "^4.8.3"
+  },
+  "build": {
+    "appId": "yourappid",
+    "category": "your.app.category.type",
+    "dmg": {
+      "contents": [
+        {
+          "x": 110,
+          "y": 150
+        },
+        {
+          "x": 240,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "win": {
+      "target": "NSIS",
+      "icon": "build/icon.ico"
+    }
   },
   "dependencies": {
     "express": "^4.16.4",
