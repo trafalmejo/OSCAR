@@ -1,6 +1,6 @@
 ![](assets/css/headerColor.png)
 
-# OSCAR - [Web Version](https://trafalmejo.github.io/OSCar/)
+# OSCAR - [Web Version](https://trafalmejo.github.io/OSCAR/)
 
 OSCAR is a tool to create beautiful graphic user interaces (GUIs) to send OSC messages and control interactive installations (Resolume arena, Touch Designer, Ableton, Processing, PD, UNITY, Unreal, etc).
 Let's create beautiful, responsive and touchable interfaces.
@@ -17,11 +17,9 @@ alt="OSCAR tool to create GIUS to control interactive installations" width="1200
 
 Created with node.js/express. Main libraries: Grapesjs, socket.io.js
 
-We also added <a href="https://nodemon.io/" target="_blank">nodemon</a> to develop with greater ease locally.
-
 If you want to use this implementation for your own purposes try the following steps:
 
-  1. Clone or download this [repository](https://github.com/trafalmejo/OSCar/)
+  1. Clone or download this [repository](https://github.com/trafalmejo/OSCAR/)
   2. Go into the folder you just download
   2. run `npm install`
   3. run `node server.js`
