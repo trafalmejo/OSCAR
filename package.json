@@ -7,8 +7,8 @@
   "scripts": {
     "start": "electron .",
     "package-mac": "electron-packager . --overwrite --platform=darwin --arch=x64 --icon=assets/css/icon.icns --prune=true --out=release-builds",
-    "package-win": "electron-packager . OSCAR --overwrite --asar=true --platform=win32 --arch=ia32 --icon=assets/css/icon.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE --version-string.ProductName=\"CryptoApp\"",    
-    "package-linux": "electron-packager . OSCAR --overwrite --asar=true --platform=linux --arch=x64 --icon=assets/css/icon.png --prune=true --out=release-builds"   
+    "package-win": "electron-packager . OSCAR --overwrite --asar=true --platform=win32 --arch=ia32 --icon=assets/css/icon.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE --version-string.ProductName=\"CryptoApp\"",
+    "package-linux": "electron-packager . OSCAR --overwrite --asar=true --platform=linux --arch=x64 --icon=assets/css/icon.png --prune=true --out=release-builds"
   },
   "repository": {
     "type": "git",
@@ -34,7 +34,7 @@
     "electron": "^5.0.0",
     "electron-builder": "^20.39.0",
     "electron-packager": "^13.1.1",
-    "node-sass": "^4.8.3"
+    "node-sass": "^4.12.0"
   },
   "build": {
     "appId": "yourappid",
