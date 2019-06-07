@@ -6,27 +6,31 @@
  	fromElement: true,
   allowScripts: 1,
   //canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
+  panels: {
+    // options
+
+  },
   assetManager: {
    assets: [
-   'http://placehold.it/350x250/78c5d6/fff/image1.jpg', 'images/fruits/orange.png',
-   {
-    type: 'image',
-    src: 'images/fruits/orange.png',
-    height: 1920,
-    width: 1080
-  },
+   'images/fruits/emoji-apple.png',
+   'images/fruits/emoji-apple-click.png',
+   'images/fruits/emoji-orange.png',
+   'images/fruits/emoji-orange-click.png',
+   'images/fruits/emoji-banana.png',
+   'images/fruits/emoji-banana-click.png',
+   'images/fruits/background.png',
      // Pass an object with your properties
-     {
-     	type: 'image',
-     	src: 'https://i.ytimg.com/vi/UQTdBYbGJIU/maxresdefault.jpg',
-     	height: 1920,
-     	width: 1080
-     },
      {
      	type: 'image',
      	src: 'http://placehold.it/350x250/459ba8/fff/image2.jpg',
      	height: 350,
      	width: 250
+     },
+     {
+     	type: 'image',
+     	src:  'http://placehold.it/350x250/78c5d6/fff/image1.jpg',
+     	height: 200,
+     	width: 200
      },
      {
        // As the 'image' is the base type of assets, omitting it will
@@ -64,7 +68,7 @@
   // TO READ: this plugin loads default blocks
   //gjs-aviary
   //aviaryOpts: [false],
-  plugins: [oscar_button, oscar_slider,'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
+  plugins: [oscar_button, oscar_slider,'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch', 'grapesjs-tooltip'],
   pluginsOpts: {
   	'gjs-preset-webpage': {
   		blocks: [],
@@ -77,9 +81,11 @@
       modalImportContent: function(editor) {
         return editor.getHtml() + '<style>'+editor.getCss()+'</style>'
       }
-  	},
+    },
+    'grapesjs-tooltip': {}
   }
 });
+window.editor = editor;
 
 editor.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
 
@@ -280,18 +286,50 @@ editor.on('run:gjs-open-import-webpage', () =>
     }
   }),
 );
+
+//     // Add and beautify tooltips
+
       var pn = editor.Panels;
       var modal = editor.Modal;
       var commands = editor.Commands;
 
+
+            // Add info command
+            var mdlClass = 'gjs-mdl-dialog-sm';
+            var infoContainer = document.getElementById('info-panel');
+            commands.add('open-info', function() {
+              var mdlDialog = document.querySelector('.gjs-mdl-dialog');
+              mdlDialog.className += ' ' + mdlClass;
+              infoContainer.style.display = 'block';
+              modal.setTitle('About this demo');
+              modal.setContent(infoContainer);
+              modal.open();
+              modal.getModel().once('change:open', function() {
+                mdlDialog.className = mdlDialog.className.replace(mdlClass, '');
+              })
+            });
+            
+      pn.addButton('options', {
+        id: 'open-info',
+        className: 'fa fa-question-circle',
+        command: function() { editor.runCommand('open-info') },
+        attributes: {
+          'title': 'About',
+          'data-tooltip-pos': 'bottom',
+        },
+      });
+
+      console.log("Panels: ", editor.Panels.getPanels());
+
+      console.log("Button for tooltp: ", pn.getButton('options', 'export-template', 'Export'));
      // Add and beautify tooltips
       [['sw-visibility', 'Show Borders'], ['preview', 'Preview'], ['fullscreen', 'Fullscreen'],
        ['export-template', 'Export'], ['undo', 'Undo'], ['redo', 'Redo'],
-       ['gjs-open-import-webpage', 'Import'], ['canvas-clear', 'Clear canvas']]
+       ['gjs-open-import-webpage', 'Import'], ['canvas-clear', 'Clear canvas', 'open-info', 'About']]
       .forEach(function(item) {
         pn.getButton('options', item[0]).set('attributes', {title: item[1], 'data-tooltip-pos': 'bottom'});
       });
-      [['open-sm', 'Style Manager'], ['open-layers', 'Layers'], ['open-blocks', 'Blocks']]
+      [['open-sm', 'Style Manager'],['open-tm', 'Settings'], ['open-layers', 'Layers'], ['open-blocks', 'Blocks']]
       .forEach(function(item) {
         pn.getButton('views', item[0]).set('attributes', {title: item[1], 'data-tooltip-pos': 'bottom'});
       });
