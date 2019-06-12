@@ -227,7 +227,7 @@ editor.on("component:update", function(component) {
       console.log("Is correct");
       component.attributes.min = newMin;
       console.log('orient: ', component)
-      component.setAttributes({'min': newMin, 'max': component.attributes.max, 'type': 'range', 'step': '0.1', 'orient': component.view.attr.orient});
+      component.setAttributes({'min': newMin, 'max': component.attributes.max, 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient});
     }else{
       alert("Your min is incorrect");
       var trait = component.getTrait('min');
@@ -237,11 +237,11 @@ editor.on("component:update", function(component) {
    }
    var newMax = component.changed.max;
    if(typeof newMax !== 'undefined'){
-    console.log("Min Changed: ", newMax);
+    console.log("Max Changed: ", newMax);
     if(!isNaN(parseInt(newMax))){
       console.log("Is correct");
       component.attributes.max = newMax;
-      component.setAttributes({'min': component.attributes.min, 'max': newMax , 'type': 'range', 'step': '0.1', 'orient': component.view.attr.orient});
+      component.setAttributes({'min': component.attributes.min, 'max': newMax , 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient});
 
     }else{
       alert("Your max is incorrect");
@@ -249,6 +249,12 @@ editor.on("component:update", function(component) {
       trait.view.$input[0].value = component._previousAttributes.max;
       component.attributes.max = component._previousAttributes.max;
     }
+   }
+   var newToggle = component.changed.toggle;
+   if(typeof newToggle !== 'undefined'){
+    console.log("Toggle Changed to: ", newToggle);
+    component.attributes.toggle = newToggle;
+
    }
 })
 

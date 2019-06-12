@@ -26,7 +26,9 @@ comps.addType('button', {
       ip : 'localhost',
       port: 10000,
       message: '/push1',
-      //toggle: false,
+      max: '1',
+      toggle: false,
+      value: true,
       traits: [ 
       {type: 'text',
       label: 'Ip',
@@ -40,12 +42,17 @@ comps.addType('button', {
       label: 'Message',
       name: 'message',
       changeProp: 1,},
-      // {
-      //     // Can make it required for the form
-      //     type: 'checkbox',
-      //     label: 'Toggle Button',
-      //     name: 'toggle',
-      //   }
+      {type: 'text',
+      label: 'Max',
+      name: 'max',
+      changeProp: 1,},
+      {
+          // Can make it required for the form
+          type: 'checkbox',
+          label: 'Toggle Button',
+          name: 'toggle',
+          changeProp: 1,
+      }
       ],
       }),
     init() {
@@ -112,7 +119,7 @@ comps.addType('button', {
     changeToggle() {
     	console.log("Toggle Changed")
     	var toggleOption = this.changed.toggle;
-    	this.attributes.toggle = newMessage;
+    	this.attributes.toggle = toggleOption;
     },
     validateIPaddress(ipaddress) 
     {
@@ -153,8 +160,18 @@ comps.addType('button', {
       console.log("Click event owner: ", this);
       var id = this.model.attributes.ip + "" + this.model.attributes.port
       var message = this.model.attributes.message;
-      editor.socket.emit('message', id, [this.model.attributes.message].concat(1));
-      setTimeout(function(){editor.socket.emit('message', id, [message].concat(0));},250);
+      if(this.model.attributes.toggle){
+        if(this.model.attributes.value){
+          editor.socket.emit('message', id, [this.model.attributes.message].concat(parseInt(this.model.attributes.max)));
+        }else{
+          editor.socket.emit('message', id, [this.model.attributes.message].concat(0));
+        }
+        this.model.attributes.value = !this.model.attributes.value;
+      }
+      else{
+        editor.socket.emit('message', id, [this.model.attributes.message].concat(parseInt(this.model.attributes.max)));
+        setTimeout(function(){editor.socket.emit('message', id, [message].concat(0));},250);
+      }
       //this.model.socket.emit('message', id, [this.model.attributes.message].concat(1));
       //this.model.set('style', {color: this.randomHex()}); // <- Affects the final HTML code
       //this.el.style.backgroundColor = this.randomHex(); // <- Doesn't affect the final HTML code
