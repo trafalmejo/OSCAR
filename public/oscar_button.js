@@ -26,7 +26,7 @@ comps.addType('button', {
       ip : 'localhost',
       port: 10000,
       message: '/push1',
-      toggle: false,
+      //toggle: false,
       traits: [ 
       {type: 'text',
       label: 'Ip',
@@ -40,12 +40,13 @@ comps.addType('button', {
       label: 'Message',
       name: 'message',
       changeProp: 1,},
-      {
-          // Can make it required for the form
-          type: 'checkbox',
-          label: 'Toggle Button',
-          name: 'toggle',
-        }],
+      // {
+      //     // Can make it required for the form
+      //     type: 'checkbox',
+      //     label: 'Toggle Button',
+      //     name: 'toggle',
+      //   }
+      ],
       }),
     init() {
       console.log('init: ', this); 

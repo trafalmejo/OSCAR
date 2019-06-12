@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-	<title>Welcome to OSCar</title>
+	<title>Welcome to OSCAR</title>
 	<link rel="icon" href="images/favicon_color.png">
 	<link href="https://unpkg.com/grapesjs/dist/css/grapes.min.css" rel="stylesheet">
     <link href="dist/grapesjs-preset-webpage.min.css" rel="stylesheet">
@@ -22,7 +22,11 @@
 <script src="dist/grapesjs-preset-webpage.min.js"></script>
 <script> 
     var localIPpromise = getLocalIP();
-    localIPpromise.then(v => config={ip:v+""});
+	localIPpromise.then((ipAddr) => {
+		config={ip:ipAddr+""},
+		console.log("ip local: ", ipAddr)
+	});
+
 </script>
 <!-- <script src="dist/grapesjs-aviary.min.js"></script> -->
 <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
@@ -67,9 +71,9 @@
 			<b>OSCAR</b> is a tool to create custom and beautiful GUIs to control interactive installations
 			<br/><br/>
 			For tutorial, feedback, tutorial you can refer to
-			<a class="info-panel-link gjs-four-color" target="_blank" href="https://trafalmejo.github.io/OSCar">our webpage</a>
+			<a class="info-panel-link gjs-four-color" target="_blank" href="https://trafalmejo.github.io/OSCAR">our webpage</a>
 			and open an issue. For problems with the builder itself, open an issue on the main
-			<a class="info-panel-link gjs-four-color" target="_blank" href="https://github.com/trafalmejo/OSCar/issues">OSCAR repository</a>
+			<a class="info-panel-link gjs-four-color" target="_blank" href="https://github.com/trafalmejo/OSCAR/issues">OSCAR repository</a>
 			<br/><br/>
 			Being a free and open source project contributors and supporters are extremely welcome.
 			If you like the project support it with a donation of your choice or become a backer/sponsor via
