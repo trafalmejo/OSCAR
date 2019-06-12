@@ -7,7 +7,6 @@
   allowScripts: 1,
   //canvas: {styles:['assets/css/noscript.css','assets/css/main.css','https://www.w3schools.com/w3css/4/w3.css', 'https://fonts.googleapis.com/css?family=Raleway']},
   panels: {
-    // options
 
   },
   assetManager: {
@@ -85,8 +84,7 @@
     'grapesjs-tooltip': {}
   }
 });
-window.editor = editor;
-
+console.log("Ip to connect: " , config.ip);
 editor.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
 
   //to open the asset manager
@@ -106,7 +104,6 @@ editor.on('load', function(edit){
   console.log('Model was loaded');
   console.log('Model loaded:', edit);
   console.log('Editor: ', editor);
-  //edit.socket = io.connect('http://'+config.ip+':8081', { port: 8081, rememberTransport: false });
 
 });
 //Event is trigger for every loaded component
@@ -319,7 +316,26 @@ editor.on('run:gjs-open-import-webpage', () =>
         },
       });
 
-      console.log("Panels: ", editor.Panels.getPanels());
+      var ipButton = pn.addButton('devices-c',{
+        id: 'ipButton',
+        className: 'someClass',
+        label: "ip: " + config.ip,
+        command: null,
+        attributes: { title: 'Some title'},
+        active: false,
+        disable: true,
+      });
+
+      var localIPpromise = getLocalIP();
+      localIPpromise.then((ipAddr) => {
+        console.log("IP was retrieved");
+        var button = pn.getButton('devices-c','ipButton');
+        button.set("label", "ip: " + config.ip);
+      });
+
+
+
+      console.log("Panels: ", pn.getPanels());
 
       console.log("Button for tooltp: ", pn.getButton('options', 'export-template', 'Export'));
      // Add and beautify tooltips
@@ -345,4 +361,8 @@ editor.on('run:gjs-open-import-webpage', () =>
         el.setAttribute('title', '');
       }
 
+
 //console.log('All commands: ', commands.getAll());
+
+
+
