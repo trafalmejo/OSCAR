@@ -7,13 +7,13 @@ function oscar_slider(editor){
     label: 'Horizontal Slider',
     attributes: { class:'fa fa-arrows-h' },
     category: 'Basic',
-    content: `<input type="range" step="0.1" orient="horizontal">` 
+    content: `<input type="range" step="0.01" orient="horizontal">` 
   })
   editor.BlockManager.add('sliderVertical', {
     label: 'Vertical Slider',
     attributes: { class:'fa fa-arrows-v' },
     category: 'Basic',
-    content: `<input type="range" step="0.1" orient="vertical">` 
+    content: `<input type="range" step="0.01" orient="vertical">` 
   })
 //SLIDER
 // The `input` will be the Component type ID
@@ -30,7 +30,7 @@ comps.addType('input', {
         port: 10000,
         message: '/slider1',
         min: '0',
-        max: 100,
+        max: '100',
         traits: [ 
         {type: 'text',
         label: 'Ip',
@@ -114,7 +114,7 @@ comps.addType('input', {
         var mini = this.changed.min;
         if(!isNaN(mini)){
           this.attributes.min = mini;
-          this.setAttributes({'min': mini, 'max': this.attributes.max, 'type': 'range'});
+          this.setAttributes({'min': mini, 'max': this.attributes.max, 'type': 'range', 'step': "0.01"});
           //this.setAttribute('min', min);
 
         }else{
@@ -122,10 +122,12 @@ comps.addType('input', {
         }
       },
       changeMax() {
+        console.log('Max Changed')
+        console.log('This: ', this)
         var maxi = this.changed.max;
         if(!isNaN(maxi)){
           this.attributes.max = maxi;
-          this.setAttributes({'min': this.attributes.min, 'max': maxi , 'type': 'range'});
+          this.setAttributes({'min': this.attributes.min, 'max': maxi , 'type': 'range', 'step': "0.01"});
         }else{
           alert("Max should be a number");
         }
