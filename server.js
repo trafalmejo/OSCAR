@@ -11,6 +11,7 @@ app.use(express.static(__dirname + '/public'));
 var osc = require('node-osc');
 var io = require('socket.io')(8081);
 var config = require("./public/config.js");
+var code = "Hello World";
 
 //BRIDGE
 
@@ -78,7 +79,11 @@ io.sockets.on('connection', function (socket) {
 				 sent = true;
  			}
  		}
- 	});
+	 });
+	 socket.on("code", function (obj) {
+		code = obj;
+		//console.log(code);
+	});
 	// socket.on('disconnect', function(socket){
 	// 	console.log("Disconnect all");
 	// 	for (var i = 0; i < oscClient.length; i++) {
@@ -103,8 +108,9 @@ io.sockets.on('connection', function (socket) {
 
 
 //SERVER
-app.get('/', function (req, res) {
-	res.send('Hello World!')
+app.get('/server', function (req, res) {
+	console.log();
+	res.send(code);
 })
 
 app.listen(8080, config.ip, function () {
