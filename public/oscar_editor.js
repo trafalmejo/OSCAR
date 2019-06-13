@@ -254,6 +254,17 @@ editor.on("component:update", function(component) {
    if(typeof newToggle !== 'undefined'){
     console.log("Toggle Changed to: ", newToggle);
     component.attributes.toggle = newToggle;
+   }
+   var newInvert = component.changed.invert;
+   if(typeof newInvert !== 'undefined'){
+    console.log("Invert Changed to: ", newInvert);
+    component.attributes.invert = newInvert;
+    if(!component.attributes.invert){
+      component.setAttributes({'min': component.attributes.min, 'max': newMax , 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient, 'style': 'transform: rotate(0deg);'});
+    }
+    else{
+      component.setAttributes({'min': component.attributes.min, 'max': newMax , 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient, 'style': 'transform: rotate(180deg);'});
+    }
 
    }
 })
@@ -290,11 +301,24 @@ editor.on('run:gjs-open-import-webpage', () =>
   }),
 );
 
+
+//preview was Clicked
+editor.on('run:core:preview', () =>
+{  console.log("Preview was pressed")
+   var code =  editor.getHtml() + '<style>'+editor.getCss()+'</style>';
+   editor.socket.emit('code', code);
+   //console.log("Code: ",  editor.getHtml() + '<style>'+editor.getCss()+'</style>')
+}
+);
+
+
 //     // Add and beautify tooltips
 
       var pn = editor.Panels;
       var modal = editor.Modal;
       var commands = editor.Commands;
+
+      console.log("Commands: " , commands.getAll())
 
 
             // Add info command

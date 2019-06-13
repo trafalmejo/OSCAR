@@ -7,13 +7,13 @@ function oscar_slider(editor){
     label: 'Horizontal Slider',
     attributes: { class:'fa fa-arrows-h' },
     category: 'Basic',
-    content: `<input type="range" step="0.01" orient="horizontal">` 
+    content: `<input style="transform: rotate(0deg);" type="range" step="0.01" orient="horizontal">` 
   })
   editor.BlockManager.add('sliderVertical', {
     label: 'Vertical Slider',
     attributes: { class:'fa fa-arrows-v' },
     category: 'Basic',
-    content: `<input type="range" step="0.01" orient="vertical">` 
+    content: `<input style="transform: rotate(0deg);" type="range" step="0.01" orient="vertical">` 
   })
 //SLIDER
 // The `input` will be the Component type ID
@@ -31,6 +31,7 @@ comps.addType('input', {
         message: '/slider1',
         min: '0',
         max: '100',
+        invert: false,
         traits: [ 
         {type: 'text',
         label: 'Ip',
@@ -51,6 +52,10 @@ comps.addType('input', {
         {type: 'text',
         label: 'Max',
         name: 'max',
+        changeProp: 1,},
+        {type: 'checkbox',
+        label: 'Invert',
+        name: 'invert',
         changeProp: 1,}
       ],
         }),
