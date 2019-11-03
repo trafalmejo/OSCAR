@@ -9,6 +9,7 @@ var app = express()
 app.use(express.static(__dirname + '/public'));
 //OSC library = node-osc
 var osc = require('node-osc');
+// var osc1 = requires('osc');
 var io = require('socket.io')(8081);
 var config = require("./public/config.js");
 var code = "Hello World";
@@ -80,6 +81,7 @@ io.sockets.on('connection', function (socket) {
  			}
  		}
 	 });
+
 	 socket.on("code", function (obj) {
 		code = obj;
 		//console.log(code);
