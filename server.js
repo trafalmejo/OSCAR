@@ -7,116 +7,73 @@
 var express = require('express')
 var app = express()
 app.use(express.static(__dirname + '/public'));
-//OSC library = node-osc
-var osc = require('node-osc');
-// var osc1 = requires('osc');
+var osc = require('osc');
+//BRIDGE Between Client and Server
 var io = require('socket.io')(8081);
 var config = require("./public/config.js");
-var code = "Hello World";
-
-//BRIDGE
-
-var oscServer;
-var oscClient = [];
+var code = "";
+//Connection between Server and App to be controlled
+var oscConnections = [];
 var isConnected = [];
 
-function getSocket(hpp){
-	for (let i = 0; i < oscClient.length; i++) {
-		var socket = oscClient[i];
-		var h = oscClient[i].host;
-		var p = oscClient[i].port;
-		//ID will be represented by the IP and PORT concatenated (host + port)
-		var hp = h + "" + p;
-		if(hp == hpp){
-			return socket;
-		}
-	}
-	return null;
-}
-io.sockets.on('connection', function (socket) {
-	console.log('Connection');
-	socket.on("config", function (obj) {
-
-		//if (!isConnected) {
-			//console.log('log', obj);
-			oscServer = new osc.Server(obj.server.port, obj.server.host);
-			var existingSocket = getSocket(obj.client.host +""+ obj.client.port);
-			if(existingSocket == null){
-				console.log("Socket existed before");
-				var client = new osc.Client(obj.client.host, obj.client.port);
-				oscClient.push(client);
-				isConnected.push(true);
-				client.send('/status', socket.sessionId + ' connected');
-			}
-			else{
-				console.log("New socket created");
-				existingSocket.send('/status', socket.sessionId + ' connected');
-			}
-			console.log("Number of Client: ",oscClient.length);
-			oscServer.on('message', function(msg, rinfo) {
-				socket.emit("message", msg);
-			});
-			socket.emit("Connected", 1);
-		//}
-	});
-	socket.on("message", function (id, obj) {
- 		// for (var i = oscClient.length - 1; i >= 0; i--) {
- 		// 	if(oscClient[i].port == id){
-			// oscClient[i].send.apply(oscClient[i], obj);
-			// }
- 		// }
-		 //console.log("socket: ", oscClient[0]);
-		var sent = false;
- 		for (var i = 0; i < oscClient.length && !sent; i++) {
- 			var h = oscClient[i].host;
-			 var p = oscClient[i].port;
-			 //ID will be represented by the IP and PORT concatenated (host + port)
- 			var hp = h + "" + p;;
- 			if(hp == id){
-				 console.log('Socket in position: ', i);
-				 console.log("hp: ", hp);
-				 console.log("id: ", id);
-				 oscClient[i].send.apply(oscClient[i], obj);
-				 sent = true;
- 			}
- 		}
-	 });
-
-	 socket.on("code", function (obj) {
-		code = obj;
-		//console.log(code);
-	});
-	// socket.on('disconnect', function(socket){
-	// 	console.log("Disconnect all");
-	// 	for (var i = 0; i < oscClient.length; i++) {
-	// 		if (isConnected[i]) {
-	// 			oscClient[i].kill();
-	// 		}
-	// 	}
-	// });
-	// socket.on('disconnectme', function(id){
-	// 	for (var i = 0; i < oscClient.length; i++) {
-	// 		var h = oscClient[i].host;
-	// 		var p = oscClient[i].port;
-	// 		var hp = h + "" + p;
-	// 		if (isConnected[i] && id == hp) {
-	// 			console.log("Disconnect");
-	// 			//oscClient[i].kill();
-	// 			isConnected[i] = false;
-	// 		}
-	// 	}
-	// });
+var udpPortGlobal = new osc.UDPPort({
+	localAddress: "localhost",
+	localPort: 5000,
+	metadata: true,
 });
+udpPortGlobal.open()
 
+//Send OSC Message over UDP
+function sendOSCMessage(ip, port, addressp, type, value) {
+	var msg = {
+		address: addressp,
+		args: [
+			{
+				type: type,
+				value: value
+			}
+		]
+	};
+	console.log("Sending message", msg.address, msg.args, "to", ip + ":" + port);
+	udpPortGlobal.send(msg, ip, port);
+}
+
+io.sockets.on('connection', function (socket) {
+	console.log('Web sockect is connected between OSCAR and Local Server');
+	socket.on("config", function (obj) {
+		console.log("Receive Config: ", obj.client.host, obj.client.port)
+		var device = { ip: obj.client.host, port: obj.client.port }
+		oscConnections.push(device);
+		isConnected.push(true);
+	})
+	socket.on("message", function (ip, port, addressp, type, value) {
+			try {
+				sendOSCMessage(ip, port, addressp, type, value);
+			}
+			catch (err) {
+				console.log("ERROR: ", err)
+			}
+	});
+	socket.on("code", function (obj) {
+		//console.log(code);
+		code = obj;
+	});
+})
 
 //SERVER
 app.get('/server', function (req, res) {
-	console.log();
 	res.send(code);
 })
+app.get('/dom', function (req, res) {
+	console.log("Requesting DOM")
+	res.send(code)
+})
 
-app.listen(8080, config.ip, function () {
-	console.log('Example app listening on port 8080!')
+// app.listen(8080, config.ip, function () {
+	
+// })
+app.listen(8080, function () {
+	
 })
 
 

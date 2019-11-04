@@ -4,11 +4,21 @@ function oscar_button(editor) {
   var dModel = dType.model;
   var dView = dType.view;
 
+  //BUTTON type
   comps.addType('button', {
     // Define the Model
     model: dModel.extend({
       defaults: Object.assign({}, dModel.prototype.defaults, {
         // Can't drop other elements inside it
+        tagName: 'button',
+        attributes: { // Default attributes
+          type: 'button',
+          name: 'button_oscar',
+        },
+        components: [{
+          type: 'textnode',
+          content: 'Insert here your text'
+        }],
         droppable: false,
         resizable: true,
         editable: true,
@@ -127,6 +137,7 @@ function oscar_button(editor) {
         isComponent: function (el) {
           if (el.tagName == 'BUTTON') {
             //type text gives you text edit capabilities
+            console.log("IS MEGA BUTTOON")
             return { type: 'button' };
           }
         },
@@ -152,14 +163,17 @@ function oscar_button(editor) {
         if (this.model.get("toggle")) {
           if (this.model.get("value")) {
             console.log("Push");
+            this.model.setClass("toggle");
             editor.socket.emit('message', ip, port, message, "f", this.model.get("max"));
           } else {
             console.log("Unpush");
+            this.model.setClass("");
             editor.socket.emit('message', ip, port, message, "f", 0.000);
           }
           this.model.set({value : !this.model.get("value")})
         }
         else {
+          console.log("HTML: ", this.model.toHTML())
           editor.socket.emit('message', ip, port,  message, "f", this.model.get("max"));
           setTimeout(function () { editor.socket.emit('message', ip, port, message, "f", 0.000); }, 250);
         }
@@ -186,9 +200,12 @@ function oscar_button(editor) {
   //Add Block to Manager
   editor.BlockManager.add('button', {
     label: 'Button',
-    attributes: { class: 'fa fa-toggle-on' },
+    attributes: { class: 'fa fa-square' },
     category: 'Basic',
-    content: '<button type="button" style="display:inline-block"><p style="margin: auto; display: inline-block;">Insert your text</p></button>'
+    content: {
+      type: 'button', // OSCAR component
+      //script: "alert('Hi'); console.log('the element', this)",
+    }
   })
 }
 
