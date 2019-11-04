@@ -65,7 +65,9 @@
     }
   },
   "dependencies": {
+    "ejs": "^2.7.1",
     "express": "^4.16.4",
+    "fs": "0.0.1-security",
     "grapesjs-aviary": "^0.1.2",
     "grapesjs-blocks-basic": "^0.1.7",
     "grapesjs-component-countdown": "^0.1.2",

@@ -1,6 +1,6 @@
 
 var editor = grapesjs.init({
-  //domComponents: { storeWrapper: 1 },
+ // domComponents: { storeWrapper: 1 },
   height: '100%',
   container: '#gjs',
   fromElement: true,
@@ -50,7 +50,8 @@ var editor = grapesjs.init({
   // Default configurations
   storageManager: {
     id: 'gjs-',             // Prefix identifier that will be used on parameters
-    type: 'local',          // Type of the storage
+    //type: 'local',          // Type of the storage
+    type: null,          // Type of the storage
     autosave: true,         // Store data automatically
     autoload: true,         // Autoload stored data on init
     stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
@@ -64,7 +65,7 @@ var editor = grapesjs.init({
     storeCss: 1,
   },
   // TO READ: this plugin loads default blocks
-  plugins: [socket, oscar_button, oscar_toggle, oscar_slider, 'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch', 'grapesjs-tooltip'],
+  plugins: [socket, oscar_button, oscar_slider, 'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch', 'grapesjs-tooltip'],
   pluginsOpts: {
     'gjs-preset-webpage': {
       blocks: [],
@@ -92,14 +93,20 @@ var dView = dType.view;
 //EVENT WHEN THE EDITOR IS LOADED
 editor.on('load', function (edit) {
   console.log('Model was loaded, Editor:', edit);
+  jQuery.get( "dom", function(data, textStatus, jqXHR){
+    // alert('status: ' + textStatus + ', data:' + data);
+    editor.setComponents(data);
+  })
+
 });
 //Event is trigger for every loaded component
 editor.on('storage:load', function (editor) {
-  var jsonObject = JSON.parse(editor.components);
-  console.log('Loaded Object: ', jsonObject);
+  jQuery.get("/dom", function(data, textStatus, jqXHR){
+    //alert('status: ' + textStatus + ', data:' + data);
+    
+  })
 });
 editor.on('component:add', function (model) {
-
 
 });
 editor.on('component:remove', function (model) {
@@ -107,47 +114,7 @@ editor.on('component:remove', function (model) {
 });
 //UPDATE TRAITS
 editor.on("component:update", function (component) {
-  // var newMin = component.changed.min;
-  // if (typeof newMin !== 'undefined') {
-  //   console.log("Min Changed: ", newMin);
-  //   if (!isNaN(parseInt(newMin))) {
-  //     console.log("Is correct");
-  //     component.attributes.min = newMin;
-  //     console.log('orient: ', component)
-  //     component.setAttributes({ 'min': newMin, 'max': component.attributes.max, 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient });
-  //   } else {
-  //     alert("Your min is incorrect");
-  //     var trait = component.getTrait('min');
-  //     trait.view.$input[0].value = component._previousAttributes.min;
-  //     component.attributes.min = component._previousAttributes.min;
-  //   }
-  // }
-  // var newMax = component.changed.max;
-  // if (typeof newMax !== 'undefined') {
-  //   console.log("Max Changed: ", newMax);
-  //   if (!isNaN(parseInt(newMax))) {
-  //     console.log("Is correct");
-  //     component.attributes.max = newMax;
-  //     component.setAttributes({ 'min': component.attributes.min, 'max': newMax, 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient });
 
-  //   } else {
-  //     alert("Your max is incorrect");
-  //     var trait = component.getTrait('max');
-  //     trait.view.$input[0].value = component._previousAttributes.max;
-  //     component.attributes.max = component._previousAttributes.max;
-  //   }
-  // }
-  // var newInvert = component.changed.invert;
-  // if (typeof newInvert !== 'undefined') {
-  //   console.log("Invert Changed to: ", newInvert);
-  //   component.attributes.invert = newInvert;
-  //   if (!component.attributes.invert) {
-  //     component.setAttributes({ 'min': component.attributes.min, 'max': newMax, 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient, 'style': 'transform: rotate(0deg);' });
-  //   }
-  //   else {
-  //     component.setAttributes({ 'min': component.attributes.min, 'max': newMax, 'type': 'range', 'step': '0.01', 'orient': component.view.attr.orient, 'style': 'transform: rotate(180deg);' });
-  //   }
-  // }
 })
 
 //EXAMPLE OF SHORT FUNCTION
@@ -163,6 +130,36 @@ editor.on('run:custom-code:open-modal', () =>
   }),
 );
 
+//Preview was Clicked
+editor.on('run:core:preview', () => {
+  console.log("Preview was pressed")
+  console.log("JS: ", editor.getJs())
+  var code = editor.getHtml() + '<style>' + editor.getCss() + '</style>' + '<script>'+ editor.getJs() +'</script>';
+  editor.DomComponents = comps;
+  //var code = editor.getWrapper();
+  editor.socket.emit('code', code);
+  //console.log("Code: ",  editor.getHtml() + '<style>'+editor.getCss()+'</style>')
+}
+);
+
+//Turn OFF editable mode on Preview
+editor.on('run:preview', () => {
+  // Execute a callback on all inner components starting from the root
+  console.log("Run Preview Mode")
+	editor.DomComponents.getWrapper().onAll(comp => 
+		comp.set({ editable: false, draggable: false })
+	);
+});
+//Turn OFF editable mode on Preview
+editor.on('stop:preview', () => {
+  // Execute a callback on all inner components starting from the root
+  console.log("Stop Preview Mode")
+	editor.DomComponents.getWrapper().onAll(comp => 
+		comp.set({ editable: true,  draggable: true })
+	);
+});
+
+
 //FIXES MODAL FOR IMPORT HTML CODE
 editor.on('run:gjs-open-import-webpage', () =>
   editor.once('modal:close', () => {
@@ -174,14 +171,6 @@ editor.on('run:gjs-open-import-webpage', () =>
 );
 
 
-//Preview was Clicked
-editor.on('run:core:preview', () => {
-  console.log("Preview was pressed")
-  var code = editor.getHtml() + '<style>' + editor.getCss() + '</style>';
-  editor.socket.emit('code', code);
-  //console.log("Code: ",  editor.getHtml() + '<style>'+editor.getCss()+'</style>')
-}
-);
 
 
 // Add and beautify tooltips
@@ -191,7 +180,6 @@ var modal = editor.Modal;
 var commands = editor.Commands;
 
 console.log("Commands: ", commands.getAll())
-
 
 // Add info command
 var mdlClass = 'gjs-mdl-dialog-sm';
@@ -235,8 +223,6 @@ localIPpromise.then((ipAddr) => {
   button.set("label", "ip: " + config.ip);
 });
 
-
-
 console.log("Panels: ", pn.getPanels());
 
 console.log("Button for tooltp: ", pn.getButton('options', 'export-template', 'Export'));
@@ -262,9 +248,6 @@ for (var i = 0; i < titles.length; i++) {
   el.setAttribute('data-tooltip', title);
   el.setAttribute('title', '');
 }
-
-
-//console.log('All commands: ', commands.getAll());
 
 
 
