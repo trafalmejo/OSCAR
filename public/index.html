@@ -5,62 +5,22 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 	<title>Welcome to OSCAR</title>
 	<link rel="icon" href="images/favicon_color.png">
-	<link href="https://unpkg.com/grapesjs/dist/css/grapes.min.css" rel="stylesheet">
-    <link href="dist/grapesjs-preset-webpage.min.css" rel="stylesheet">
-    <script src="libraries/getLocalIP.js" type="text/javascript"></script>
-	<script src="config.js"></script>
-	<script src="libraries/socket.io.js" type="text/javascript"></script>
+	<link href="node_modules/grapesjs/dist/css/grapes.min.css" rel="stylesheet">
+	<link href="node_modules/grapesjs-preset-webpage/dist/grapesjs-preset-webpage.min.css" rel="stylesheet">
+	<link href="oscar_colors.css" rel="stylesheet">
+	<script src="node_modules/socket.io-client/dist/socket.io.js" type="text/javascript"></script>
 <!-- 	<script src="//feather.aviary.com/imaging/v3/editor.js"></script>
 -->	
 <!-- <script src="https://static.filestackapi.com/v3/filestack-0.1.10.js"></script> -->
-<script src="https://unpkg.com/grapesjs"></script>
-<script src="https://unpkg.com/grapesjs-parser-postcss"></script>
-<script src="https://unpkg.com/grapesjs-custom-code"></script>
-<script src="https://unpkg.com/grapesjs-tooltip"></script>
+<script src="node_modules/grapesjs/dist/grapes.js"></script>
+<script src="node_modules/grapesjs/dist/grapes.min.js"></script>
+<script src="node_modules/grapesjs-parser-postcss/dist/grapesjs-parser-postcss.min.js"></script>
+<script src="node_modules/grapesjs-custom-code/dist/grapesjs-custom-code.min.js"></script>
+<script src="node_modules/grapesjs-touch/dist/grapesjs-touch.min.js"></script>
+<script src="node_modules/grapesjs-preset-webpage/dist/grapesjs-preset-webpage.min.js"></script>
 
-<script src="dist/grapesjs-touch.min.js"></script>
-<script src="dist/grapesjs-preset-webpage.min.js"></script>
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
-<script> 
-    var localIPpromise = getLocalIP();
-	localIPpromise.then((ipAddr) => {
-		config={ip:ipAddr+""},
-		console.log("ip local: ", ipAddr)
-	});
-
-</script>
-<!-- <script src="dist/grapesjs-aviary.min.js"></script> -->
-<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
 <style>
-	body,h1 {font-family: "Raleway", sans-serif}
-	body, html {height: 100%}
-	/* We can remove the border we've set at the beginnig */
-#gjs {
-  border: none;
-}
-/* Theming */
 
-/* Primary color for the background */
-.gjs-one-bg {
-  background-color: #3d3d3d;
-}
-
-/* Secondary color for the text color */
-.gjs-two-color {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-/* Tertiary color for the background */
-.gjs-three-bg {
-  background-color: #ec5896;
-  color: white;
-}
-
-/* Quaternary color for the text color */
-.gjs-four-color,
-.gjs-four-color-h:hover {
-  color: #ec5896;
-}
 
 </style>
 </head>
@@ -81,11 +41,17 @@
 			<a class="info-panel-link gjs-four-color" target="_blank" href="https://opencollective.com/">Open Collective</a>, please let us know!
 		</div>
 </div>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
-	<script src="socket.js"></script>
-	<script src="oscar_slider.js"></script>
-	<script src="oscar_button.js"></script>
-    <script src="oscar_editor.js"></script>
+	<!-- Bootstrap need jquery, popper and bootstrap.js -->
+	<script src="node_modules/popper.js/dist/umd/popper.min.js"></script>
+	<script src="node_modules/jquery/dist/jquery.min.js"></script>
+	<script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+	<script src="libraries/oscar_socket.js"></script>
+	<script src="libraries/oscar_ip.js"></script>
+	<script src="libraries/oscar_slider.js"></script>
+	<script src="libraries/oscar_button.js"></script>
+	<script src="libraries/bundle.js"></script>
+
+
 
 </body>
 </html>

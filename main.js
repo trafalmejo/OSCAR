@@ -1,3 +1,4 @@
+//Electron App
 // Modules to control application life and create native browser window
 const {app, BrowserWindow} = require('electron')
 const { fork } = require('child_process')

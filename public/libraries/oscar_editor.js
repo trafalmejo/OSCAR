@@ -1,11 +1,13 @@
+var localIPpromise = require('binternalip');
 
 var editor = grapesjs.init({
  // domComponents: { storeWrapper: 1 },
+  // dragMode: 'absolute',
   height: '100%',
   container: '#gjs',
   fromElement: true,
   allowScripts: 1,
-  canvas: { styles: ['assets/css/toggle.css'] },
+  canvas: { styles: ['assets/css/toggle.css', 'node_modules/bootstrap/dist/css/bootstrap.min.css'] },
   panels: {
 
   },
@@ -50,8 +52,8 @@ var editor = grapesjs.init({
   // Default configurations
   storageManager: {
     id: 'gjs-',             // Prefix identifier that will be used on parameters
-    //type: 'local',          // Type of the storage
-    type: null,          // Type of the storage
+    type: 'local',          // Type of the storage
+    //type: null,          // Type of the storage
     autosave: true,         // Store data automatically
     autoload: true,         // Autoload stored data on init
     stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
@@ -65,7 +67,7 @@ var editor = grapesjs.init({
     storeCss: 1,
   },
   // TO READ: this plugin loads default blocks
-  plugins: [socket, oscar_button, oscar_slider, 'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch', 'grapesjs-tooltip'],
+  plugins: [oscar_socket, oscar_ip, oscar_button, oscar_slider, 'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
   pluginsOpts: {
     'gjs-preset-webpage': {
       blocks: [],
@@ -79,7 +81,6 @@ var editor = grapesjs.init({
         return editor.getHtml() + '<style>' + editor.getCss() + '</style>'
       }
     },
-    'grapesjs-tooltip': {}
   }
 });
 
@@ -137,7 +138,7 @@ editor.on('run:core:preview', () => {
   var code = editor.getHtml() + '<style>' + editor.getCss() + '</style>' + '<script>'+ editor.getJs() +'</script>';
   editor.DomComponents = comps;
   //var code = editor.getWrapper();
-  editor.socket.emit('code', code);
+  //editor.socket.emit('code', code);
   //console.log("Code: ",  editor.getHtml() + '<style>'+editor.getCss()+'</style>')
 }
 );
@@ -209,18 +210,22 @@ pn.addButton('options', {
 var ipButton = pn.addButton('devices-c', {
   id: 'ipButton',
   className: 'someClass',
-  label: "ip: " + config.ip,
+  label: "IP: ",
   command: null,
   attributes: { title: 'Some title' },
   active: false,
   disable: true,
 });
 
-var localIPpromise = getLocalIP();
 localIPpromise.then((ipAddr) => {
-  console.log("IP was retrieved");
   var button = pn.getButton('devices-c', 'ipButton');
-  button.set("label", "ip: " + config.ip);
+  console.log("Promise solved: ", ipAddr)
+  button.set("label", "IP: " + ipAddr);
+  editor.ip = ipAddr;
+});
+localIPpromise.catch(error => { 
+  console.log("Error: ", error);
+  editor.ip = "localhost"
 });
 
 console.log("Panels: ", pn.getPanels());

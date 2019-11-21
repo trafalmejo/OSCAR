@@ -3,28 +3,30 @@
 // If you need plugins, put them below the main grapesjs script
 // import 'grapesjs-some-plugin';
 
-//var grapesjs = require('grapejs')
 var express = require('express')
 var app = express()
 app.use(express.static(__dirname + '/public'));
 var osc = require('osc');
 //BRIDGE Between Client and Server
 var io = require('socket.io')(8081);
-var config = require("./public/config.js");
+var ipLibrary = require('ip');
+var serverIP = ipLibrary.address() // my ip address
+
+
 var code = "";
 //Connection between Server and App to be controlled
 var oscConnections = [];
 var isConnected = [];
 
 var udpPortGlobal = new osc.UDPPort({
-	localAddress: "localhost",
-	localPort: 5000,
+	localAddress: serverIP,
+	localPort: 7000,
 	metadata: true,
 });
 udpPortGlobal.open()
 
 //Send OSC Message over UDP
-function sendOSCMessage(ip, port, addressp, type, value) {
+function sendOSCMessage(clientIP, ip, port, addressp, type, value) {
 	var msg = {
 		address: addressp,
 		args: [
@@ -34,8 +36,16 @@ function sendOSCMessage(ip, port, addressp, type, value) {
 			}
 		]
 	};
+	if(ip == "localhost"){
+		ip = clientIP;
+	}
 	console.log("Sending message", msg.address, msg.args, "to", ip + ":" + port);
-	udpPortGlobal.send(msg, ip, port);
+	try{
+		udpPortGlobal.send(msg, ip, port);
+	} catch (err) {
+		console.log("chatching this error")
+		console.log("ERROR: ", err)
+	}
 }
 
 io.sockets.on('connection', function (socket) {
@@ -46,9 +56,9 @@ io.sockets.on('connection', function (socket) {
 		oscConnections.push(device);
 		isConnected.push(true);
 	})
-	socket.on("message", function (ip, port, addressp, type, value) {
+	socket.on("message", function (clientIP, ip, port, addressp, type, value) {
 			try {
-				sendOSCMessage(ip, port, addressp, type, value);
+				sendOSCMessage(clientIP, ip, port, addressp, type, value);
 			}
 			catch (err) {
 				console.log("ERROR: ", err)
@@ -67,6 +77,9 @@ app.get('/server', function (req, res) {
 app.get('/dom', function (req, res) {
 	console.log("Requesting DOM")
 	res.send(code)
+})
+app.get('/ipserver', function (req, res) {
+	res.send(serverIP)
 })
 
 // app.listen(8080, config.ip, function () {

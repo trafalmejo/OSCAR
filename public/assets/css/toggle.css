@@ -4,21 +4,28 @@
     writing-mode: bt-lr; /* IE */
     -webkit-appearance: slider-vertical; /* WebKit */
 }
-
+input {
+  background: #d3d3d3;
+  outline: none;
+  opacity: 0.8;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+}
+input:hover {
+  opacity: 1;
+}
 
 .toggle {
-  background: #bbb;
+  background: rgba(187, 187, 187, 0.5);
   border-top: solid 2px #777;
   border-left: solid 2px #777;
   border-bottom: solid 2px #eaeaea;
   border-right: solid 2px #eaeaea;
 }
+button:hover {
+  opacity: 1;
+}
+
 button {
-  border: none;
-  color: black;
-  padding: 15px 32px;
-  text-align: center;
-  text-decoration: none;
-  display: inline-block;
-  font-size: 16px;
+  opacity: 0.8;
 }

@@ -5,7 +5,10 @@
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "build": "webpack",
+    "browserify" : "browserify ./public/libraries/oscar_socket.js ./public/libraries/oscar_button.js ./public/libraries/oscar_slider.js ./public/libraries/oscar_editor.js > ./public/libraries/bundle.js",
+    "start": "npm run browserify && nodemon ./server.js",
+    "electron": "electron .",
     "package-mac": "electron-packager . --overwrite --platform=darwin --arch=x64 --icon=assets/css/icon.icns --prune=true --out=release-builds",
     "package-win": "electron-packager . OSCAR --overwrite --asar=true --platform=win32 --arch=ia32 --icon=assets/css/icon.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE --version-string.ProductName=\"CryptoApp\"",
     "package-linux": "electron-packager . OSCAR --overwrite --asar=true --platform=linux --arch=x64 --icon=assets/css/icon.png --prune=true --out=release-builds"
@@ -34,7 +37,9 @@
     "electron": "^5.0.0",
     "electron-builder": "^20.39.0",
     "electron-packager": "^13.1.1",
-    "node-sass": "^4.12.0"
+    "node-sass": "^4.12.0",
+    "webpack": "^4.41.2",
+    "webpack-cli": "^3.3.10"
   },
   "build": {
     "appId": "yourappid",
@@ -68,6 +73,7 @@
     "ejs": "^2.7.1",
     "express": "^4.16.4",
     "fs": "0.0.1-security",
+    "grapesjs": "^0.15.8",
     "grapesjs-aviary": "^0.1.2",
     "grapesjs-blocks-basic": "^0.1.7",
     "grapesjs-component-countdown": "^0.1.2",
@@ -77,8 +83,9 @@
     "grapesjs-plugin-filestack": "^0.1.1",
     "grapesjs-plugin-forms": "^0.3.5",
     "grapesjs-touch": "^0.1.1",
-    "node-osc": "^3.0.1",
+    "ip": "^1.1.5",
     "nodemon": "^1.19.4",
+    "os": "^0.1.1",
     "osc": "^2.3.1",
     "socket.io": "^2.2.0"
   }

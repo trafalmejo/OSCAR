@@ -1,28 +1,34 @@
-function oscar_slider(editor) {
+function oscar_button(editor) {
   var comps = editor.DomComponents;
   var dType = comps.getType('default');
   var dModel = dType.model;
   var dView = dType.view;
 
-  //SLIDER type
-  comps.addType('input', {
+  //BUTTON type
+  comps.addType('button', {
     // Define the Model
     model: dModel.extend({
       defaults: Object.assign({}, dModel.prototype.defaults, {
         // Can't drop other elements inside it
+        tagName: 'button',
+        attributes: { // Default attributes
+          // type: 'button',
+          name: 'button_oscar',
+        },
+        components: [{
+          type: 'textnode',
+          content: 'Insert here your text'
+        }],
         droppable: false,
         resizable: true,
         editable: true,
         // // Traits (Settings)
         ip: 'localhost',
         port: 10000,
-        message: '/slider1',
-        min: 0,
-        max: 100,
-        value: 0,
-        orient: "horizontal",
-        orientation: false,
-        invert: false,
+        message: '/push1',
+        max: '1',
+        toggle: false,
+        value: false,
         traits: [
           {
             type: 'text',
@@ -44,50 +50,26 @@ function oscar_slider(editor) {
           },
           {
             type: 'text',
-            label: 'Min',
-            name: 'min',
-            changeProp: 1,
-          },
-          {
-            type: 'text',
             label: 'Max',
             name: 'max',
             changeProp: 1,
           },
           {
-            type: 'text',
-            label: 'Value',
-            name: 'value',
-            changeProp: 1,
-          },
-          {
-            type: 'select',
-            label: 'Orientation',
-            name: 'orientation',
-            options:[
-              { id: 'horizontal', name: 'Horizontal'},
-              { id: 'vertical', name: 'Vertical'},
-            ],
-            changeProp: 1,
-          },
-          {
             type: 'checkbox',
-            label: 'Invert',
-            name: 'invert',
+            label: 'Toggle Button',
+            name: 'toggle',
             changeProp: 1,
-          },
-
+        }
         ],
-      }),
+      }
+      ),
+      //init is inside the model
       init() {
-        this.on('change:ip', this.changeIP);
         this.on('change:port', this.changePort);
-        this.on('change:message', this.changeMessage);
+        this.on('change:ip', this.changeIP);
         this.on('change:max', this.changeMax);
-        this.on('change:min', this.changeMin);
-        this.on('change:value', this.changeValue);
-        this.on('change:invert', this.changeInvert);
-        this.on('change:orientation', this.changeOrientation);
+        this.on('change:message', this.changeMessage);
+        this.on('change:toggle', this.changeToggle);
       },
       changeIP() {
         console.log("IP Changed in component: ", this)
@@ -99,7 +81,7 @@ function oscar_slider(editor) {
             client: { port: this.get('port'), host: newIP }
           });
         } else {
-          alert("Your IP is incorrect");
+          alert("Your IP is incorrect: " + this.attributes.ip);
           this.set({ ip: this._previousAttributes.ip })
         }
       },
@@ -124,54 +106,21 @@ function oscar_slider(editor) {
         var newMessage = this.get("message")
         this.set({ message: newMessage })
       },
-      changeMin() {
-        console.log("Min Changed in Component: ", this)
-        var newMin = this.get('min');
-        if (!isNaN(newMin)) {
-          this.set({ min: newMin })
-          this.addAttributes({ 'min': newMin });
-        } else {
-          alert("Your min is incorrect. It should be a number");
-          this.set({ min: this._previousAttributes.min })
-        }
-      },
       changeMax() {
         console.log("Max Changed in Component: ", this)
         var newMax = this.get('max');
-        if (!isNaN(newMax)) {
+        if (!isNaN(parseInt(newMax))) {
           this.set({ max: newMax })
-          this.addAttributes({'max': newMax });
         } else {
-          alert("Your max is incorrect. It must be a number");
+          alert("Your max is incorrect. It should be an integer value");
           this.set({ max: this._previousAttributes.max })
         }
       },
-      changeValue(){
-        console.log("Value Changed in Component: ", this)
-        var newValue = parseFloat(this.get('value'));
-        if (newValue >= this.get("min") && newValue <= this.get("max")) {
-          this.getEl().value = newValue;
-        }
-        else{
-          alert("Your value must be a number, between the ranges")
-          this.set({ value: this._previousAttributes.value })
-        }
+      changeToggle() {
+        console.log("Toggle Changed in Component: ", this)
+        var newToggle = this.get('toggle');
       },
-      changeOrientation() {
-        var newOrient = this.get('orientation');
-        console.log("Orientation Changed in Component: ", this, newOrient)
-        if (newOrient == "vertical") {
-          this.set({orient : "vertical"})
-        }
-        else if(newOrient == "horizontal"){
-          this.set({orient : "horizontal"})
-        }
-        this.addAttributes({'orient': this.get("orient") });
-      },
-      changeInvert(){
-        console.log("Invert Changed in Component: ", this)
-        var newInvert = this.get('invert')
-      },
+
       validateIPaddress(ipaddress) {
         if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress)) {
           return (true)
@@ -186,9 +135,10 @@ function oscar_slider(editor) {
       // the default one.
       {
         isComponent: function (el) {
-          if (el.tagName == 'INPUT') {
+          if (el.tagName == 'BUTTON') {
             //type text gives you text edit capabilities
-            return { type: 'input' };
+            console.log("IS MEGA BUTTOON")
+            return { type: 'button' };
           }
         },
       }),
@@ -202,28 +152,41 @@ function oscar_slider(editor) {
         //     error: 'onError',
         //     dragstart: 'noDrag',
         //     mousedown: 'noDrag'
-        //input: 'changeValue',
-        input: 'changeValue',
+        click: 'handleClick',
+        //mouseup: 'release',
       },
-
-      changeValue: function (e) {
-        console.log("e:", e);
-        console.log("This: ", this);
+      handleClick: function (e) {
+        console.log("Click Event Owner: ", this);
         var message = this.model.get("message");
-        var invert = this.model.get("invert");
-        var inputValue = parseFloat(this.el.value);
-        var finalValue;
         var ip = this.model.get("ip");
         var port = this.model.get("port");
-        if(!invert){
-          finalValue = inputValue;
-        }else{
-          finalValue = parseFloat(this.model.get("max")) - inputValue + parseFloat(this.model.get("min"))
+        if (this.model.get("toggle")) {
+          if (this.model.get("value")) {
+            console.log("Push");
+            this.model.addClass("toggle");
+            editor.socket.emit('message', editor.ip, ip, port, message, "f", this.model.get("max"));
+          } else {
+            console.log("Unpush");
+            this.model.removeClass("toggle");
+            editor.socket.emit('message', editor.ip, ip, port, message, "f", 0.000);
+          }
+          this.model.set({value : !this.model.get("value")})
         }
-        console.log("Value: ", finalValue);
-        this.model.set({value : finalValue})
-        editor.socket.emit('message', ip, port, message, "f", parseFloat(finalValue));
-  
+        else {
+          console.log("HTML: ", this.model.toHTML())
+          editor.socket.emit('message', editor.ip, ip, port,  message, "f", this.model.get("max"));
+          setTimeout(function () { editor.socket.emit('message', editor.ip,  ip, port, message, "f", 0.000); }, 250);
+        }
+        //this.model.set('style', {color: this.randomHex()}); // <- Affects the final HTML code
+        //this.el.style.backgroundColor = this.randomHex(); // <- Doesn't affect the final HTML code
+        // Tip: updating the model will reflect the changes to the view, so, in this case,
+        // if you put the model change after the DOM one this will override the backgroundColor
+        // change made before
+      },
+      release: function (e) {
+        console.log('Release Event Owner: ', this);
+        var message = this.model.get("message");
+        //editor.socket.emit('message', this.model.get("ip"), this.model.get("port"), message, "f", 0.000);
       },
       // The render() should return 'this'
       render: function () {
@@ -233,12 +196,16 @@ function oscar_slider(editor) {
       },
     }),
   });
-  //Slider finished
-  editor.BlockManager.add('slider', {
-    label: 'Slider',
-    attributes: { class: 'fa fa-sliders' },
+
+  //Add Block to Manager
+  editor.BlockManager.add('button', {
+    label: 'Button',
+    attributes: { class: 'fa fa-square' },
     category: 'Basic',
-    content: `<input type="range" step="0.01" orient="horizontal">`
+    content: {
+      type: 'button', // OSCAR component
+      //script: "alert('Hi'); console.log('the element', this)",
+    }
   })
 }
 
