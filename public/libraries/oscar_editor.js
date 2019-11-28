@@ -1,4 +1,5 @@
 var localIPpromise = require('binternalip');
+var ipLibrary = require('ip');
 
 var editor = grapesjs.init({
  // domComponents: { storeWrapper: 1 },
@@ -131,27 +132,21 @@ editor.on('run:custom-code:open-modal', () =>
   }),
 );
 
-//Preview was Clicked
-editor.on('run:core:preview', () => {
-  console.log("Preview was pressed")
-  console.log("JS: ", editor.getJs())
-  var code = editor.getHtml() + '<style>' + editor.getCss() + '</style>' + '<script>'+ editor.getJs() +'</script>';
-  editor.DomComponents = comps;
-  //var code = editor.getWrapper();
-  //editor.socket.emit('code', code);
-  //console.log("Code: ",  editor.getHtml() + '<style>'+editor.getCss()+'</style>')
-}
-);
-
 //Turn OFF editable mode on Preview
 editor.on('run:preview', () => {
   // Execute a callback on all inner components starting from the root
   console.log("Run Preview Mode")
+  console.log("JS: ", editor.getJs())
 	editor.DomComponents.getWrapper().onAll(comp => 
 		comp.set({ editable: false, draggable: false })
-	);
+  );
+  var code = editor.getComponents();
+  editor.socket.emit('code', code);
+  console.log("Components: ", code)
+  editor.DomComponents = code
 });
-//Turn OFF editable mode on Preview
+
+//Turn ON editable mode on Preview
 editor.on('stop:preview', () => {
   // Execute a callback on all inner components starting from the root
   console.log("Stop Preview Mode")
@@ -217,15 +212,26 @@ var ipButton = pn.addButton('devices-c', {
   disable: true,
 });
 
+//Default value of editor.ip is localhost
+var IPLabel = pn.getButton('devices-c', 'ipButton');
+editor.ip  = "localhost"
+IPLabel.set("label", "IP: " + editor.ip);
+
 localIPpromise.then((ipAddr) => {
-  var button = pn.getButton('devices-c', 'ipButton');
   console.log("Promise solved: ", ipAddr)
-  button.set("label", "IP: " + ipAddr);
+  IPLabel.set("label", "IP: " + ipAddr);
   editor.ip = ipAddr;
+  if(editor.ip == "" || !ipLibrary.isV4Format(editor.ip) ){
+    console.log("editor.ip is empty")
+    editor.ip  = "localhost"
+    IPLabel.set("label", "IP: " + editor.ip);
+  }
 });
 localIPpromise.catch(error => { 
   console.log("Error: ", error);
   editor.ip = "localhost"
+  IPLabel.set("label", "IP: " + editor.ip);
+
 });
 
 console.log("Panels: ", pn.getPanels());
