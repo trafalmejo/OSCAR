@@ -5,9 +5,10 @@
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
   "main": "main.js",
   "scripts": {
+    "watchify": "watchify ./public/libraries/oscar_socket.js ./public/libraries/oscar_button.js ./public/libraries/oscar_slider.js ./public/libraries/oscar_editor.js -o ./public/libraries/bundle.js -v",
     "build": "webpack",
-    "browserify" : "browserify ./public/libraries/oscar_socket.js ./public/libraries/oscar_button.js ./public/libraries/oscar_slider.js ./public/libraries/oscar_editor.js > ./public/libraries/bundle.js",
-    "start": "npm run browserify && nodemon ./server.js",
+    "browserify": "browserify --debug ./public/libraries/oscar_socket.js ./public/libraries/oscar_button.js ./public/libraries/oscar_slider.js ./public/libraries/oscar_editor.js -o ./public/libraries/bundle.js",
+    "start": "concurrently \"npm run watchify\" \"nodemon ./server.js\"",
     "electron": "electron .",
     "package-mac": "electron-packager . --overwrite --platform=darwin --arch=x64 --icon=assets/css/icon.icns --prune=true --out=release-builds",
     "package-win": "electron-packager . OSCAR --overwrite --asar=true --platform=win32 --arch=ia32 --icon=assets/css/icon.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE --version-string.ProductName=\"CryptoApp\"",
@@ -34,6 +35,7 @@
     "grapesjs": "0.x"
   },
   "devDependencies": {
+    "concurrently": "^5.0.0",
     "electron": "^5.0.0",
     "electron-builder": "^20.39.0",
     "electron-packager": "^13.1.1",

@@ -8,7 +8,7 @@ var app = express()
 app.use(express.static(__dirname + '/public'));
 var osc = require('osc');
 //BRIDGE Between Client and Server
-var io = require('socket.io')(8081);
+var io = require('socket.io')(8081); 
 var ipLibrary = require('ip');
 var serverIP = ipLibrary.address() // my ip address
 
@@ -77,7 +77,7 @@ app.get('/server', function (req, res) {
 app.get('/dom', function (req, res) {
 	console.log("Requesting DOM")
 	res.send(code)
-})
+}) 
 app.get('/ipserver', function (req, res) {
 	res.send(serverIP)
 })
