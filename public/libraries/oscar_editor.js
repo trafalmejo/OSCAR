@@ -96,10 +96,11 @@ var dView = dType.view;
 //EVENT WHEN THE EDITOR IS LOADED
 editor.on('load', function (edit) {
   console.log('Model was loaded, Editor:', edit);
-  jQuery.get( "dom", function(data, textStatus, jqXHR){
+  //jquery doesnot work in electron
+  //jQuery.get( "dom", function(data, textStatus, jqXHR){
     // alert('status: ' + textStatus + ', data:' + data);
     //editor.setComponents(data);
-  })
+  //})
 
 });
 //Event is trigger for every loaded component

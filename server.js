@@ -8,6 +8,7 @@ var app = express()
 app.use(express.static(__dirname + '/public'));
 var osc = require('osc');
 //BRIDGE Between Client and Server
+//var io = require('socket.io')(8081); 
 var io = require('socket.io')(8081); 
 var ipLibrary = require('ip');
 var serverIP = ipLibrary.address() // my ip address
@@ -25,6 +26,15 @@ var udpPortGlobal = new osc.UDPPort({
 });
 udpPortGlobal.open()
 
+
+//localhost
+var udpPortLocal = new osc.UDPPort({
+	localAddress: "localhost",
+	localPort: 7001,
+	metadata: true,
+});
+udpPortLocal.open()
+
 //Send OSC Message over UDP
 function sendOSCMessage(clientIP, ip, port, addressp, type, value) {
 	var msg = {
@@ -36,16 +46,25 @@ function sendOSCMessage(clientIP, ip, port, addressp, type, value) {
 			}
 		]
 	};
-	if(ip == "localhost"){
-		ip = clientIP;
-	}
 	console.log("Sending message", msg.address, msg.args, "to", ip + ":" + port);
+
+	if(ip == "localhost"){
+		//ip = clientIP;
+		try{
+			udpPortLocal.send(msg, ip, port);
+		} catch (err) {
+			console.log("chatching this error")
+			console.log("ERROR: ", err)
+		}
+	}
+	else{
 	try{
 		udpPortGlobal.send(msg, ip, port);
 	} catch (err) {
 		console.log("chatching this error")
 		console.log("ERROR: ", err)
 	}
+}
 }
 
 io.sockets.on('connection', function (socket) {

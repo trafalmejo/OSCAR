@@ -76,10 +76,10 @@ function oscar_button(editor) {
         var newIP = this.get('ip');
         if (newIP == 'localhost' || this.validateIPaddress(newIP)) {
           this.set({ ip: newIP })
-          editor.socket.emit('config', {
-            server: { port: 4000, host:  config.ip },
-            client: { port: this.get('port'), host: newIP }
-          });
+          // editor.socket.emit('config', {
+          //   server: { port: 4000, host:  config.ip },
+          //   client: { port: this.get('port'), host: newIP }
+          // });
         } else {
           alert("Your IP is incorrect: " + this.attributes.ip);
           this.set({ ip: this._previousAttributes.ip })
@@ -91,10 +91,10 @@ function oscar_button(editor) {
         //If it is a number
         if (!isNaN(parseInt(newPort))) {
           this.set({ port: newPort })
-          editor.socket.emit('config', {
-            server: { port: 4000, host: config.ip },
-            client: { port: newPort, host: this.get('ip') }
-          });
+          // editor.socket.emit('config', {
+          //   server: { port: 4000, host: config.ip },
+          //   client: { port: newPort, host: this.get('ip') }
+          // });
         } else {
           alert("Your port is incorrect");
           this.set({ port: this._previousAttributes.port })
