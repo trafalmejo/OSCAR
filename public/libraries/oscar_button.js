@@ -77,7 +77,7 @@ function oscar_button(editor) {
         if (newIP == 'localhost' || this.validateIPaddress(newIP)) {
           this.set({ ip: newIP })
           editor.socket.emit('config', {
-            server: { port: 4000, host: config.ip },
+            server: { port: 4000, host:  config.ip },
             client: { port: this.get('port'), host: newIP }
           });
         } else {
