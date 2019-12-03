@@ -84,7 +84,8 @@ var editor = grapesjs.init({
     },
   }
 });
-
+//Storage
+const storageManager = editor.StorageManager;
 // Get DomComponents module
 var comps = editor.DomComponents;
 // Get the model and the view from the default Component type
@@ -97,16 +98,13 @@ editor.on('load', function (edit) {
   console.log('Model was loaded, Editor:', edit);
   jQuery.get( "dom", function(data, textStatus, jqXHR){
     // alert('status: ' + textStatus + ', data:' + data);
-    editor.setComponents(data);
+    //editor.setComponents(data);
   })
 
 });
 //Event is trigger for every loaded component
 editor.on('storage:load', function (editor) {
-  jQuery.get("/dom", function(data, textStatus, jqXHR){
-    //alert('status: ' + textStatus + ', data:' + data);
-    
-  })
+
 });
 editor.on('component:add', function (model) {
 
@@ -143,7 +141,7 @@ editor.on('run:preview', () => {
   var code = editor.getComponents();
   editor.socket.emit('code', code);
   console.log("Components: ", code)
-  editor.DomComponents = code
+  //editor.DomComponents = code
 });
 
 //Turn ON editable mode on Preview

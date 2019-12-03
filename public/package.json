@@ -12,9 +12,6 @@
     "address": "^1.1.2",
     "binternalip": "^1.0.4",
     "bootstrap": "^4.3.1",
-    "common-js": "^0.3.8",
-    "easy-ip": "^1.2.0",
-    "get-ip-addresses": "^1.1.0",
     "grapesjs": "^0.15.8",
     "grapesjs-aviary": "^0.1.2",
     "grapesjs-blocks-basic": "^0.1.7",
@@ -27,18 +24,13 @@
     "grapesjs-plugin-forms": "^0.3.5",
     "grapesjs-preset-webpage": "^0.1.11",
     "grapesjs-touch": "^0.1.1",
-    "internal-ip": "^5.0.0",
     "ip": "^1.1.5",
     "jquery": "^3.4.1",
-    "local-ip": "^2.0.0",
     "os": "^0.1.1",
     "osc": "^2.3.1",
     "popper": "^1.0.1",
     "popper.js": "^1.16.0",
-    "socket.io": "^2.3.0",
-    "webrtc-ips": "^0.1.4"
+    "socket.io": "^2.3.0"
   },
-  "devDependencies": {
-    "local-ip-url": "^1.0.2"
-  }
+  "devDependencies": {}
 }

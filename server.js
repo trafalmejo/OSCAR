@@ -72,7 +72,8 @@ io.sockets.on('connection', function (socket) {
 
 //SERVER
 app.get('/server', function (req, res) {
-	res.send(code);
+	//res.send(code);
+	res.sendfile(__dirname + '/public/index.html');
 })
 app.get('/dom', function (req, res) {
 	console.log("Requesting DOM")
