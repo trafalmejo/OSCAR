@@ -1,9 +1,9 @@
-function oscar_button(editor) {
+function oscar_button(editor, options) {
   var comps = editor.DomComponents;
   var dType = comps.getType('default');
   var dModel = dType.model;
   var dView = dType.view;
-
+  console.log("options: ", options)
   //BUTTON type
   comps.addType('button', {
     // Define the Model
@@ -16,14 +16,14 @@ function oscar_button(editor) {
           name: 'button_oscar',
         },
         components: [{
-          type: 'textnode',
+          type: 'text',
           content: 'Insert here your text'
         }],
         droppable: false,
         resizable: true,
         editable: true,
         // // Traits (Settings)
-        ip: 'localhost',
+        ip: options.ipserver,
         port: 10000,
         message: '/push1',
         max: '1',
@@ -61,6 +61,7 @@ function oscar_button(editor) {
             changeProp: 1,
         }
         ],
+        propagate: ['traits'],
       }
       ),
       //init is inside the model
@@ -70,6 +71,23 @@ function oscar_button(editor) {
         this.on('change:max', this.changeMax);
         this.on('change:message', this.changeMessage);
         this.on('change:toggle', this.changeToggle);
+        //this.getIpServer();
+
+      },
+      getIpServer(){
+        var butt = this;
+        fetch('/ipserver')
+          .then(function(response) {
+            return response.text();
+          })
+          .then(function(text) {
+            console.log('Request successful', text);
+            ipServer = text;
+            butt.set({ ip: ipServer })
+          })
+          .catch(function(error) {
+            console.log('Request failed', error)
+          });
       },
       changeIP() {
         console.log("IP Changed in component: ", this)

@@ -14,7 +14,7 @@ var ipLibrary = require('ip');
 var serverIP = ipLibrary.address() // my ip address
 
 
-var code = "";
+var code;
 //Connection between Server and App to be controlled
 var oscConnections = [];
 var isConnected = [];
@@ -90,12 +90,12 @@ io.sockets.on('connection', function (socket) {
 })
 
 //SERVER
-app.get('/server', function (req, res) {
+app.get('/preview', function (req, res) {
 	//res.send(code);
-	res.sendfile(__dirname + '/public/index.html');
+	res.sendfile(__dirname + '/public/preview.html');
 })
 app.get('/dom', function (req, res) {
-	console.log("Requesting DOM")
+	console.log("Requesting DOM", code)
 	res.send(code)
 }) 
 app.get('/ipserver', function (req, res) {

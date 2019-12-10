@@ -1,9 +1,9 @@
-function oscar_slider(editor) {
+function oscar_slider(editor, options) {
   var comps = editor.DomComponents;
   var dType = comps.getType('default');
   var dModel = dType.model;
   var dView = dType.view;
-
+  console.log("options: ", options)
   //SLIDER type
   comps.addType('input', {
     // Define the Model
@@ -14,7 +14,7 @@ function oscar_slider(editor) {
         resizable: true,
         editable: true,
         // // Traits (Settings)
-        ip: 'localhost',
+        ip: options.ipserver,
         port: 10000,
         message: '/slider1',
         min: 0,
@@ -88,16 +88,29 @@ function oscar_slider(editor) {
         this.on('change:value', this.changeValue);
         this.on('change:invert', this.changeInvert);
         this.on('change:orientation', this.changeOrientation);
+        //this.getIpServer();
+
+      },
+      getIpServer(){
+        var butt = this;
+        fetch('/ipserver')
+          .then(function(response) {
+            return response.text();
+          })
+          .then(function(text) {
+            console.log('Request successful', text);
+            ipServer = text;
+            butt.set({ ip: ipServer })
+          })
+          .catch(function(error) {
+            console.log('Request failed', error)
+          });
       },
       changeIP() {
         console.log("IP Changed in component: ", this)
         var newIP = this.get('ip');
         if (newIP == 'localhost' || this.validateIPaddress(newIP)) {
           this.set({ ip: newIP })
-          editor.socket.emit('config', {
-            server: { port: 4000, host: config.ip },
-            client: { port: this.get('port'), host: newIP }
-          });
         } else {
           alert("Your IP is incorrect");
           this.set({ ip: this._previousAttributes.ip })
@@ -109,10 +122,10 @@ function oscar_slider(editor) {
         //If it is a number
         if (!isNaN(parseInt(newPort))) {
           this.set({ port: newPort })
-          editor.socket.emit('config', {
-            server: { port: 4000, host: config.ip },
-            client: { port: newPort, host: this.get('ip') }
-          });
+          // editor.socket.emit('config', {
+          //   server: { port: 4000, host: config.ip },
+          //   client: { port: newPort, host: this.get('ip') }
+          // });
         } else {
           alert("Your port is incorrect");
           this.set({ port: this._previousAttributes.port })
@@ -233,6 +246,32 @@ function oscar_slider(editor) {
       },
     }),
   });
+
+  function updateSliderType(server){
+    comps.addType('input', {
+      // You can update the isComponent logic or leave the one from `some-component`
+      // isComponent: (el) => false,
+    
+      // Update the model, if you need
+      model: {
+        // The `defaults` property is handled differently
+        // and will be merged with the old `defaults`
+        defaults: {
+          ip: server
+          // tagName: '...', // Overrides the old one
+          // someNewProp: 'Hello', // Add new property
+        },
+        init() {
+          // Ovverride `init` function in `some-component`
+        }
+      },
+    
+      // Update the view, if you need
+      view: {},
+    });
+    console.log("Input Type Updated")
+  }
+
   //Slider finished
   editor.BlockManager.add('slider', {
     label: 'Slider',
@@ -240,5 +279,6 @@ function oscar_slider(editor) {
     category: 'Basic',
     content: `<input type="range" step="0.01" orient="horizontal">`
   })
+
 }
 
