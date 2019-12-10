@@ -1,14 +1,40 @@
+window.$ = window.jQuery = require('jquery');
 var localIPpromise = require('binternalip');
+//var localIPpromise = require('./webRTC.js');
 var ipLibrary = require('ip');
 
-var editor = grapesjs.init({
+
+var editor;
+var ipServer = "localhost";
+
+console.log("path: ", process.cwd())
+$.get("/ipserver", function(data, status){
+  console.log("jquery: ", data);
+  ipServer = data;
+  initGrape();
+  //alert("Data: " + data + "\nStatus: " + status);
+});
+
+// fetch('/ipserver')
+// 	  .then(function(response) {
+// 		return response.text();
+// 	  })
+// 	  .then(function(ip) {
+// 		console.log('Request successful', ip);
+//     ipServer = ip;
+// })
+// .catch(function(error) {
+// console.log('Request failed', error)
+// });
+function initGrape(){
+editor =  grapesjs.init({
  // domComponents: { storeWrapper: 1 },
-  // dragMode: 'absolute',
+  //dragMode: 'absolute',
   height: '100%',
   container: '#gjs',
   fromElement: true,
   allowScripts: 1,
-  canvas: { styles: ['assets/css/toggle.css', 'node_modules/bootstrap/dist/css/bootstrap.min.css'] },
+  canvas: { styles: ['assets/css/toggle.css'] },
   panels: {
 
   },
@@ -53,23 +79,36 @@ var editor = grapesjs.init({
   // Default configurations
   storageManager: {
     id: 'gjs-',             // Prefix identifier that will be used on parameters
-    type: 'local',          // Type of the storage
+    //type: 'local',          // Type of the storage
     //type: null,          // Type of the storage
+    type: 'remote',          // Type of the storage
+    storeStyles: 3,
+    urlStore: 'http://'+ipServer+':8080/preview',
+    urlLoad: 'http://'+ipServer+':8080/preview',
     autosave: true,         // Store data automatically
     autoload: true,         // Autoload stored data on init
     stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
-    //Enable/Disable components model (JSON format)
+    // //Enable/Disable components model (JSON format)
     storeComponents: 1,
-    //Enable/Disable styles model (JSON format)
-    storeStyles: 1,
-    //Enable/Disable saving HTML template
-    storeHtml: 1,
-    //Enable/Disable saving CSS template
-    storeCss: 1,
+    // //Enable/Disable styles model (JSON format)
+    // storeStyles: 1,
+    // //Enable/Disable saving HTML template
+    // storeHtml: 1,
+    // //Enable/Disable saving CSS template
+    // storeCss: 1,
   },
   // TO READ: this plugin loads default blocks
-  plugins: [oscar_socket, oscar_ip, oscar_button, oscar_slider, 'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
+  plugins: ['oscar_socket', 'oscar_ip', 'oscar_button', 'oscar_slider', 'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch'],
   pluginsOpts: {
+    'oscar_socket' : {
+      ipserver: ipServer,
+    },
+    'oscar_slider' : {
+      ipserver: ipServer,
+    },
+    'oscar_button': {
+      ipserver: ipServer,
+    },
     'gjs-preset-webpage': {
       blocks: [],
       formsOpts: false,
@@ -84,14 +123,8 @@ var editor = grapesjs.init({
     },
   }
 });
-//Storage
-const storageManager = editor.StorageManager;
-// Get DomComponents module
-var comps = editor.DomComponents;
-// Get the model and the view from the default Component type
-var dType = comps.getType('default');
-var dModel = dType.model;
-var dView = dType.view;
+//END EDITOR INIT
+
 
 //EVENT WHEN THE EDITOR IS LOADED
 editor.on('load', function (edit) {
@@ -130,6 +163,7 @@ editor.on('run:custom-code:open-modal', () =>
     }
   }),
 );
+const storageManager = editor.StorageManager;
 
 //Turn OFF editable mode on Preview
 editor.on('run:preview', () => {
@@ -139,9 +173,11 @@ editor.on('run:preview', () => {
 	editor.DomComponents.getWrapper().onAll(comp => 
 		comp.set({ editable: false, draggable: false })
   );
-  var code = editor.getComponents();
+  const domComponents = editor.DomComponents;
+  //var code = editor.getComponents();
+  var code = domComponents.getComponents();
+  console.log("Components: ", code.models)
   editor.socket.emit('code', code);
-  console.log("Components: ", code)
   //editor.DomComponents = code
 });
 
@@ -164,9 +200,6 @@ editor.on('run:gjs-open-import-webpage', () =>
     }
   }),
 );
-
-
-
 
 // Add and beautify tooltips
 
@@ -211,26 +244,53 @@ var ipButton = pn.addButton('devices-c', {
   disable: true,
 });
 
-//Default value of editor.ip is localhost
-var IPLabel = pn.getButton('devices-c', 'ipButton');
-editor.ip  = "localhost"
-IPLabel.set("label", "IP: " + editor.ip);
 
-localIPpromise.then((ipAddr) => {
-  console.log("Promise solved: ", ipAddr)
-  IPLabel.set("label", "IP: " + ipAddr);
-  editor.ip = ipAddr;
-  if(editor.ip == "" || !ipLibrary.isV4Format(editor.ip) ){
-    console.log("editor.ip is empty")
-    editor.ip  = "localhost"
-    IPLabel.set("label", "IP: " + editor.ip);
+var IPLabel = pn.getButton('devices-c', 'ipButton');
+getipServer(); 
+function getipServer(){
+     IPLabel.set("label", "Server IP: " + editor.ipserver);
+}
+// function getipServer(){
+// fetch('/ipserver')
+//   .then(function(response) {
+//     return response.text();
+//   })
+//   .then(function(ip) {
+//     editor.ipserver = ip
+//     IPLabel.set("label", "Server IP: " + editor.ipserver);
+//     console.log("Socket: ", editor.ipserver)
+//   })
+//   .catch(function(error) {
+//     console.log('Request failed', error)
+//   });
+// }
+
+
+
+//Default value of editor.ip is localhost
+editor.ip  = "localhost"
+
+var promise = localIPpromise.then((ipAddr) => {
+  var ipv4 = "";
+  for (let i = 0; i < ipAddr.length; i++) {
+    if(ipLibrary.isV4Format(ipAddr[i])){
+      ipv4 = ipAddr[i];
+      console.log("Promise solved: ", ipAddr)
+      //IPLabel.set("label", "Client IP" + ipAddr);
+      editor.ip = ipAddr;
+    }
   }
-});
+  if(editor.ip == "" || !ipLibrary.isV4Format(editor.ip) ){
+    //console.log("editor.ip is empty")
+    editor.ip  = "localhost"
+    //IPLabel.set("label", "Client IP: " + editor.ip);
+  }
+})
+
 localIPpromise.catch(error => { 
   console.log("Error: ", error);
   editor.ip = "localhost"
   IPLabel.set("label", "IP: " + editor.ip);
-
 });
 
 console.log("Panels: ", pn.getPanels());
@@ -259,5 +319,4 @@ for (var i = 0; i < titles.length; i++) {
   el.setAttribute('title', '');
 }
 
-
-
+}
