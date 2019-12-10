@@ -7,7 +7,6 @@ var ipLibrary = require('ip');
 var editor;
 var ipServer = "localhost";
 
-console.log("path: ", process.cwd())
 $.get("/ipserver", function(data, status){
   console.log("jquery: ", data);
   ipServer = data;
@@ -82,14 +81,16 @@ editor =  grapesjs.init({
     //type: 'local',          // Type of the storage
     //type: null,          // Type of the storage
     type: 'remote',          // Type of the storage
-    storeStyles: 3,
-    urlStore: 'http://'+ipServer+':8080/preview',
-    urlLoad: 'http://'+ipServer+':8080/preview',
-    autosave: true,         // Store data automatically
-    autoload: true,         // Autoload stored data on init
-    stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+    stepsBeforeSave: 3,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+    urlStore: 'http://'+ipServer+':8080/store',
+    urlLoad: 'http://'+ipServer+':8080/load',
+    //autosave: true,         // Store data automatically
+    //autoload: true,         // Autoload stored data on init
+    // For custom parameters/headers on requests
+    // params: { _some_token: '....' },
+    // headers: { Authorization: 'Basic ...' }, 
     // //Enable/Disable components model (JSON format)
-    storeComponents: 1,
+    //storeComponents: 1,
     // //Enable/Disable styles model (JSON format)
     // storeStyles: 1,
     // //Enable/Disable saving HTML template
@@ -138,7 +139,10 @@ editor.on('load', function (edit) {
 });
 //Event is trigger for every loaded component
 editor.on('storage:load', function (editor) {
-
+  console.log("Loading...")
+});
+editor.on('storage:store', function (editor) {
+  console.log("Storing...")
 });
 editor.on('component:add', function (model) {
 
@@ -170,6 +174,8 @@ editor.on('run:preview', () => {
   // Execute a callback on all inner components starting from the root
   console.log("Run Preview Mode")
   console.log("JS: ", editor.getJs())
+  var res = editor.store(res => console.log('Store callback'));
+  console.log("res: ", res);
 	editor.DomComponents.getWrapper().onAll(comp => 
 		comp.set({ editable: false, draggable: false })
   );
