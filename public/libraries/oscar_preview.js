@@ -5,7 +5,6 @@ var ipLibrary = require('ip');
 var editor;
 var ipServer = "localhost";
 
-console.log("path: ", process.cwd())
 $.get("/ipserver", function(data, status){
   console.log("jquery: ", data);
   ipServer = data;
@@ -39,12 +38,12 @@ editor =  grapesjs.init({
   // Default configurations
   storageManager: {
     id: 'gjs-',             // Prefix identifier that will be used on parameters
-    type: 'local',          // Type of the storage
-    storeStyles: 1,
-    autoload: true,         // Autoload stored data on init
-    stepsBeforeSave: 0,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
-    // //Enable/Disable components model (JSON format)
-    storeComponents: 1,
+    //type: 'local',          // Type of the storage
+    //type: null,          // Type of the storage
+    type: 'remote',          // Type of the storage
+    stepsBeforeSave: 3,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+    urlStore: 'http://'+ipServer+':8080/store',
+    urlLoad: 'http://'+ipServer+':8080/load',
 
   },
   // TO READ: this plugin loads default blocks
@@ -81,11 +80,11 @@ editor.on('stop:preview', () => {
 
 editor.on('load', function()
 {
-    const updateAll = model => {
-        model.set({editable: false,selectable:false,hoverable:false});
-        model.get('components').each(model => updateAll(model));
-    }
-    updateAll(editor.DomComponents.getWrapper());
+    // const updateAll = model => {
+    //     model.set({editable: false,selectable:false,hoverable:false});
+    //     model.get('components').each(model => updateAll(model));
+    // }
+    // updateAll(editor.DomComponents.getWrapper());
 });
 
 }

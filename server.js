@@ -5,7 +5,22 @@
 
 var express = require('express')
 var app = express()
+var cors = require('cors')
+var bodyParser = require('body-parser')
+
+app.use(cors({credentials: true, origin: 'http://localhost:8080'}));
 app.use(express.static(__dirname + '/public'));
+app.use(bodyParser.urlencoded({extended: false}));
+app.use(bodyParser.json());
+//  app.use((req, res, next) => {
+//  	res.header('Access-Control-Allow-Origin', 'http://localhost:8080');
+// 	res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+// 	if(req.method === 'OPTIONS'){
+// 		req.header('Access-Control-Allow-Methods', 'PUT, POST, PATCH, DELETE, GET');
+// 		return res.status(200).json({});
+// 	}
+// next();
+//  });
 var osc = require('osc');
 //BRIDGE Between Client and Server
 //var io = require('socket.io')(8081); 
@@ -15,6 +30,7 @@ var serverIP = ipLibrary.address() // my ip address
 
 
 var code;
+var store = {};
 //Connection between Server and App to be controlled
 var oscConnections = [];
 var isConnected = [];
@@ -90,8 +106,14 @@ io.sockets.on('connection', function (socket) {
 })
 
 //SERVER
+app.post('/store', function (req, res) {
+	store = req.body;
+	res.send("HI GUYS");
+})
+app.get('/load', function (req, res) {
+	res.send(store);
+})
 app.get('/preview', function (req, res) {
-	//res.send(code);
 	res.sendfile(__dirname + '/public/preview.html');
 })
 app.get('/dom', function (req, res) {
@@ -101,9 +123,7 @@ app.get('/dom', function (req, res) {
 app.get('/ipserver', function (req, res) {
 	res.send(serverIP)
 })
-
-// app.listen(8080, config.ip, function () {
-	
+// app.listen(8080, config.ip, function () {	
 // })
 app.listen(8080, function () {
 	
