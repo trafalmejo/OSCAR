@@ -3,7 +3,6 @@ function oscar_button(editor, options) {
   var dType = comps.getType('default');
   var dModel = dType.model;
   var dView = dType.view;
-  console.log("options: ", options)
   //BUTTON type
   comps.addType('button', {
     // Define the Model

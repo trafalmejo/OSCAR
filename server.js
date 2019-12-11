@@ -7,20 +7,6 @@ var express = require('express')
 var app = express()
 var cors = require('cors')
 var bodyParser = require('body-parser')
-
-app.use(cors({credentials: true, origin: 'http://localhost:8080'}));
-app.use(express.static(__dirname + '/public'));
-app.use(bodyParser.urlencoded({extended: false}));
-app.use(bodyParser.json());
-//  app.use((req, res, next) => {
-//  	res.header('Access-Control-Allow-Origin', 'http://localhost:8080');
-// 	res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-// 	if(req.method === 'OPTIONS'){
-// 		req.header('Access-Control-Allow-Methods', 'PUT, POST, PATCH, DELETE, GET');
-// 		return res.status(200).json({});
-// 	}
-// next();
-//  });
 var osc = require('osc');
 //BRIDGE Between Client and Server
 //var io = require('socket.io')(8081); 
@@ -28,6 +14,14 @@ var io = require('socket.io')(8081);
 var ipLibrary = require('ip');
 var serverIP = ipLibrary.address() // my ip address
 
+var allowedOrigins = ['http://localhost:8080',
+					  'http://'+serverIP+':8080'];
+
+					  
+app.use(cors({credentials: true, origin: 'http://localhost:8080'}));
+app.use(express.static(__dirname + '/public'));
+app.use(bodyParser.urlencoded({extended: false}));
+app.use(bodyParser.json());
 
 var code;
 var store = {};
@@ -37,7 +31,7 @@ var isConnected = [];
 
 var udpPortGlobal = new osc.UDPPort({
 	localAddress: serverIP,
-	localPort: 7000,
+	localPort: 5001,
 	metadata: true,
 });
 udpPortGlobal.open()
@@ -46,7 +40,7 @@ udpPortGlobal.open()
 //localhost
 var udpPortLocal = new osc.UDPPort({
 	localAddress: "localhost",
-	localPort: 7001,
+	localPort: 5002,
 	metadata: true,
 });
 udpPortLocal.open()
@@ -108,7 +102,6 @@ io.sockets.on('connection', function (socket) {
 //SERVER
 app.post('/store', function (req, res) {
 	store = req.body;
-	res.send("HI GUYS");
 })
 app.get('/load', function (req, res) {
 	res.send(store);
