@@ -2,13 +2,10 @@ window.$ = window.jQuery = require('jquery');
 var localIPpromise = require('binternalip');
 //var localIPpromise = require('./webRTC.js');
 var ipLibrary = require('ip');
-
-
 var editor;
 var ipServer = "localhost";
 
 $.get("/ipserver", function(data, status){
-  console.log("jquery: ", data);
   ipServer = data;
   initGrape();
   //alert("Data: " + data + "\nStatus: " + status);
@@ -25,6 +22,7 @@ $.get("/ipserver", function(data, status){
 // .catch(function(error) {
 // console.log('Request failed', error)
 // });
+
 function initGrape(){
 editor =  grapesjs.init({
  // domComponents: { storeWrapper: 1 },
@@ -129,30 +127,18 @@ editor =  grapesjs.init({
 
 //EVENT WHEN THE EDITOR IS LOADED
 editor.on('load', function (edit) {
-  console.log('Model was loaded, Editor:', edit);
-  //jquery doesnot work in electron
-  //jQuery.get( "dom", function(data, textStatus, jqXHR){
-    // alert('status: ' + textStatus + ', data:' + data);
-    //editor.setComponents(data);
-  //})
-
 });
 //Event is trigger for every loaded component
 editor.on('storage:load', function (editor) {
-  console.log("Loading...")
 });
 editor.on('storage:store', function (editor) {
-  console.log("Storing...")
 });
 editor.on('component:add', function (model) {
-
 });
 editor.on('component:remove', function (model) {
-
 });
 //UPDATE TRAITS
 editor.on("component:update", function (component) {
-
 })
 
 //EXAMPLE OF SHORT FUNCTION
@@ -167,35 +153,27 @@ editor.on('run:custom-code:open-modal', () =>
     }
   }),
 );
-const storageManager = editor.StorageManager;
 
 //Turn OFF editable mode on Preview
 editor.on('run:preview', () => {
   // Execute a callback on all inner components starting from the root
-  console.log("Run Preview Mode")
-  console.log("JS: ", editor.getJs())
   var res = editor.store(res => console.log('Store callback'));
-  console.log("res: ", res);
 	editor.DomComponents.getWrapper().onAll(comp => 
 		comp.set({ editable: false, draggable: false })
   );
   const domComponents = editor.DomComponents;
-  //var code = editor.getComponents();
   var code = domComponents.getComponents();
   console.log("Components: ", code.models)
   editor.socket.emit('code', code);
-  //editor.DomComponents = code
 });
 
 //Turn ON editable mode on Preview
 editor.on('stop:preview', () => {
   // Execute a callback on all inner components starting from the root
-  console.log("Stop Preview Mode")
 	editor.DomComponents.getWrapper().onAll(comp => 
 		comp.set({ editable: true,  draggable: true })
 	);
 });
-
 
 //FIXES MODAL FOR IMPORT HTML CODE
 editor.on('run:gjs-open-import-webpage', () =>
@@ -208,12 +186,9 @@ editor.on('run:gjs-open-import-webpage', () =>
 );
 
 // Add and beautify tooltips
-
 var pn = editor.Panels;
 var modal = editor.Modal;
 var commands = editor.Commands;
-
-console.log("Commands: ", commands.getAll())
 
 // Add info command
 var mdlClass = 'gjs-mdl-dialog-sm';
@@ -256,38 +231,20 @@ getipServer();
 function getipServer(){
      IPLabel.set("label", "Server IP: " + editor.ipserver);
 }
-// function getipServer(){
-// fetch('/ipserver')
-//   .then(function(response) {
-//     return response.text();
-//   })
-//   .then(function(ip) {
-//     editor.ipserver = ip
-//     IPLabel.set("label", "Server IP: " + editor.ipserver);
-//     console.log("Socket: ", editor.ipserver)
-//   })
-//   .catch(function(error) {
-//     console.log('Request failed', error)
-//   });
-// }
-
-
 
 //Default value of editor.ip is localhost
 editor.ip  = "localhost"
 
-var promise = localIPpromise.then((ipAddr) => {
+localIPpromise.then((ipAddr) => {
   var ipv4 = "";
   for (let i = 0; i < ipAddr.length; i++) {
     if(ipLibrary.isV4Format(ipAddr[i])){
       ipv4 = ipAddr[i];
-      console.log("Promise solved: ", ipAddr)
-      //IPLabel.set("label", "Client IP" + ipAddr);
-      editor.ip = ipAddr;
+      console.log("Editor.ip: ", ipv4)
+      editor.ip = ipv4;
     }
   }
   if(editor.ip == "" || !ipLibrary.isV4Format(editor.ip) ){
-    //console.log("editor.ip is empty")
     editor.ip  = "localhost"
     //IPLabel.set("label", "Client IP: " + editor.ip);
   }
@@ -299,9 +256,6 @@ localIPpromise.catch(error => {
   IPLabel.set("label", "IP: " + editor.ip);
 });
 
-console.log("Panels: ", pn.getPanels());
-
-console.log("Button for tooltp: ", pn.getButton('options', 'export-template', 'Export'));
 // Add and beautify tooltips
 [['sw-visibility', 'Show Borders'], ['preview', 'Preview'], ['fullscreen', 'Fullscreen'],
 ['export-template', 'Export'], ['undo', 'Undo'], ['redo', 'Redo'],

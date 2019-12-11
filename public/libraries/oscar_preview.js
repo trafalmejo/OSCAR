@@ -6,21 +6,14 @@ var editor;
 var ipServer = "localhost";
 
 $.get("/ipserver", function(data, status){
-  console.log("jquery: ", data);
   ipServer = data;
   initGrape();
   runPreview();
-  //uneditable();
-  
 });
-function uneditable(){
-  console.log("uneditable")
-  editor.DomComponents.getWrapper().onAll(comp => 
-		comp.set({ editable: false, draggable: false })
-  );
-}
+
 function runPreview(){
-  editor.runCommand('preview');
+  //Bug
+ editor.runCommand('preview');
 }
 
 function initGrape(){
@@ -73,18 +66,16 @@ editor =  grapesjs.init({
   }
 });
 //END EDITOR INIT
+editor.on('run:preview', () => {
+  const updateAll = model => {
+    model.set({editable: false,selectable:false,hoverable:false});
+    model.get('components').each(model => updateAll(model));
+}
+updateAll(editor.DomComponents.getWrapper());
+});
 editor.on('stop:preview', () => {
   // Execute a callback on all inner components starting from the root
   editor.runCommand('preview');
-});
-
-editor.on('load', function()
-{
-    // const updateAll = model => {
-    //     model.set({editable: false,selectable:false,hoverable:false});
-    //     model.get('components').each(model => updateAll(model));
-    // }
-    // updateAll(editor.DomComponents.getWrapper());
 });
 
 }

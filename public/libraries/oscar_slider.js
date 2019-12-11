@@ -3,7 +3,6 @@ function oscar_slider(editor, options) {
   var dType = comps.getType('default');
   var dModel = dType.model;
   var dView = dType.view;
-  console.log("options: ", options)
   //SLIDER type
   comps.addType('input', {
     // Define the Model
