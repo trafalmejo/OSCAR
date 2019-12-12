@@ -23,6 +23,7 @@
     "grapesjs-plugin-filestack": "^0.1.1",
     "grapesjs-plugin-forms": "^0.3.5",
     "grapesjs-preset-webpage": "^0.1.11",
+    "grapesjs-tooltip": "^0.1.5",
     "grapesjs-touch": "^0.1.1",
     "ip": "^1.1.5",
     "jquery": "^3.4.1",

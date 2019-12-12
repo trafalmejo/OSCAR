@@ -1,6 +1,6 @@
 //Electron App
 // Modules to control application life and create native browser window
-const {app, BrowserWindow} = require('electron')
+const { app, BrowserWindow, globalShortcut } = require('electron')
 const { fork } = require('child_process')
 const ps = fork(`${__dirname}/server.js`)
 
@@ -8,7 +8,7 @@ const ps = fork(`${__dirname}/server.js`)
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow
 
-function createWindow () {
+function createWindow() {
   // Create the browser window.
   mainWindow = new BrowserWindow({
     //width: 800,
@@ -21,6 +21,8 @@ function createWindow () {
   })
   mainWindow.maximize();
   mainWindow.setMenu(null)
+
+
   // and load the index.html of the app.
   //mainWindow.loadFile('public/index.html')
   mainWindow.loadURL('http://localhost:8080/');
@@ -35,7 +37,11 @@ function createWindow () {
     mainWindow = null
   })
 }
-
+app.on('ready', () => {
+  globalShortcut.register('CommandOrControl+Shift+O', () => {
+    mainWindow.webContents.openDevTools()
+  })
+})
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.

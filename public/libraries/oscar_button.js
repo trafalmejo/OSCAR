@@ -23,7 +23,7 @@ function oscar_button(editor, options) {
         editable: true,
         // // Traits (Settings)
         ip: options.ipserver,
-        port: 10000,
+        port: 7000,
         message: '/push1',
         max: '1',
         toggle: false,
@@ -58,7 +58,7 @@ function oscar_button(editor, options) {
             label: 'Toggle Button',
             name: 'toggle',
             changeProp: 1,
-        }
+          }
         ],
         propagate: ['traits'],
       }
@@ -70,33 +70,13 @@ function oscar_button(editor, options) {
         this.on('change:max', this.changeMax);
         this.on('change:message', this.changeMessage);
         this.on('change:toggle', this.changeToggle);
-        //this.getIpServer();
 
-      },
-      getIpServer(){
-        var butt = this;
-        fetch('/ipserver')
-          .then(function(response) {
-            return response.text();
-          })
-          .then(function(text) {
-            console.log('Request successful', text);
-            ipServer = text;
-            butt.set({ ip: ipServer })
-          })
-          .catch(function(error) {
-            console.log('Request failed', error)
-          });
       },
       changeIP() {
         console.log("IP Changed in component: ", this)
         var newIP = this.get('ip');
         if (newIP == 'localhost' || this.validateIPaddress(newIP)) {
           this.set({ ip: newIP })
-          // editor.socket.emit('config', {
-          //   server: { port: 4000, host:  config.ip },
-          //   client: { port: this.get('port'), host: newIP }
-          // });
         } else {
           alert("Your IP is incorrect: " + this.attributes.ip);
           this.set({ ip: this._previousAttributes.ip })
@@ -105,19 +85,13 @@ function oscar_button(editor, options) {
       changePort() {
         console.log("Port Changed in component: ", this);
         var newPort = this.get('port');
-        //If it is a number
         if (!isNaN(parseInt(newPort))) {
           this.set({ port: newPort })
-          // editor.socket.emit('config', {
-          //   server: { port: 4000, host: config.ip },
-          //   client: { port: newPort, host: this.get('ip') }
-          // });
         } else {
           alert("Your port is incorrect");
           this.set({ port: this._previousAttributes.port })
         }
       },
-
       changeMessage() {
         console.log("Message Changed in Component:", this)
         var newMessage = this.get("message")
@@ -137,14 +111,12 @@ function oscar_button(editor, options) {
         console.log("Toggle Changed in Component: ", this)
         var newToggle = this.get('toggle');
       },
-
       validateIPaddress(ipaddress) {
         if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress)) {
           return (true)
         }
         return (false)
       }
-
     },
       // The second argument of .extend are static methods and we'll put inside our
       // isComponent() method. As you're putting a new Component type on top of the stack,
@@ -154,7 +126,6 @@ function oscar_button(editor, options) {
         isComponent: function (el) {
           if (el.tagName == 'BUTTON') {
             //type text gives you text edit capabilities
-            console.log("IS MEGA BUTTOON")
             return { type: 'button' };
           }
         },
@@ -179,20 +150,16 @@ function oscar_button(editor, options) {
         var port = this.model.get("port");
         if (this.model.get("toggle")) {
           if (this.model.get("value")) {
-            console.log("Push");
             this.model.addClass("toggle");
-            editor.socket.emit('message', editor.ip, ip, port, message, "f", this.model.get("max"));
           } else {
-            console.log("Unpush");
             this.model.removeClass("toggle");
             editor.socket.emit('message', editor.ip, ip, port, message, "f", 0.000);
           }
-          this.model.set({value : !this.model.get("value")})
+          this.model.set({ value: !this.model.get("value") })
         }
         else {
-          console.log("HTML: ", this.model.toHTML())
-          editor.socket.emit('message', editor.ip, ip, port,  message, "f", this.model.get("max"));
-          setTimeout(function () { editor.socket.emit('message', editor.ip,  ip, port, message, "f", 0.000); }, 250);
+          editor.socket.emit('message', editor.ip, ip, port, message, "f", this.model.get("max"));
+          setTimeout(function () { editor.socket.emit('message', editor.ip, ip, port, message, "f", 0.000); }, 250);
         }
         //this.model.set('style', {color: this.randomHex()}); // <- Affects the final HTML code
         //this.el.style.backgroundColor = this.randomHex(); // <- Doesn't affect the final HTML code
@@ -213,7 +180,6 @@ function oscar_button(editor, options) {
       },
     }),
   });
-
   //Add Block to Manager
   editor.BlockManager.add('button', {
     label: 'Button',

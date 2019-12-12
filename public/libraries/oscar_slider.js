@@ -14,7 +14,7 @@ function oscar_slider(editor, options) {
         editable: true,
         // // Traits (Settings)
         ip: options.ipserver,
-        port: 10000,
+        port: 7000,
         message: '/slider1',
         min: 0,
         max: 100,
@@ -63,9 +63,9 @@ function oscar_slider(editor, options) {
             type: 'select',
             label: 'Orientation',
             name: 'orientation',
-            options:[
-              { id: 'horizontal', name: 'Horizontal'},
-              { id: 'vertical', name: 'Vertical'},
+            options: [
+              { id: 'horizontal', name: 'Horizontal' },
+              { id: 'vertical', name: 'Vertical' },
             ],
             changeProp: 1,
           },
@@ -87,23 +87,6 @@ function oscar_slider(editor, options) {
         this.on('change:value', this.changeValue);
         this.on('change:invert', this.changeInvert);
         this.on('change:orientation', this.changeOrientation);
-        //this.getIpServer();
-
-      },
-      getIpServer(){
-        var butt = this;
-        fetch('/ipserver')
-          .then(function(response) {
-            return response.text();
-          })
-          .then(function(text) {
-            console.log('Request successful', text);
-            ipServer = text;
-            butt.set({ ip: ipServer })
-          })
-          .catch(function(error) {
-            console.log('Request failed', error)
-          });
       },
       changeIP() {
         console.log("IP Changed in component: ", this)
@@ -121,16 +104,11 @@ function oscar_slider(editor, options) {
         //If it is a number
         if (!isNaN(parseInt(newPort))) {
           this.set({ port: newPort })
-          // editor.socket.emit('config', {
-          //   server: { port: 4000, host: config.ip },
-          //   client: { port: newPort, host: this.get('ip') }
-          // });
         } else {
           alert("Your port is incorrect");
           this.set({ port: this._previousAttributes.port })
         }
       },
-
       changeMessage() {
         console.log("Message Changed in Component:", this)
         var newMessage = this.get("message")
@@ -152,19 +130,19 @@ function oscar_slider(editor, options) {
         var newMax = this.get('max');
         if (!isNaN(newMax)) {
           this.set({ max: newMax })
-          this.addAttributes({'max': newMax });
+          this.addAttributes({ 'max': newMax });
         } else {
           alert("Your max is incorrect. It must be a number");
           this.set({ max: this._previousAttributes.max })
         }
       },
-      changeValue(){
+      changeValue() {
         console.log("Value Changed in Component: ", this)
         var newValue = parseFloat(this.get('value'));
         if (newValue >= this.get("min") && newValue <= this.get("max")) {
           this.getEl().value = newValue;
         }
-        else{
+        else {
           alert("Your value must be a number, between the ranges")
           this.set({ value: this._previousAttributes.value })
         }
@@ -173,14 +151,14 @@ function oscar_slider(editor, options) {
         var newOrient = this.get('orientation');
         console.log("Orientation Changed in Component: ", this, newOrient)
         if (newOrient == "vertical") {
-          this.set({orient : "vertical"})
+          this.set({ orient: "vertical" })
         }
-        else if(newOrient == "horizontal"){
-          this.set({orient : "horizontal"})
+        else if (newOrient == "horizontal") {
+          this.set({ orient: "horizontal" })
         }
-        this.addAttributes({'orient': this.get("orient") });
+        this.addAttributes({ 'orient': this.get("orient") });
       },
-      changeInvert(){
+      changeInvert() {
         console.log("Invert Changed in Component: ", this)
         var newInvert = this.get('invert')
       },
@@ -190,7 +168,6 @@ function oscar_slider(editor, options) {
         }
         return (false)
       }
-
     },
       // The second argument of .extend are static methods and we'll put inside our
       // isComponent() method. As you're putting a new Component type on top of the stack,
@@ -219,23 +196,19 @@ function oscar_slider(editor, options) {
       },
 
       changeValue: function (e) {
-        console.log("e:", e);
-        console.log("This: ", this);
         var message = this.model.get("message");
         var invert = this.model.get("invert");
         var inputValue = parseFloat(this.el.value);
         var finalValue;
         var ip = this.model.get("ip");
         var port = this.model.get("port");
-        if(!invert){
+        if (!invert) {
           finalValue = inputValue;
-        }else{
+        } else {
           finalValue = parseFloat(this.model.get("max")) - inputValue + parseFloat(this.model.get("min"))
         }
-        console.log("Value: ", finalValue);
-        this.model.set({value : finalValue})
+        this.model.set({ value: finalValue })
         editor.socket.emit('message', editor.ip, ip, port, message, "f", parseFloat(finalValue));
-  
       },
       // The render() should return 'this'
       render: function () {
@@ -245,31 +218,6 @@ function oscar_slider(editor, options) {
       },
     }),
   });
-
-  function updateSliderType(server){
-    comps.addType('input', {
-      // You can update the isComponent logic or leave the one from `some-component`
-      // isComponent: (el) => false,
-    
-      // Update the model, if you need
-      model: {
-        // The `defaults` property is handled differently
-        // and will be merged with the old `defaults`
-        defaults: {
-          ip: server
-          // tagName: '...', // Overrides the old one
-          // someNewProp: 'Hello', // Add new property
-        },
-        init() {
-          // Ovverride `init` function in `some-component`
-        }
-      },
-    
-      // Update the view, if you need
-      view: {},
-    });
-    console.log("Input Type Updated")
-  }
 
   //Slider finished
   editor.BlockManager.add('slider', {
