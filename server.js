@@ -114,6 +114,7 @@ app.get('/ipserver', function (req, res) {
 // app.listen(8080, config.ip, function () {	
 // })
 app.listen(process.env.HTTPPORT, function () {
+	console.log("Open any browser connected to the same network on: ", "http://"+serverIP+":"+process.env.HTTPPORT)
 })
 
 

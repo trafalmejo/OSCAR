@@ -274,6 +274,6 @@ function initGrape() {
     el.setAttribute('title', '');
   }
   // Show borders by default
-  pn.getButton('options', 'sw-visibility').set('active', 1);
+  //pn.getButton('options', 'sw-visibility').set('active', 1);
 
 }
