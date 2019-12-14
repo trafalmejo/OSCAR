@@ -25,7 +25,8 @@
       "public/**/*"
     ],
     "targets": [
-      "node12"
+      "node12-macos",
+      "node12-win"
     ]
   },
   "keywords": [
@@ -45,15 +46,11 @@
     "grapesjs": "0.x"
   },
   "devDependencies": {
-    "concurrently": "^5.0.1",
-    "electron": "5.0.1",
-    "electron-builder": "^20.39.0",
-    "electron-packager": "^14.1.1",
-    "electron-rebuild": "^1.8.8"
+    "concurrently": "^5.0.1"
   },
   "build": {
-    "appId": "yourappid",
-    "category": "your.app.category.type",
+    "appId": "oscar",
+    "category": "oscar",
     "dmg": {
       "contents": [
         {
@@ -82,7 +79,6 @@
   "dependencies": {
     "body-parser": "^1.19.0",
     "cors": "^2.8.5",
-    "dotenv": "^8.2.0",
     "express": "^4.17.1",
     "grapesjs": "^0.15.9",
     "grapesjs-aviary": "^0.1.2",
@@ -95,9 +91,10 @@
     "grapesjs-plugin-forms": "^0.3.6",
     "grapesjs-touch": "^0.1.1",
     "ip": "^1.1.5",
-    "node-gyp": "^6.0.1",
     "nodemon": "^1.19.4",
+    "open": "^7.0.0",
     "osc": "^2.3.1",
+    "pkg": "^4.4.1",
     "socket.io": "^2.3.0"
   }
 }

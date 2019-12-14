@@ -151,6 +151,7 @@ function oscar_button(editor, options) {
         if (this.model.get("toggle")) {
           if (this.model.get("value")) {
             this.model.addClass("toggle");
+            editor.socket.emit('message', editor.ip, ip, port, message, "f", this.model.get("max"));
           } else {
             this.model.removeClass("toggle");
             editor.socket.emit('message', editor.ip, ip, port, message, "f", 0.000);
