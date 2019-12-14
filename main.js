@@ -14,21 +14,21 @@ function createWindow() {
     //width: 800,
     //height: 600,
     webPreferences: {
-      //preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: true,
-      nodeIntegrationInWorker: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true
     }
   })
+
+  app.commandLine.appendSwitch('host-rules', 'MAP * 127.0.0.1');
+
   mainWindow.maximize();
   mainWindow.setMenu(null)
-
-
   // and load the index.html of the app.
   //mainWindow.loadFile('public/index.html')
-  mainWindow.loadURL('http://localhost:8080/');
+  mainWindow.loadURL('http://127.0.0.1:8080');
+
   // Open the DevTools.
   // mainWindow.webContents.openDevTools()
-
   // Emitted when the window is closed.
   mainWindow.on('closed', function () {
     // Dereference the window object, usually you would store windows
@@ -62,3 +62,10 @@ app.on('activate', function () {
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
+
+
+app.on('certificate-error', function(event, webContents, url, error, 
+  certificate, callback) {
+      event.preventDefault();
+      callback(true);
+});

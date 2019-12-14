@@ -1,21 +1,32 @@
 {
   "name": "oscar",
   "productName": "OSCAR",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
-  "main": "main.js",
+  "main": "server.js",
+  "bin": "server.js",
   "scripts": {
+    "rebuild": "electron-rebuild -f -w osc",
     "watchify": "watchify --debug ./public/libraries/oscar_preview.js ./public/libraries/oscar_editor.js -o ./public/libraries/bundle.js -v",
     "browserify": "browserify --debug ./public/libraries/oscar_preview.js ./public/libraries/oscar_editor.js -o ./public/libraries/bundle.js",
     "start": "npm i && npm rebuild && concurrently \"npm run watchify\" \"nodemon ./server.js\"",
     "electron": "npm run browserify && electron-rebuild -f -w serialport && electron .",
     "package-mac": "electron-packager . --overwrite --platform=darwin --arch=x64 --icon=assets/css/icon.icns --prune=true --out=release-builds",
-    "package-win": "electron-packager . OSCAR --overwrite --asar=true --platform=win32 --arch=ia32 --icon=assets/css/icon.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE --version-string.ProductName=\"CryptoApp\"",
-    "package-linux": "electron-packager . OSCAR --overwrite --asar=true --platform=linux --arch=x64 --icon=assets/css/icon.png --prune=true --out=release-builds"
+    "package-win32": "electron-packager . OSCAR --overwrite --asar=true --platform=win32 --arch=ia32 --icon=assets/css/icon.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE --version-string.ProductName=\"CryptoApp\"",
+    "package-linux": "electron-packager . OSCAR --overwrite --asar=true --platform=linux --arch=x64 --icon=assets/css/icon.png --prune=true --out=release-builds",
+    "build-prod": "pkg server.js"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/trafalmejo/OSCAR"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*"
+    ],
+    "targets": [
+      "node12"
+    ]
   },
   "keywords": [
     "grapesjs",
@@ -34,12 +45,11 @@
     "grapesjs": "0.x"
   },
   "devDependencies": {
-    "concurrently": "^5.0.0",
-    "electron": "^5.0.0",
+    "concurrently": "^5.0.1",
+    "electron": "5.0.1",
     "electron-builder": "^20.39.0",
-    "electron-packager": "^13.1.1",
-    "electron-rebuild": "^1.8.8",
-    "node-sass": "^4.8.3"
+    "electron-packager": "^14.1.1",
+    "electron-rebuild": "^1.8.8"
   },
   "build": {
     "appId": "yourappid",
@@ -74,7 +84,6 @@
     "cors": "^2.8.5",
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
-    "fs": "0.0.1-security",
     "grapesjs": "^0.15.9",
     "grapesjs-aviary": "^0.1.2",
     "grapesjs-blocks-basic": "^0.1.8",
@@ -86,10 +95,9 @@
     "grapesjs-plugin-forms": "^0.3.6",
     "grapesjs-touch": "^0.1.1",
     "ip": "^1.1.5",
+    "node-gyp": "^6.0.1",
     "nodemon": "^1.19.4",
-    "os": "^0.1.1",
     "osc": "^2.3.1",
-    "serialport": "^8.0.5",
     "socket.io": "^2.3.0"
   }
 }
