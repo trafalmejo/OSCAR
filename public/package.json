@@ -9,7 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "address": "^1.1.2",
     "binternalip": "^1.0.4",
     "bootstrap": "^4.3.1",
     "grapesjs": "^0.15.8",
@@ -27,9 +26,6 @@
     "grapesjs-touch": "^0.1.1",
     "ip": "^1.1.5",
     "jquery": "^3.4.1",
-    "os": "^0.1.1",
-    "osc": "^2.3.1",
-    "popper": "^1.0.1",
     "popper.js": "^1.16.0",
     "socket.io": "^2.3.0"
   },

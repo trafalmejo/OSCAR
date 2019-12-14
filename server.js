@@ -2,20 +2,23 @@
 //import '/dist/css/grapes.min.css';
 // If you need plugins, put them below the main grapesjs script
 // import 'grapesjs-some-plugin';
-const dotenv = require('dotenv');
-dotenv.config();
+const socketport = 8081;
+const httpport = 8080;
+const lanport = 5001;
+const localport = 5002;
+const open = require('open');
 var express = require('express')
 var app = express()
 var cors = require('cors')
 var bodyParser = require('body-parser')
 var osc = require('osc');
 //BRIDGE Between Client and Server
-var io = require('socket.io')(process.env.SOCKETPORT);
+var io = require('socket.io')(socketport);
 var ipLibrary = require('ip');
 var serverIP = ipLibrary.address() // my ip address
 
-
-app.use(cors({ credentials: true, origin: 'http://localhost:' + process.env.HTTPPORT }));
+//app.use(cors())
+app.use(cors({ credentials: true, origin: 'http://localhost:' + httpport }));
 app.use(express.static(__dirname + '/public'));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -28,7 +31,7 @@ var isConnected = [];
 
 var udpPortGlobal = new osc.UDPPort({
 	localAddress: serverIP,
-	localPort: process.env.LOCALPORT,
+	localPort: localport,
 	metadata: true,
 });
 udpPortGlobal.open()
@@ -37,7 +40,7 @@ udpPortGlobal.open()
 //Localhost
 var udpPortLocal = new osc.UDPPort({
 	localAddress: "localhost",
-	localPort: process.env.LANPORT,
+	localPort: lanport,
 	metadata: true,
 });
 udpPortLocal.open()
@@ -113,8 +116,10 @@ app.get('/ipserver', function (req, res) {
 })
 // app.listen(8080, config.ip, function () {	
 // })
-app.listen(process.env.HTTPPORT, function () {
-	console.log("Open any browser connected to the same network on: ", "http://"+serverIP+":"+process.env.HTTPPORT)
+app.listen(httpport, function () {
+	console.log("Open any browser connected to the same network on: ", "http://"+serverIP+":"+httpport)
+	open("http://"+serverIP+":"+httpport);
+
 })
 
 
