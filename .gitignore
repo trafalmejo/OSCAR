@@ -2,3 +2,5 @@ node_modules
 release-builds
 .env
 certificates
+oscar-macos
+oscar-win.exe
