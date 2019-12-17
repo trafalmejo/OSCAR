@@ -1,10 +1,6 @@
 node_modules
 release-builds
 .env
-<<<<<<< HEAD
 certificates
 oscar-macos
 oscar-win.exe
-=======
-certificates
->>>>>>> f256bac2844c302a3137ef3f48d48c3937c27590
