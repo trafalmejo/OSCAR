@@ -1,4 +1,5 @@
-node_modules
+.gitignore
+node_modules/
 release-builds
 .env
 certificates
