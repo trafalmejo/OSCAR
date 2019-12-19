@@ -4,3 +4,4 @@ release-builds
 certificates
 oscar-macos
 oscar-win.exe
+.DS_Store

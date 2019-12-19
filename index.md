@@ -5,8 +5,9 @@ We are still under construction and this is a quick <a href="https://www.youtube
 
 ### Please [Sign Up](https://forms.gle/1pGiDJDh3jur8Tq68) in the newsletter to keep you posted about the next release and send it to you.
 
-<figure class="video_container">
-  <iframe src="https://www.youtube.com/embed/qzUnwvPMT2k" width="100%" frameborder="0" allowfullscreen="true"> </iframe>
+<figure class="video_container" style="position:relative;padding-top:56.25%;">
+  <iframe src="https://www.youtube.com/embed/qzUnwvPMT2k" width="100%" frameborder="0" allowfullscreen="true" style="position:absolute;top:0;left:0;width:100%;height:100%;"> 
+  </iframe>
 </figure>
 
 ## App Setup
