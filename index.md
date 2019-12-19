@@ -3,15 +3,11 @@ Let's create beautiful, responsive and touchable interfaces.
 
 We are still under construction and this is a quick <a href="https://www.youtube.com/watch?v=ZcW8zBWRLf0" target="_blank">VIDEO</a> DEMO of what the tool is currently able to do, but is up to you to support with feedback, documentation, suggestions, bugs detection to create a better tool.
 
-<figure class="video_container">
-  <iframe src="https://www.youtube.com/embed/qzUnwvPMT2k" width="100%" frameborder="0" allowfullscreen="true" height="500"> </iframe>
-</figure>
-
-
 ### Please [Sign Up](https://forms.gle/1pGiDJDh3jur8Tq68) in the newsletter to keep you posted about the next release and send it to you.
 
-<iframe src="https://docs.google.com/forms/d/e/1FAIpQLSdVnwJ9l5JzyjN2PP9OrZx5by7lDniyIJPSCUpp-5EfKDMrsQ/viewform?embedded=true" width="640" height="1628" frameborder="0" marginheight="0" marginwidth="0">Loading...</iframe>
-
+<figure class="video_container">
+  <iframe src="https://www.youtube.com/embed/qzUnwvPMT2k" width="100%" frameborder="0" allowfullscreen="true"> </iframe>
+</figure>
 
 ## App Setup
 
@@ -28,6 +24,10 @@ If you want to use this implementation for your own purposes try the following s
 ## Tutorials
 
   1. Youtube Channel [OSCAR](https://www.youtube.com/channel/UCyIxOoajn_4Nj8Mjz2k-3qA)
+
+## Newsletter
+
+  1. Please [Sign Up](https://forms.gle/1pGiDJDh3jur8Tq68) in the newsletter to keep you posted about the next release and send it to you.
 
 ## Download
 
