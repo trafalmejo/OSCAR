@@ -2,7 +2,7 @@
 
 # OSCAR - [Web Version](https://trafalmejo.github.io/OSCAR/)
 
-OSCAR is a tool to create beautiful graphic user interaces (GUIs) to send OSC messages and control interactive installations (Resolume arena, Touch Designer, Ableton, Processing, PD, UNITY, Unreal, etc).
+OSCAR is a tool to create beautiful graphic user interaces (GUIs) to send OSC messages and control interactive installations ([Resolume arena](https://resolume.com/), [TouchDesigner](https://derivative.ca/), [Ableton Live](https://www.ableton.com/), [Processing](https://processing.org/), [Pure Data](https://puredata.info/), [Unity](https://unity.com/), [Unreal Engine](https://www.unrealengine.com/en-US/), etc).
 Let's create beautiful, responsive and touchable interfaces.
 
 We are still under construction and this is a quick <a href="https://www.youtube.com/watch?v=ZcW8zBWRLf0" target="_blank">VIDEO</a> DEMO of what the tool is currently able to do, but is up to you to support with feedback, documentation, suggestions, bugs detection to create a better tool.
@@ -15,7 +15,7 @@ alt="OSCAR tool to create GIUS to control interactive installations" width="1200
 
 ## App Setup
 
-Created with node.js/express. Main libraries: Grapesjs, socket.io.js, pkg.
+Created with [Node.js](https://nodejs.org/en/)/[Express](https://expressjs.com/). Main libraries: Grapesjs, socket.io.js, pkg.
 
 If you want to use this implementation for your own purposes try the following steps:
 
@@ -23,7 +23,7 @@ If you want to use this implementation for your own purposes try the following s
   2. Go into the folder you just download
   3. run `npm start`
   4. run `node server.js`
-  5. Open a browser on `http://localhost:8080/` (Preferibly Google Chrome)
+  5. Open a browser on `http://localhost:8080/` (Preferably Google Chrome)
 
 ## Tutorials
 
