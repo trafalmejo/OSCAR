@@ -8,7 +8,7 @@ defaults:
       path: ""
     values:
       image:
-        path: /assets/css/social-preview.png
+        path: /assets/css/social-preview.jpg
         height: 630
         width: 1200
 github:
