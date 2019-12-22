@@ -3,6 +3,7 @@ description: OSCAR is a tool to create beautiful, responsive Graphical User Inte
 show_downloads: true
 google_analytics: UA-138608012-1
 theme: jekyll-theme-cayman
+image: /assets/css/social-preview.jpg
 twitter:
   username: trafalmejo
 defaults:
