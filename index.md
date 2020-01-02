@@ -1,5 +1,7 @@
-OSCAR is a tool to create beautiful graphic user interaces (GUIs) to send OSC messages and control interactive installations ([Modul8](https://www.garagecube.com/modul8/), [MapMapper](https://madmapper.com/), [Resolume arena](https://resolume.com/), [TouchDesigner](https://derivative.ca/), [Ableton Live](https://www.ableton.com/), [Processing](https://processing.org/), [Pure Data](https://puredata.info/), [Unity](https://unity.com/), [Unreal Engine](https://www.unrealengine.com/en-US/), etc).
+OSCAR is a tool to create beautiful graphical user interaces (GUIs) to send OSC messages and control interactive installations ([Modul8](https://www.garagecube.com/modul8/), [MapMapper](https://madmapper.com/), [Resolume arena](https://resolume.com/), [TouchDesigner](https://derivative.ca/), [Ableton Live](https://www.ableton.com/), [Processing](https://processing.org/), [Pure Data](https://puredata.info/), [Unity](https://unity.com/), [Unreal Engine](https://www.unrealengine.com/en-US/), etc).
 Let's create beautiful, responsive and touchable interfaces.
+
+We released a first version of OSCAR and we're happy to share. Please [DOWNLOAD OSCAR](https://github.com/trafalmejo/OSCAR/releases) and give us your opinion at [hellooscarosc@gmail.com](mailto:hellooscarosc@gmail.com)
 
 We are still under construction and this is a quick <a href="https://www.youtube.com/watch?v=ZcW8zBWRLf0" target="_blank">VIDEO</a> DEMO of what the tool is currently able to do, but is up to you to support with feedback, documentation, suggestions, bugs detection to create a better tool.
 
