@@ -103,6 +103,7 @@ function initGrape() {
       'gjs-preset-webpage': {
         blocks: [],
         formsOpts: false,
+        exportOpts: false,
         navbarOpts: false,
         countdownOpts: false,
         showStylesOnChange: true,
@@ -195,8 +196,70 @@ function initGrape() {
     })
   });
 
+    // Save Panel Button
+    var mdlClass = 'gjs-mdl-dialog-sm';
+    var saveContainer = document.getElementById('save-panel');
+    commands.add('open-save', function () {
+      var mdlDialog = document.querySelector('.gjs-mdl-dialog');
+      mdlDialog.className += ' ' + mdlClass;
+      saveContainer.style.display = 'block';
+      modal.setTitle('Save Design');
+      modal.setContent(saveContainer);
+      modal.open();
+      modal.getModel().once('change:open', function () {
+        mdlDialog.className = mdlDialog.className.replace(mdlClass, '');
+      })
+    });
 
-  //
+        // Load Panel Button
+        var mdlClass = 'gjs-mdl-dialog-sm';
+        var loadContainer = document.getElementById('load-panel');
+        commands.add('open-load', function () {
+          var mdlDialog = document.querySelector('.gjs-mdl-dialog');
+          mdlDialog.className += ' ' + mdlClass;
+          loadContainer.style.display = 'block';
+          modal.setTitle('Load Design');
+          modal.setContent(loadContainer);
+          modal.open();
+          modal.getModel().once('change:open', function () {
+            mdlDialog.className = mdlDialog.className.replace(mdlClass, '');
+          })
+        });
+
+  //Add Save Panel Button
+  pn.addButton('options', {
+    id: 'open-save',
+    className: 'fa fa-cloud-upload',
+    command: function () { editor.runCommand('open-save') },
+    attributes: {
+      'title': 'Save',
+      'data-tooltip-pos': 'bottom',
+    },
+  });
+    //Add Load Panel Button
+    pn.addButton('options', {
+      id: 'open-load',
+      className: 'fa fa-cloud-download',
+      command: function () { editor.runCommand('open-load') },
+      attributes: {
+        'title': 'Load',
+        'data-tooltip-pos': 'bottom',
+      },
+    });
+      //Icon session is connected
+    //Add Connection Button
+    pn.addButton('options', {
+      id: 'connection',
+      className: 'fa fa-circle',
+      active: true,
+      disable: true,
+      command: null,
+      attributes: {
+        'title': 'Connection',
+        'data-tooltip-pos': 'bottom',
+      },
+    });
+  //Add About Button
   pn.addButton('options', {
     id: 'open-info',
     className: 'fa fa-question-circle',
@@ -206,6 +269,20 @@ function initGrape() {
       'data-tooltip-pos': 'bottom',
     },
   });
+
+    // Save Button
+    var saveButton = document.getElementById('save-button');
+    saveButton.onclick = ()=>{
+
+      console.log('save clicked')
+      var res = editor.store(res => console.log('Store callback'));
+        console.log('promise delivered'),
+        console.log(res)
+
+    };
+    // Load Button
+    var loadButton = document.getElementById('load-button');
+    loadButton.onclick = ()=>{console.log('load clicked')};
 
   //Create IP Label
   var ipButton = pn.addButton('devices-c', {
@@ -254,7 +331,7 @@ function initGrape() {
   const panelManager = editor.Panels;
   // Add and beautify tooltips
   [['sw-visibility', 'Show Borders'], ['preview', 'Preview'], ['fullscreen', 'Fullscreen'],
-  ['export-template', 'Export'], ['undo', 'Undo'], ['redo', 'Redo'],
+  ['export-template', 'See Code'], ['undo', 'Undo'], ['redo', 'Redo'],
   ['gjs-open-import-webpage', 'Import'], ['canvas-clear', 'Clear canvas']]
     .forEach(function (item) {
       pn.getButton('options', item[0]).set('attributes', { title: item[1], 'data-tooltip-pos': 'bottom' });

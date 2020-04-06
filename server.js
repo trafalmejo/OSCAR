@@ -9,6 +9,7 @@ const localport = 5002;
 const open = require('open');
 var express = require('express')
 var app = express()
+const mongoose = require('mongoose')
 var cors = require('cors')
 var bodyParser = require('body-parser')
 var osc = require('osc');
@@ -16,6 +17,17 @@ var osc = require('osc');
 var io = require('socket.io')(socketport);
 var ipLibrary = require('ip');
 var serverIP = ipLibrary.address() // my ip address
+
+//DB
+const db = require("./config/keys").MongoURI;
+
+//Connect to Mongo
+mongoose.connect(db, { useNewUrlParser: true })
+.then(()=> console.log('MongoDB Connected'))
+.catch(err => console.log(err));
+
+//User model
+const OscarFile = require('./models/OscarFile')
 
 //app.use(cors())
 app.use(cors({ credentials: true, origin: 'http://localhost:' + httpport }));
@@ -98,8 +110,50 @@ io.sockets.on('connection', function (socket) {
 })
 
 //SERVER
-app.post('/store', function (req, res) {
-	store = req.body;
+// app.post('/store', function (req, res) {
+// 	store = req.body;
+// })
+// Register Handle
+app.post('/store', (req, res) => {
+
+	//
+	console.log('saving')
+	console.log()
+	const name  = 'test1';
+	const content = 'content';
+
+	//const content = req.body;
+    let errors = [];
+
+    //Check required fields
+    if(!name || !content ){
+        errors.push({ msg: "Data is incomplete"});
+    }
+    if(errors.length > 0){
+		console.log('Data is incomplete')
+        res.render('save', {
+            errors
+        });
+    }else{
+        //Validation passed
+        OscarFile.findOne({ name: name})
+        .then(file => {
+            if(file){
+                //User exists
+                errors.push({msg: "There is a file with the same name"})
+                res.render('save', {
+                    errors
+                });
+            }else{
+				console.log('content print')
+				console.log(content)
+                const newFile = new OscarFile({
+					name,
+					content,				})
+				newFile.save()
+            }
+        });
+    }
 })
 app.get('/load', function (req, res) {
 	res.send(store);
@@ -119,7 +173,6 @@ app.get('/ipserver', function (req, res) {
 app.listen(httpport, function () {
 	console.log("Open any browser connected to the same network on: ", "http://"+serverIP+":"+httpport)
 	open("http://"+serverIP+":"+httpport);
-
 })
 
 

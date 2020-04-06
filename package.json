@@ -91,10 +91,12 @@
     "grapesjs-plugin-forms": "^0.3.6",
     "grapesjs-touch": "^0.1.1",
     "ip": "^1.1.5",
+    "mongoose": "^5.9.7",
     "nodemon": "^1.19.4",
     "open": "^7.0.0",
     "osc": "^2.3.1",
     "pkg": "^4.4.1",
-    "socket.io": "^2.3.0"
+    "socket.io": "^2.3.0",
+    "watchify": "^3.11.1"
   }
 }
