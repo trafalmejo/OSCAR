@@ -7,8 +7,8 @@
   "bin": "server.js",
   "scripts": {
     "rebuild": "electron-rebuild -f -w osc",
-    "watchify": "watchify --debug ./public/libraries/oscar_preview.js ./public/libraries/oscar_editor.js -o ./public/libraries/bundle.js -v",
-    "browserify": "browserify --debug ./public/libraries/oscar_preview.js ./public/libraries/oscar_editor.js -o ./public/libraries/bundle.js",
+    "watchify": "watchify --debug ./public/src/oscar_preview.js ./public/src/oscar_editor.js -o ./public/src/bundle.js -v",
+    "browserify": "browserify --debug ./public/src/oscar_preview.js ./public/src/oscar_editor.js -o ./public/src/bundle.js",
     "start": "npm i && cd ./public && npm i && cd .. && npm rebuild && concurrently \"npm run watchify\" \"nodemon ./server.js\"",
     "electron": "npm run browserify && electron-rebuild -f -w serialport && electron .",
     "package-mac": "electron-packager . --overwrite --platform=darwin --arch=x64 --icon=assets/css/icon.icns --prune=true --out=release-builds",
@@ -77,9 +77,16 @@
     }
   },
   "dependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-preset-react-app": "^3.1.2",
+    "bcryptjs": "^2.4.3",
     "body-parser": "^1.19.0",
+    "bson": "^4.0.4",
     "cors": "^2.8.5",
+    "ejs": "^3.0.2",
     "express": "^4.17.1",
+    "express-ejs-layouts": "^2.5.0",
+    "express-session": "^1.17.0",
     "grapesjs": "^0.15.9",
     "grapesjs-aviary": "^0.1.2",
     "grapesjs-blocks-basic": "^0.1.8",
@@ -95,6 +102,8 @@
     "nodemon": "^1.19.4",
     "open": "^7.0.0",
     "osc": "^2.3.1",
+    "passport": "^0.4.1",
+    "passport-local": "^1.0.0",
     "pkg": "^4.4.1",
     "socket.io": "^2.3.0",
     "watchify": "^3.11.1"

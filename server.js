@@ -17,7 +17,14 @@ var osc = require('osc');
 var io = require('socket.io')(socketport);
 var ipLibrary = require('ip');
 var serverIP = ipLibrary.address() // my ip address
+var path = require('path');
+const passport = require('passport')
+const session = require('express-session')
+var BSON = require("bson");
 
+
+//Passport config
+require('./config/passport')(passport);
 //DB
 const db = require("./config/keys").MongoURI;
 
@@ -29,11 +36,27 @@ mongoose.connect(db, { useNewUrlParser: true })
 //User model
 const OscarFile = require('./models/OscarFile')
 
+//EJS
+app.set('views', path.join(__dirname, '/public'));
+app.set('view engine', 'ejs')
+
+
+
 //app.use(cors())
 app.use(cors({ credentials: true, origin: 'http://localhost:' + httpport }));
 app.use(express.static(__dirname + '/public'));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+
+//Express Session
+app.use(session({
+    secret: 'oscarsecret',
+    resave: true,
+    saveUninitialized: true,
+  }))
+//After session it goes Passport Middleware
+app.use(passport.initialize());
+app.use(passport.session());
 
 var code;
 var store = {};
@@ -109,20 +132,19 @@ io.sockets.on('connection', function (socket) {
 	});
 })
 
-//SERVER
-// app.post('/store', function (req, res) {
-// 	store = req.body;
-// })
+
+//User Global
+app.get('*', function(req, res, next){
+    res.locals.user = req.user || null;
+    next();
+});
 // Register Handle
 app.post('/store', (req, res) => {
+	
+	const name  = req.body.name;
+	const content = req.body;
+	const size =  BSON.calculateObjectSize(content);
 
-	//
-	console.log('saving')
-	console.log()
-	const name  = 'test1';
-	const content = 'content';
-
-	//const content = req.body;
     let errors = [];
 
     //Check required fields
@@ -138,25 +160,38 @@ app.post('/store', (req, res) => {
         //Validation passed
         OscarFile.findOne({ name: name})
         .then(file => {
-            if(file){
-                //User exists
-                errors.push({msg: "There is a file with the same name"})
-                res.render('save', {
-                    errors
-                });
-            }else{
-				console.log('content print')
-				console.log(content)
+            // if(file){
+            //     //User exists
+            //     errors.push({msg: "There is a file with the same name"})
+            //     res.render('save', {
+            //         errors
+            //     });
+            // }else{
                 const newFile = new OscarFile({
 					name,
-					content,				})
+					content,
+					size				})
 				newFile.save()
-            }
+            //}
         });
     }
 })
-app.get('/load', function (req, res) {
-	res.send(store);
+app.get('/load/:name', function (req, res) {
+	console.log(req.params.name)
+	OscarFile.findOne({ name: req.params.name})
+	.then(file => {
+		if(file){
+			//User exists
+			console.log('file exists')
+			res.send(file.content);
+		}
+	});
+})
+app.get('/', function (req, res) {
+	res.render('index');
+})
+app.get('/loggedin', function (req, res) {
+	res.locals.user?res.send(true):res.send(false)
 })
 app.get('/preview', function (req, res) {
 	res.sendfile(__dirname + '/public/preview.html');
@@ -168,8 +203,47 @@ app.get('/dom', function (req, res) {
 app.get('/ipserver', function (req, res) {
 	res.send(serverIP)
 })
-// app.listen(8080, config.ip, function () {	
-// })
+
+//Login Handle
+app.post('/login', function(req, res, next) {
+	console.log('logginin')
+    let errors = [];
+    const { email, password} = req.body;
+        //Check required fields
+        if(!email || !password){
+            errors.push({ msg: "Please fill in all fields"});
+            res.render('login', {
+                errors
+            });
+        }else{
+    passport.authenticate('local', function(err, user, info) {
+      if (err) { return next(err); }
+      if (!user) { 
+        req.flash('error_msg', 'Credentials are Incorrect')  
+        return res.redirect('/users/login'); }
+      req.logIn(user, function(err) {
+        if (err) { 
+			console.log(err)
+            //req.flash('error_msg', 'Credentials are Incorrect')  
+            return next(err); 
+			}
+			console.log("si")
+		return res.send({});
+      });
+    })(req, res, next);
+}
+  });
+//LogIn Handle
+app.get('/login', (req, res) =>{
+	res.render('index');
+})
+//LogOut Handle
+app.get('/logout', (req, res) =>{
+    req.logout();
+	res.send({})
+})
+
+
 app.listen(httpport, function () {
 	console.log("Open any browser connected to the same network on: ", "http://"+serverIP+":"+httpport)
 	open("http://"+serverIP+":"+httpport);

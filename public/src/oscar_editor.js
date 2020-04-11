@@ -24,7 +24,6 @@ function initGrape() {
     allowScripts: 1,
     canvas: { styles: ['assets/css/toggle.css'] },
     panels: {
-
     },
     assetManager: {
       assets: [
@@ -73,8 +72,9 @@ function initGrape() {
       stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
       urlStore: 'http://' + ipServer + ':8080/store',
       urlLoad: 'http://' + ipServer + ':8080/load',
-      //autosave: true,         // Store data automatically
-      //autoload: true,         // Autoload stored data on init
+      autosave: false,         // Store data automatically
+      autoload: false,         // Autoload stored data on init
+      contentTypeJson: true,
       // For custom parameters/headers on requests
       // params: { _some_token: '....' },
       // headers: { Authorization: 'Basic ...' }, 
@@ -148,7 +148,7 @@ function initGrape() {
   //Turn OFF editable mode on Preview
   editor.on('run:preview', () => {
     // Execute a callback on all inner components starting from the root
-    var res = editor.store(res => console.log('Store callback'));
+    //var res = editor.store(res => console.log('Store callback'));
     editor.DomComponents.getWrapper().onAll(comp =>
       comp.set({ editable: false, draggable: false })
     );
@@ -181,108 +181,158 @@ function initGrape() {
   var modal = editor.Modal;
   var commands = editor.Commands;
 
-  // About OSCAR
-  var mdlClass = 'gjs-mdl-dialog-sm';
-  var infoContainer = document.getElementById('info-panel');
-  commands.add('open-info', function () {
+  //Set General MODAL
+  function setModal(title, namecontainer, buttonclicked) {
+    var mdlClass = 'gjs-mdl-dialog-sm';
+    var container = document.getElementById(namecontainer);
     var mdlDialog = document.querySelector('.gjs-mdl-dialog');
     mdlDialog.className += ' ' + mdlClass;
-    infoContainer.style.display = 'block';
-    modal.setTitle('About this demo');
-    modal.setContent(infoContainer);
+    container.style.display = 'block';
+    modal.setTitle(title);
+    modal.from = buttonclicked;
+    modal.setContent(container);
     modal.open();
     modal.getModel().once('change:open', function () {
       mdlDialog.className = mdlDialog.className.replace(mdlClass, '');
     })
+  }
+
+  //FORM LogginIn
+  $('#login_button').click(function () {
+    console.log("pressed")
+    var email = $('#email').val();
+    var password = $('#password').val();
+    $.ajax({
+      type: "POST",
+      url: "/login",
+      data: { email: email, password: password },
+      dataType: 'html'
+    })
+      .done(function (result) {
+        isloggedIn(modal.from +"")
+      });
   });
 
-    // Save Panel Button
-    var mdlClass = 'gjs-mdl-dialog-sm';
-    var saveContainer = document.getElementById('save-panel');
-    commands.add('open-save', function () {
-      var mdlDialog = document.querySelector('.gjs-mdl-dialog');
-      mdlDialog.className += ' ' + mdlClass;
-      saveContainer.style.display = 'block';
-      modal.setTitle('Save Design');
-      modal.setContent(saveContainer);
-      modal.open();
-      modal.getModel().once('change:open', function () {
-        mdlDialog.className = mdlDialog.className.replace(mdlClass, '');
-      })
-    });
+  //FORM LogginOut
+  $('#logout-button-load, #logout-button-save').click(function () {
+    $.ajax({
+      type: "GET",
+      url: "/logout",
+      dataType: 'html'
+    })
+      .done(function (result) {
+        //setModal('Login', 'login-panel')
+        modal.close();
 
-        // Load Panel Button
-        var mdlClass = 'gjs-mdl-dialog-sm';
-        var loadContainer = document.getElementById('load-panel');
-        commands.add('open-load', function () {
-          var mdlDialog = document.querySelector('.gjs-mdl-dialog');
-          mdlDialog.className += ' ' + mdlClass;
-          loadContainer.style.display = 'block';
-          modal.setTitle('Load Design');
-          modal.setContent(loadContainer);
-          modal.open();
-          modal.getModel().once('change:open', function () {
-            mdlDialog.className = mdlDialog.className.replace(mdlClass, '');
-          })
-        });
+      });
+  });
+
+  //Check If user is loggedIn
+  function isloggedIn(type) {
+    $.get("/loggedin", function (loggedin, status) {
+    })
+      .done(function (loggedin) {
+        //User is not loggedIn
+        if (!loggedin) {
+          setModal('Login', 'login-panel', type)
+        }
+        //User is loggedIn
+        else {
+          if (type == "save") {
+            setModal('Save', 'save-panel')
+          }
+          else if (type == "load") {
+            setModal('Load', 'load-panel')
+          }
+        }
+      });
+  }
+
+
+  // Open Modal Command
+  var mdlClass = 'gjs-mdl-dialog-sm';
+  commands.add('open-modal-login', (editor, sender, options = {}) => {
+    //console.log(options.type)
+    if (options.type) {
+      isloggedIn(options.type)
+    }
+    var mdlDialog = document.querySelector('.gjs-mdl-dialog');
+    mdlDialog.className += ' ' + mdlClass;
+    modal.open();
+    modal.getModel().once('change:open', function () {
+      mdlDialog.className = mdlDialog.className.replace(mdlClass, '');
+    })
+  }
+
+  );
 
   //Add Save Panel Button
   pn.addButton('options', {
     id: 'open-save',
     className: 'fa fa-cloud-upload',
-    command: function () { editor.runCommand('open-save') },
+    command: function () {
+      editor.runCommand('open-modal-login', { type: "save" })
+    },
     attributes: {
       'title': 'Save',
       'data-tooltip-pos': 'bottom',
     },
   });
-    //Add Load Panel Button
-    pn.addButton('options', {
-      id: 'open-load',
-      className: 'fa fa-cloud-download',
-      command: function () { editor.runCommand('open-load') },
-      attributes: {
-        'title': 'Load',
-        'data-tooltip-pos': 'bottom',
-      },
-    });
-      //Icon session is connected
-    //Add Connection Button
-    pn.addButton('options', {
-      id: 'connection',
-      className: 'fa fa-circle',
-      active: true,
-      disable: true,
-      command: null,
-      attributes: {
-        'title': 'Connection',
-        'data-tooltip-pos': 'bottom',
-      },
-    });
+  //Add Load Panel Button
+  pn.addButton('options', {
+    id: 'open-load',
+    className: 'fa fa-cloud-download',
+    command: function () {
+      editor.runCommand('open-modal-login', { type: "load" })
+    },
+    attributes: {
+      'title': 'Load',
+      'data-tooltip-pos': 'bottom',
+    },
+  });
   //Add About Button
   pn.addButton('options', {
     id: 'open-info',
     className: 'fa fa-question-circle',
-    command: function () { editor.runCommand('open-info') },
+    command: function () {
+      setModal('About', 'info-panel')
+      editor.runCommand('open-modal-login')
+    },
     attributes: {
       'title': 'About',
       'data-tooltip-pos': 'bottom',
     },
   });
 
-    // Save Button
-    var saveButton = document.getElementById('save-button');
-    saveButton.onclick = ()=>{
+  editor.on('run:open-modal-login', function () {
+    console.log("MODAL OPENED")
 
-      console.log('save clicked')
-      var res = editor.store(res => console.log('Store callback'));
-        console.log('promise delivered'),
-        console.log(res)
-
-    };
-    // Load Button
-    var loadButton = document.getElementById('load-button');
-    loadButton.onclick = ()=>{console.log('load clicked')};
+  });
+  //Save and Load
+  const RemoteStorage = editor.StorageManager.get('remote');
+  // Save Action
+  var saveName = document.getElementById('save-name');
+  var saveButton = document.getElementById('save-button');
+  saveButton.onclick = () => {
+    RemoteStorage.set('params', { name: saveName.value })
+    editor.store(res => console.log('Saved'));
+  };
+  // Load Action
+  var loadName = document.getElementById('load-name');
+  var loadButton = document.getElementById('load-button');
+  loadButton.onclick = () => {
+    console.log(loadName.value)
+    RemoteStorage.set({ urlLoad: 'http://' + ipServer + ':8080/load/' + loadName.value })
+    editor.load();
+    // fetch('http://' + ipServer + ':8080/load/'+loadName.value)
+    //   .then((response) => {
+    //     return response.json();
+    //   })
+    //   .then((data) => {
+    //     //console.log(data);
+    //     editor.load(data)
+    //   });
+  };
 
   //Create IP Label
   var ipButton = pn.addButton('devices-c', {

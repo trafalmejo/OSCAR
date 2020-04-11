@@ -5,7 +5,11 @@ const oscarSchema = new mongoose.Schema({
         required: true
     },
     content: {
-        type: String,
+        type: mongoose.Schema.Types.Mixed,
+        required: true
+    },
+    size: {
+        type: Number,
         required: true
     },
     date: {
