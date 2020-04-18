@@ -1,0 +1,30 @@
+<div id="table-panel" style="display:none">
+    <div class="table-panel-label ">
+        <div class="container-fluid text-center">
+            <div class="bg-light rounded p-1">
+            <!-- Begin Page Content -->
+            <!-- DataTales Example -->
+            <table id="projects-table" class="table table-borderless rounded" style="width:100%">
+                <!-- <thead>
+                    <tr>
+                        <th data-field="name">Name</th>
+                        <th data-field="size">Size</th>
+                        <th data-field="date">Date</th>
+                    </tr>
+                </thead>
+                <tbody class="table-body">
+                </tbody> -->
+            </table>
+        </div>
+                <div class="d-flex mt-2 mb-2">
+                    <input id="project-name" class="form-control mr-1" type="text" placeholder="Name of the project"
+                        name="name" required>
+                    <%- include('save') %>
+                    <%- include('load') %>
+                </div>
+
+            <a id='logout-button' class="info-panel-link gjs-four-color logout-button" href="#">Log Out</a>
+        </div>
+        <!-- /.container-fluid -->
+    </div>
+</div>

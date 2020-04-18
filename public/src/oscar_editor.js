@@ -1,6 +1,8 @@
-window.$ = window.jQuery = require('jquery');
+window.$ = $ = window.jQuery = require('jquery');
+var bootst = require('bootstrap')
+require('bootstrap-table')
+
 var localIPpromise = require('binternalip');
-//var localIPpromise = require('./webRTC.js');
 var ipLibrary = require('ip');
 var editor;
 var ipServer = "localhost";
@@ -9,14 +11,11 @@ $.get("/ipserver", function (data, status) {
   ipServer = data;
   console.log('/ipserver answered: ', data)
   initGrape();
-  //editor as a variable of global Scope
   window.editor = editor;
-  //alert("Data: " + data + "\nStatus: " + status);
 });
 
 function initGrape() {
   editor = grapesjs.init({
-    // domComponents: { storeWrapper: 1 },
     dragMode: 'absolute',
     height: '100%',
     container: '#gjs',
@@ -56,36 +55,21 @@ function initGrape() {
         },
       ],
     },
-    //Just draw on set of style options
     styleManager: {},
-    // Configurations for Block Manager
     blockManager: {},
     traitManager: {
     },
     //Persistance
     // Default configurations
     storageManager: {
-      id: 'gjs-',             // Prefix identifier that will be used on parameters
-      //type: 'local',          // Type of the storage
-      //type: null,          // Type of the storage
-      type: 'remote',          // Type of the storage
-      stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
-      urlStore: 'http://' + ipServer + ':8080/store',
-      urlLoad: 'http://' + ipServer + ':8080/load',
-      autosave: false,         // Store data automatically
-      autoload: false,         // Autoload stored data on init
-      contentTypeJson: true,
-      // For custom parameters/headers on requests
-      // params: { _some_token: '....' },
-      // headers: { Authorization: 'Basic ...' }, 
-      // //Enable/Disable components model (JSON format)
-      //storeComponents: 1,
-      // //Enable/Disable styles model (JSON format)
-      // storeStyles: 1,
-      // //Enable/Disable saving HTML template
-      // storeHtml: 1,
-      // //Enable/Disable saving CSS template
-      // storeCss: 1,
+    id: 'gjs-',             // Prefix identifier that will be used on parameters
+    //type: 'local',          // Type of the storage
+    //type: null,          // Type of the storage
+    type: 'local',          // Type of the storage
+    stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+    autosave: true,         // Store data automatically
+    autoload: true,         // Autoload stored data on init
+    contentTypeJson: true,
     },
     // TO READ: this plugin loads default blocks
     plugins: ['oscar_socket', 'oscar_ip', 'oscar_button', 'oscar_slider', 'gjs-preset-webpage', 'grapesjs-custom-code', 'grapesjs-parser-postcss', 'grapesjs-touch', 'grapesjs-tooltip'],
@@ -115,8 +99,9 @@ function initGrape() {
       },
     }
   });
-  //END EDITOR INIT
 
+
+  //END EDITOR INIT
 
   //EVENT WHEN THE EDITOR IS LOADED
   editor.on('load', function (edit) {
@@ -183,7 +168,7 @@ function initGrape() {
 
   //Set General MODAL
   function setModal(title, namecontainer, buttonclicked) {
-    var mdlClass = 'gjs-mdl-dialog-sm';
+    var mdlClass = 'modal-login';
     var container = document.getElementById(namecontainer);
     var mdlDialog = document.querySelector('.gjs-mdl-dialog');
     mdlDialog.className += ' ' + mdlClass;
@@ -198,8 +183,9 @@ function initGrape() {
   }
 
   //FORM LogginIn
-  $('#login_button').click(function () {
-    console.log("pressed")
+  $('#login_button').click(function (e) {
+    e.preventDefault();
+    $('#login-messages-div').hide()
     var email = $('#email').val();
     var password = $('#password').val();
     $.ajax({
@@ -209,21 +195,24 @@ function initGrape() {
       dataType: 'html'
     })
       .done(function (result) {
-        isloggedIn(modal.from +"")
+        var msg = JSON.parse(result)
+        if (typeof msg.error != 'undefined') {
+          $('#login-messages').html(msg.error)
+          $('#login-messages-div').show()
+        }
+        isloggedIn(modal.from + "")
       });
   });
 
   //FORM LogginOut
-  $('#logout-button-load, #logout-button-save').click(function () {
+  $('.logout-button').click(function () {
     $.ajax({
       type: "GET",
       url: "/logout",
       dataType: 'html'
     })
       .done(function (result) {
-        //setModal('Login', 'login-panel')
         modal.close();
-
       });
   });
 
@@ -237,25 +226,109 @@ function initGrape() {
           setModal('Login', 'login-panel', type)
         }
         //User is loggedIn
+        //got to save or load
         else {
-          if (type == "save") {
-            setModal('Save', 'save-panel')
-          }
-          else if (type == "load") {
-            setModal('Load', 'load-panel')
+          setModal(type, 'table-panel')
+          updateProjects()
+          if (type == "Save") {
+            $('#load-button').hide()
+            $('#save-button').show()
+          } else if (type == "Load") {
+            $('#load-button').show()
+            $('#save-button').hide()
           }
         }
       });
+  }
+  //Check for projects
+  function updateProjects() {
+    $('#projects-table').bootstrapTable({
+      url: "/projects",
+      height: 300,
+      columns: [{
+        title: 'Name',
+        field: 'name',
+        sortable: true,
+      },
+      {
+        title: 'Size',
+        field: 'size',
+        sortable: true,
+      },
+      {
+        title: 'Date',
+        field: 'date',
+        sortable: true,
+      },
+      {
+        title: 'Actions',
+        field: 'action',
+        clickToSelect: false,
+        events: window.operateEvents,
+        formatter: operateFormatter
+      }],
+      pagination: false,
+      search: false,
+      sortable: true,
+      pageSize: 5,
+      pageList: [],
+      clickToSelect: true,
+      singleSelect: true,
+      onClickRow: function (row, $element) {
+        $('#project-name').val(row.name)
+        // row: the record corresponding to the clicked row, 
+        // $element: the tr element.
+      }
+    })
+    $('#projects-table').bootstrapTable('refresh')
+  }
+  window.operateEvents = {
+    'click .like': function (e, value, row, index) {
+      alert('You click like action, row: ' + JSON.stringify(row))
+    },
+    'click .remove': function (e, value, row, index) {
+      //delete 
+      $.confirm({
+        title: 'Delete Project',
+        content: "Are you sure you want to delete this project. You won't be able to recover it afterwards",
+        buttons: {
+          confirm: function () {
+            $.ajax({
+              type: 'DELETE',
+              url: '/remove/' + row.name,
+              success: function (data) {
+                $('#projects-table').bootstrapTable('refresh')
+              },
+              error: function (err) {
+                console.log("error");
+                console.log(err);
+              }
+            });
+          },
+          cancel: function () {
+          },
+        }
+      });
+    }
+  }
+
+  function operateFormatter(value, row, index) {
+    return [
+      '<a class="remove icon" href="javascript:void(0)" title="Remove">',
+      '<i class="fa fa-times-circle"></i>',
+      '</a>'
+    ].join('')
   }
 
 
   // Open Modal Command
   var mdlClass = 'gjs-mdl-dialog-sm';
   commands.add('open-modal-login', (editor, sender, options = {}) => {
-    //console.log(options.type)
+    //If it is save or load check if it is logged In
     if (options.type) {
       isloggedIn(options.type)
     }
+    $('#login-messages-div').hide()
     var mdlDialog = document.querySelector('.gjs-mdl-dialog');
     mdlDialog.className += ' ' + mdlClass;
     modal.open();
@@ -271,7 +344,7 @@ function initGrape() {
     id: 'open-save',
     className: 'fa fa-cloud-upload',
     command: function () {
-      editor.runCommand('open-modal-login', { type: "save" })
+      editor.runCommand('open-modal-login', { type: "Save" })
     },
     attributes: {
       'title': 'Save',
@@ -283,7 +356,7 @@ function initGrape() {
     id: 'open-load',
     className: 'fa fa-cloud-download',
     command: function () {
-      editor.runCommand('open-modal-login', { type: "load" })
+      editor.runCommand('open-modal-login', { type: "Load" })
     },
     attributes: {
       'title': 'Load',
@@ -308,30 +381,88 @@ function initGrape() {
     console.log("MODAL OPENED")
 
   });
+
+  const RemoteStorage = editor.StorageManager.get('remote')
+  .set({
+    id: 'gjs-',             // Prefix identifier that will be used on parameters
+    //type: 'local',          // Type of the storage
+    //type: null,          // Type of the storage
+    type: 'remote',          // Type of the storage
+    stepsBeforeSave: 1,     // If autosave enabled, indicates how many changes are necessary before store method is triggered
+    urlStore: 'http://' + ipServer + ':8080/save',
+    urlLoad: 'http://' + ipServer + ':8080/load',
+    autosave: false,         // Store data automatically
+    autoload: false,         // Autoload stored data on init
+    contentTypeJson: true,
+  });
+
+
+  //ADD STORAGE
+  console.log('components', editor.getComponents())
   //Save and Load
-  const RemoteStorage = editor.StorageManager.get('remote');
+  const LocalStorage = editor.StorageManager.get('local')
+  console.log('storages', editor.StorageManager.getStorages())
+
   // Save Action
-  var saveName = document.getElementById('save-name');
+  var saveName = document.getElementById('project-name');
   var saveButton = document.getElementById('save-button');
+  let stored
   saveButton.onclick = () => {
-    RemoteStorage.set('params', { name: saveName.value })
-    editor.store(res => console.log('Saved'));
+    //sets the nanem of the project as parameter.
+    editor.StorageManager.setCurrent('remote')
+    RemoteStorage.set('params', { name: saveName.value, overwrite: false })
+    stored = editor.store((res) => {
+      console.log('res', res)
+      if (typeof res.errors != 'undefined') {
+        $.confirm({
+          title: 'Error',
+          content: res.errors,
+          buttons: {
+            confirm: function () {
+              RemoteStorage.set('params', { name: saveName.value, overwrite: true })
+              editor.store((e) => { $.alert(e.msg) })
+              modal.close()
+            },
+            cancel: function () {
+            },
+          }
+        });
+      } else {
+        $.alert(res.msg)
+        modal.close()
+      }
+      editor.StorageManager.setCurrent('local')
+    });
   };
   // Load Action
-  var loadName = document.getElementById('load-name');
+  var loadName = document.getElementById('project-name');
   var loadButton = document.getElementById('load-button');
   loadButton.onclick = () => {
-    console.log(loadName.value)
-    RemoteStorage.set({ urlLoad: 'http://' + ipServer + ':8080/load/' + loadName.value })
-    editor.load();
-    // fetch('http://' + ipServer + ':8080/load/'+loadName.value)
-    //   .then((response) => {
-    //     return response.json();
-    //   })
-    //   .then((data) => {
-    //     //console.log(data);
-    //     editor.load(data)
-    //   });
+    $.confirm({
+      title: 'Load',
+      content: 'If you load this project, you will lose all information of your current project',
+      buttons: {
+        confirm: function () {
+          editor.runCommand('core:canvas-clear');
+          RemoteStorage.set({ urlLoad: 'http://' + ipServer + ':8080/load/' + loadName.value })
+          editor.StorageManager.setCurrent('remote')
+          editor.load((res) => {
+            if (Object.keys(res).length === 0) {
+              $.alert("Project doesn't exist");
+            } else {
+              console.log('loaded', res)
+              $.alert('Loaded Successfully');
+              modal.close()
+            }
+            editor.StorageManager.setCurrent('local')
+          });
+
+
+        },
+        cancel: function () {
+        },
+      }
+    });
   };
 
   //Create IP Label
@@ -404,3 +535,7 @@ function initGrape() {
   //pn.getButton('options', 'sw-visibility').set('active', 1);
 
 }
+
+
+
+

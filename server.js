@@ -20,8 +20,9 @@ var serverIP = ipLibrary.address() // my ip address
 var path = require('path');
 const passport = require('passport')
 const session = require('express-session')
-var BSON = require("bson");
-
+const auth = require('./config/auth')
+const flash = require('connect-flash')
+var cookieParser = require('cookie-parser');
 
 //Passport config
 require('./config/passport')(passport);
@@ -30,8 +31,8 @@ const db = require("./config/keys").MongoURI;
 
 //Connect to Mongo
 mongoose.connect(db, { useNewUrlParser: true })
-.then(()=> console.log('MongoDB Connected'))
-.catch(err => console.log(err));
+	.then(() => console.log('MongoDB Connected'))
+	.catch(err => console.log(err));
 
 //User model
 const OscarFile = require('./models/OscarFile')
@@ -48,21 +49,32 @@ app.use(express.static(__dirname + '/public'));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+
+app.use(cookieParser('secret'));
+
 //Express Session
 app.use(session({
-    secret: 'oscarsecret',
-    resave: true,
-    saveUninitialized: true,
-  }))
+	cookie: { maxAge: 60000 },
+	secret: 'oscarsecret',
+	resave: true,
+	saveUninitialized: true,
+}))
 //After session it goes Passport Middleware
 app.use(passport.initialize());
 app.use(passport.session());
 
+ // Connect Flash
+ app.use(flash());
+
+ //Global Vars
+ app.use(function(req, res, next){
+    res.locals.success_msg = req.flash('success_msg')
+    res.locals.error_msg = req.flash('error_msg')
+    res.locals.error = req.flash('error')
+    next()
+ })
+
 var code;
-var store = {};
-//Connection between Server and App to be controlled
-var oscConnections = [];
-var isConnected = [];
 
 var udpPortGlobal = new osc.UDPPort({
 	localAddress: serverIP,
@@ -132,121 +144,44 @@ io.sockets.on('connection', function (socket) {
 	});
 })
 
+ //local variables
+ app.locals.projects = [{ name: "", size: 0, date: {} }]
+ app.locals.user = null
+ 
 
 //User Global
-app.get('*', function(req, res, next){
-    res.locals.user = req.user || null;
-    next();
+app.get('*', function (req, res, next) {
+	res.locals.user = req.user || null;
+	next();
 });
-// Register Handle
-app.post('/store', (req, res) => {
-	
-	const name  = req.body.name;
-	const content = req.body;
-	const size =  BSON.calculateObjectSize(content);
+app.get('/test', (req, res) => {
+	req.flash('error_msg', 'falashasdasfafs')
+	res.render('test')
+})
+//Projects
+app.get('/projects', auth.ensureAuthenticated, (req, res) => {
+	let projects = [];
 
-    let errors = [];
-
-    //Check required fields
-    if(!name || !content ){
-        errors.push({ msg: "Data is incomplete"});
-    }
-    if(errors.length > 0){
-		console.log('Data is incomplete')
-        res.render('save', {
-            errors
-        });
-    }else{
-        //Validation passed
-        OscarFile.findOne({ name: name})
-        .then(file => {
-            // if(file){
-            //     //User exists
-            //     errors.push({msg: "There is a file with the same name"})
-            //     res.render('save', {
-            //         errors
-            //     });
-            // }else{
-                const newFile = new OscarFile({
-					name,
-					content,
-					size				})
-				newFile.save()
-            //}
-        });
-    }
-})
-app.get('/load/:name', function (req, res) {
-	console.log(req.params.name)
-	OscarFile.findOne({ name: req.params.name})
-	.then(file => {
-		if(file){
-			//User exists
-			console.log('file exists')
-			res.send(file.content);
-		}
-	});
-})
-app.get('/', function (req, res) {
-	res.render('index');
-})
-app.get('/loggedin', function (req, res) {
-	res.locals.user?res.send(true):res.send(false)
-})
-app.get('/preview', function (req, res) {
-	res.sendfile(__dirname + '/public/preview.html');
-})
-app.get('/dom', function (req, res) {
-	console.log("Requesting DOM", code)
-	res.send(code)
-})
-app.get('/ipserver', function (req, res) {
-	res.send(serverIP)
-})
-
-//Login Handle
-app.post('/login', function(req, res, next) {
-	console.log('logginin')
-    let errors = [];
-    const { email, password} = req.body;
-        //Check required fields
-        if(!email || !password){
-            errors.push({ msg: "Please fill in all fields"});
-            res.render('login', {
-                errors
-            });
-        }else{
-    passport.authenticate('local', function(err, user, info) {
-      if (err) { return next(err); }
-      if (!user) { 
-        req.flash('error_msg', 'Credentials are Incorrect')  
-        return res.redirect('/users/login'); }
-      req.logIn(user, function(err) {
-        if (err) { 
-			console.log(err)
-            //req.flash('error_msg', 'Credentials are Incorrect')  
-            return next(err); 
+	//Obtain projects
+	OscarFile.find({})
+		.then(file => {
+			if (file) {
+				//file exists
+				projects = file;
+				app.locals.projects = projects
+				//send data
+				res.json(projects)
 			}
-			console.log("si")
-		return res.send({});
-      });
-    })(req, res, next);
+		});
 }
-  });
-//LogIn Handle
-app.get('/login', (req, res) =>{
-	res.render('index');
-})
-//LogOut Handle
-app.get('/logout', (req, res) =>{
-    req.logout();
-	res.send({})
-})
+)
 
+//Routes
+app.use('/', require('./routes/index'))
 
 app.listen(httpport, function () {
-	console.log("Open any browser connected to the same network on: ", "http://"+serverIP+":"+httpport)
-	open("http://"+serverIP+":"+httpport);
+	console.log("Open any browser connected to the same network on: ", "http://" + serverIP + ":" + httpport)
+	open("http://" + serverIP + ":" + httpport);
 })
 
 

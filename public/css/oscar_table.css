@@ -1,0 +1,16 @@
+
+  th {
+    background-color: #FF3663;
+    color: white;
+  }
+  .page-link {
+    position: relative;
+    display: block;
+    padding: .5rem .75rem;
+    margin-left: -1px;
+    line-height: 1.25;
+    color: white;
+}
+.icon{
+  color: #FF3663;
+}

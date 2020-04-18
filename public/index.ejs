@@ -1,6 +1,5 @@
 <!doctype html>
 <html lang="en">
-
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
@@ -11,7 +10,15 @@
 	<link href="css/oscar_colors.css" rel="stylesheet">
 	<link href="css/oscar_tooltip.css" rel="stylesheet">
 	<link href="css/oscar_login.css" rel="stylesheet">
+	<link href="css/oscar_table.css" rel="stylesheet">
+	<link href="css/oscar_messages.css" rel="stylesheet">
+	<link rel="stylesheet" href="node_modules/jquery-confirm/dist/jquery-confirm.min.css">
+	<script src="node_modules/jquery/dist/jquery.min.js"></script>
+	<script src="node_modules/bootstrap/dist/js/bootstrap.min.js" type="text/javascript"></script>
+	<link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+	<link rel="stylesheet" href="https://unpkg.com/bootstrap-table@1.16.0/dist/bootstrap-table.min.css">
 	<script src="node_modules/socket.io-client/dist/socket.io.js" type="text/javascript"></script>
+
 	<!-- 	<script src="//feather.aviary.com/imaging/v3/editor.js"></script>
 -->
 	<!-- <script src="https://static.filestackapi.com/v3/filestack-0.1.10.js"></script> -->
@@ -30,31 +37,21 @@
 <body>
 	<div id="gjs" style="height:0px; overflow:hidden;">
 	</div>
-	<% if(user){ %>
-	<% } %>
 	<%- include('partials/login') %>
-	<%- include('partials/save') %>
-	<%- include('partials/load') %>
+	<%- include('partials/table') %>
 	<%- include('partials/about') %>
-
-
-
-	<!-- Load React. -->
-	<!-- Note: when deploying, replace "development.js" with "production.min.js". -->
-	<script src="https://unpkg.com/react@16/umd/react.development.js" crossorigin></script>
-	<script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js" crossorigin></script>
-	<!-- Load our React component. -->
-	<script src="src/login.js"></script>
+	<%- include('partials/confirm') %>
 
 	<!-- Bootstrap need jquery, popper and bootstrap.js -->
 	<script src="node_modules/popper.js/dist/umd/popper.min.js"></script>
-	<script src="node_modules/jquery/dist/jquery.min.js"></script>
 	<script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
 	<script src="src/oscar_socket.js"></script>
 	<script src="src/oscar_ip.js"></script>
 	<script src="src/oscar_slider.js"></script>
 	<script src="src/oscar_button.js"></script>
 	<script src="src/bundle.js"></script>
+	<script src="node_modules/jquery-confirm/dist/jquery-confirm.min.js"></script>
+	<script src="https://unpkg.com/bootstrap-table@1.16.0/dist/bootstrap-table.min.js"></script>
 
 </body>
 

@@ -1,15 +1,15 @@
 <div id="login-panel" style="display:none">
-  <div class="login-panel-label">
-    <!-- <form action="login" method="post"> -->
-    <div class="container">
-      <label for="uname"><b>Email</b></label>
-      <input id="email" type="text" placeholder="Enter Email" name="email" required>
-      <label for="psw"><b>Password</b></label>
-      <input id="password" type="password" placeholder="Enter Password" name="password" required>
-      <button id="login_button" type="button">Login</button>
+  <div class="login-panel-label text-center">
+    <form class="form-signin" action="login" method="post">
+      <%- include('messages') %>
+      <img class="mb-4" src="../images/oscar-circle.png" alt="" width="72" height="72">
+      <label for="inputEmail" class="sr-only mb-2">Email address</label>
+      <input type="email" id="email" class="form-control mb-2" name="email" placeholder="Email address" required="" autofocus="">
+      <label for="inputPassword" class="sr-only mb-2">Password</label>
+      <input type="password" id="password" class="form-control mb-2" name="password" placeholder="Password" required="">
+      <button id="login_button" class="btn btn-lg btn-block btn-secondary btn-gradient" type="submit">Log in</button>
       <span class="psw"></span><a class="info-panel-link gjs-four-color" target="_blank"
-        href="https://trafalmejo.github.io/OSCAR">Forgot password?</a> </span>
-    </div>
-    <!-- </form>  -->
+      href="https://trafalmejo.github.io/OSCAR">Forgot password?</a> </span>
+    </form>
   </div>
 </div>

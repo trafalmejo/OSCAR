@@ -11,7 +11,10 @@
   "dependencies": {
     "binternalip": "^1.0.4",
     "bootstrap": "^4.3.1",
-    "grapesjs": "^0.15.8",
+    "bootstrap-table": "^1.16.0",
+    "datatables.net": "^1.10.20",
+    "datatables.net-bs": "^1.10.20",
+    "grapesjs": "^0.16.3",
     "grapesjs-aviary": "^0.1.2",
     "grapesjs-blocks-basic": "^0.1.7",
     "grapesjs-component-countdown": "^0.1.2",
@@ -26,6 +29,7 @@
     "grapesjs-touch": "^0.1.1",
     "ip": "^1.1.5",
     "jquery": "^3.4.1",
+    "jquery-confirm": "^3.3.4",
     "popper.js": "^1.16.0",
     "socket.io": "^2.3.0"
   },
