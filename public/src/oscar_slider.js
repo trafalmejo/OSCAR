@@ -229,3 +229,4 @@ function oscar_slider(editor, options) {
 
 }
 
+

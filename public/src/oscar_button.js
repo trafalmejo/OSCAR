@@ -192,4 +192,3 @@ function oscar_button(editor, options) {
     }
   })
 }
-

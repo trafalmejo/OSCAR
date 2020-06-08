@@ -1,159 +1,157 @@
-const express = require('express')
+const express = require("express");
 const router = express.Router();
-const auth = require('../config/auth')
+const auth = require("../middleware/auth");
 var BSON = require("bson");
-const bcrypt = require('bcryptjs')
-const passport = require('passport')
-var ipLibrary = require('ip');
-var serverIP = ipLibrary.address() // my ip address
-
-//User model
-const OscarFile = require('../models/OscarFile')
+const bcrypt = require("bcryptjs");
+const passport = require("passport");
+var ipLibrary = require("ip");
+var serverIP = ipLibrary.address(); // my ip address
+const axios = require("axios");
+require("dotenv/config");
 
 // Register Handle
-router.post('/save', (req, res) => {
-	//console.log('received data: ', req.body)
-	const name = req.body.name;
-	const overwrite = req.body.overwrite;
-	const content = req.body;
-	const size = BSON.calculateObjectSize(content);
-	let errors = [];
-	//Check required fields
-	if (!name || !content || !size) {
-		res.json({msg:'Data is incomplete. Be sure you pick a name for your project'})
-	}
-	else {
-		//Validation passed
-		OscarFile.findOne({ name: name })
-			.then(file => {
-				if (file) {
-					if (overwrite) {
-						//File is gonna be overwrite
-						let oscarnewfile = {}
-						oscarnewfile.name = name;
-						oscarnewfile.content = content;
-						oscarnewfile.size = size;
+router.post("/save", auth, (req, res) => {
+  const name = req.body.name;
+  const content = req.body;
+  const size = BSON.calculateObjectSize(content);
+  req.body.author = req.user.id;
+  //console.log(req.user);
+  //console.log("savee");
+  //console.log(req.body);
 
-						let query = { _id:file._id }
-						OscarFile.update(query, oscarnewfile, function (err) {
-							if (err) {
-								console.log(err)
-								return;
-							}
-							else {
-								res.json({msg:'Saved sucessfully'})
-							}
-						})
-					} else {
-						res.json({ errors: "There is a file with the same name, Do you want to overwrite?" });
-					}
-				} else {
-					const newFile = new OscarFile({
-						name,
-						content,
-						size
-					})
-					//console.log('new file')
-					newFile.save()
-					res.json({ msg: "Saved Successfully" });
-				}
-			});
-	}
-})
-router.get('/load/:name', function (req, res) {
-	//console.log(req.params.name)
-	OscarFile.findOne({ name: req.params.name })
-		.then(file => {
-			if (file) {
-				//User exists
-				res.send(file.content);
-			}
-		});
-})
-router.get('/', function (req, res) {
-	res.render('index');
-})
-router.get('/loggedin', function (req, res) {
-	res.locals.user ? res.send(true) : res.send(false)
-})
-router.get('/preview', function (req, res) {
-	res.sendfile(__dirname + '/public/preview.html');
-})
-router.get('/dom', function (req, res) {
-	console.log("Requesting DOM", code)
-	res.send(code)
-})
-router.get('/ipserver', function (req, res) {
-	res.send(serverIP)
-})
-
-//Login Handle
-router.post('/login', function (req, res, next) {
-	let errors = [];
-	const { email, password } = req.body;
-	//Check required fields
-	if (!email || !password) {
-		errors.push({ msg: "Please fill in all fields" });
-		res.json({ error: "Please fill the fields" });
-	} else {
-		passport.authenticate('local', function (err, user, info) {
-			if (err) { return next(err); }
-			if (!user) {
-				req.flash('error_msg', 'Credentials are Incorrect')
-				return res.json({ error: "Credentials are Incorrect" });
-				//return res.redirect('index');
-			}
-			req.logIn(user, function (err) {
-				if (err) {
-					req.flash('error_msg', 'Credentials are Incorrect')
-					res.json({ error: "Credentials are Incorrect" });
-					return next(err);
-				}
-				return res.send({});
-			});
-		})(req, res, next);
-	}
+  //Check required fields
+  if (!name || !content || !size) {
+    res.json({
+      error: "Data is incomplete. Be sure you pick a name for your project",
+    });
+  } else {
+    axios
+      .post(
+        process.env.serverURL + "api/projects",
+        req.body,
+        tokenConfig(req.headers["x_auth_token"])
+      )
+      .then((response) => {
+        console.log("saving...");
+        console.log(response.data);
+        if (response.data.msg) {
+          res.json({ msg: response.data.msg });
+        } else if (response.data.confirm) {
+          res.json({ confirm: response.data.confirm });
+        }
+        //res.json({ msg: "Saved sucessfully" });
+      })
+      .catch((err) => {
+        console.log("saving error...");
+        console.log(err);
+        res.json({ error: "Could not be saved" });
+      });
+  }
+});
+router.get("/load/:name", auth, function (req, res) {
+  console.log("load triguered");
+  //console.log(req);
+  if (!req.params.name) {
+    res.json({
+      error: "Data is incomplete. Be sure you pick a name for your project",
+    });
+  } else {
+    axios
+      .post(
+        process.env.serverURL + "api/projects/" + req.params.name,
+        tokenConfig(req.headers["x_auth_token"])
+      )
+      .then((data) => {
+        console.log("loading...");
+        //console.log(data);
+        res.send(data.data);
+      })
+      .catch((err) => {
+        console.log("loading error...");
+        //console.log(err);
+        res.json({ error: "Could not be loaded" });
+      });
+  }
+});
+router.get("/", function (req, res) {
+  res.render("index");
+});
+router.get("/upgrade", function (req, res) {
+  res.json({ success: true });
 });
 
-router.delete('/remove/:id', function(req,res){
-    if(!req.user._id){
-        res.status(500).send();
-	}
-	console.log(req.params.id)
-    let query = {name:req.params.id}
-    // OscarFile.findById(req.params.name, function(err, article){
-        // if(article.author != ReadableStream.user._id){
-        //     res.status(500).send()
-        // }
-        // else{
-        //     res.send('Success')
-        // }
-	// })
-	console.log(query.name)
-    OscarFile.remove(query, function(err){
-        if(err){
-            console.log(err)
-        }
-        else{
-        }
-        res.json({msg:'Projected deleted'});
+router.get("/dom", function (req, res) {
+  console.log("Requesting DOM", code);
+  res.send(code);
+});
+router.get("/ipserver", function (req, res) {
+  res.send(serverIP);
+});
+router.get("/preview", function (req, res) {
+  //res.sendfile(__dirname + '/public/preview.html');
+  res.render("preview");
+});
 
+router.delete("/remove/:id", auth, function (req, res) {
+  console.log("requesting deleting");
+  if (!req.user.id) {
+    res.status(500).send();
+  } else {
+    axios
+      .delete(
+        process.env.serverURL + "api/projects/" + req.params.id,
+        req.body,
+        tokenConfig(req.headers["x_auth_token"])
+      )
+      .then((response) => {
+        console.log("deleting...");
+        //console.log(response);
+        res.json({ msg: response.data.msg });
+      })
+      .catch((err) => {
+        console.log("deleting error...");
+        console.log(err);
+        res.json({ error: "Could not be deleted" });
+      });
+  }
+});
+
+//Projects
+router.get("/projects", (req, res) => {
+  console.log("token received by table");
+  console.log(req.headers["x_auth_token"]);
+  axios
+    .post(
+      process.env.serverURL + "api/projects/all",
+      tokenConfig(req.headers["x_auth_token"])
+    )
+    .then((response) => {
+      console.log("loading table...");
+      //console.log(response.data);
+      res.json(response.data);
+      //console.log(res);
+      //res.json({ msg: "Deleted sucessfully" });
     })
-})
+    .catch((err) => {
+      console.log("loading table error...");
+      console.log(err);
+      //res.json({ err: "Could not be deleted" });
+    });
+});
+const tokenConfig = (tokenp) => {
+  //Get Token from Local Storage
+  const token = tokenp;
+  //headers
+  const config = {
+    headers: {
+      "Content-type": "application/json",
+    },
+  };
+  //If tokem, add to headers
+  if (token) {
+    config.headers["x_auth_token"] = token;
+  }
+  return config;
+};
 
-//LogIn Handle
-router.get('/login', (req, res) => {
-	res.render('index');
-})
-//LogOut Handle
-router.get('/logout', (req, res) => {
-	req.logout();
-	res.send({})
-})
-
-
-
-
-
-
-module.exports = router
+module.exports = router;
