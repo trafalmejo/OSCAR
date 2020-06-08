@@ -1,0 +1,14 @@
+/* Modal Content/Box */
+
+.modal-login {
+  max-width: 600px; /* Could be more or less, depending on screen size */
+}
+
+.btn-gradient {
+  background-image: linear-gradient(to right, #ff623a 0%, #ff3663 100%);
+  margin: auto;
+  color: white;
+  display: inline-block;
+  text-align: center;
+  vertical-align: middle;
+}
