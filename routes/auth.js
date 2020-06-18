@@ -34,15 +34,18 @@ router.post("/", (req, res) => {
     .post(process.env.serverURL + "api/auth", body, config)
     .then((response) => {
       //console.log("login axios res");
-      //console.log(response.data);
+      console.log(response.data);
       res.json(response.data);
       //console.log(res);
     })
     .catch((err) => {
       //console.log("Error login");
-      //console.log(err);
-      res.status(400).json({ msg: "Check Your Internet Connection" });
-      //res.status(400).json({ msg: err.response.data.msg });
+      // console.log(err);
+      if (typeof err.response !== "undefined") {
+        return res.status(400).json({ msg: err.response.data.msg });
+      } else {
+        return res.status(400).json({ msg: "Check your Internet Connection" });
+      }
     });
 });
 

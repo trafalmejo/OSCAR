@@ -8,10 +8,11 @@ function auth(req, res, next) {
   //const token = req.headers;
   console.log("token");
   console.log(token);
+
   //console.log(token);
   //Check for token
   if (!token) {
-    console.log("no token");
+    //console.log("no token");
     return res.status(401).json({ msg: "Authorization denied" });
   }
 
@@ -22,8 +23,8 @@ function auth(req, res, next) {
     req.user = decoded;
     next();
   } catch (e) {
-    console.log("error token");
-    console.log(e);
+    //console.log("error token");
+    //console.log(e);
     res.status(400).json({ msg: "Request not valid" });
   }
 }

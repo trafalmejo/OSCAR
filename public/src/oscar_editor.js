@@ -4,7 +4,8 @@ require("bootstrap-table");
 
 var localIPpromise = require("binternalip");
 var ipLibrary = require("ip");
-var editor;
+var mongoose = require("mongoose");
+var editor = {};
 var ipServer = "localhost";
 
 $.get("/ipserver", function (data, status) {
@@ -127,10 +128,33 @@ function initGrape() {
     })
   );
 
+  //OPEN MODAL IF UPDATE
+  editor.on("load", () => {
+    $.ajax({
+      type: "POST",
+      url: "/update",
+    })
+      .done(function (result) {
+        console.log(result);
+        if (result.title) {
+          var mdlClass = "modal-login";
+          var mdlDialog = document.querySelector(".gjs-mdl-dialog");
+          mdlDialog.className += " " + mdlClass;
+          modal.setTitle(result.title);
+          modal.setContent(result.content);
+          modal.open();
+        }
+      })
+      .fail(function (jqXHR, textStatus) {
+        console.log(jqXHR);
+      });
+  });
+
   //Turn OFF editable mode on Preview
   editor.on("run:preview", () => {
     // Execute a callback on all inner components starting from the root
-    //var res = editor.store(res => console.log('Store callback'));
+    var res = editor.store((res) => console.log("Store callback"));
+    console.log(res);
     editor.DomComponents.getWrapper().onAll((comp) =>
       comp.set({
         editable: false,
@@ -139,8 +163,22 @@ function initGrape() {
     );
     const domComponents = editor.DomComponents;
     var code = domComponents.getComponents();
-    console.log("Components: ", code.models);
-    editor.socket.emit("code", code);
+    $.ajax({
+      type: "POST",
+      url: "/save/preview",
+      data: {
+        project: res,
+      },
+    })
+      .done(function (result) {
+        var msg = JSON.parse(result);
+        console.log(msg);
+      })
+      .fail(function (jqXHR, textStatus) {
+        console.log(jqXHR);
+      });
+    //console.log("Components: ", code.models);
+    //editor.socket.emit("code", code);
   });
 
   //Turn ON editable mode on Preview
@@ -183,6 +221,7 @@ function initGrape() {
   //FORM LogginIn
   $("#login_button").click(function (e) {
     e.preventDefault();
+    showLoader();
     $("#login-messages-div").hide();
     var email = $("#email").val();
     var password = $("#password").val();
@@ -196,11 +235,32 @@ function initGrape() {
       dataType: "html",
     })
       .done(function (result) {
+        hideLoader();
         var msg = JSON.parse(result);
+        console.log("token: ", msg.token);
         window.localStorage.setItem("token", msg.token);
+        console.log(
+          "token after loggin:",
+          window.localStorage.getItem("token")
+        );
         isloggedIn(modal.from + "");
+        RemoteStorage.set({
+          id: "gjs-", // Prefix identifier that will be used on parameters
+          //type: 'local',          // Type of the storage
+          //type: null,          // Type of the storage
+          type: "remote", // Type of the storage
+          stepsBeforeSave: 1, // If autosave enabled, indicates how many changes are necessary before store method is triggered
+          urlStore: "http://" + ipServer + ":8080/save",
+          urlLoad: "http://" + ipServer + ":8080/load",
+          autosave: false, // Store data automatically
+          autoload: false, // Autoload stored data on init
+          contentTypeJson: true,
+          params: { x_auth_token: msg.token },
+          headers: { x_auth_token: msg.token },
+        });
       })
       .fail(function (jqXHR, textStatus) {
+        hideLoader();
         window.localStorage.removeItem("token");
         var msg = JSON.parse(jqXHR.responseText);
         if (typeof msg.msg != "undefined") {
@@ -213,8 +273,22 @@ function initGrape() {
   //FORM LogginOut
   $(".logout-button").click(function () {
     console.log(editor.StorageManager.get("remote"));
-
     window.localStorage.removeItem("token");
+    console.log("token after logout:", window.localStorage.getItem("token"));
+    RemoteStorage.set({
+      id: "gjs-", // Prefix identifier that will be used on parameters
+      //type: 'local',          // Type of the storage
+      //type: null,          // Type of the storage
+      type: "remote", // Type of the storage
+      stepsBeforeSave: 1, // If autosave enabled, indicates how many changes are necessary before store method is triggered
+      urlStore: "http://" + ipServer + ":8080/save",
+      urlLoad: "http://" + ipServer + ":8080/load",
+      autosave: false, // Store data automatically
+      autoload: false, // Autoload stored data on init
+      contentTypeJson: true,
+      params: { x_auth_token: null },
+      headers: { x_auth_token: null },
+    });
     modal.close();
     console.log(editor.StorageManager.get("remote"));
     // $.ajax({
@@ -225,7 +299,18 @@ function initGrape() {
     //   modal.close();
     // });
   });
-
+  function showLoader() {
+    $("#login-form").hide();
+    $("#table-container").hide();
+    $("#loader").show();
+    $("#loader-table").show();
+  }
+  function hideLoader() {
+    $("#login-form").show();
+    $("#table-container").show();
+    $("#loader").hide();
+    $("#loader-table").hide();
+  }
   //Check If user is loggedIn
   function isloggedIn(type) {
     var isAutenthicated = false;
@@ -242,9 +327,10 @@ function initGrape() {
       success: function (data) {
         isAutenthicated = true;
         //console.log("success auth");
-        //console.info(data);
-        setModal(type, "table-panel");
+        console.info(data);
+        initTable();
         updateProjects();
+        setModal(type, "table-panel");
         if (type == "Save") {
           $("#load-button").hide();
           $("#save-button").show();
@@ -261,14 +347,13 @@ function initGrape() {
       },
     });
   }
-
-  //Check for projects
-  function updateProjects() {
+  function initTable() {
+    var token = window.localStorage.getItem("token");
     //Check error in projects Table
     $("#projects-table").bootstrapTable({
       url: "/projects",
       ajaxOptions: {
-        headers: { x_auth_token: window.localStorage.getItem("token") },
+        headers: { x_auth_token: token },
       },
       height: 300,
       columns: [
@@ -304,15 +389,27 @@ function initGrape() {
       singleSelect: true,
       onClickRow: function (row, $element) {
         $("#project-name").val(row.name);
+        $("#project-name").attr("id-project", row._id);
         // row: the record corresponding to the clicked row,
         // $element: the tr element.
       },
       onLoadError: function (status, jqXHR) {
-        alert(status);
+        //alert(status);
         console.log(jqXHR);
       },
     });
-    $("#projects-table").bootstrapTable("refresh");
+  }
+  //Check for projects
+  function updateProjects() {
+    var token = window.localStorage.getItem("token");
+    console.log("token in local storage:");
+    console.log(token);
+    $("#projects-table").bootstrapTable("refreshOptions", {
+      url: "/projects",
+      ajaxOptions: {
+        headers: { x_auth_token: token },
+      },
+    });
   }
   window.operateEvents = {
     "click .like": function (e, value, row, index) {
@@ -442,6 +539,7 @@ function initGrape() {
   var saveButton = document.getElementById("save-button");
   let stored;
   saveButton.onclick = () => {
+    showLoader();
     //sets the nanem of the project as parameter.
     editor.StorageManager.setCurrent("remote");
     RemoteStorage.set("params", {
@@ -450,6 +548,7 @@ function initGrape() {
       visibility: "private",
     });
     stored = editor.store((res) => {
+      hideLoader();
       editor.StorageManager.setCurrent("local");
       console.log("res", res);
       if (typeof res.error != "undefined") {
@@ -467,6 +566,7 @@ function initGrape() {
               });
               editor.StorageManager.setCurrent("remote");
               editor.store((e) => {
+                hideLoader();
                 editor.StorageManager.setCurrent("local");
                 if (typeof e.error != "undefined") {
                   $.alert(e.error);
@@ -475,7 +575,9 @@ function initGrape() {
               });
               modal.close();
             },
-            cancel: function () {},
+            cancel: function () {
+              hideLoader();
+            },
           },
         });
       } else {
@@ -487,7 +589,16 @@ function initGrape() {
   // Load Action
   var loadName = document.getElementById("project-name");
   var loadButton = document.getElementById("load-button");
+  $("#project-name").change(function () {
+    //alert("changed");
+    //mongoose.Types.ObjectId.isValid
+    if (mongoose.Types.ObjectId.isValid($("#project-name").val())) {
+      $("#project-name").attr("id-project", $("#project-name").val());
+    }
+  });
+
   loadButton.onclick = () => {
+    showLoader();
     $.confirm({
       title: "Load",
       content:
@@ -495,14 +606,19 @@ function initGrape() {
       buttons: {
         confirm: function () {
           RemoteStorage.set({
-            urlLoad: "http://" + ipServer + ":8080/load/" + loadName.value,
+            urlLoad:
+              "http://" +
+              ipServer +
+              ":8080/load/" +
+              loadName.getAttribute("id-project"),
           });
           editor.StorageManager.setCurrent("remote");
           editor.load((res) => {
+            hideLoader();
             console.log("res: " + res);
             if (Object.keys(res).length === 0) {
               //console.log("loaded: " + res);
-              $.alert("Project doesn't exist");
+              $.alert("Project doesn't exist or You are not Logged In");
             } else {
               //console.log('loaded', res)
               if (res.error) {
@@ -512,11 +628,12 @@ function initGrape() {
                 modal.close();
               }
             }
-
             editor.StorageManager.setCurrent("local");
           });
         },
-        cancel: function () {},
+        cancel: function () {
+          hideLoader();
+        },
       },
     });
   };

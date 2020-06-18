@@ -8,9 +8,11 @@ var ipLibrary = require("ip");
 var serverIP = ipLibrary.address(); // my ip address
 const axios = require("axios");
 require("dotenv/config");
+let preview;
 
 // Register Handle
 router.post("/save", auth, (req, res) => {
+  console.log("requesting saving");
   const name = req.body.name;
   const content = req.body;
   const size = BSON.calculateObjectSize(content);
@@ -48,17 +50,17 @@ router.post("/save", auth, (req, res) => {
       });
   }
 });
-router.get("/load/:name", auth, function (req, res) {
+router.get("/load/:id", auth, function (req, res) {
   console.log("load triguered");
   //console.log(req);
-  if (!req.params.name) {
+  if (!req.params.id) {
     res.json({
       error: "Data is incomplete. Be sure you pick a name for your project",
     });
   } else {
     axios
       .post(
-        process.env.serverURL + "api/projects/" + req.params.name,
+        process.env.serverURL + "api/projects/" + req.params.id,
         tokenConfig(req.headers["x_auth_token"])
       )
       .then((data) => {
@@ -68,7 +70,7 @@ router.get("/load/:name", auth, function (req, res) {
       })
       .catch((err) => {
         console.log("loading error...");
-        //console.log(err);
+        console.log(err);
         res.json({ error: "Could not be loaded" });
       });
   }
@@ -91,16 +93,25 @@ router.get("/preview", function (req, res) {
   //res.sendfile(__dirname + '/public/preview.html');
   res.render("preview");
 });
+router.post("/save/preview", function (req, res) {
+  //res.sendfile(__dirname + '/public/preview.html');
+  preview = req.body.project;
+});
+router.get("/show/preview", function (req, res) {
+  //res.sendfile(__dirname + '/public/preview.html');
+  console.log("load preview");
+  res.send(preview);
+});
 
 router.delete("/remove/:id", auth, function (req, res) {
   console.log("requesting deleting");
+  console.log(req.headers["x_auth_token"]);
   if (!req.user.id) {
     res.status(500).send();
   } else {
     axios
       .delete(
         process.env.serverURL + "api/projects/" + req.params.id,
-        req.body,
         tokenConfig(req.headers["x_auth_token"])
       )
       .then((response) => {
@@ -117,9 +128,11 @@ router.delete("/remove/:id", auth, function (req, res) {
 });
 
 //Projects
-router.get("/projects", (req, res) => {
+router.get("/projects", auth, (req, res) => {
   console.log("token received by table");
   console.log(req.headers["x_auth_token"]);
+  //console.log(req);
+
   axios
     .post(
       process.env.serverURL + "api/projects/all",
@@ -136,6 +149,28 @@ router.get("/projects", (req, res) => {
       console.log("loading table error...");
       console.log(err);
       //res.json({ err: "Could not be deleted" });
+    });
+});
+// Register Handle
+router.post("/update", (req, res) => {
+  console.log("requesting update");
+  //Check required fields
+  axios
+    .post(process.env.serverURL + "api/update")
+    .then((response) => {
+      console.log("this is the update message");
+      console.log(response.data);
+      if (response.data.title) {
+        res.json(response.data);
+      } else {
+        res.json({});
+      }
+      //res.json({ msg: "Saved sucessfully" });
+    })
+    .catch((err) => {
+      //console.log("saving error...");
+      //console.log(err);
+      res.json({ error: "No Updates" });
     });
 });
 const tokenConfig = (tokenp) => {
