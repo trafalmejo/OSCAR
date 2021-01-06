@@ -78,7 +78,7 @@
   },
   "dependencies": {
     "ajax": "0.0.4",
-    "axios": "^0.19.2",
+    "axios": "^0.21.1",
     "babel-cli": "^6.26.0",
     "babel-preset-react-app": "^3.1.2",
     "bcryptjs": "^2.4.3",
