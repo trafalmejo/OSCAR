@@ -15,13 +15,13 @@ We are still under construction and this is a quick <a href="https://www.youtube
 
 ## App Setup
 
-Created with [Node.js](https://nodejs.org/en/)/[Express](https://expressjs.com/). Main libraries: Grapesjs, socket.io.js, pkg.
+Created with [Nodejs 12](https://nodejs.org/en/)/[Express](https://expressjs.com/). Main libraries: Grapesjs, socket.io.js, pkg.
 
 If you want to use this implementation for your own purposes try the following steps:
 
   1. Clone or download this [repository](https://github.com/trafalmejo/OSCAR/)
   2. Go into the folder you just download
-  3. run `npm start`
+  3. run `npm start` (you need NodeJS 12)
   4. run `node server.js`
   5. Open a browser on `http://localhost:8080/` (Preferably Google Chrome)
 
