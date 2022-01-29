@@ -1,6 +1,6 @@
 ![](assets/css/headerColor.png)
 
-# OSCAR - [Web Version](https://trafalmejo.github.io/OSCAR/)
+# OSCAR - Visit [our website](https://www.createwithoscar.com/)
 
 OSCAR is a tool to create beautiful graphical user interaces (GUIs) to send OSC messages and control interactive installations ([Modul8](https://www.garagecube.com/modul8/), [MapMapper](https://madmapper.com/), [Resolume arena](https://resolume.com/), [TouchDesigner](https://derivative.ca/), [Ableton Live](https://www.ableton.com/), [Processing](https://processing.org/), [Pure Data](https://puredata.info/), [Unity](https://unity.com/), [Unreal Engine](https://www.unrealengine.com/en-US/), etc).
 Let's create beautiful, responsive and touchable interfaces.
@@ -19,22 +19,22 @@ Created with [Nodejs 12](https://nodejs.org/en/)/[Express](https://expressjs.com
 
 If you want to use this implementation for your own purposes try the following steps:
 
-  1. Clone or download this [repository](https://github.com/trafalmejo/OSCAR/)
-  2. Go into the folder you just download
-  3. run `npm start` (you need NodeJS 12)
-  4. run `node server.js`
-  5. Open a browser on `http://localhost:8080/` (Preferably Google Chrome)
+1. Clone or download this [repository](https://github.com/trafalmejo/OSCAR/)
+2. Go into the folder you just download
+3. run `npm start` (you need NodeJS 12)
+4. run `node server.js`
+5. Open a browser on `http://localhost:8080/` (Preferably Google Chrome)
 
 ## Tutorials
 
-  1. Youtube Channel [OSCAR](https://www.youtube.com/channel/UCyIxOoajn_4Nj8Mjz2k-3qA)
+1. Youtube Channel [OSCAR](https://www.youtube.com/channel/UCyIxOoajn_4Nj8Mjz2k-3qA)
 
 ## Download
 
-  1. Go to [releases](https://github.com/trafalmejo/OSCAR/releases) and download the lastest version for your OS.
-  2. Unzip the compressed file
-  3. Double-click on the Oscar executable file
-  4. Your default browser will open in the URL: [http://localhost:8080](http://localhost:8080) or http://[your local ip]:8080
+1. Go to [releases](https://github.com/trafalmejo/OSCAR/releases) and download the lastest version for your OS.
+2. Unzip the compressed file
+3. Double-click on the Oscar executable file
+4. Your default browser will open in the URL: [http://localhost:8080](http://localhost:8080) or http://[your local ip]:8080
 
 Be sure your firewall and router allow communication between devices.
 
