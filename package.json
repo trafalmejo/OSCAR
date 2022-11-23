@@ -112,7 +112,7 @@
     "passport": "^0.4.1",
     "passport-local": "^1.0.0",
     "pkg": "^4.4.9",
-    "socket.io": "^2.4.1",
+    "socket.io": "^2.5.0",
     "watchify": "^4.0.0"
   }
 }
