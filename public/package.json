@@ -32,7 +32,7 @@
     "jquery-confirm": "^3.3.4",
     "mongoose": "^5.9.19",
     "popper.js": "^1.16.0",
-    "socket.io": "^2.3.0"
+    "socket.io": "^2.5.0"
   },
   "devDependencies": {}
 }
