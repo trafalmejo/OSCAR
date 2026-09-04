@@ -102,6 +102,11 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("  Projects folder:      " + PROJECTS_DIR);
   console.log("");
 
+  // When Electron forks this file it waits for this before opening a window.
+  if (process.send) {
+    process.send({ type: "ready", port: HTTP_PORT, address: serverIP });
+  }
+
   if (process.env.OSCAR_NO_OPEN !== "1") {
     // Loaded lazily so `require`-ing this file for tests has no side effects.
     require("open")("http://localhost:" + HTTP_PORT).catch(() => {});

@@ -35,6 +35,25 @@ Make sure your firewall allows communication between devices on the network.
 | `npm run dev` | Rebuild on change and restart on change |
 | `npm test` | Run the test suite |
 
+### Building a desktop app
+
+OSCAR ships as an Electron app. `npm run electron` runs it from source, and
+the `dist` scripts produce installers under `release-builds/`:
+
+| Command | Output |
+| --- | --- |
+| `npm run electron` | Run the desktop app from source |
+| `npm run dist:win` | Windows installer (NSIS) |
+| `npm run dist:mac` | macOS disk image |
+| `npm run dist:linux` | Linux AppImage and .deb |
+
+Each platform's installer has to be built on that platform. Icons are
+generated from `build/icon.png`.
+
+When run as a desktop app, projects are stored in the per-user data folder
+(`%APPDATA%/OSCAR/projects` on Windows, `~/Library/Application Support/OSCAR/projects`
+on macOS) rather than next to the executable.
+
 ### Configuration
 
 All optional, set as environment variables:

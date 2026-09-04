@@ -1,71 +1,138 @@
-//Electron App
-// Modules to control application life and create native browser window
-const { app, BrowserWindow, globalShortcut } = require('electron')
-const { fork } = require('child_process')
-const ps = fork(`${__dirname}/server.js`)
+"use strict";
 
-// Keep a global reference of the window object, if you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
-let mainWindow
+const path = require("path");
+const { fork } = require("child_process");
+const { app, BrowserWindow, Menu, shell, dialog } = require("electron");
 
-function createWindow() {
-  // Create the browser window.
-  mainWindow = new BrowserWindow({
-    //width: 800,
-    //height: 600,
-    webPreferences: {
-      webSecurity: false,
-      allowRunningInsecureContent: true
-    }
-  })
+const START_TIMEOUT_MS = 30000;
 
-  app.commandLine.appendSwitch('host-rules', 'MAP * 127.0.0.1');
+let mainWindow = null;
+let serverProcess = null;
+let serverExited = false;
 
-  mainWindow.maximize();
-  mainWindow.setMenu(null)
-  // and load the index.html of the app.
-  //mainWindow.loadFile('public/index.html')
-  mainWindow.loadURL('http://127.0.0.1:8080');
+// Two OSCAR windows would fight over port 8080, so hand focus to the running
+// instance instead of starting a second server.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
 
-  // Open the DevTools.
-  // mainWindow.webContents.openDevTools()
-  // Emitted when the window is closed.
-  mainWindow.on('closed', function () {
-    // Dereference the window object, usually you would store windows
-    // in an array if your app supports multi windows, this is the time
-    // when you should delete the corresponding element.
-    mainWindow = null
-  })
+  app.whenReady().then(start);
 }
-app.on('ready', () => {
-  globalShortcut.register('CommandOrControl+Shift+O', () => {
-    mainWindow.webContents.openDevTools()
-  })
-})
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', createWindow)
 
-// Quit when all windows are closed.
-app.on('window-all-closed', function () {
-  // On macOS it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== 'darwin') app.quit()
-})
+function startServer() {
+  return new Promise((resolve, reject) => {
+    serverProcess = fork(path.join(__dirname, "server.js"), [], {
+      env: Object.assign({}, process.env, {
+        // A packaged app lives in a read-only folder, so projects belong in
+        // the per-user data directory instead of next to the executable.
+        OSCAR_PROJECTS_DIR: path.join(app.getPath("userData"), "projects"),
+        // Electron provides the window; don't also open the system browser.
+        OSCAR_NO_OPEN: "1",
+      }),
+      stdio: ["ignore", "inherit", "inherit", "ipc"],
+    });
 
-app.on('activate', function () {
-  // On macOS it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  if (mainWindow === null) createWindow()
-})
+    const timer = setTimeout(
+      () => reject(new Error("OSCAR's server did not start within 30 seconds.")),
+      START_TIMEOUT_MS
+    );
 
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+    serverProcess.on("message", (msg) => {
+      if (msg && msg.type === "ready") {
+        clearTimeout(timer);
+        resolve(msg);
+      }
+    });
 
+    serverProcess.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
 
-app.on('certificate-error', function(event, webContents, url, error, 
-  certificate, callback) {
+    serverProcess.on("exit", (code) => {
+      serverExited = true;
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(
+          new Error(
+            "OSCAR's server stopped unexpectedly (exit code " +
+              code +
+              ").\n\nIs another copy of OSCAR already running?"
+          )
+        );
+      }
+    });
+  });
+}
+
+function createWindow(ready) {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    backgroundColor: "#444444",
+    title: "OSCAR",
+    show: false,
+    webPreferences: {
+      // The renderer only ever loads OSCAR's own pages, and they are plain
+      // browser code -- it needs no access to Node.
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  Menu.setApplicationMenu(null);
+  mainWindow.maximize();
+  mainWindow.loadURL("http://localhost:" + ready.port);
+
+  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+
+  // A window-scoped devtools shortcut, rather than registering a global one
+  // that would also fire while other applications are focused.
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    const modifier = process.platform === "darwin" ? input.meta : input.control;
+    if (modifier && input.shift && input.key.toLowerCase() === "i") {
+      mainWindow.webContents.toggleDevTools();
       event.preventDefault();
-      callback(true);
+    }
+  });
+
+  // Links to tutorials, the website and so on belong in the real browser.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+}
+
+async function start() {
+  try {
+    const ready = await startServer();
+    createWindow(ready);
+  } catch (err) {
+    dialog.showErrorBox("OSCAR could not start", err.message);
+    app.quit();
+  }
+}
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0 && !serverExited) start();
 });
+
+app.on("window-all-closed", () => app.quit());
+
+app.on("before-quit", stopServer);
+app.on("will-quit", stopServer);
+
+function stopServer() {
+  if (serverProcess && !serverProcess.killed) {
+    serverProcess.kill();
+    serverProcess = null;
+  }
+}
