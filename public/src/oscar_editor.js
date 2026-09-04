@@ -1,30 +1,35 @@
 window.$ = $ = window.jQuery = require("jquery");
-//var bootst = require('bootstrap')
+
+// These plugins attach themselves to whichever jQuery they are handed. The
+// bundle carries its own copy of jQuery, so they must be required here rather
+// than loaded as separate <script> tags -- otherwise they extend the page's
+// jQuery and $.alert/$.confirm/.bootstrapTable go missing on this one.
 require("bootstrap-table");
+// jquery-confirm's CommonJS build exports an initialiser instead of running
+// itself, so it has to be invoked with the jQuery it should extend.
+require("jquery-confirm")(window, $);
 
-var localIPpromise = require("binternalip");
-var ipLibrary = require("ip");
-var mongoose = require("mongoose");
 var editor = {};
-var ipServer = "localhost";
 
-$.get("/ipserver", function (data, status) {
-  ipServer = data;
-  console.log("/ipserver answered: ", data);
-  initGrape();
-  window.editor = editor;
-});
+// One browserify bundle serves both the editor and the preview page, so each
+// entry point only boots when its own container is on the page.
+if (document.getElementById("gjs")) {
+  // Ask the server which address it is reachable on, so new widgets default to
+  // an IP that other devices on the network can actually talk to.
+  $.get("/ipserver", function (data) {
+    initGrape(data || window.location.hostname || "localhost");
+    window.editor = editor;
+  });
+}
 
-function initGrape() {
+function initGrape(ipServer) {
   editor = grapesjs.init({
     dragMode: "absolute",
     height: "100%",
     container: "#gjs",
     fromElement: true,
     allowScripts: 1,
-    canvas: {
-      styles: ["assets/css/toggle.css"],
-    },
+    canvas: { styles: ["assets/css/toggle.css"] },
     panels: {},
     assetManager: {
       assets: [
@@ -35,44 +40,21 @@ function initGrape() {
         "images/fruits/emoji-banana.png",
         "images/fruits/emoji-banana-click.png",
         "images/fruits/background.png",
-        // Pass an object with your properties
-        {
-          type: "image",
-          src: "http://placehold.it/350x250/459ba8/fff/image2.jpg",
-          height: 350,
-          width: 250,
-        },
-        {
-          type: "image",
-          src: "http://placehold.it/350x250/78c5d6/fff/image1.jpg",
-          height: 200,
-          width: 200,
-        },
-        {
-          // As the 'image' is the base type of assets, omitting it will
-          // be set as `image` by default
-          src: "http://placehold.it/350x250/79c267/fff/image3.jpg",
-          height: 350,
-          width: 250,
-        },
       ],
     },
     styleManager: {},
     blockManager: {},
     traitManager: {},
-    //Persistance
-    // Default configurations
+    // The canvas autosaves into this browser. Named projects are a separate,
+    // explicit action that writes JSON files next to the OSCAR server.
     storageManager: {
-      id: "gjs-", // Prefix identifier that will be used on parameters
-      //type: 'local',          // Type of the storage
-      //type: null,          // Type of the storage
-      type: "local", // Type of the storage
-      stepsBeforeSave: 1, // If autosave enabled, indicates how many changes are necessary before store method is triggered
-      autosave: true, // Store data automatically
-      autoload: true, // Autoload stored data on init
+      id: "gjs-",
+      type: "local",
+      stepsBeforeSave: 1,
+      autosave: true,
+      autoload: true,
       contentTypeJson: true,
     },
-    // TO READ: this plugin loads default blocks
     plugins: [
       "oscar_socket",
       "oscar_ip",
@@ -85,15 +67,9 @@ function initGrape() {
       "grapesjs-tooltip",
     ],
     pluginsOpts: {
-      oscar_socket: {
-        ipserver: ipServer,
-      },
-      oscar_slider: {
-        ipserver: ipServer,
-      },
-      oscar_button: {
-        ipserver: ipServer,
-      },
+      oscar_socket: { ipserver: ipServer },
+      oscar_slider: { ipserver: ipServer },
+      oscar_button: { ipserver: ipServer },
       "grapesjs-tooltip": {},
       "gjs-preset-webpage": {
         blocks: [],
@@ -111,269 +87,89 @@ function initGrape() {
       },
     },
   });
-  // Define Panels, Modals and Commdans
+
   var pn = editor.Panels;
   var modal = editor.Modal;
   var commands = editor.Commands;
 
-  //END EDITOR INIT
-
-  //FIXES MODAL FOR CUSTOM CODE PLUGIN
-  editor.on("run:custom-code:open-modal", () =>
-    editor.once("modal:close", () => {
-      const { Commands } = editor;
-      if (Commands.isActive("custom-code:open-modal")) {
-        Commands.stop("custom-code:open-modal");
-      }
-    })
-  );
-
-  //OPEN MODAL IF UPDATE
-  editor.on("load", () => {
-    $.ajax({
-      type: "POST",
-      url: "/update",
-    })
-      .done(function (result) {
-        console.log(result);
-        if (result.title) {
-          var mdlClass = "modal-login";
-          var mdlDialog = document.querySelector(".gjs-mdl-dialog");
-          mdlDialog.className += " " + mdlClass;
-          modal.setTitle(result.title);
-          modal.setContent(result.content);
-          modal.open();
-        }
-      })
-      .fail(function (jqXHR, textStatus) {
-        console.log(jqXHR);
-      });
+  // Named projects go through the "remote" storage, which now points at
+  // OSCAR's own local file API rather than a cloud account.
+  var ProjectStorage = editor.StorageManager.get("remote").set({
+    id: "gjs-",
+    type: "remote",
+    stepsBeforeSave: 1,
+    urlStore: "/save",
+    urlLoad: "/load",
+    autosave: false,
+    autoload: false,
+    contentTypeJson: true,
   });
 
-  //Turn OFF editable mode on Preview
-  editor.on("run:preview", () => {
-    // Execute a callback on all inner components starting from the root
-    var res = editor.store((res) => console.log("Store callback"));
-    console.log(res);
-    editor.DomComponents.getWrapper().onAll((comp) =>
-      comp.set({
-        editable: false,
-        draggable: false,
-      })
-    );
-    const domComponents = editor.DomComponents;
-    var code = domComponents.getComponents();
-    $.ajax({
-      type: "POST",
-      url: "/save/preview",
-      data: {
-        project: res,
-      },
-    })
-      .done(function (result) {
-        var msg = JSON.parse(result);
-        console.log(msg);
-      })
-      .fail(function (jqXHR, textStatus) {
-        console.log(jqXHR);
-      });
-    //console.log("Components: ", code.models);
-    //editor.socket.emit("code", code);
-  });
+  // Run a project-library action against the server, then always hand the
+  // editor back to local autosave so the canvas keeps saving itself.
+  function withProjectStorage(action) {
+    editor.StorageManager.setCurrent("remote");
+    action(function restore() {
+      editor.StorageManager.setCurrent("local");
+    });
+  }
 
-  //Turn ON editable mode on Preview
-  editor.on("stop:preview", () => {
-    // Execute a callback on all inner components starting from the root
-    editor.DomComponents.getWrapper().onAll((comp) =>
-      comp.set({
-        editable: true,
-        draggable: true,
-      })
-    );
-  });
+  // ---- modals ------------------------------------------------------------
+  function setModal(title, containerId) {
+    var container = document.getElementById(containerId);
+    var dialog = document.querySelector(".gjs-mdl-dialog");
+    var cls = "modal-login";
 
-  //FIXES MODAL FOR IMPORT HTML CODE
-  editor.on("run:gjs-open-import-webpage", () =>
-    editor.once("modal:close", () => {
-      const { Commands } = editor;
-      if (Commands.isActive("gjs-open-import-webpage")) {
-        Commands.stop("gjs-open-import-webpage");
-      }
-    })
-  );
-
-  //Set General MODAL
-  function setModal(title, namecontainer, buttonclicked) {
-    var mdlClass = "modal-login";
-    var container = document.getElementById(namecontainer);
-    var mdlDialog = document.querySelector(".gjs-mdl-dialog");
-    mdlDialog.className += " " + mdlClass;
+    dialog.className += " " + cls;
     container.style.display = "block";
     modal.setTitle(title);
-    modal.from = buttonclicked;
     modal.setContent(container);
     modal.open();
     modal.getModel().once("change:open", function () {
-      mdlDialog.className = mdlDialog.className.replace(mdlClass, "");
+      dialog.className = dialog.className.replace(cls, "");
     });
   }
 
-  //FORM LogginIn
-  $("#login_button").click(function (e) {
-    e.preventDefault();
-    showLoader();
-    $("#login-messages-div").hide();
-    var email = $("#email").val();
-    var password = $("#password").val();
-    $.ajax({
-      type: "POST",
-      url: "/auth",
-      data: {
-        email: email,
-        password: password,
-      },
-      dataType: "html",
-    })
-      .done(function (result) {
-        hideLoader();
-        var msg = JSON.parse(result);
-        console.log("token: ", msg.token);
-        window.localStorage.setItem("token", msg.token);
-        console.log(
-          "token after loggin:",
-          window.localStorage.getItem("token")
-        );
-        isloggedIn(modal.from + "");
-        RemoteStorage.set({
-          id: "gjs-", // Prefix identifier that will be used on parameters
-          //type: 'local',          // Type of the storage
-          //type: null,          // Type of the storage
-          type: "remote", // Type of the storage
-          stepsBeforeSave: 1, // If autosave enabled, indicates how many changes are necessary before store method is triggered
-          urlStore: "http://" + ipServer + ":8080/save",
-          urlLoad: "http://" + ipServer + ":8080/load",
-          autosave: false, // Store data automatically
-          autoload: false, // Autoload stored data on init
-          contentTypeJson: true,
-          params: { x_auth_token: msg.token },
-          headers: { x_auth_token: msg.token },
-        });
-      })
-      .fail(function (jqXHR, textStatus) {
-        hideLoader();
-        window.localStorage.removeItem("token");
-        var msg = JSON.parse(jqXHR.responseText);
-        if (typeof msg.msg != "undefined") {
-          $("#login-messages").html(msg.msg);
-          $("#login-messages-div").show();
-        }
-      });
-  });
-
-  //FORM LogginOut
-  $(".logout-button").click(function () {
-    console.log(editor.StorageManager.get("remote"));
-    window.localStorage.removeItem("token");
-    console.log("token after logout:", window.localStorage.getItem("token"));
-    RemoteStorage.set({
-      id: "gjs-", // Prefix identifier that will be used on parameters
-      //type: 'local',          // Type of the storage
-      //type: null,          // Type of the storage
-      type: "remote", // Type of the storage
-      stepsBeforeSave: 1, // If autosave enabled, indicates how many changes are necessary before store method is triggered
-      urlStore: "http://" + ipServer + ":8080/save",
-      urlLoad: "http://" + ipServer + ":8080/load",
-      autosave: false, // Store data automatically
-      autoload: false, // Autoload stored data on init
-      contentTypeJson: true,
-      params: { x_auth_token: null },
-      headers: { x_auth_token: null },
-    });
-    modal.close();
-    console.log(editor.StorageManager.get("remote"));
-    // $.ajax({
-    //   type: "GET",
-    //   url: "/logout",
-    //   dataType: "html",
-    // }).done(function (result) {
-    //   modal.close();
-    // });
-  });
   function showLoader() {
-    $("#login-form").hide();
     $("#table-container").hide();
-    $("#loader").show();
     $("#loader-table").show();
   }
+
   function hideLoader() {
-    $("#login-form").show();
     $("#table-container").show();
-    $("#loader").hide();
     $("#loader-table").hide();
   }
-  //Check If user is loggedIn
-  function isloggedIn(type) {
-    var isAutenthicated = false;
-    setModal("Login", "login-panel", type);
-    //console.log(window.localStorage.getItem("token"));
-    $.ajax({
-      url: "/auth/user",
-      type: "post",
-      data: {},
-      headers: {
-        x_auth_token: window.localStorage.getItem("token"), //If your header name has spaces or any other char not appropriate
-      },
-      dataType: "json",
-      success: function (data) {
-        isAutenthicated = true;
-        //console.log("success auth");
-        console.info(data);
-        initTable();
-        updateProjects();
-        setModal(type, "table-panel");
-        if (type == "Save") {
-          $("#load-button").hide();
-          $("#save-button").show();
-        } else if (type == "Load") {
-          $("#load-button").show();
-          $("#save-button").hide();
-        }
-      },
-      error: function (data, status) {
-        isAutenthicated = false;
-        //console.log("fail auth");
-        //console.info(data);
-        setModal("Login", "login-panel", type);
-      },
-    });
+
+  var tableReady = false;
+
+  function openProjects(mode) {
+    setModal(mode, "table-panel");
+    $("#save-button").toggle(mode === "Save");
+    $("#load-button").toggle(mode === "Load");
+
+    if (!tableReady) {
+      initTable();
+      tableReady = true;
+    } else {
+      $("#projects-table").bootstrapTable("refresh");
+    }
   }
+
+  commands.add("open-projects", function (ed, sender, options) {
+    openProjects((options && options.type) || "Save");
+  });
+
+  // ---- project table -----------------------------------------------------
   function initTable() {
-    var token = window.localStorage.getItem("token");
-    //Check error in projects Table
     $("#projects-table").bootstrapTable({
       url: "/projects",
-      ajaxOptions: {
-        headers: { x_auth_token: token },
-      },
       height: 300,
       columns: [
+        { title: "Name", field: "name", sortable: true },
+        { title: "Size", field: "size", sortable: true, formatter: sizeFormatter },
+        { title: "Saved", field: "date", sortable: true },
         {
-          title: "Name",
-          field: "name",
-          sortable: true,
-        },
-        {
-          title: "Size",
-          field: "size",
-          sortable: true,
-        },
-        {
-          title: "Date",
-          field: "date",
-          sortable: true,
-        },
-        {
-          title: "Actions",
+          title: "",
           field: "action",
           clickToSelect: false,
           events: window.operateEvents,
@@ -383,63 +179,42 @@ function initGrape() {
       pagination: false,
       search: false,
       sortable: true,
-      pageSize: 5,
-      pageList: [],
       clickToSelect: true,
       singleSelect: true,
-      onClickRow: function (row, $element) {
-        $("#project-name").val(row.name);
-        $("#project-name").attr("id-project", row._id);
-        // row: the record corresponding to the clicked row,
-        // $element: the tr element.
+      onClickRow: function (row) {
+        $("#project-name").val(row.name).attr("id-project", row._id);
       },
       onLoadError: function (status, jqXHR) {
-        //alert(status);
-        console.log(jqXHR);
+        console.log("Could not load projects", jqXHR);
       },
     });
   }
-  //Check for projects
-  function updateProjects() {
-    var token = window.localStorage.getItem("token");
-    console.log("token in local storage:");
-    console.log(token);
-    $("#projects-table").bootstrapTable("refreshOptions", {
-      url: "/projects",
-      ajaxOptions: {
-        headers: { x_auth_token: token },
-      },
-    });
+
+  function sizeFormatter(value) {
+    if (value !== 0 && !value) return "";
+    return value < 1024 ? value + " B" : Math.round(value / 1024) + " KB";
   }
+
+  function operateFormatter() {
+    return '<a class="remove icon" href="javascript:void(0)" title="Remove"><i class="fa fa-times-circle"></i></a>';
+  }
+
   window.operateEvents = {
-    "click .like": function (e, value, row, index) {
-      alert("You click like action, row: " + JSON.stringify(row));
-    },
-    "click .remove": function (e, value, row, index) {
-      //console.log(row);
-      //delete
+    "click .remove": function (e, value, row) {
       $.confirm({
         title: "Delete Project",
         content:
-          "Are you sure you want to delete this project. You won't be able to recover it afterwards",
+          "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
         buttons: {
           confirm: function () {
-            $.ajax({
-              type: "DELETE",
-              url: "/remove/" + row._id,
-              headers: {
-                x_auth_token: window.localStorage.getItem("token"), //If your header name has spaces or any other char not appropriate
-              },
-              success: function (data) {
+            $.ajax({ type: "DELETE", url: "/remove/" + row._id })
+              .done(function (data) {
                 $("#projects-table").bootstrapTable("refresh");
-                $.alert(data.msg);
-              },
-              error: function (err) {
-                console.log("error");
-                console.log(err);
-                $.alert(err);
-              },
-            });
+                $.alert(data.error || data.msg);
+              })
+              .fail(function () {
+                $.alert("Could not delete that project");
+              });
           },
           cancel: function () {},
         },
@@ -447,188 +222,86 @@ function initGrape() {
     },
   };
 
-  function operateFormatter(value, row, index) {
-    return [
-      '<a class="remove icon" href="javascript:void(0)" title="Remove">',
-      '<i class="fa fa-times-circle"></i>',
-      "</a>",
-    ].join("");
-  }
+  // ---- save --------------------------------------------------------------
+  var projectName = document.getElementById("project-name");
 
-  // Open Modal Command
-  var mdlClass = "gjs-mdl-dialog-sm";
-  commands.add("open-modal-login", (editor, sender, options = {}) => {
-    //If it is save or load check if it is logged In
-    if (options.type) {
-      isloggedIn(options.type);
+  document.getElementById("save-button").onclick = function () {
+    var name = (projectName.value || "").trim();
+    if (!name) {
+      $.alert("Give your project a name first");
+      return;
     }
-    $("#login-messages-div").hide();
-    var mdlDialog = document.querySelector(".gjs-mdl-dialog");
-    mdlDialog.className += " " + mdlClass;
-    modal.open();
-    modal.getModel().once("change:open", function () {
-      mdlDialog.className = mdlDialog.className.replace(mdlClass, "");
-    });
-  });
+    saveProject(name, false);
+  };
 
-  //Add Save Panel Button
-  pn.addButton("options", {
-    id: "open-save",
-    className: "fa fa-cloud-upload",
-    command: function () {
-      editor.runCommand("open-modal-login", {
-        type: "Save",
-      });
-    },
-    attributes: {
-      title: "Save",
-      "data-tooltip-pos": "bottom",
-    },
-  });
-  //Add Load Panel Button
-  pn.addButton("options", {
-    id: "open-load",
-    className: "fa fa-cloud-download",
-    command: function () {
-      editor.runCommand("open-modal-login", {
-        type: "Load",
-      });
-    },
-    attributes: {
-      title: "Load",
-      "data-tooltip-pos": "bottom",
-    },
-  });
-  //Add About Button
-  pn.addButton("options", {
-    id: "open-info",
-    className: "fa fa-question-circle",
-    command: function () {
-      setModal("About", "info-panel");
-      editor.runCommand("open-modal-login");
-    },
-    attributes: {
-      title: "About",
-      "data-tooltip-pos": "bottom",
-    },
-  });
-
-  editor.on("run:open-modal-login", function () {});
-
-  const RemoteStorage = editor.StorageManager.get("remote").set({
-    id: "gjs-", // Prefix identifier that will be used on parameters
-    //type: 'local',          // Type of the storage
-    //type: null,          // Type of the storage
-    type: "remote", // Type of the storage
-    stepsBeforeSave: 1, // If autosave enabled, indicates how many changes are necessary before store method is triggered
-    urlStore: "http://" + ipServer + ":8080/save",
-    urlLoad: "http://" + ipServer + ":8080/load",
-    autosave: false, // Store data automatically
-    autoload: false, // Autoload stored data on init
-    contentTypeJson: true,
-    params: { x_auth_token: window.localStorage.getItem("token") },
-    headers: { x_auth_token: window.localStorage.getItem("token") },
-  });
-
-  //Save and Load
-  const LocalStorage = editor.StorageManager.get("local");
-  console.log("storages", editor.StorageManager.getStorages());
-
-  // Save Action
-  var saveName = document.getElementById("project-name");
-  var saveButton = document.getElementById("save-button");
-  let stored;
-  saveButton.onclick = () => {
+  function saveProject(name, overwrite) {
     showLoader();
-    //sets the nanem of the project as parameter.
-    editor.StorageManager.setCurrent("remote");
-    RemoteStorage.set("params", {
-      name: saveName.value,
-      overwrite: false,
-      visibility: "private",
-    });
-    stored = editor.store((res) => {
-      hideLoader();
-      editor.StorageManager.setCurrent("local");
-      console.log("res", res);
-      if (typeof res.error != "undefined") {
-        $.alert(res.error);
-      } else if (typeof res.confirm != "undefined") {
-        $.confirm({
-          title: "Overwriting",
-          content: res.confirm,
-          buttons: {
-            confirm: function () {
-              RemoteStorage.set("params", {
-                name: saveName.value,
-                overwrite: true,
-                visibility: "private",
-              });
-              editor.StorageManager.setCurrent("remote");
-              editor.store((e) => {
-                hideLoader();
-                editor.StorageManager.setCurrent("local");
-                if (typeof e.error != "undefined") {
-                  $.alert(e.error);
-                }
-                $.alert(e.msg);
-              });
-              modal.close();
+    ProjectStorage.set("params", { name: name, overwrite: overwrite });
+
+    withProjectStorage(function (restore) {
+      editor.store(function (res) {
+        hideLoader();
+        restore();
+
+        if (!res || res.error) {
+          $.alert((res && res.error) || "Could not be saved");
+          return;
+        }
+
+        if (res.confirm) {
+          $.confirm({
+            title: "Overwriting",
+            content: res.confirm,
+            buttons: {
+              confirm: function () {
+                saveProject(name, true);
+              },
+              cancel: function () {},
             },
-            cancel: function () {
-              hideLoader();
-            },
-          },
-        });
-      } else {
+          });
+          return;
+        }
+
+        $("#projects-table").bootstrapTable("refresh");
         $.alert(res.msg);
         modal.close();
-      }
+      });
     });
-  };
-  // Load Action
-  var loadName = document.getElementById("project-name");
-  var loadButton = document.getElementById("load-button");
-  $("#project-name").change(function () {
-    //alert("changed");
-    //mongoose.Types.ObjectId.isValid
-    if (mongoose.Types.ObjectId.isValid($("#project-name").val())) {
-      $("#project-name").attr("id-project", $("#project-name").val());
-    }
-  });
+  }
 
-  loadButton.onclick = () => {
-    showLoader();
+  // ---- load --------------------------------------------------------------
+  document.getElementById("load-button").onclick = function () {
+    var id = projectName.getAttribute("id-project");
+    if (!id) {
+      $.alert("Pick a project from the list first");
+      return;
+    }
+
     $.confirm({
       title: "Load",
       content:
-        "If you load this project, you will lose all information of your current project",
+        "If you load this project, you will lose all unsaved changes in the current one.",
       buttons: {
         confirm: function () {
-          RemoteStorage.set({
-            urlLoad:
-              "http://" +
-              ipServer +
-              ":8080/load/" +
-              loadName.getAttribute("id-project"),
-          });
-          editor.StorageManager.setCurrent("remote");
-          editor.load((res) => {
-            hideLoader();
-            console.log("res: " + res);
-            if (Object.keys(res).length === 0) {
-              //console.log("loaded: " + res);
-              $.alert("Project doesn't exist or You are not Logged In");
-            } else {
-              //console.log('loaded', res)
-              if (res.error) {
-                $.alert("Check Your Internet Connection");
-              } else {
-                $.alert("Loaded Successfully");
-                modal.close();
+          showLoader();
+          ProjectStorage.set({ urlLoad: "/load/" + id });
+
+          withProjectStorage(function (restore) {
+            editor.load(function (res) {
+              hideLoader();
+              restore();
+
+              if (!res || !Object.keys(res).length) {
+                $.alert("That project could not be found");
+                return;
               }
-            }
-            editor.StorageManager.setCurrent("local");
+              if (res.error) {
+                $.alert(res.error);
+                return;
+              }
+              $.alert("Loaded successfully");
+              modal.close();
+            });
           });
         },
         cancel: function () {
@@ -638,56 +311,80 @@ function initGrape() {
     });
   };
 
-  //Upgrade
-  $.get("/upgrade", function (data, status) {
-    if (data.success) {
-      //Add Notification
-    }
+  // ---- preview hand-off --------------------------------------------------
+  editor.on("run:preview", function () {
+    editor.DomComponents.getWrapper().onAll(function (comp) {
+      comp.set({ editable: false, draggable: false });
+    });
+
+    // Hand the current canvas to the preview tab, which reads it back from
+    // /show/preview.
+    //
+    // With local storage `editor.store(cb)` hands the callback nothing -- the
+    // data is the return value, and its keys come back unprefixed. The preview
+    // page asks for them under the "gjs-" prefix, so add it here.
+    var data = editor.store() || {};
+    var project = {};
+    Object.keys(data).forEach(function (key) {
+      project["gjs-" + key] = data[key];
+    });
+
+    $.ajax({
+      type: "POST",
+      url: "/save/preview",
+      contentType: "application/json",
+      data: JSON.stringify({ project: project }),
+    }).fail(function (jqXHR) {
+      console.log("Could not hand off preview", jqXHR);
+    });
   });
 
-  //Create IP Label
+  editor.on("stop:preview", function () {
+    editor.DomComponents.getWrapper().onAll(function (comp) {
+      comp.set({ editable: true, draggable: true });
+    });
+  });
+
+  // ---- panel buttons -----------------------------------------------------
+  pn.addButton("options", {
+    id: "open-save",
+    className: "fa fa-download",
+    command: function () {
+      editor.runCommand("open-projects", { type: "Save" });
+    },
+    attributes: { title: "Save project", "data-tooltip-pos": "bottom" },
+  });
+
+  pn.addButton("options", {
+    id: "open-load",
+    className: "fa fa-upload",
+    command: function () {
+      editor.runCommand("open-projects", { type: "Load" });
+    },
+    attributes: { title: "Load project", "data-tooltip-pos": "bottom" },
+  });
+
+  pn.addButton("options", {
+    id: "open-info",
+    className: "fa fa-question-circle",
+    command: function () {
+      setModal("About", "info-panel");
+    },
+    attributes: { title: "About", "data-tooltip-pos": "bottom" },
+  });
+
   var IPLabel = pn.addButton("devices-c", {
     id: "ipButton",
     className: "someClass",
-    label: "IP: ",
+    label: "Server IP: " + ipServer,
     command: null,
-    attributes: {
-      title: "Server IP",
-    },
+    attributes: { title: "Point other devices at this address" },
     active: false,
     disable: true,
   });
+  IPLabel.set("label", "Server IP: " + ipServer);
 
-  getipServer();
-
-  function getipServer() {
-    IPLabel.set("label", "Server IP: " + editor.ipserver);
-  }
-
-  //Default value of editor.ip is localhost
-  editor.ip = "localhost";
-
-  localIPpromise.then((ipAddr) => {
-    var ipv4 = "";
-    for (let i = 0; i < ipAddr.length; i++) {
-      if (ipLibrary.isV4Format(ipAddr[i])) {
-        ipv4 = ipAddr[i];
-        editor.ip = ipv4;
-      }
-    }
-    if (editor.ip == "" || !ipLibrary.isV4Format(editor.ip)) {
-      editor.ip = "localhost";
-      //IPLabel.set("label", "Client IP: " + editor.ip);
-    }
-    console.log("editor.ip: ", editor.ip);
-  });
-  localIPpromise.catch((error) => {
-    console.log("Error: ", error);
-    editor.ip = "localhost";
-    IPLabel.set("label", "IP: " + editor.ip);
-  });
-
-  // Add and beautify tooltips
+  // ---- tooltips ----------------------------------------------------------
   [
     ["sw-visibility", "Show Borders"],
     ["preview", "Preview"],
@@ -698,31 +395,35 @@ function initGrape() {
     ["gjs-open-import-webpage", "Import"],
     ["canvas-clear", "Clear canvas"],
   ].forEach(function (item) {
-    pn.getButton("options", item[0]).set("attributes", {
-      title: item[1],
-      "data-tooltip-pos": "bottom",
-    });
+    var button = pn.getButton("options", item[0]);
+    button && button.set("attributes", { title: item[1], "data-tooltip-pos": "bottom" });
   });
+
   [
     ["open-sm", "Style Manager"],
     ["open-tm", "OSC Settings"],
     ["open-layers", "Layers"],
     ["open-blocks", "Blocks"],
   ].forEach(function (item) {
-    pn.getButton("views", item[0]).set("attributes", {
-      title: item[1],
-      "data-tooltip-pos": "bottom",
-    });
+    var button = pn.getButton("views", item[0]);
+    button && button.set("attributes", { title: item[1], "data-tooltip-pos": "bottom" });
   });
+
   var titles = document.querySelectorAll("*[title]");
   for (var i = 0; i < titles.length; i++) {
     var el = titles[i];
-    var title = el.getAttribute("title");
-    title = title ? title.trim() : "";
-    if (!title) break;
+    var title = (el.getAttribute("title") || "").trim();
+    if (!title) continue;
     el.setAttribute("data-tooltip", title);
     el.setAttribute("title", "");
   }
-  // Show borders by default
-  //pn.getButton('options', 'sw-visibility').set('active', 1);
+
+  // Keep the custom-code and import modals from getting stuck open.
+  ["custom-code:open-modal", "gjs-open-import-webpage"].forEach(function (cmd) {
+    editor.on("run:" + cmd, function () {
+      editor.once("modal:close", function () {
+        if (editor.Commands.isActive(cmd)) editor.Commands.stop(cmd);
+      });
+    });
+  });
 }

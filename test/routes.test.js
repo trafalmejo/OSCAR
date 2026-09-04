@@ -1,0 +1,184 @@
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const express = require("express");
+
+const { ProjectStore } = require("../lib/projects");
+const createRouter = require("../routes/index");
+
+// Spin the real router up on an ephemeral port so the tests exercise the same
+// request path the editor uses.
+async function withServer(run) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-routes-"));
+  const store = new ProjectStore(dir);
+
+  const app = express();
+  app.set("views", path.join(__dirname, "..", "public"));
+  app.set("view engine", "ejs");
+  app.use(express.json({ limit: "25mb" }));
+  app.use(express.urlencoded({ limit: "25mb", extended: true }));
+  app.use("/", createRouter({ store, serverIP: () => "192.168.0.5" }));
+
+  const server = await new Promise((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  const base = "http://127.0.0.1:" + server.address().port;
+
+  try {
+    await run(base, store, dir);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+const postJSON = (base, url, body) =>
+  fetch(base + url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+test("GET /ipserver reports the LAN address", async () => {
+  await withServer(async (base) => {
+    const res = await fetch(base + "/ipserver");
+    assert.strictEqual(await res.text(), "192.168.0.5");
+  });
+});
+
+test("GET /projects starts empty and reflects saves", async () => {
+  await withServer(async (base) => {
+    assert.deepStrictEqual(await (await fetch(base + "/projects")).json(), []);
+
+    await postJSON(base, "/save", { name: "Show A", "gjs-components": "[]" });
+
+    const list = await (await fetch(base + "/projects")).json();
+    assert.strictEqual(list.length, 1);
+    assert.strictEqual(list[0].name, "Show A");
+    assert.strictEqual(list[0]._id, "show-a");
+  });
+});
+
+test("POST /save refuses an unnamed project", async () => {
+  await withServer(async (base) => {
+    const body = await (await postJSON(base, "/save", { "gjs-components": "[]" })).json();
+    assert.match(body.error, /name/i);
+  });
+});
+
+test("POST /save refuses an empty project", async () => {
+  await withServer(async (base) => {
+    const body = await (await postJSON(base, "/save", { name: "Empty" })).json();
+    assert.match(body.error, /nothing to save/i);
+  });
+});
+
+test("POST /save asks before overwriting, then overwrites on confirm", async () => {
+  await withServer(async (base, store) => {
+    const first = await (
+      await postJSON(base, "/save", { name: "Show", "gjs-components": "v1" })
+    ).json();
+    assert.match(first.msg, /Saved/);
+
+    const second = await (
+      await postJSON(base, "/save", { name: "Show", "gjs-components": "v2" })
+    ).json();
+    assert.ok(second.confirm, "a second save without overwrite asks first");
+    assert.strictEqual((await store.read("show")).data["gjs-components"], "v1");
+
+    const third = await (
+      await postJSON(base, "/save", {
+        name: "Show",
+        overwrite: true,
+        "gjs-components": "v2",
+      })
+    ).json();
+    assert.match(third.msg, /Saved/);
+    assert.strictEqual((await store.read("show")).data["gjs-components"], "v2");
+  });
+});
+
+test("save strips OSCAR metadata out of the stored project", async () => {
+  await withServer(async (base, store) => {
+    await postJSON(base, "/save", {
+      name: "Meta",
+      overwrite: false,
+      visibility: "private",
+      "gjs-components": "[]",
+    });
+
+    const data = (await store.read("meta")).data;
+    assert.deepStrictEqual(Object.keys(data), ["gjs-components"]);
+  });
+});
+
+test("GET /load returns the project, and {} when missing", async () => {
+  await withServer(async (base) => {
+    await postJSON(base, "/save", { name: "Loadable", "gjs-components": "abc" });
+
+    const found = await (await fetch(base + "/load/loadable")).json();
+    assert.strictEqual(found["gjs-components"], "abc");
+
+    const missing = await (await fetch(base + "/load/nope")).json();
+    assert.deepStrictEqual(missing, {});
+  });
+});
+
+test("traversal ids cannot read or delete files outside the store", async () => {
+  await withServer(async (base, store, dir) => {
+    const outside = path.join(dir, "..", "oscar-outside.json");
+    fs.writeFileSync(outside, JSON.stringify({ name: "x", data: { secret: true } }));
+
+    // Some of these never reach the handler at all -- Express normalises the
+    // path and 404s first. Either way the contract is the same: nothing from
+    // outside the store may be read, and nothing outside it may be deleted.
+    for (const id of ["..%2Foscar-outside", "..\\oscar-outside", "%2E%2E%2Foscar-outside"]) {
+      const read = await fetch(base + "/load/" + id);
+      assert.doesNotMatch(await read.text(), /secret/, "load " + id + " leaks nothing");
+
+      const del = await fetch(base + "/remove/" + id, { method: "DELETE" });
+      const body = await del.text();
+      if (del.ok) {
+        assert.ok(JSON.parse(body).error, "delete of " + id + " is refused");
+      }
+    }
+
+    assert.ok(fs.existsSync(outside), "the file outside the store survived");
+    fs.unlinkSync(outside);
+  });
+});
+
+test("DELETE /remove deletes once and then reports it is gone", async () => {
+  await withServer(async (base) => {
+    await postJSON(base, "/save", { name: "Temp", "gjs-components": "[]" });
+
+    assert.match((await (await fetch(base + "/remove/temp", { method: "DELETE" })).json()).msg, /Deleted/);
+    assert.ok((await (await fetch(base + "/remove/temp", { method: "DELETE" })).json()).error);
+  });
+});
+
+test("preview hand-off round-trips through the server", async () => {
+  await withServer(async (base) => {
+    assert.deepStrictEqual(await (await fetch(base + "/show/preview")).json(), {});
+
+    const project = { "gjs-components": '[{"type":"slider"}]' };
+    await postJSON(base, "/save/preview", { project });
+
+    assert.deepStrictEqual(await (await fetch(base + "/show/preview")).json(), project);
+  });
+});
+
+test("editor pages render", async () => {
+  await withServer(async (base) => {
+    for (const route of ["/", "/preview"]) {
+      const res = await fetch(base + route);
+      assert.strictEqual(res.status, 200, route);
+      const html = await res.text();
+      assert.match(html, /<title>OSCAR<\/title>/, route + " renders the OSCAR shell");
+      assert.doesNotMatch(html, /createwithoscar\.com\/register/, route + " has no dead account links");
+    }
+  });
+});

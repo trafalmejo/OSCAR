@@ -1,18 +1,24 @@
-function oscar_socket(editor, options){//Client is going to connect to Server
- editor.ipserver = "localhost"
-// fetch('/ipserver')
-//   .then(function(response) {
-//     return response.text();
-//   })
-//   .then(function(text) {
-//     console.log('Request successful', text);
-//     ipServer = text;
-//     editor.ipserver = ipServer
-//     editor.socket = io.connect('http://' + ipServer + ':8081', { port: 8081, rememberTransport: false });
-//   })
-//   .catch(function(error) {
-//     console.log('Request failed', error)
-//   });
-    editor.ipserver = options.ipserver
-    editor.socket = io.connect('http://' + editor.ipserver + ':8081', { port: 8081, rememberTransport: false });
+/**
+ * Connects the editor to OSCAR's OSC bridge.
+ *
+ * The page is served from :8080 while the bridge listens on :8081, so this is
+ * a cross-origin connection by design -- the server opts back into it via its
+ * socket.io CORS config.
+ */
+function oscar_socket(editor, options) {
+  var host = (options && options.ipserver) || window.location.hostname || "localhost";
+
+  editor.ipserver = host;
+  editor.socket = io("http://" + host + ":8081", {
+    transports: ["websocket", "polling"],
+    reconnectionDelayMax: 5000,
+  });
+
+  editor.socket.on("connect", function () {
+    console.log("OSC bridge connected");
+  });
+
+  editor.socket.on("connect_error", function (err) {
+    console.warn("OSC bridge unavailable:", err && err.message);
+  });
 }

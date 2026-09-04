@@ -1,8 +1,11 @@
-.gitignore
 node_modules/
-release-builds
+release-builds/
+dist/
 .env
 certificates
 oscar-macos
 oscar-win.exe
 .DS_Store
+
+# Projects saved by a local OSCAR instance
+projects/
