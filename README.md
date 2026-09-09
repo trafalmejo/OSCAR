@@ -47,8 +47,9 @@ the `dist` scripts produce installers under `release-builds/`:
 | `npm run dist:mac` | macOS disk image |
 | `npm run dist:linux` | Linux AppImage and .deb |
 
-Each platform's installer has to be built on that platform. Icons are
-generated from `build/icon.png`.
+Each platform's installer has to be built on that platform. Windows and macOS
+are built for both Intel (`x64`) and ARM (`arm64`); Electron no longer ships a
+32-bit Windows build. Icons are generated from `build/icon.png`.
 
 ### Cutting a release
 
