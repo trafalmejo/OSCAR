@@ -5,7 +5,7 @@
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
   "main": "main.js",
   "scripts": {
-    "postinstall": "npm --prefix public install",
+    "postinstall": "cd public && npm install",
     "build": "browserify ./public/src/oscar_preview.js ./public/src/oscar_editor.js -o ./public/src/bundle.js",
     "watch": "watchify --debug ./public/src/oscar_preview.js ./public/src/oscar_editor.js -o ./public/src/bundle.js -v",
     "start": "npm run build && node server.js",
@@ -85,7 +85,9 @@
         "AppImage",
         "deb"
       ],
-      "category": "AudioVideo"
+      "category": "AudioVideo",
+      "maintainer": "Daniel Castaño <hello@createwithoscar.com>",
+      "desktopName": "oscar.desktop"
     },
     "publish": [
       {
