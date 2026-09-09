@@ -86,8 +86,7 @@
         "deb"
       ],
       "category": "AudioVideo",
-      "maintainer": "Daniel Castaño <hello@createwithoscar.com>",
-      "desktopName": "oscar.desktop"
+      "maintainer": "Daniel Castaño <hello@createwithoscar.com>"
     },
     "publish": [
       {
