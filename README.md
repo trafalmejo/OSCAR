@@ -50,6 +50,30 @@ the `dist` scripts produce installers under `release-builds/`:
 Each platform's installer has to be built on that platform. Icons are
 generated from `build/icon.png`.
 
+### Cutting a release
+
+Releases are built by GitHub Actions. Pushing a `v*` tag builds OSCAR on
+Windows, macOS and Linux in parallel and attaches all the installers to a
+**draft** GitHub release, which you then write notes for and publish:
+
+```bash
+npm version 2.1.0        # bumps package.json and creates the tag
+git push --follow-tags   # builds all three platforms, draft release appears
+```
+
+To re-cut the current version in package.json, tag it directly:
+
+```bash
+git tag v2.0.0 && git push origin v2.0.0
+```
+
+Running the workflow by hand from the Actions tab builds the installers and
+leaves them as downloadable run artifacts without creating a release — useful
+for checking a build before tagging.
+
+Builds are **not code signed**, so Windows SmartScreen and macOS Gatekeeper
+will warn on first run. On macOS, right-click the app and choose Open.
+
 When run as a desktop app, projects are stored in the per-user data folder
 (`%APPDATA%/OSCAR/projects` on Windows, `~/Library/Application Support/OSCAR/projects`
 on macOS) rather than next to the executable.

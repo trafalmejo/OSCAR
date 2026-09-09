@@ -1,0 +1,74 @@
+name: Release
+
+# Tagging is the whole release process: push a v* tag and this builds OSCAR
+# for all three platforms in parallel and attaches the installers to a draft
+# GitHub release.
+on:
+  push:
+    tags:
+      - "v*"
+  # Allows a dry run from the Actions tab without creating a tag.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing shouldn't throw away the other two builds.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+          - os: macos-latest
+            label: macOS
+          - os: ubuntu-latest
+            label: Linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall also installs the browser libraries under public/.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      # Only a tag publishes. Running this workflow by hand builds the
+      # installers and leaves them as run artifacts, without touching releases.
+      - name: Build${{ startsWith(github.ref, 'refs/tags/') && ' and publish' || ' only (no release)' }}
+        run: npm run build && npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # OSCAR is not code signed. Without this, macOS builds stall looking
+          # for a signing identity that isn't there.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Keeps the installers available from the run even if publishing is
+      # skipped (for example on a workflow_dispatch dry run).
+      - name: Upload installers as run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oscar-${{ matrix.os }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            release-builds/*.exe
+            release-builds/*.dmg
+            release-builds/*.AppImage
+            release-builds/*.deb

@@ -16,7 +16,8 @@
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
-    "test": "node --test"
+    "test": "node --test",
+    "release": "npm run build && electron-builder --publish always"
   },
   "repository": {
     "type": "git",
@@ -85,7 +86,16 @@
         "deb"
       ],
       "category": "AudioVideo"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "trafalmejo",
+        "repo": "OSCAR",
+        "releaseType": "draft"
+      }
+    ],
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
   },
   "overrides": {
     "ws": "^8.21.3"
