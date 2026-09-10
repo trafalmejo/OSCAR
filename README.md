@@ -9,7 +9,33 @@ Build a layout in the browser, drop in buttons and sliders, point each one at an
 
 <a href="https://www.youtube.com/watch?v=JO6r7gUNlgo&list=PLScMjUz4HRHxxDL2OYcNCMCsD-srohkIW" target="_blank"><img src="http://img.youtube.com/vi/ZcW8zBWRLf0/0.jpg" alt="OSCAR tool to create GUIs to control interactive installations" width="1200" height="600" border="10"/></a>
 
-## Running OSCAR
+## Download
+
+Get the installer for your machine from the
+[latest release](https://github.com/trafalmejo/OSCAR/releases/latest):
+
+| Your machine | File |
+| --- | --- |
+| **Windows** (most PCs) | `OSCAR-*-win-x64.exe` |
+| **Windows on ARM** (Snapdragon laptops) | `OSCAR-*-win-arm64.exe` |
+| **Mac** with Apple Silicon (M1 and later) | `OSCAR-*-mac-arm64.dmg` |
+| **Mac** with an Intel processor | `OSCAR-*-mac-x64.dmg` |
+| **Linux** (most distributions) | `OSCAR-*-linux-x86_64.AppImage` |
+| **Linux** (Debian, Ubuntu) | `OSCAR-*-linux-amd64.deb` |
+
+These builds aren't code signed, so your system warns you the first time. On
+Windows, click *More info* then *Run anyway*. On macOS, right-click the app and
+choose *Open*.
+
+## Keep in touch
+
+[**Sign up to the OSCAR mailing list**](https://forms.gle/1pGiDJDh3jur8Tq68) to
+hear about new releases, features and tutorials.
+
+OSCAR is a free and open source project, and it is better for every bit of
+feedback it gets. If you build something with it, we would love to know.
+
+## Running from source
 
 Requires [Node.js 18 or newer](https://nodejs.org/en/).
 
@@ -127,7 +153,9 @@ server, which emits the actual OSC packet over UDP.
 ## Contributing
 
 Bug reports and pull requests are welcome on the
-[issue tracker](https://github.com/trafalmejo/OSCAR/issues).
+[issue tracker](https://github.com/trafalmejo/OSCAR/issues), and you can
+[sign up for OSCAR news](https://forms.gle/1pGiDJDh3jur8Tq68) to follow along
+with what is coming next.
 
 ## License
 
