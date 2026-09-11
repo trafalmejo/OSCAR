@@ -32,7 +32,12 @@ function oscar_button(editor, options) {
       defaults: {
         tagName: "button",
         attributes: { name: "button_oscar" },
-        components: [{ type: "text", content: "Insert here your text" }],
+        // The label is plain text inside the button, not a child element. A
+        // child element intercepted every click and drag: grabbing a button by
+        // its label tore the label out, and clicking selected the text rather
+        // than the button and its OSC settings. The Label field edits it.
+        label: "Insert here your text",
+        components: "Insert here your text",
         droppable: false,
         resizable: true,
         editable: true,
@@ -43,6 +48,7 @@ function oscar_button(editor, options) {
         toggle: false,
         value: false,
         traits: [
+          { type: "text", label: "Label", name: "label", changeProp: true },
           { type: "text", label: "Ip", name: "ip", changeProp: true },
           { type: "text", label: "Port", name: "port", changeProp: true },
           { type: "text", label: "Message", name: "message", changeProp: true },
@@ -52,9 +58,23 @@ function oscar_button(editor, options) {
       },
 
       init: function () {
+        // A button imported from HTML brings its own text; show that in the
+        // Label field rather than the default.
+        var text = this.components()
+          .map(function (c) {
+            return c.get("type") === "textnode" ? c.get("content") : "";
+          })
+          .join("");
+        if (text && text !== this.get("label")) this.set({ label: text }, { silent: true });
+
+        this.on("change:label", this.applyLabel);
         this.on("change:ip", this.checkIP);
         this.on("change:port", this.checkPort);
         this.on("change:max", this.checkMax);
+      },
+
+      applyLabel: function () {
+        this.components(String(this.get("label") || ""));
       },
 
       checkIP: function () {

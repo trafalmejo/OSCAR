@@ -334,14 +334,49 @@ function initGrape(ipServer) {
     });
   };
 
-  // ---- preview hand-off --------------------------------------------------
-  // Hand the current canvas to the preview page, which reads it back from
-  // /show/preview. (GrapesJS 0.21+ fires `command:run:<id>`; the old `run:<id>`
-  // events no longer exist.)
+  // ---- preview mode ------------------------------------------------------
+  // GrapesJS's preview hides the panels, but in absolute drag mode it leaves
+  // components draggable and selectable -- dragging a button in preview pulls
+  // its label out of it. Lock everything while previewing, then put each
+  // component back exactly as it was.
+  //
+  // `avoidStore` keeps the temporary lock out of undo history and autosave;
+  // otherwise closing the window mid-preview would save every widget locked.
+  // (GrapesJS 0.21+ fires `command:run:<id>`; `run:<id>` no longer exists.)
+  var PREVIEW_LOCK = {
+    draggable: false,
+    selectable: false,
+    hoverable: false,
+    editable: false,
+    highlightable: false,
+  };
+  var beforePreview = null;
+
   editor.on("command:run:preview", function () {
+    // Hand the canvas to the preview page (read back from /show/preview)
+    // before locking, so the lock doesn't travel with it.
     postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
       console.log("Could not hand off preview", err);
     });
+
+    editor.select();
+    beforePreview = [];
+    editor.getWrapper().onAll(function (component) {
+      var previous = {};
+      Object.keys(PREVIEW_LOCK).forEach(function (key) {
+        previous[key] = component.get(key);
+      });
+      beforePreview.push([component, previous]);
+      component.set(PREVIEW_LOCK, { avoidStore: true });
+    });
+  });
+
+  editor.on("command:stop:preview", function () {
+    if (!beforePreview) return;
+    beforePreview.forEach(function (entry) {
+      entry[0].set(entry[1], { avoidStore: true });
+    });
+    beforePreview = null;
   });
 
   // ---- panel buttons -----------------------------------------------------
