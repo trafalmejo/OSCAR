@@ -9,3 +9,6 @@ oscar-win.exe
 
 # Projects saved by a local OSCAR instance
 projects/
+
+# Private working notes, kept out of the public repo
+docs/
