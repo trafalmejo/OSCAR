@@ -1,232 +1,161 @@
+/**
+ * OSC slider: sends its value to ip:port/message as it moves.
+ *
+ * With `invert` on, the value sent is mirrored within [min, max] while the
+ * thumb stays where the user put it.
+ */
 function oscar_slider(editor, options) {
-  var comps = editor.DomComponents;
-  var dType = comps.getType('default');
-  var dModel = dType.model;
-  var dView = dType.view;
-  //SLIDER type
-  comps.addType('input', {
-    // Define the Model
-    model: dModel.extend({
-      defaults: Object.assign({}, dModel.prototype.defaults, {
-        // Can't drop other elements inside it
+  var ipserver = (options && options.ipserver) || "localhost";
+
+  var IPV4 =
+    /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/;
+
+  editor.DomComponents.addType("oscar-slider", {
+    // Only range inputs are sliders. Matching every <input> would turn the
+    // text fields of any imported form into OSC controls.
+    isComponent: function (el) {
+      if (el.tagName === "INPUT" && el.getAttribute("type") === "range") {
+        return { type: "oscar-slider" };
+      }
+    },
+
+    model: {
+      defaults: {
+        tagName: "input",
+        attributes: { type: "range", step: "0.01", min: "0", max: "100", orient: "horizontal" },
         droppable: false,
         resizable: true,
         editable: true,
-        // // Traits (Settings)
-        ip: options.ipserver,
+        ip: ipserver,
         port: 7000,
-        message: '/slider1',
+        message: "/slider1",
         min: 0,
         max: 100,
         value: 0,
-        orient: "horizontal",
-        orientation: false,
+        orientation: "horizontal",
         invert: false,
         traits: [
+          { type: "text", label: "Ip", name: "ip", changeProp: true },
+          { type: "text", label: "Port", name: "port", changeProp: true },
+          { type: "text", label: "Message", name: "message", changeProp: true },
+          { type: "text", label: "Min", name: "min", changeProp: true },
+          { type: "text", label: "Max", name: "max", changeProp: true },
+          { type: "text", label: "Value", name: "value", changeProp: true },
           {
-            type: 'text',
-            label: 'Ip',
-            name: 'ip',
-            changeProp: 1,
-          },
-          {
-            type: 'text',
-            label: 'Port',
-            name: 'port',
-            changeProp: 1,
-          },
-          {
-            type: 'text',
-            label: 'Message',
-            name: 'message',
-            changeProp: 1,
-          },
-          {
-            type: 'text',
-            label: 'Min',
-            name: 'min',
-            changeProp: 1,
-          },
-          {
-            type: 'text',
-            label: 'Max',
-            name: 'max',
-            changeProp: 1,
-          },
-          {
-            type: 'text',
-            label: 'Value',
-            name: 'value',
-            changeProp: 1,
-          },
-          {
-            type: 'select',
-            label: 'Orientation',
-            name: 'orientation',
+            type: "select",
+            label: "Orientation",
+            name: "orientation",
             options: [
-              { id: 'horizontal', name: 'Horizontal' },
-              { id: 'vertical', name: 'Vertical' },
+              { id: "horizontal", name: "Horizontal" },
+              { id: "vertical", name: "Vertical" },
             ],
-            changeProp: 1,
+            changeProp: true,
           },
-          {
-            type: 'checkbox',
-            label: 'Invert',
-            name: 'invert',
-            changeProp: 1,
-          },
-
+          { type: "checkbox", label: "Invert", name: "invert", changeProp: true },
         ],
-      }),
-      init() {
-        this.on('change:ip', this.changeIP);
-        this.on('change:port', this.changePort);
-        this.on('change:message', this.changeMessage);
-        this.on('change:max', this.changeMax);
-        this.on('change:min', this.changeMin);
-        this.on('change:value', this.changeValue);
-        this.on('change:invert', this.changeInvert);
-        this.on('change:orientation', this.changeOrientation);
-      },
-      changeIP() {
-        console.log("IP Changed in component: ", this)
-        var newIP = this.get('ip');
-        if (newIP == 'localhost' || this.validateIPaddress(newIP)) {
-          this.set({ ip: newIP })
-        } else {
-          alert("Your IP is incorrect");
-          this.set({ ip: this._previousAttributes.ip })
-        }
-      },
-      changePort() {
-        console.log("Port Changed in component: ", this);
-        var newPort = this.get('port');
-        //If it is a number
-        if (!isNaN(parseInt(newPort))) {
-          this.set({ port: newPort })
-        } else {
-          alert("Your port is incorrect");
-          this.set({ port: this._previousAttributes.port })
-        }
-      },
-      changeMessage() {
-        console.log("Message Changed in Component:", this)
-        var newMessage = this.get("message")
-        this.set({ message: newMessage })
-      },
-      changeMin() {
-        console.log("Min Changed in Component: ", this)
-        var newMin = this.get('min');
-        if (!isNaN(newMin)) {
-          this.set({ min: newMin })
-          this.addAttributes({ 'min': newMin });
-        } else {
-          alert("Your min is incorrect. It should be a number");
-          this.set({ min: this._previousAttributes.min })
-        }
-      },
-      changeMax() {
-        console.log("Max Changed in Component: ", this)
-        var newMax = this.get('max');
-        if (!isNaN(newMax)) {
-          this.set({ max: newMax })
-          this.addAttributes({ 'max': newMax });
-        } else {
-          alert("Your max is incorrect. It must be a number");
-          this.set({ max: this._previousAttributes.max })
-        }
-      },
-      changeValue() {
-        console.log("Value Changed in Component: ", this)
-        var newValue = parseFloat(this.get('value'));
-        if (newValue >= this.get("min") && newValue <= this.get("max")) {
-          this.getEl().value = newValue;
-        }
-        else {
-          alert("Your value must be a number, between the ranges")
-          this.set({ value: this._previousAttributes.value })
-        }
-      },
-      changeOrientation() {
-        var newOrient = this.get('orientation');
-        console.log("Orientation Changed in Component: ", this, newOrient)
-        if (newOrient == "vertical") {
-          this.set({ orient: "vertical" })
-        }
-        else if (newOrient == "horizontal") {
-          this.set({ orient: "horizontal" })
-        }
-        this.addAttributes({ 'orient': this.get("orient") });
-      },
-      changeInvert() {
-        console.log("Invert Changed in Component: ", this)
-        var newInvert = this.get('invert')
-      },
-      validateIPaddress(ipaddress) {
-        if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress)) {
-          return (true)
-        }
-        return (false)
-      }
-    },
-      // The second argument of .extend are static methods and we'll put inside our
-      // isComponent() method. As you're putting a new Component type on top of the stack,
-      // not declaring isComponent() might probably break stuff, especially if you extend
-      // the default one.
-      {
-        isComponent: function (el) {
-          if (el.tagName == 'INPUT') {
-            //type text gives you text edit capabilities
-            return { type: 'input' };
-          }
-        },
-      }),
-    view: dView.extend({
-      // Bind events
-      events: {
-        // If you want to bind the event to children elements
-        // 'click .someChildrenClass': 'methodName',
-        //     dblclick: 'onActive',
-        //     click: 'initResize',
-        //     error: 'onError',
-        //     dragstart: 'noDrag',
-        //     mousedown: 'noDrag'
-        //input: 'changeValue',
-        input: 'changeValue',
       },
 
-      changeValue: function (e) {
-        var message = this.model.get("message");
-        var invert = this.model.get("invert");
-        var inputValue = parseFloat(this.el.value);
-        var finalValue;
-        var ip = this.model.get("ip");
-        var port = this.model.get("port");
-        if (!invert) {
-          finalValue = inputValue;
-        } else {
-          finalValue = parseFloat(this.model.get("max")) - inputValue + parseFloat(this.model.get("min"))
+      init: function () {
+        this.on("change:ip", this.checkIP);
+        this.on("change:port", this.checkPort);
+        this.on("change:min change:max", this.checkRange);
+        this.on("change:value", this.checkValue);
+        this.on("change:orientation", this.applyOrientation);
+      },
+
+      checkIP: function () {
+        var ip = this.get("ip");
+        if (ip === "localhost" || IPV4.test(ip)) return;
+        alert("That IP address isn't valid: " + ip);
+        this.set({ ip: this.previous("ip") });
+      },
+
+      checkPort: function () {
+        if (!isNaN(parseInt(this.get("port"), 10))) return;
+        alert("The port has to be a number");
+        this.set({ port: this.previous("port") });
+      },
+
+      checkRange: function () {
+        var min = parseFloat(this.get("min"));
+        var max = parseFloat(this.get("max"));
+        if (isNaN(min) || isNaN(max)) {
+          alert("Min and max have to be numbers");
+          this.set({ min: this.previous("min"), max: this.previous("max") });
+          return;
         }
-        this.model.set({ value: finalValue })
-        editor.socket.emit('message', editor.ip, ip, port, message, "f", parseFloat(finalValue));
+        this.addAttributes({ min: String(min), max: String(max) });
       },
-      // The render() should return 'this'
-      render: function () {
-        // Extend the original render method
-        dView.prototype.render.apply(this, arguments);
-        return this;
+
+      // Edits from the settings panel move the thumb. Values the view sets
+      // while the user is dragging are flagged `fromView`, and must not be
+      // written back -- with invert on, that would snap the thumb to the
+      // mirrored position on every input event.
+      checkValue: function (model, value, opts) {
+        if (opts && opts.fromView) return;
+        var v = parseFloat(value);
+        var min = parseFloat(this.get("min"));
+        var max = parseFloat(this.get("max"));
+        if (isNaN(v) || v < min || v > max) {
+          alert("The value has to be a number between min and max");
+          this.set({ value: this.previous("value") });
+          return;
+        }
+        var el = this.getEl();
+        if (el) el.value = v;
       },
-    }),
+
+      applyOrientation: function () {
+        this.addAttributes({ orient: this.get("orientation") });
+      },
+    },
+
+    view: {
+      events: {
+        input: "handleInput",
+      },
+
+      // Put the thumb back where it was when the project was saved. Without
+      // this every slider sits at the browser's default midpoint after a load,
+      // while the value last sent to the rig was something else.
+      onRender: function () {
+        var model = this.model;
+        var value = parseFloat(model.get("value"));
+        if (isNaN(value)) return;
+        var min = parseFloat(model.get("min"));
+        var max = parseFloat(model.get("max"));
+        this.el.value = model.get("invert") ? max - value + min : value;
+      },
+
+      handleInput: function () {
+        var model = this.model;
+        var raw = parseFloat(this.el.value);
+        var min = parseFloat(model.get("min"));
+        var max = parseFloat(model.get("max"));
+        var value = model.get("invert") ? max - raw + min : raw;
+
+        model.set({ value: value }, { fromView: true });
+
+        if (!editor.socket) return;
+        editor.socket.emit(
+          "message",
+          editor.ip,
+          model.get("ip"),
+          model.get("port"),
+          model.get("message"),
+          "f",
+          value
+        );
+      },
+    },
   });
 
-  //Slider finished
-  editor.BlockManager.add('slider', {
-    label: 'Slider',
-    attributes: { class: 'fa fa-sliders' },
-    category: 'Basic',
-    content: `<input type="range" step="0.01" orient="horizontal">`
-  })
-
+  editor.BlockManager.add("oscar-slider", {
+    label: "Slider",
+    // GrapesJS 0.21+ no longer ships Font Awesome, so icons are inline SVG.
+    media:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" d="M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z"/></svg>',
+    category: "OSC",
+    content: { type: "oscar-slider" },
+  });
 }
-
-

@@ -10,14 +10,15 @@
     <link rel="icon" href="images/favicon_color.png" />
 
     <link href="node_modules/grapesjs/dist/css/grapes.min.css" rel="stylesheet" />
-    <link
-      href="node_modules/grapesjs-preset-webpage/dist/grapesjs-preset-webpage.min.css"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css" />
 
     <link href="css/oscar_colors.css" rel="stylesheet" />
     <link href="css/oscar_tooltip.css" rel="stylesheet" />
+    <style>
+      /* The preview runs GrapesJS's own preview mode; its "exit preview"
+         button would drop a control surface back into an editor. */
+      .gjs-off-prv { display: none !important; }
+    </style>
 
     <script src="node_modules/jquery/dist/jquery.min.js"></script>
     <script src="node_modules/popper.js/dist/umd/popper.min.js"></script>

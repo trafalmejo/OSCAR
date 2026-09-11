@@ -10753,6 +10753,22 @@ require("bootstrap-table");
 // itself, so it has to be invoked with the jQuery it should extend.
 require("jquery-confirm")(window, $);
 
+// GrapesJS 0.21+ no longer ships Font Awesome, so OSCAR's icons are inline SVG.
+var ICONS = {
+  save: "M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z",
+  open: "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
+  help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
+  remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
+};
+
+function icon(name, size) {
+  size = size || 18;
+  return (
+    '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '">' +
+    '<path fill="currentColor" d="' + ICONS[name] + '"/></svg>'
+  );
+}
+
 var editor = {};
 
 // One browserify bundle serves both the editor and the preview page, so each
@@ -10766,6 +10782,22 @@ if (document.getElementById("gjs")) {
   });
 }
 
+// A GrapesJS 0.21+ project always carries a `pages` array. Files from older
+// OSCAR builds used `gjs-components`/`gjs-styles` keys instead.
+function isProjectData(data) {
+  return !!data && Array.isArray(data.pages) && data.pages.length > 0;
+}
+
+function postJSON(url, body) {
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(function (res) {
+    return res.json();
+  });
+}
+
 function initGrape(ipServer) {
   editor = grapesjs.init({
     dragMode: "absolute",
@@ -10774,7 +10806,6 @@ function initGrape(ipServer) {
     fromElement: true,
     allowScripts: 1,
     canvas: { styles: ["assets/css/toggle.css"] },
-    panels: {},
     assetManager: {
       assets: [
         "images/fruits/emoji-apple.png",
@@ -10786,25 +10817,33 @@ function initGrape(ipServer) {
         "images/fruits/background.png",
       ],
     },
-    styleManager: {},
-    blockManager: {},
-    traitManager: {},
     // The canvas autosaves into this browser. Named projects are a separate,
     // explicit action that writes JSON files next to the OSCAR server.
     storageManager: {
-      id: "gjs-",
       type: "local",
-      stepsBeforeSave: 1,
       autosave: true,
       autoload: true,
-      contentTypeJson: true,
+      stepsBeforeSave: 1,
+      // A key distinct from 0.16's `gjs-*` entries, so a browser that ran an
+      // older OSCAR ignores that data instead of half-loading it.
+      options: { local: { key: "oscarProject" } },
+      // An autosave with no pages (from a crash mid-load, say) would leave the
+      // editor blank and unusable on every launch, with no way out short of
+      // clearing browser data. Start fresh instead -- `{}` is exactly what a
+      // first-ever launch loads.
+      onLoad: function (data) {
+        if (!data || !Object.keys(data).length || isProjectData(data)) return data;
+        console.warn("OSCAR: discarding an unreadable autosave and starting fresh");
+        return {};
+      },
     },
     plugins: [
       "oscar_socket",
       "oscar_ip",
       "oscar_button",
       "oscar_slider",
-      "gjs-preset-webpage",
+      "grapesjs-preset-webpage",
+      "gjs-blocks-basic",
       "grapesjs-custom-code",
       "grapesjs-parser-postcss",
       "grapesjs-touch",
@@ -10815,12 +10854,12 @@ function initGrape(ipServer) {
       oscar_slider: { ipserver: ipServer },
       oscar_button: { ipserver: ipServer },
       "grapesjs-tooltip": {},
-      "gjs-preset-webpage": {
+      "gjs-blocks-basic": { flexGrid: true },
+      "grapesjs-preset-webpage": {
         blocks: [],
-        formsOpts: false,
-        exportOpts: false,
-        navbarOpts: false,
-        countdownOpts: false,
+        // Keep OSCAR's own palette (css/oscar_colors.css) rather than the
+        // preset's theme.
+        useCustomTheme: false,
         showStylesOnChange: true,
         modalImportTitle: "Import Template",
         modalImportLabel:
@@ -10834,44 +10873,12 @@ function initGrape(ipServer) {
 
   var pn = editor.Panels;
   var modal = editor.Modal;
-  var commands = editor.Commands;
-
-  // Named projects go through the "remote" storage, which now points at
-  // OSCAR's own local file API rather than a cloud account.
-  var ProjectStorage = editor.StorageManager.get("remote").set({
-    id: "gjs-",
-    type: "remote",
-    stepsBeforeSave: 1,
-    urlStore: "/save",
-    urlLoad: "/load",
-    autosave: false,
-    autoload: false,
-    contentTypeJson: true,
-  });
-
-  // Run a project-library action against the server, then always hand the
-  // editor back to local autosave so the canvas keeps saving itself.
-  function withProjectStorage(action) {
-    editor.StorageManager.setCurrent("remote");
-    action(function restore() {
-      editor.StorageManager.setCurrent("local");
-    });
-  }
 
   // ---- modals ------------------------------------------------------------
   function setModal(title, containerId) {
     var container = document.getElementById(containerId);
-    var dialog = document.querySelector(".gjs-mdl-dialog");
-    var cls = "modal-login";
-
-    dialog.className += " " + cls;
     container.style.display = "block";
-    modal.setTitle(title);
-    modal.setContent(container);
-    modal.open();
-    modal.getModel().once("change:open", function () {
-      dialog.className = dialog.className.replace(cls, "");
-    });
+    modal.open({ title: title, content: container, attributes: { class: "modal-login" } });
   }
 
   function showLoader() {
@@ -10899,7 +10906,7 @@ function initGrape(ipServer) {
     }
   }
 
-  commands.add("open-projects", function (ed, sender, options) {
+  editor.Commands.add("open-projects", function (ed, sender, options) {
     openProjects((options && options.type) || "Save");
   });
 
@@ -10940,7 +10947,7 @@ function initGrape(ipServer) {
   }
 
   function operateFormatter() {
-    return '<a class="remove icon" href="javascript:void(0)" title="Remove"><i class="fa fa-times-circle"></i></a>';
+    return '<a class="remove icon" href="javascript:void(0)" title="Remove">' + icon("remove") + "</a>";
   }
 
   window.operateEvents = {
@@ -10980,12 +10987,14 @@ function initGrape(ipServer) {
 
   function saveProject(name, overwrite) {
     showLoader();
-    ProjectStorage.set("params", { name: name, overwrite: overwrite });
 
-    withProjectStorage(function (restore) {
-      editor.store(function (res) {
+    // The project JSON is sent flat alongside OSCAR's own `name`/`overwrite`
+    // fields; the server strips those two before writing the file.
+    var body = Object.assign({ name: name, overwrite: overwrite }, editor.getProjectData());
+
+    postJSON("/save", body)
+      .then(function (res) {
         hideLoader();
-        restore();
 
         if (!res || res.error) {
           $.alert((res && res.error) || "Could not be saved");
@@ -11009,8 +11018,11 @@ function initGrape(ipServer) {
         $("#projects-table").bootstrapTable("refresh");
         $.alert(res.msg);
         modal.close();
+      })
+      .catch(function () {
+        hideLoader();
+        $.alert("Could not reach the OSCAR server");
       });
-    });
   }
 
   // ---- load --------------------------------------------------------------
@@ -11028,71 +11040,58 @@ function initGrape(ipServer) {
       buttons: {
         confirm: function () {
           showLoader();
-          ProjectStorage.set({ urlLoad: "/load/" + id });
 
-          withProjectStorage(function (restore) {
-            editor.load(function (res) {
+          fetch("/load/" + encodeURIComponent(id))
+            .then(function (res) {
+              return res.json();
+            })
+            .then(function (data) {
               hideLoader();
-              restore();
 
-              if (!res || !Object.keys(res).length) {
-                $.alert("That project could not be found");
+              if (!data || data.error || !Object.keys(data).length) {
+                $.alert((data && data.error) || "That project could not be found");
                 return;
               }
-              if (res.error) {
-                $.alert(res.error);
+
+              // loadProjectData tears down the current page before reading
+              // the new one, so a file that isn't a GrapesJS 0.21+ project
+              // leaves the editor with no page at all. Check the shape first.
+              if (!isProjectData(data)) {
+                $.alert(
+                  "This file isn't an OSCAR 2 project, so it can't be opened. " +
+                    "Your current project hasn't been changed."
+                );
                 return;
               }
+
+              editor.loadProjectData(data);
               $.alert("Loaded successfully");
               modal.close();
+            })
+            .catch(function () {
+              hideLoader();
+              $.alert("Could not reach the OSCAR server");
             });
-          });
         },
-        cancel: function () {
-          hideLoader();
-        },
+        cancel: function () {},
       },
     });
   };
 
   // ---- preview hand-off --------------------------------------------------
-  editor.on("run:preview", function () {
-    editor.DomComponents.getWrapper().onAll(function (comp) {
-      comp.set({ editable: false, draggable: false });
-    });
-
-    // Hand the current canvas to the preview tab, which reads it back from
-    // /show/preview.
-    //
-    // With local storage `editor.store(cb)` hands the callback nothing -- the
-    // data is the return value, and its keys come back unprefixed. The preview
-    // page asks for them under the "gjs-" prefix, so add it here.
-    var data = editor.store() || {};
-    var project = {};
-    Object.keys(data).forEach(function (key) {
-      project["gjs-" + key] = data[key];
-    });
-
-    $.ajax({
-      type: "POST",
-      url: "/save/preview",
-      contentType: "application/json",
-      data: JSON.stringify({ project: project }),
-    }).fail(function (jqXHR) {
-      console.log("Could not hand off preview", jqXHR);
-    });
-  });
-
-  editor.on("stop:preview", function () {
-    editor.DomComponents.getWrapper().onAll(function (comp) {
-      comp.set({ editable: true, draggable: true });
+  // Hand the current canvas to the preview page, which reads it back from
+  // /show/preview. (GrapesJS 0.21+ fires `command:run:<id>`; the old `run:<id>`
+  // events no longer exist.)
+  editor.on("command:run:preview", function () {
+    postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
+      console.log("Could not hand off preview", err);
     });
   });
 
   // ---- panel buttons -----------------------------------------------------
   pn.addButton("options", {
     id: "open-save",
-    className: "fa fa-download",
+    label: icon("save"),
     command: function () {
       editor.runCommand("open-projects", { type: "Save" });
     },
@@ -11101,7 +11100,7 @@ function initGrape(ipServer) {
 
   pn.addButton("options", {
     id: "open-load",
-    className: "fa fa-upload",
+    label: icon("open"),
     command: function () {
       editor.runCommand("open-projects", { type: "Load" });
     },
@@ -11110,23 +11109,22 @@ function initGrape(ipServer) {
 
   pn.addButton("options", {
     id: "open-info",
-    className: "fa fa-question-circle",
+    label: icon("help"),
     command: function () {
       setModal("About", "info-panel");
     },
     attributes: { title: "About", "data-tooltip-pos": "bottom" },
   });
 
-  var IPLabel = pn.addButton("devices-c", {
+  pn.addButton("devices-c", {
     id: "ipButton",
-    className: "someClass",
+    className: "oscar-ip-label",
     label: "Server IP: " + ipServer,
     command: null,
     attributes: { title: "Point other devices at this address" },
     active: false,
     disable: true,
   });
-  IPLabel.set("label", "Server IP: " + ipServer);
 
   // ---- tooltips ----------------------------------------------------------
   [
@@ -11161,15 +11159,6 @@ function initGrape(ipServer) {
     el.setAttribute("data-tooltip", title);
     el.setAttribute("title", "");
   }
-
-  // Keep the custom-code and import modals from getting stuck open.
-  ["custom-code:open-modal", "gjs-open-import-webpage"].forEach(function (cmd) {
-    editor.on("run:" + cmd, function () {
-      editor.once("modal:close", function () {
-        if (editor.Commands.isActive(cmd)) editor.Commands.stop(cmd);
-      });
-    });
-  });
 }
 
 },{"bootstrap-table":1,"jquery":3,"jquery-confirm":2}],5:[function(require,module,exports){
@@ -11194,14 +11183,9 @@ function initGrape(ipServer) {
     allowScripts: 1,
     panels: { defaults: [] },
     canvas: { styles: ["assets/css/toggle.css"] },
-    storageManager: {
-      id: "gjs-",
-      type: "remote",
-      urlLoad: "/show/preview",
-      contentTypeJson: true,
-      autosave: false,
-      autoload: false,
-    },
+    // The preview only displays whatever the editor handed over; it must never
+    // write into the editor's autosave.
+    storageManager: false,
     plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider", "grapesjs-touch"],
     pluginsOpts: {
       oscar_socket: { ipserver: ipServer },
@@ -11210,60 +11194,36 @@ function initGrape(ipServer) {
     },
   });
 
-  // A preview is for driving the show, not editing it: lock everything down
-  // once the project has loaded.
-  editor.on("storage:end:load", function () {
-    var lock = function (model) {
-      model.set({
-        editable: false,
-        selectable: false,
-        hoverable: false,
-        draggable: false,
+  editor.on("load", function () {
+    fetch("/show/preview")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        // loadProjectData tears down the current page before reading the new
+        // one, so only hand it something shaped like a GrapesJS project.
+        if (data && Array.isArray(data.pages) && data.pages.length) {
+          editor.loadProjectData(data);
+        }
+
+        // A preview is for driving the show, not editing it.
+        editor.getWrapper().onAll(function (component) {
+          component.set({
+            editable: false,
+            selectable: false,
+            hoverable: false,
+            draggable: false,
+            highlightable: false,
+          });
+        });
+
+        // GrapesJS's own preview mode hides the panels and makes the canvas
+        // full size. Its "exit preview" button is hidden in preview.ejs.
+        editor.runCommand("preview");
+      })
+      .catch(function (err) {
+        console.log("Could not load the preview", err);
       });
-      model.get("components").each(lock);
-    };
-    lock(editor.DomComponents.getWrapper());
-  });
-
-  editor.Commands.add("production", {
-    run: function () {
-      var cmdVis = "sw-visibility";
-      if (!this.shouldRunSwVisibility) {
-        this.shouldRunSwVisibility = editor.Commands.isActive(cmdVis);
-      }
-      this.shouldRunSwVisibility && editor.stopCommand(cmdVis);
-      editor.getModel().stopDefault();
-
-      var panels = editor.Panels.getPanels();
-      var canvas = editor.Canvas.getElement();
-
-      // Make every widget clickable: in edit mode grapesjs disables pointer
-      // events on some elements, which would swallow OSC triggers.
-      var pfx = editor.Config.stylePrefix || "gjs-";
-      var body = editor.Canvas.getBody();
-      var blocked = body.querySelectorAll("." + pfx + "no-pointer");
-      Array.prototype.forEach.call(blocked, function (item) {
-        item.style.pointerEvents = "all";
-      });
-
-      panels.forEach(function (panel) {
-        editor.Panels.removePanel(panel.get("id"));
-      });
-
-      var style = canvas.style;
-      style.width = "100%";
-      style.height = "100%";
-      style.top = "0";
-      style.left = "0";
-      style.padding = "0";
-      style.margin = "0";
-      editor.refresh();
-    },
-    stop: function () {},
-  });
-
-  editor.load(function () {
-    editor.runCommand("production");
   });
 }
 

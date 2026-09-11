@@ -1,6 +1,8 @@
 /* Modal Content/Box */
 
-.modal-login {
+/* GrapesJS 0.21+ puts a modal's custom class on the full-screen container, not
+   the dialog, so target the dialog inside it. */
+.modal-login .gjs-mdl-dialog {
   max-width: 600px; /* Could be more or less, depending on screen size */
 }
 

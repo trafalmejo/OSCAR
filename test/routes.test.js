@@ -115,6 +115,44 @@ test("save strips OSCAR metadata out of the stored project", async () => {
   });
 });
 
+test("a GrapesJS 0.21+ project round-trips through save and load unchanged", async () => {
+  await withServer(async (base) => {
+    // The shape editor.getProjectData() produces. The editor sends it flat,
+    // alongside OSCAR's own name/overwrite fields, and hands whatever /load
+    // returns straight to editor.loadProjectData().
+    const project = {
+      dataSources: [],
+      assets: [],
+      styles: [{ selectors: ["#i1"], style: { color: "red" } }],
+      pages: [
+        {
+          frames: [
+            {
+              component: {
+                type: "wrapper",
+                components: [
+                  { type: "oscar-button", message: "/push1", port: 7000 },
+                  { type: "oscar-slider", message: "/slider1", invert: true },
+                ],
+              },
+            },
+          ],
+          id: "page-1",
+        },
+      ],
+      symbols: [],
+    };
+
+    const saved = await (
+      await postJSON(base, "/save", Object.assign({ name: "Round Trip", overwrite: false }, project))
+    ).json();
+    assert.match(saved.msg, /Saved/);
+
+    const loaded = await (await fetch(base + "/load/round-trip")).json();
+    assert.deepStrictEqual(loaded, project, "loaded project is exactly what was saved, minus OSCAR's fields");
+  });
+});
+
 test("GET /load returns the project, and {} when missing", async () => {
   await withServer(async (base) => {
     await postJSON(base, "/save", { name: "Loadable", "gjs-components": "abc" });
