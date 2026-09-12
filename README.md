@@ -91,6 +91,18 @@ All optional, set as environment variables:
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |
 | `OSCAR_NO_OPEN` | unset | Set to `1` to not open a browser on start |
+| `OSCAR_NO_UPDATE_CHECK` | unset | Set to `1` to never check for new versions |
+
+### Update checks
+
+Once a day at most, OSCAR asks GitHub whether a newer version has been
+released, and shows a dismissible notice in the editor if so. Nothing is
+downloaded or installed automatically, and you can skip a version or turn the
+check off entirely with `OSCAR_NO_UPDATE_CHECK=1`.
+
+This is the only request OSCAR makes to the internet. It sends nothing about
+you or your projects, times out quickly, and failing silently is the expected
+case on a venue network with no internet access.
 
 ## Saving your work
 

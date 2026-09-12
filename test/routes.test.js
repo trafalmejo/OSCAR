@@ -12,7 +12,7 @@ const createRouter = require("../routes/index");
 
 // Spin the real router up on an ephemeral port so the tests exercise the same
 // request path the editor uses.
-async function withServer(run) {
+async function withServer(run, deps = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-routes-"));
   const store = new ProjectStore(dir);
 
@@ -21,7 +21,7 @@ async function withServer(run) {
   app.set("view engine", "ejs");
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ limit: "25mb", extended: true }));
-  app.use("/", createRouter({ store, serverIP: () => "192.168.0.5" }));
+  app.use("/", createRouter(Object.assign({ store, serverIP: () => "192.168.0.5" }, deps)));
 
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s));
@@ -207,6 +207,40 @@ test("preview hand-off round-trips through the server", async () => {
 
     assert.deepStrictEqual(await (await fetch(base + "/show/preview")).json(), project);
   });
+});
+
+test("GET /update passes on what the checker found", async () => {
+  await withServer(
+    async (base) => {
+      const body = await (await fetch(base + "/update")).json();
+      assert.strictEqual(body.available, true);
+      assert.strictEqual(body.version, "2.1.0");
+    },
+    { updates: { check: async () => ({ available: true, version: "2.1.0", current: "2.0.0" }) } }
+  );
+});
+
+test("GET /update says nothing when no checker is wired", async () => {
+  await withServer(async (base) => {
+    assert.deepStrictEqual(await (await fetch(base + "/update")).json(), { available: false });
+  });
+});
+
+test("a failing update check never breaks the request", async () => {
+  await withServer(
+    async (base) => {
+      const res = await fetch(base + "/update");
+      assert.strictEqual(res.status, 200);
+      assert.deepStrictEqual(await res.json(), { available: false });
+    },
+    {
+      updates: {
+        check: async () => {
+          throw new Error("boom");
+        },
+      },
+    }
+  );
 });
 
 test("editor pages render", async () => {

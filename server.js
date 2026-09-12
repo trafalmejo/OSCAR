@@ -8,7 +8,10 @@ const { Server } = require("socket.io");
 
 const { lanAddress } = require("./lib/net");
 const { ProjectStore } = require("./lib/projects");
+const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const createRouter = require("./routes/index");
+
+const pkg = require("./package.json");
 
 const HTTP_PORT = Number(process.env.OSCAR_HTTP_PORT) || 8080;
 const SOCKET_PORT = Number(process.env.OSCAR_SOCKET_PORT) || 8081;
@@ -35,7 +38,15 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 
-app.use("/", createRouter({ store, serverIP: () => serverIP }));
+// Checking for a new release is the only request OSCAR makes to the internet.
+// Set OSCAR_NO_UPDATE_CHECK=1 to switch it off; everything else still works.
+const updates = createUpdateChecker({
+  currentVersion: pkg.version,
+  repo: repoFromUrl(pkg.repository && pkg.repository.url),
+  enabled: process.env.OSCAR_NO_UPDATE_CHECK !== "1",
+});
+
+app.use("/", createRouter({ store, serverIP: () => serverIP, updates }));
 
 // ---- OSC transport --------------------------------------------------------
 

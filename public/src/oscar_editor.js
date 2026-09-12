@@ -36,6 +36,94 @@ if (document.getElementById("gjs")) {
     initGrape(data || window.location.hostname || "localhost");
     window.editor = editor;
   });
+
+  checkForUpdate();
+}
+
+// ---- update notice ---------------------------------------------------------
+// The server does the checking; this only reports what it found. It is a
+// corner toast rather than a modal on purpose: OSCAR is often on screen during
+// a show, and nothing here may steal focus, cover the toolbar, or block work.
+var SKIPPED_KEY = "oscarSkippedUpdate";
+
+function skippedVersion() {
+  try {
+    return localStorage.getItem(SKIPPED_KEY);
+  } catch (err) {
+    return null; // private windows and locked-down browsers
+  }
+}
+
+function showUpdateNotice(info) {
+  var box = document.createElement("div");
+  box.className = "oscar-update";
+
+  var title = document.createElement("div");
+  title.className = "oscar-update-title";
+  title.textContent = "OSCAR " + info.version + " is available";
+
+  var current = document.createElement("div");
+  current.className = "oscar-update-current";
+  current.textContent = info.current
+    ? "You are running " + info.current + "."
+    : "You are running an older version.";
+
+  var actions = document.createElement("div");
+  actions.className = "oscar-update-actions";
+
+  // Only ever link to a GitHub release page, whatever the server replied.
+  var link = document.createElement("a");
+  link.className = "oscar-update-get";
+  link.textContent = "What's new";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.href = /^https:\/\/github\.com\//.test(info.url || "")
+    ? info.url
+    : "https://github.com/trafalmejo/OSCAR/releases/latest";
+
+  var later = document.createElement("button");
+  later.className = "oscar-update-later";
+  later.type = "button";
+  later.textContent = "Later";
+  later.onclick = function () {
+    box.remove();
+  };
+
+  var skip = document.createElement("button");
+  skip.className = "oscar-update-skip";
+  skip.type = "button";
+  skip.textContent = "Skip this version";
+  skip.onclick = function () {
+    try {
+      localStorage.setItem(SKIPPED_KEY, info.version);
+    } catch (err) {
+      /* nothing to do -- it just gets offered again next launch */
+    }
+    box.remove();
+  };
+
+  actions.appendChild(link);
+  actions.appendChild(later);
+  actions.appendChild(skip);
+  box.appendChild(title);
+  box.appendChild(current);
+  box.appendChild(actions);
+  document.body.appendChild(box);
+}
+
+function checkForUpdate() {
+  fetch("/update")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (info) {
+      if (!info || !info.available || !info.version) return;
+      if (info.version === skippedVersion()) return;
+      showUpdateNotice(info);
+    })
+    .catch(function () {
+      // Offline, or the server said nothing. Never worth bothering anyone.
+    });
 }
 
 // A GrapesJS 0.21+ project always carries a `pages` array. Files from older

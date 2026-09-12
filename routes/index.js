@@ -10,8 +10,9 @@ const META_KEYS = new Set(["name", "overwrite", "visibility"]);
  * @param {object} deps
  * @param {import('../lib/projects').ProjectStore} deps.store
  * @param {() => string} deps.serverIP
+ * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
  */
-module.exports = function createRouter({ store, serverIP }) {
+module.exports = function createRouter({ store, serverIP, updates }) {
   const router = express.Router();
 
   // The live preview payload is deliberately in-memory: it is a scratch copy
@@ -23,10 +24,18 @@ module.exports = function createRouter({ store, serverIP }) {
 
   router.get("/ipserver", (req, res) => res.send(serverIP()));
 
-  // Kept for the editor's startup check. There is no update service any more,
-  // so this always reports "nothing to announce".
-  router.post("/update", (req, res) => res.json({}));
-  router.get("/upgrade", (req, res) => res.json({ success: true }));
+  // Is a newer OSCAR out? Answers { available: false } when the check is
+  // switched off, offline, or already up to date -- the editor treats every
+  // one of those the same way, by saying nothing.
+  router.get("/update", async (req, res) => {
+    if (!updates) return res.json({ available: false });
+    try {
+      res.json(await updates.check());
+    } catch (err) {
+      console.error("Update check failed:", err.message);
+      res.json({ available: false });
+    }
+  });
 
   // ---- Preview hand-off -------------------------------------------------
   router.post("/save/preview", (req, res) => {
