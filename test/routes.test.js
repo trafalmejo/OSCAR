@@ -8,20 +8,22 @@ const path = require("node:path");
 const express = require("express");
 
 const { ProjectStore } = require("../lib/projects");
+const { CURRENT_FORMAT } = require("../lib/project-format");
 const createRouter = require("../routes/index");
 
 // Spin the real router up on an ephemeral port so the tests exercise the same
 // request path the editor uses.
 async function withServer(run, deps = {}) {
+  const { storeOptions, ...routerDeps } = deps;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-routes-"));
-  const store = new ProjectStore(dir);
+  const store = new ProjectStore(dir, storeOptions);
 
   const app = express();
   app.set("views", path.join(__dirname, "..", "public"));
   app.set("view engine", "ejs");
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ limit: "25mb", extended: true }));
-  app.use("/", createRouter(Object.assign({ store, serverIP: () => "192.168.0.5" }, deps)));
+  app.use("/", createRouter(Object.assign({ store, serverIP: () => "192.168.0.5" }, routerDeps)));
 
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s));
@@ -155,14 +157,67 @@ test("a GrapesJS 0.21+ project round-trips through save and load unchanged", asy
 
 test("GET /load returns the project, and {} when missing", async () => {
   await withServer(async (base) => {
-    await postJSON(base, "/save", { name: "Loadable", "gjs-components": "abc" });
+    const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }], styles: [] };
+    await postJSON(base, "/save", Object.assign({ name: "Loadable" }, project));
 
     const found = await (await fetch(base + "/load/loadable")).json();
-    assert.strictEqual(found["gjs-components"], "abc");
+    assert.deepStrictEqual(found, project);
 
     const missing = await (await fetch(base + "/load/nope")).json();
     assert.deepStrictEqual(missing, {});
   });
+});
+
+test("GET /load refuses a project saved by a newer OSCAR", async () => {
+  await withServer(async (base, store, dir) => {
+    // Hand-write a file claiming a future format, the way a newer OSCAR would.
+    fs.writeFileSync(
+      path.join(dir, "from-the-future.json"),
+      JSON.stringify({
+        format: 99,
+        oscar: "9.9.9",
+        name: "From The Future",
+        data: { pages: [{ frames: [{ component: { type: "wrapper" } }] }] },
+      })
+    );
+
+    const body = await (await fetch(base + "/load/from-the-future")).json();
+    assert.match(body.error, /newer version of OSCAR/i);
+    assert.match(body.error, /9\.9\.9/, "the message names the version that wrote it");
+    assert.strictEqual(body.pages, undefined, "no data is handed back to be mangled");
+  });
+});
+
+test("GET /load refuses a 1.x-era file instead of half-loading it", async () => {
+  await withServer(async (base, store, dir) => {
+    fs.writeFileSync(
+      path.join(dir, "ancient.json"),
+      JSON.stringify({ name: "Ancient", data: { "gjs-components": "[]" } })
+    );
+
+    const body = await (await fetch(base + "/load/ancient")).json();
+    assert.match(body.error, /isn't an OSCAR project|damaged/i);
+  });
+});
+
+test("saved files carry the format and the versions that wrote them", async () => {
+  await withServer(
+    async (base, store) => {
+      const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }] };
+      await postJSON(
+        base,
+        "/save",
+        Object.assign({ name: "Stamped", grapesjs: "0.23.6" }, project)
+      );
+
+      const record = await store.read("stamped");
+      assert.strictEqual(record.format, CURRENT_FORMAT);
+      assert.strictEqual(record.oscar, "2.0.0");
+      assert.strictEqual(record.grapesjs, "0.23.6");
+      assert.deepStrictEqual(record.data, project, "the version fields stay out of the project");
+    },
+    { storeOptions: { oscarVersion: "2.0.0" } }
+  );
 });
 
 test("traversal ids cannot read or delete files outside the store", async () => {

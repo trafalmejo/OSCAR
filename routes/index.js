@@ -2,9 +2,11 @@
 
 const express = require("express");
 
+const { openProject } = require("../lib/project-format");
+
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
-const META_KEYS = new Set(["name", "overwrite", "visibility"]);
+const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
 
 /**
  * @param {object} deps
@@ -86,7 +88,7 @@ module.exports = function createRouter({ store, serverIP, updates }) {
         });
       }
 
-      await store.save(name, data);
+      await store.save(name, data, { grapesjs: body.grapesjs });
       res.json({ msg: 'Saved "' + name + '"', id });
     } catch (err) {
       console.error("Could not save project:", err.message);
@@ -98,7 +100,27 @@ module.exports = function createRouter({ store, serverIP, updates }) {
     try {
       const record = await store.read(req.params.id);
       if (!record) return res.json({});
-      res.json(record.data || {});
+
+      const opened = openProject(record);
+
+      if (opened.status === "too-new") {
+        // Opening it anyway would drop whatever this version doesn't know
+        // about, and the next save would write that loss back over the file.
+        return res.json({
+          error:
+            "This project was saved with a newer version of OSCAR" +
+            (opened.savedBy ? " (" + opened.savedBy + ")" : "") +
+            ". Update OSCAR to open it.",
+        });
+      }
+
+      if (opened.status !== "ok") {
+        return res.json({
+          error: "This file isn't an OSCAR project, or it is damaged.",
+        });
+      }
+
+      res.json(opened.data);
     } catch (err) {
       console.error("Could not load project:", err.message);
       res.json({ error: "Could not be loaded" });

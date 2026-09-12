@@ -126,11 +126,10 @@ function checkForUpdate() {
     });
 }
 
-// A GrapesJS 0.21+ project always carries a `pages` array. Files from older
-// OSCAR builds used `gjs-components`/`gjs-styles` keys instead.
-function isProjectData(data) {
-  return !!data && Array.isArray(data.pages) && data.pages.length > 0;
-}
+// The same module the server uses to stamp and check project files, so the
+// format number and the "is this a project?" rule can never drift apart.
+var projectFormat = require("../../lib/project-format");
+var isProjectData = projectFormat.isGrapesProject;
 
 function postJSON(url, body) {
   return fetch(url, {
@@ -171,12 +170,37 @@ function initGrape(ipServer) {
       // A key distinct from 0.16's `gjs-*` entries, so a browser that ran an
       // older OSCAR ignores that data instead of half-loading it.
       options: { local: { key: "oscarProject" } },
-      // An autosave with no pages (from a crash mid-load, say) would leave the
-      // editor blank and unusable on every launch, with no way out short of
-      // clearing browser data. Start fresh instead -- `{}` is exactly what a
-      // first-ever launch loads.
+      // Stamp the autosave the same way saved files are stamped.
+      onStore: function (data) {
+        return Object.assign({ oscarFormat: projectFormat.CURRENT_FORMAT }, data);
+      },
       onLoad: function (data) {
-        if (!data || !Object.keys(data).length || isProjectData(data)) return data;
+        if (!data || !Object.keys(data).length) return data;
+
+        var format = typeof data.oscarFormat === "number" ? data.oscarFormat : 0;
+        delete data.oscarFormat;
+
+        // An autosave from a newer OSCAR would be quietly mangled by this one,
+        // and the next change would save the damage. Start fresh, but keep the
+        // newer copy rather than destroying someone's canvas.
+        if (format > projectFormat.CURRENT_FORMAT) {
+          try {
+            localStorage.setItem("oscarProject.newer", JSON.stringify(data));
+          } catch (err) {
+            /* nothing more we can do */
+          }
+          console.warn(
+            "OSCAR: this browser holds work from a newer OSCAR. Starting fresh; " +
+              "the newer copy is kept under the oscarProject.newer key."
+          );
+          return {};
+        }
+
+        // An autosave with no pages (from a crash mid-load, say) would leave
+        // the editor blank and unusable on every launch, with no way out short
+        // of clearing browser data. Start fresh -- `{}` is exactly what a
+        // first-ever launch loads.
+        if (isProjectData(data)) return data;
         console.warn("OSCAR: discarding an unreadable autosave and starting fresh");
         return {};
       },
@@ -334,7 +358,10 @@ function initGrape(ipServer) {
 
     // The project JSON is sent flat alongside OSCAR's own `name`/`overwrite`
     // fields; the server strips those two before writing the file.
-    var body = Object.assign({ name: name, overwrite: overwrite }, editor.getProjectData());
+    var body = Object.assign(
+      { name: name, overwrite: overwrite, grapesjs: grapesjs.version },
+      editor.getProjectData()
+    );
 
     postJSON("/save", body)
       .then(function (res) {

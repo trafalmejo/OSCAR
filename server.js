@@ -25,7 +25,9 @@ const PROJECTS_DIR =
 let serverIP = lanAddress();
 
 const app = express();
-const store = new ProjectStore(PROJECTS_DIR);
+// The OSCAR version is recorded in every saved project, so a file can always
+// say what wrote it.
+const store = new ProjectStore(PROJECTS_DIR, { oscarVersion: pkg.version });
 
 app.set("views", path.join(__dirname, "public"));
 app.set("view engine", "ejs");

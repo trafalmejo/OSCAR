@@ -7,6 +7,8 @@
 function oscar_button(editor, options) {
   var ipserver = (options && options.ipserver) || "localhost";
 
+  var DEFAULT_LABEL = "Insert here your text";
+
   var IPV4 =
     /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/;
 
@@ -36,8 +38,8 @@ function oscar_button(editor, options) {
         // child element intercepted every click and drag: grabbing a button by
         // its label tore the label out, and clicking selected the text rather
         // than the button and its OSC settings. The Label field edits it.
-        label: "Insert here your text",
-        components: "Insert here your text",
+        label: DEFAULT_LABEL,
+        components: DEFAULT_LABEL,
         droppable: false,
         resizable: true,
         editable: true,
@@ -58,14 +60,22 @@ function oscar_button(editor, options) {
       },
 
       init: function () {
-        // A button imported from HTML brings its own text; show that in the
-        // Label field rather than the default.
         var text = this.components()
           .map(function (c) {
             return c.get("type") === "textnode" ? c.get("content") : "";
           })
           .join("");
-        if (text && text !== this.get("label")) this.set({ label: text }, { silent: true });
+        var label = this.get("label");
+
+        if (label && label !== DEFAULT_LABEL && label !== text) {
+          // A label came from a saved project or from whoever created the
+          // component; it wins over whatever text the markup happens to carry.
+          this.components(label);
+        } else if (text && text !== label) {
+          // A button imported from HTML brings its own text; show that in the
+          // Label field rather than the default.
+          this.set({ label: text }, { silent: true });
+        }
 
         this.on("change:label", this.applyLabel);
         this.on("change:ip", this.checkIP);
