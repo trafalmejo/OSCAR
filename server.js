@@ -35,6 +35,18 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 
+// CSRF hardening: state-changing requests must originate from this app's own
+// origin. Browsers always attach `Origin` on cross-site POST/PUT/DELETE/PATCH,
+// so a mismatch means the request was forged by another site, not sent by us.
+const MUTATING_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (MUTATING_METHODS.has(req.method) && origin && origin !== `${req.protocol}://${req.headers.host}`) {
+    return res.status(403).json({ error: "Cross-origin request blocked" });
+  }
+  next();
+});
+
 app.use("/", createRouter({ store, serverIP: () => serverIP }));
 
 // ---- OSC transport --------------------------------------------------------
