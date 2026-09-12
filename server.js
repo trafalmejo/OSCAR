@@ -9,6 +9,7 @@ const { Server } = require("socket.io");
 const { lanAddress } = require("./lib/net");
 const { ProjectStore } = require("./lib/projects");
 const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
+const { CURRENT_FORMAT } = require("./lib/project-format");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -48,7 +49,19 @@ const updates = createUpdateChecker({
   enabled: process.env.OSCAR_NO_UPDATE_CHECK !== "1",
 });
 
-app.use("/", createRouter({ store, serverIP: () => serverIP, updates }));
+// What a bug report always needs: which OSCAR, on what, run how.
+function diagnostics() {
+  return {
+    oscar: pkg.version,
+    projectFormat: CURRENT_FORMAT,
+    platform: process.platform,
+    arch: process.arch,
+    node: process.versions.node,
+    electron: process.versions.electron || null,
+  };
+}
+
+app.use("/", createRouter({ store, serverIP: () => serverIP, updates, diagnostics }));
 
 // ---- OSC transport --------------------------------------------------------
 

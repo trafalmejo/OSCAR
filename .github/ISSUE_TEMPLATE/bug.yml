@@ -1,0 +1,69 @@
+name: Something isn't working
+description: Report a problem with OSCAR
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. If you got here from OSCAR's **Report a problem**
+        button, the version details below are already filled in.
+
+        In a hurry, or don't have a GitHub account? Email
+        [hello@createwithoscar.com](mailto:hello@createwithoscar.com) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what did OSCAR do?
+      placeholder: I pressed a button in the preview and nothing was sent.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      description: Even rough steps help a lot.
+      placeholder: |
+        1. Drag a Button onto the canvas
+        2. Set its port to 8000
+        3. Press it
+    validations:
+      required: false
+
+  - type: input
+    id: controlling
+    attributes:
+      label: What were you controlling?
+      description: Resolume, TouchDesigner, MadMapper, a lighting desk, something else?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: how-running
+    attributes:
+      label: How were you running OSCAR?
+      options:
+        - The desktop app
+        - A browser on the same computer
+        - A browser on a phone or tablet
+        - Not sure
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Version details
+      description: Filled in automatically by OSCAR's "Report a problem" button.
+      render: text
+    validations:
+      required: false

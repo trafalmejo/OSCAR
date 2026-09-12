@@ -10883,6 +10883,75 @@ if (document.getElementById("gjs")) {
   });
 
   checkForUpdate();
+  loadDiagnostics();
+  wireFeedbackButtons();
+}
+
+// ---- feedback --------------------------------------------------------------
+// Reports are prefilled into GitHub's issue form and opened in the browser, so
+// the person sees exactly what is being sent before submitting. OSCAR itself
+// posts nothing and holds no credentials.
+var ISSUES_URL = "https://github.com/trafalmejo/OSCAR/issues/new";
+
+var diagnostics = null;
+
+function loadDiagnostics() {
+  fetch("/diagnostics")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (info) {
+      diagnostics = info || {};
+      var el = document.getElementById("about-version");
+      if (el && diagnostics.oscar) el.textContent = "OSCAR " + diagnostics.oscar;
+    })
+    .catch(function () {
+      diagnostics = {};
+    });
+}
+
+/** The version details a bug report always ends up asking for. */
+function environmentReport() {
+  var info = diagnostics || {};
+  var lines = [
+    "OSCAR:      " + (info.oscar || "unknown"),
+    "Runs as:    " + (info.electron ? "desktop app (Electron " + info.electron + ")" : "browser"),
+    "System:     " + (info.platform || "?") + " " + (info.arch || ""),
+    "Node:       " + (info.node || "?"),
+    "GrapesJS:   " + (typeof grapesjs !== "undefined" ? grapesjs.version : "?"),
+    "Project:    format " + (info.projectFormat || "?"),
+    "Browser:    " + navigator.userAgent,
+  ];
+  return lines.join("\n");
+}
+
+function openIssue(template) {
+  var url =
+    ISSUES_URL +
+    "?template=" +
+    encodeURIComponent(template) +
+    "&environment=" +
+    encodeURIComponent(environmentReport());
+  window.open(url, "_blank", "noopener");
+}
+
+function wireFeedbackButtons() {
+  var report = document.getElementById("report-problem");
+  if (report) {
+    report.onclick = function (e) {
+      e.preventDefault();
+      openIssue("bug.yml");
+    };
+  }
+
+  var suggest = document.getElementById("suggest-feature");
+  if (suggest) {
+    suggest.onclick = function (e) {
+      e.preventDefault();
+      // The feature form has no environment field; nothing to prefill.
+      window.open(ISSUES_URL + "?template=feature.yml", "_blank", "noopener");
+    };
+  }
 }
 
 // ---- update notice ---------------------------------------------------------

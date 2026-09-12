@@ -68,3 +68,30 @@
   font-size: 12px;
   opacity: 0.8;
 }
+
+/* About panel: report/suggest actions */
+
+.about-actions {
+  display: flex;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+
+.about-actions .btn {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+  padding: 8px 12px;
+}
+
+.about-note {
+  font-size: 12px;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+#about-version {
+  margin-top: 10px;
+  font-family: monospace;
+  opacity: 0.55;
+}

@@ -264,6 +264,31 @@ test("preview hand-off round-trips through the server", async () => {
   });
 });
 
+test("GET /diagnostics reports what a bug report needs", async () => {
+  await withServer(
+    async (base) => {
+      const body = await (await fetch(base + "/diagnostics")).json();
+      assert.strictEqual(body.oscar, "2.0.0");
+      assert.strictEqual(body.platform, "linux");
+      assert.strictEqual(body.projectFormat, CURRENT_FORMAT);
+    },
+    {
+      diagnostics: () => ({
+        oscar: "2.0.0",
+        platform: "linux",
+        arch: "x64",
+        projectFormat: CURRENT_FORMAT,
+      }),
+    }
+  );
+});
+
+test("GET /diagnostics is empty rather than broken when unwired", async () => {
+  await withServer(async (base) => {
+    assert.deepStrictEqual(await (await fetch(base + "/diagnostics")).json(), {});
+  });
+});
+
 test("GET /update passes on what the checker found", async () => {
   await withServer(
     async (base) => {

@@ -1,0 +1,43 @@
+name: Suggest a feature
+description: Something you wish OSCAR could do
+labels: ["feature request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No GitHub account? Email [hello@createwithoscar.com](mailto:hello@createwithoscar.com)
+        — suggestions sent that way are read and tracked the same way.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like OSCAR to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What are you trying to build?
+      description: >
+        The situation matters more than the feature. Knowing what you are
+        controlling, and how, often points at a better answer than the one
+        being asked for.
+    validations:
+      required: false
+
+  - type: input
+    id: controlling
+    attributes:
+      label: What software or hardware is involved?
+      description: Resolume, TouchDesigner, MadMapper, Art-Net, DMX, Arduino, something else?
+    validations:
+      required: false
+
+  - type: input
+    id: today
+    attributes:
+      label: How do you handle it today?
+      description: Another tool, a workaround, or not at all?
+    validations:
+      required: false

@@ -14,7 +14,7 @@ const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
  * @param {() => string} deps.serverIP
  * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
  */
-module.exports = function createRouter({ store, serverIP, updates }) {
+module.exports = function createRouter({ store, serverIP, updates, diagnostics }) {
   const router = express.Router();
 
   // The live preview payload is deliberately in-memory: it is a scratch copy
@@ -25,6 +25,10 @@ module.exports = function createRouter({ store, serverIP, updates }) {
   router.get("/preview", (req, res) => res.render("preview"));
 
   router.get("/ipserver", (req, res) => res.send(serverIP()));
+
+  // Version details for the "Report a problem" button. Nothing identifying:
+  // just what a bug report always has to ask for anyway.
+  router.get("/diagnostics", (req, res) => res.json(diagnostics ? diagnostics() : {}));
 
   // Is a newer OSCAR out? Answers { available: false } when the check is
   // switched off, offline, or already up to date -- the editor treats every
