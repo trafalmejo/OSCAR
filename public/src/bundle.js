@@ -11500,30 +11500,51 @@ function initGrape(ipServer, socketPort) {
   });
 
   // ---- tooltips ----------------------------------------------------------
-  [
-    ["sw-visibility", "Show Borders"],
-    ["preview", "Preview"],
-    ["fullscreen", "Fullscreen"],
-    ["export-template", "See Code"],
-    ["undo", "Undo"],
-    ["redo", "Redo"],
-    ["gjs-open-import-webpage", "Import"],
-    ["canvas-clear", "Clear canvas"],
-  ].forEach(function (item) {
-    var button = pn.getButton("options", item[0]);
-    button && button.set("attributes", { title: item[1], "data-tooltip-pos": "bottom" });
+  // GrapesJS renders the panels during init, before any of this runs, and a
+  // button does not re-render when its attributes change afterwards. Setting
+  // the model alone is silently ignored, so the text is written onto the
+  // elements as well. Buttons render in the order the panel holds them.
+  function retitle(panelId, labels) {
+    var panel = pn.getPanel(panelId);
+    var els = document.querySelectorAll(".gjs-pn-" + panelId + " .gjs-pn-btn");
+    if (!panel || !els.length) return;
+
+    panel.get("buttons").forEach(function (button, index) {
+      var label = labels[button.get("id")];
+      var el = els[index];
+      if (!label || !el) return;
+
+      button.set("attributes", { title: label, "data-tooltip-pos": "bottom" });
+      el.setAttribute("data-tooltip", label);
+      el.setAttribute("data-tooltip-pos", "bottom");
+      el.setAttribute("title", "");
+    });
+  }
+
+  retitle("options", {
+    "sw-visibility": "Show borders",
+    // "Push", not "Preview": this is also what sends the layout to the
+    // /preview page, which keeps showing the last pushed version until it is.
+    preview: "Push to preview",
+    fullscreen: "Fullscreen",
+    "export-template": "See code",
+    undo: "Undo",
+    redo: "Redo",
+    "gjs-open-import-webpage": "Import",
+    "canvas-clear": "Clear canvas",
+    "open-save": "Save project",
+    "open-load": "Load project",
+    "open-info": "About",
   });
 
-  [
-    ["open-sm", "Style Manager"],
-    ["open-tm", "OSC Settings"],
-    ["open-layers", "Layers"],
-    ["open-blocks", "Blocks"],
-  ].forEach(function (item) {
-    var button = pn.getButton("views", item[0]);
-    button && button.set("attributes", { title: item[1], "data-tooltip-pos": "bottom" });
+  retitle("views", {
+    "open-sm": "Style Manager",
+    "open-tm": "OSC Settings",
+    "open-layers": "Layers",
+    "open-blocks": "Blocks",
   });
 
+  // Anything else that still carries a title (modal contents, for instance).
   var titles = document.querySelectorAll("*[title]");
   for (var i = 0; i < titles.length; i++) {
     var el = titles[i];
