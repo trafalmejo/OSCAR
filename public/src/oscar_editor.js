@@ -531,7 +531,12 @@ function initGrape(ipServer) {
   // Only mousedown and dragstart are swallowed, and only propagation -- never
   // the default action. Clicks are still generated, and a range slider still
   // drags natively, so widgets keep sending OSC while previewing.
-  var BLOCKED_IN_PREVIEW = ["mousedown", "pointerdown", "dragstart"];
+  // touchstart is deliberately NOT in this list: OSCAR's buttons listen for it,
+  // and swallowing it would stop every widget working on a tablet -- the whole
+  // point of the preview. Blocking touchmove stops a touch-driven drag without
+  // affecting a range slider, whose touch dragging is a default action and so
+  // survives stopped propagation.
+  var BLOCKED_IN_PREVIEW = ["mousedown", "pointerdown", "dragstart", "touchmove"];
   var swallow = null;
 
   function blockCanvasEditing() {
