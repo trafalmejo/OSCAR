@@ -5,6 +5,7 @@ const assert = require("node:assert");
 
 const {
   CURRENT_FORMAT,
+  stripEditorState,
   MIGRATIONS,
   isGrapesProject,
   detectFormat,
@@ -90,6 +91,77 @@ test("isGrapesProject only accepts project data with pages", () => {
   assert.strictEqual(isGrapesProject({ pages: [] }), false);
   assert.strictEqual(isGrapesProject({ "gjs-components": "[]" }), false);
   assert.strictEqual(isGrapesProject(null), false);
+});
+
+test("format 2 strips editor state a preview once wrote into projects", () => {
+  // What a 2.1 development build saved if you pressed Save while previewing.
+  const damaged = {
+    pages: [
+      {
+        frames: [
+          {
+            component: {
+              type: "wrapper",
+              components: [
+                {
+                  type: "oscar-button",
+                  draggable: false,
+                  selectable: false,
+                  hoverable: false,
+                  highlightable: false,
+                  editable: false,
+                  droppable: false,
+                  components: [{ type: "text", draggable: false, selectable: false }],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const fixed = stripEditorState(damaged);
+  const button = fixed.pages[0].frames[0].component.components[0];
+
+  for (const key of ["draggable", "selectable", "hoverable", "highlightable", "editable"]) {
+    assert.ok(!(key in button), key + " was left on the component");
+  }
+  assert.strictEqual(button.droppable, false, "droppable is the widget's own setting, not editor state");
+  assert.ok(!("draggable" in button.components[0]), "nested components are cleaned too");
+});
+
+test("stripping leaves a healthy project untouched", () => {
+  const healthy = JSON.parse(JSON.stringify(project()));
+  assert.deepStrictEqual(stripEditorState(JSON.parse(JSON.stringify(healthy))), healthy);
+});
+
+test("a damaged format 1 file is repaired on open", () => {
+  const record = {
+    format: 1,
+    oscar: "2.0.0",
+    name: "Saved while previewing",
+    data: {
+      pages: [
+        {
+          frames: [
+            {
+              component: {
+                type: "wrapper",
+                components: [{ type: "oscar-slider", draggable: false, selectable: false }],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const opened = openProject(record);
+  assert.strictEqual(opened.status, "ok");
+  assert.strictEqual(opened.migrated, true);
+  const slider = opened.data.pages[0].frames[0].component.components[0];
+  assert.ok(!("draggable" in slider), "the widget can be moved again");
 });
 
 test("every format below the current one has a migration to the next", () => {

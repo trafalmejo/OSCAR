@@ -8,7 +8,7 @@
  * not once per OSCAR release. Add the matching entry to MIGRATIONS when you
  * do, and a test for it.
  */
-const CURRENT_FORMAT = 1;
+const CURRENT_FORMAT = 2;
 
 /**
  * MIGRATIONS[n] converts project data from format n to format n + 1.
@@ -19,7 +19,36 @@ const CURRENT_FORMAT = 1;
  */
 const MIGRATIONS = {
   0: (data) => data,
+  1: (data) => stripEditorState(data),
 };
+
+// Editor state that must never live in a project. A 2.1 development build
+// locked components while previewing by setting these on the components
+// themselves, so saving during a preview wrote them into the file and the
+// widgets could no longer be moved afterwards.
+const EDITOR_STATE_KEYS = ["draggable", "selectable", "hoverable", "highlightable", "editable"];
+
+function stripFromComponent(component) {
+  if (!component || typeof component !== "object") return;
+
+  for (const key of EDITOR_STATE_KEYS) {
+    if (component[key] === false) delete component[key];
+  }
+
+  const children = component.components;
+  if (Array.isArray(children)) children.forEach(stripFromComponent);
+}
+
+function stripEditorState(data) {
+  if (!data || !Array.isArray(data.pages)) return data;
+
+  for (const page of data.pages) {
+    for (const frame of page.frames || []) stripFromComponent(frame.component);
+    // Some projects carry the component directly on the page.
+    stripFromComponent(page.component);
+  }
+  return data;
+}
 
 /** GrapesJS 0.21+ project data always carries a pages array. */
 function isGrapesProject(data) {
@@ -92,6 +121,7 @@ function stampProject({ name, data, oscar, grapesjs, now = () => new Date() }) {
 
 module.exports = {
   CURRENT_FORMAT,
+  stripEditorState,
   MIGRATIONS,
   isGrapesProject,
   detectFormat,
@@ -11365,48 +11395,59 @@ function initGrape(ipServer) {
 
   // ---- preview mode ------------------------------------------------------
   // GrapesJS's preview hides the panels, but in absolute drag mode it leaves
-  // components draggable and selectable -- dragging a button in preview pulls
-  // its label out of it. Lock everything while previewing, then put each
-  // component back exactly as it was.
+  // components draggable -- dragging a button in preview pulls its label out.
   //
-  // `avoidStore` keeps the temporary lock out of undo history and autosave;
-  // otherwise closing the window mid-preview would save every widget locked.
-  // (GrapesJS 0.21+ fires `command:run:<id>`; `run:<id>` no longer exists.)
-  var PREVIEW_LOCK = {
-    draggable: false,
-    selectable: false,
-    hoverable: false,
-    editable: false,
-    highlightable: false,
-  };
-  var beforePreview = null;
+  // This blocks the drag in the canvas rather than marking components
+  // undraggable. An earlier version set draggable/selectable/... to false and
+  // restored them on exit, but those values are part of the project: saving
+  // while previewing wrote "don't move me" into the file permanently.
+  // Component data must never carry editor state.
+  //
+  // Only mousedown and dragstart are swallowed, and only propagation -- never
+  // the default action. Clicks are still generated, and a range slider still
+  // drags natively, so widgets keep sending OSC while previewing.
+  var BLOCKED_IN_PREVIEW = ["mousedown", "pointerdown", "dragstart"];
+  var swallow = null;
+
+  function blockCanvasEditing() {
+    var doc = editor.Canvas.getDocument();
+    if (!doc || swallow) return;
+
+    swallow = function (e) {
+      e.stopImmediatePropagation();
+    };
+    BLOCKED_IN_PREVIEW.forEach(function (type) {
+      doc.addEventListener(type, swallow, true);
+    });
+
+    // The selection toolbar, badges and resize handles live outside the canvas
+    // and would otherwise float over the control surface -- including a delete
+    // button. Hide the lot while previewing.
+    editor.getEl().classList.add("oscar-previewing");
+  }
+
+  function unblockCanvasEditing() {
+    var doc = editor.Canvas.getDocument();
+    if (!doc || !swallow) return;
+
+    BLOCKED_IN_PREVIEW.forEach(function (type) {
+      doc.removeEventListener(type, swallow, true);
+    });
+    swallow = null;
+    editor.getEl().classList.remove("oscar-previewing");
+  }
 
   editor.on("command:run:preview", function () {
-    // Hand the canvas to the preview page (read back from /show/preview)
-    // before locking, so the lock doesn't travel with it.
+    // Hand the canvas to the preview page (read back from /show/preview).
     postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
       console.log("Could not hand off preview", err);
     });
 
     editor.select();
-    beforePreview = [];
-    editor.getWrapper().onAll(function (component) {
-      var previous = {};
-      Object.keys(PREVIEW_LOCK).forEach(function (key) {
-        previous[key] = component.get(key);
-      });
-      beforePreview.push([component, previous]);
-      component.set(PREVIEW_LOCK, { avoidStore: true });
-    });
+    blockCanvasEditing();
   });
 
-  editor.on("command:stop:preview", function () {
-    if (!beforePreview) return;
-    beforePreview.forEach(function (entry) {
-      entry[0].set(entry[1], { avoidStore: true });
-    });
-    beforePreview = null;
-  });
+  editor.on("command:stop:preview", unblockCanvasEditing);
 
   // ---- panel buttons -----------------------------------------------------
   pn.addButton("options", {

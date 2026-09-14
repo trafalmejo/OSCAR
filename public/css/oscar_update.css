@@ -95,3 +95,15 @@
   font-family: monospace;
   opacity: 0.55;
 }
+
+/* While previewing, hide the editor's own overlays. They sit outside the
+   canvas, so blocking events inside it doesn't reach them -- and a delete
+   button floating over a control surface during a show is a hazard. */
+.oscar-previewing .gjs-toolbar,
+.oscar-previewing .gjs-badge,
+.oscar-previewing .gjs-resizer-h,
+.oscar-previewing .gjs-highlighter,
+.oscar-previewing .gjs-highlighter-sel,
+.oscar-previewing .gjs-placeholder {
+  display: none !important;
+}
