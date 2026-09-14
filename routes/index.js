@@ -14,7 +14,7 @@ const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
  * @param {() => string} deps.serverIP
  * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
  */
-module.exports = function createRouter({ store, serverIP, updates, diagnostics }) {
+module.exports = function createRouter({ store, serverIP, socketPort, updates, diagnostics }) {
   const router = express.Router();
 
   // The live preview payload is deliberately in-memory: it is a scratch copy
@@ -24,6 +24,14 @@ module.exports = function createRouter({ store, serverIP, updates, diagnostics }
   router.get("/", (req, res) => res.render("index"));
   router.get("/preview", (req, res) => res.render("preview"));
 
+  // Where the browser should reach OSCAR. The OSC bridge does not always
+  // listen on 8081 -- OSCAR_SOCKET_PORT moves it, and a second instance on the
+  // same machine has to -- so the port is reported rather than assumed.
+  router.get("/connection", (req, res) =>
+    res.json({ address: serverIP(), socketPort: socketPort ? socketPort() : 8081 })
+  );
+
+  // Kept for anything written against older OSCARs.
   router.get("/ipserver", (req, res) => res.send(serverIP()));
 
   // Version details for the "Report a problem" button. Nothing identifying:

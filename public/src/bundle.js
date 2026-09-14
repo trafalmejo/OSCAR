@@ -10907,10 +10907,17 @@ var editor = {};
 if (document.getElementById("gjs")) {
   // Ask the server which address it is reachable on, so new widgets default to
   // an IP that other devices on the network can actually talk to.
-  $.get("/ipserver", function (data) {
-    initGrape(data || window.location.hostname || "localhost");
-    window.editor = editor;
-  });
+  fetch("/connection")
+    .then(function (res) {
+      return res.json();
+    })
+    .catch(function () {
+      return {};
+    })
+    .then(function (conn) {
+      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081);
+      window.editor = editor;
+    });
 
   checkForUpdate();
   loadDiagnostics();
@@ -11085,7 +11092,7 @@ function postJSON(url, body) {
   });
 }
 
-function initGrape(ipServer) {
+function initGrape(ipServer, socketPort) {
   editor = grapesjs.init({
     dragMode: "absolute",
     height: "100%",
@@ -11162,7 +11169,7 @@ function initGrape(ipServer) {
       "grapesjs-tooltip",
     ],
     pluginsOpts: {
-      oscar_socket: { ipserver: ipServer },
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort },
       oscar_slider: { ipserver: ipServer },
       oscar_button: { ipserver: ipServer },
       "grapesjs-tooltip": {},
@@ -11537,12 +11544,19 @@ var editor;
 if (document.getElementById("gjs-oscar-preview")) {
   // Ask the server which address it is reachable on, so widgets default to
   // something other devices on the network can actually talk to.
-  $.get("/ipserver", function (data) {
-    initGrape(data || window.location.hostname || "localhost");
-  });
+  fetch("/connection")
+    .then(function (res) {
+      return res.json();
+    })
+    .catch(function () {
+      return {};
+    })
+    .then(function (conn) {
+      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081);
+    });
 }
 
-function initGrape(ipServer) {
+function initGrape(ipServer, socketPort) {
   editor = grapesjs.init({
     height: "100%",
     container: "#gjs-oscar-preview",
@@ -11554,7 +11568,7 @@ function initGrape(ipServer) {
     storageManager: false,
     plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider", "grapesjs-touch"],
     pluginsOpts: {
-      oscar_socket: { ipserver: ipServer },
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort },
       oscar_slider: { ipserver: ipServer },
       oscar_button: { ipserver: ipServer },
     },

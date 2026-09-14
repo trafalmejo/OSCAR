@@ -26,6 +26,12 @@ or tablet on the same Wi-Fi to use the interface as a control surface.
 
 Make sure your firewall allows communication between devices on the network.
 
+To run two copies of OSCAR on one machine, give the second one its own ports:
+
+```bash
+OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT=5004 npm run serve
+```
+
 ### Useful commands
 
 | Command | What it does |
@@ -86,7 +92,7 @@ All optional, set as environment variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `OSCAR_HTTP_PORT` | `8080` | Web interface |
-| `OSCAR_SOCKET_PORT` | `8081` | Browser-to-server OSC bridge |
+| `OSCAR_SOCKET_PORT` | `8081` | Browser-to-server OSC bridge (browsers are told the port) |
 | `OSCAR_LAN_PORT` | `5001` | Source port for OSC sent to the network |
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |

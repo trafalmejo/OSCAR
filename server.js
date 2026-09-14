@@ -61,7 +61,16 @@ function diagnostics() {
   };
 }
 
-app.use("/", createRouter({ store, serverIP: () => serverIP, updates, diagnostics }));
+app.use(
+  "/",
+  createRouter({
+    store,
+    serverIP: () => serverIP,
+    socketPort: () => SOCKET_PORT,
+    updates,
+    diagnostics,
+  })
+);
 
 // ---- OSC transport --------------------------------------------------------
 

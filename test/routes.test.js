@@ -264,6 +264,24 @@ test("preview hand-off round-trips through the server", async () => {
   });
 });
 
+test("GET /connection tells the browser where the OSC bridge is", async () => {
+  await withServer(
+    async (base) => {
+      const body = await (await fetch(base + "/connection")).json();
+      assert.strictEqual(body.address, "192.168.0.5");
+      assert.strictEqual(body.socketPort, 18091, "the configured port, not the default");
+    },
+    { socketPort: () => 18091 }
+  );
+});
+
+test("GET /connection falls back to the default bridge port", async () => {
+  await withServer(async (base) => {
+    const body = await (await fetch(base + "/connection")).json();
+    assert.strictEqual(body.socketPort, 8081);
+  });
+});
+
 test("GET /diagnostics reports what a bug report needs", async () => {
   await withServer(
     async (base) => {
