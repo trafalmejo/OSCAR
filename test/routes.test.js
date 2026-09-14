@@ -253,6 +253,20 @@ test("DELETE /remove deletes once and then reports it is gone", async () => {
   });
 });
 
+test("pushing a preview notifies open preview pages", async () => {
+  let notified = 0;
+  await withServer(
+    async (base) => {
+      await postJSON(base, "/save/preview", { project: { pages: [] } });
+      assert.strictEqual(notified, 1, "a push tells the preview pages to pick it up");
+
+      await fetch(base + "/show/preview");
+      assert.strictEqual(notified, 1, "merely reading it notifies nobody");
+    },
+    { onPreviewPush: () => (notified += 1) }
+  );
+});
+
 test("preview hand-off round-trips through the server", async () => {
   await withServer(async (base) => {
     assert.deepStrictEqual(await (await fetch(base + "/show/preview")).json(), {});

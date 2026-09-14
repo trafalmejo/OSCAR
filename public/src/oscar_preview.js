@@ -38,34 +38,54 @@ function initGrape(ipServer, socketPort) {
   });
 
   editor.on("load", function () {
-    fetch("/show/preview")
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (data) {
-        // loadProjectData tears down the current page before reading the new
-        // one, so only hand it something shaped like a GrapesJS project.
-        if (data && Array.isArray(data.pages) && data.pages.length) {
-          editor.loadProjectData(data);
-        }
+    showLatest();
 
-        // A preview is for driving the show, not editing it.
-        editor.getWrapper().onAll(function (component) {
-          component.set({
-            editable: false,
-            selectable: false,
-            hoverable: false,
-            draggable: false,
-            highlightable: false,
-          });
-        });
-
-        // GrapesJS's own preview mode hides the panels and makes the canvas
-        // full size. Its "exit preview" button is hidden in preview.ejs.
-        editor.runCommand("preview");
-      })
-      .catch(function (err) {
-        console.log("Could not load the preview", err);
-      });
+    // The editor's "Push to preview" button tells the server, which tells
+    // every open preview page. Without this a tablet keeps showing the
+    // previous push until someone walks over and reloads it.
+    if (editor.socket) {
+      editor.socket.on("preview:updated", showLatest);
+    }
   });
+}
+
+/** Fetch whatever was last pushed and display it, ready to drive a show. */
+function showLatest() {
+  return fetch("/show/preview")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (data) {
+      // loadProjectData tears down the current page before reading the new
+      // one, so only hand it something shaped like a GrapesJS project.
+      if (!data || !Array.isArray(data.pages) || !data.pages.length) return;
+
+      editor.loadProjectData(data);
+      lockDown();
+    })
+    .catch(function (err) {
+      console.log("Could not load the preview", err);
+    });
+}
+
+/**
+ * A preview is for driving the show, not editing it.
+ *
+ * Safe to set on the components here, unlike in the editor: this page never
+ * saves anything (storageManager is off), so none of it can reach a file.
+ */
+function lockDown() {
+  editor.getWrapper().onAll(function (component) {
+    component.set({
+      editable: false,
+      selectable: false,
+      hoverable: false,
+      draggable: false,
+      highlightable: false,
+    });
+  });
+
+  // GrapesJS's own preview mode hides the panels and makes the canvas full
+  // size. Its "exit preview" button is hidden in preview.ejs.
+  if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }

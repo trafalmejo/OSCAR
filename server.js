@@ -69,6 +69,8 @@ app.use(
     socketPort: () => SOCKET_PORT,
     updates,
     diagnostics,
+    // `io` is created below; this only runs once a request arrives.
+    onPreviewPush: () => io.emit("preview:updated"),
   })
 );
 

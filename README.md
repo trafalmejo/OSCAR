@@ -110,6 +110,19 @@ This is the only request OSCAR makes to the internet. It sends nothing about
 you or your projects, times out quickly, and failing silently is the expected
 case on a venue network with no internet access.
 
+## Running a show
+
+The editor lives at `/`. The control surface lives at `/preview` — the same
+layout with every editing tool stripped out, which is what you open on a phone
+or tablet.
+
+Press **Push to preview** (the eye icon) to send the current layout to it.
+Every device showing `/preview` picks the new layout up straight away; there is
+no need to walk over and reload them.
+
+`/preview` cannot be edited, but the editor is still reachable at `/` on the
+same address, so anyone on the network can open it.
+
 ## Saving your work
 
 The canvas autosaves into your browser as you work.

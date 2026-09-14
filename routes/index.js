@@ -14,7 +14,14 @@ const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
  * @param {() => string} deps.serverIP
  * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
  */
-module.exports = function createRouter({ store, serverIP, socketPort, updates, diagnostics }) {
+module.exports = function createRouter({
+  store,
+  serverIP,
+  socketPort,
+  updates,
+  diagnostics,
+  onPreviewPush,
+}) {
   const router = express.Router();
 
   // The live preview payload is deliberately in-memory: it is a scratch copy
@@ -54,6 +61,9 @@ module.exports = function createRouter({ store, serverIP, socketPort, updates, d
   // ---- Preview hand-off -------------------------------------------------
   router.post("/save/preview", (req, res) => {
     preview = req.body && req.body.project ? req.body.project : req.body;
+    // Tell any open preview pages to pick it up. Without this a tablet keeps
+    // showing the previous push until someone reloads it by hand.
+    if (onPreviewPush) onPreviewPush();
     res.json({ msg: "Preview updated" });
   });
 
