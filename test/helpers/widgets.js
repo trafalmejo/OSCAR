@@ -16,9 +16,11 @@ const { fakeElement, fakeContext } = require("./fake-dom");
  * positions; everything else is a setting. Returns { el, ctx, detach, rewrite }:
  * `el.fire(type, event)` delivers an event, `ctx.sent` is the wire traffic,
  * `ctx.edit(key, value)` pretends someone changed a setting in the panel,
- * `rewrite()` does what an editor does on a class or style edit -- wipes the
- * element and tells the widget -- and `state()` is everything the widget has
- * put on the element, so a test can check it comes back.
+ * `ctx.receive(address, args)` pretends the rig sent a message (and throws if
+ * the widget answers it with a send), `rewrite()` does what an editor does on
+ * a class or style edit -- wipes the element and tells the widget -- and
+ * `state()` is everything the widget has put on the element, so a test can
+ * check it comes back.
  */
 function mount(widget, overrides) {
   const options = Object.assign({}, overrides);

@@ -80,3 +80,96 @@ test("the definition carries no copy of what the settings decide", () => {
     assert.ok(!(key in slider.attributes), key + " is set by attach, not declared");
   }
 });
+
+// --- following the rig ------------------------------------------------------
+
+test("an incoming value moves the thumb and the stored value, and sends nothing back", () => {
+  const { el, ctx } = mount(slider, { listen: true, min: 0, max: 100, value: 0 });
+  ctx.receive("/slider1", [50]);
+  assert.strictEqual(el.value, "50", "the thumb followed");
+  assert.strictEqual(ctx.config.value, 50, "and so did the stored value");
+  assert.deepStrictEqual(ctx.sent, [], "nothing went back out");
+});
+
+test("a slider with Listen off ignores the network entirely", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, value: 0 });
+  ctx.receive("/slider1", [50]);
+  assert.strictEqual(el.value, "0");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("a listening slider answers to its own address, literally, and to patterns that reach it", () => {
+  const { el, ctx } = mount(slider, { listen: true, message: "/fader/1", min: 0, max: 100, value: 0 });
+  ctx.receive("/fader/2", [50]);
+  assert.strictEqual(el.value, "0");
+  ctx.receive("/fader/*", [30]);
+  assert.strictEqual(el.value, "30");
+  ctx.receive("/fader/1", [60]);
+  assert.strictEqual(el.value, "60");
+});
+
+test("a value the slider cannot read is ignored, never taken as zero", () => {
+  const { el, ctx } = mount(slider, { listen: true, min: 0, max: 100, value: 40 });
+  for (const args of [[], [null], ["abc"], [""], [" "], [true], [NaN], [{}]]) {
+    ctx.receive("/slider1", args);
+    assert.strictEqual(el.value, "40", JSON.stringify(args));
+    assert.strictEqual(ctx.config.value, 40, JSON.stringify(args));
+  }
+  ctx.receive("/slider1", ["55"]);
+  assert.strictEqual(el.value, "55", "a number spelled as text is a number");
+});
+
+test("an incoming value is kept inside the range, so the thumb and the value agree", () => {
+  const { el, ctx } = mount(slider, { listen: true, min: 0, max: 100, value: 40 });
+  ctx.receive("/slider1", [150]);
+  assert.strictEqual(ctx.config.value, 100);
+  assert.strictEqual(el.value, "100");
+  ctx.receive("/slider1", [-5]);
+  assert.strictEqual(ctx.config.value, 0);
+});
+
+test("with Invert on, the value received is the wire value and the thumb mirrors it", () => {
+  // The rig echoes what was sent, which was already mirrored; storing it as
+  // sent and mirroring for display keeps a round trip from drifting.
+  const { el, ctx } = mount(slider, { listen: true, invert: true, min: 0, max: 100, value: 0 });
+  ctx.receive("/slider1", [75]);
+  assert.strictEqual(ctx.config.value, 75);
+  assert.strictEqual(el.value, "25");
+});
+
+test("a hand on the thumb outranks the network until it lets go", () => {
+  const { el, ctx } = mount(slider, { listen: true, min: 0, max: 100, value: 10 });
+  el.fire("pointerdown");
+  el.value = "20";
+  el.fire("input");
+  ctx.receive("/slider1", [90]);
+  assert.strictEqual(el.value, "20", "the thumb stayed under the finger");
+  assert.strictEqual(ctx.config.value, 20);
+
+  el.fire("pointerup");
+  ctx.receive("/slider1", [90]);
+  assert.strictEqual(el.value, "90", "and follows again once released");
+});
+
+test("a cancelled drag also lets the network back in", () => {
+  const { el, ctx } = mount(slider, { listen: true, min: 0, max: 100, value: 10 });
+  el.fire("pointerdown");
+  el.fire("pointercancel");
+  ctx.receive("/slider1", [90]);
+  assert.strictEqual(el.value, "90");
+});
+
+test("Listen sits right after Message, and is off by default", () => {
+  const keys = slider.fields.map((f) => f.key);
+  assert.strictEqual(keys[keys.indexOf("message") + 1], "listen");
+  assert.strictEqual(slider.defaults.listen, false);
+});
+
+test("detaching stops the slider following the rig", () => {
+  const { el, ctx, detach } = mount(slider, { listen: true, min: 0, max: 100, value: 10 });
+  detach();
+  ctx.receive("/slider1", [90]);
+  assert.strictEqual(el.value, "10");
+  assert.strictEqual(ctx.listening(), 0);
+  assert.strictEqual(el.listenerCount("pointerdown"), 0);
+});

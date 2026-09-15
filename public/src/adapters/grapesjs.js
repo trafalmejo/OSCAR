@@ -51,11 +51,18 @@ function configOf(model, definition) {
  * the validators or a re-render -- the old slider needed a `fromView` flag
  * threaded through its model to dodge exactly that, and the pad would have
  * fought its own handle.
+ *
+ * `onOsc` is the network coming the other way, and `send` is shut for as long
+ * as a message is being delivered through it. That is the host's half of the
+ * loop guard: a widget has no way to lift it, so a value that arrived from
+ * outside cannot be bounced straight back out by any widget, however it is
+ * written. (The widgets' half is in lib/widgets/incoming.js.)
  */
 function contextFor(view, editor) {
   var model = view.model;
+  var delivering = 0;
 
-  return {
+  var ctx = {
     onRewrite: function (fn) {
       view.oscarRewrites = (view.oscarRewrites || []).concat([fn]);
       return function () {
@@ -74,6 +81,10 @@ function contextFor(view, editor) {
     },
 
     send: function (message) {
+      if (delivering) {
+        console.warn("OSCAR: a widget tried to answer incoming OSC with outgoing OSC; dropped", message);
+        return;
+      }
       if (!message || !editor.sendOSC) return;
       editor.sendOSC(message.ip, message.port, message.address, message.args);
     },
@@ -98,6 +109,23 @@ function contextFor(view, editor) {
       };
     },
   };
+
+  // Only a host that can receive offers onOsc at all; the widgets check for
+  // it (through follow() in lib/widgets/incoming.js) rather than assume it.
+  if (editor.onOscIn) {
+    ctx.onOsc = function (fn) {
+      return editor.onOscIn(function (message) {
+        delivering++;
+        try {
+          fn(message);
+        } finally {
+          delivering--;
+        }
+      });
+    };
+  }
+
+  return ctx;
 }
 
 /** Let the widget put back what GrapesJS just wiped off its element. */

@@ -134,6 +134,67 @@ test("the widget is told after GrapesJS rewrites its element, and forgotten on r
   assert.strictEqual(model.handlerCount(), 0, "no change handlers left on the model");
 });
 
+test("a host that cannot receive offers no onOsc, and the widgets cope", () => {
+  // The socket plugin is what provides onOscIn; without it the adapter must
+  // not pretend, or a widget would subscribe to nothing and never know.
+  const type = registered(slider);
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { listen: true })) };
+  assert.doesNotThrow(() => type.view.onRender.call(view));
+  type.view.removed.call(view);
+});
+
+test("an incoming message reaches the widget, and a send made while delivering it is dropped", () => {
+  // The host's half of the loop guard. A widget cannot lift it, however it
+  // is written, because the gate is in the adapter and not in the widget.
+  const editor = fakeEditor();
+  let listeners = [];
+  editor.onOscIn = (fn) => {
+    listeners.push(fn);
+    return () => {
+      listeners = listeners.filter((f) => f !== fn);
+    };
+  };
+  const sent = [];
+  editor.sendOSC = (ip, port, address, args) => sent.push({ address, args });
+  register(slider)(editor, {});
+  const type = editor.types[slider.name];
+
+  const el = fakeElement();
+  const model = fakeModel(Object.assign({}, slider.defaults, { listen: true, min: 0, max: 100, value: 0 }));
+  const view = { el, model };
+  type.view.onRender.call(view);
+  assert.strictEqual(listeners.length, 1, "the slider subscribed");
+
+  for (const fn of listeners) fn({ address: "/slider1", args: [40] });
+  assert.strictEqual(el.value, "40", "the thumb followed");
+  assert.deepStrictEqual(sent, [], "and nothing went out");
+
+  // A widget that did try to answer would be refused by the host itself.
+  const looping = { attach: (element, ctx) => ctx.onOsc(() => ctx.send({ ip: "localhost", port: 7000, address: "/x", args: [] })) };
+  register(Object.assign({}, slider, { name: "oscar-loop-probe", attach: looping.attach }))(editor, {});
+  const probe = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults)) };
+  editor.types["oscar-loop-probe"].view.onRender.call(probe);
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (...args) => warned.push(args.join(" "));
+  try {
+    for (const fn of listeners.slice()) fn({ address: "/x", args: [1] });
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepStrictEqual(sent, [], "the send was dropped");
+  assert.strictEqual(warned.length, 1, "and said so");
+
+  // A send from a hand afterwards still goes out.
+  el.value = "60";
+  el.fire("input");
+  assert.strictEqual(sent.length, 1);
+
+  type.view.removed.call(view);
+  editor.types["oscar-loop-probe"].view.removed.call(probe);
+  assert.strictEqual(listeners.length, 0, "removal unsubscribes from the host");
+});
+
 test("a widget sharing a tag is told apart by its attributes when a project is parsed", () => {
   const range = { tagName: "INPUT", getAttribute: (n) => (n === "type" ? "range" : null) };
   const text = { tagName: "INPUT", getAttribute: (n) => (n === "type" ? "text" : null) };

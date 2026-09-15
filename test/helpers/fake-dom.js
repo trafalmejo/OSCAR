@@ -79,10 +79,17 @@ function fakeElement(rect) {
 /**
  * The `ctx` an adapter would supply, recording what the widget sent so a test
  * can assert on the wire traffic rather than on internals.
+ *
+ * It is stricter than the real host in one place: the adapter drops a send()
+ * made while an incoming message is being delivered, this throws. A widget
+ * that so much as walks its send path from its receive path is a loop waiting
+ * for software that echoes its state, and a test should not be able to miss it.
  */
 function fakeContext(config) {
   const changes = {};
   let rewrites = [];
+  let listeners = [];
+  let delivering = 0;
   return {
     config,
     sent: [],
@@ -93,8 +100,26 @@ function fakeContext(config) {
       this.config[key] = value;
     },
     send(message) {
+      if (delivering) {
+        throw new Error("a widget answered an incoming OSC message by sending " + JSON.stringify(message));
+      }
       // Matching the adapter: null means stay silent, and is not recorded.
       if (message) this.sent.push(message);
+    },
+    onOsc(fn) {
+      listeners.push(fn);
+      return () => {
+        listeners = listeners.filter((f) => f !== fn);
+      };
+    },
+    /** Pretend the rig sent a message; `args` are plain values. */
+    receive(address, args) {
+      delivering++;
+      try {
+        for (const fn of listeners.slice()) fn({ address, args: args || [] });
+      } finally {
+        delivering--;
+      }
     },
     setClass(name, on) {
       this.classes = this.classes || {};
@@ -124,7 +149,7 @@ function fakeContext(config) {
     },
     /** How many handlers the widget still has on the host. */
     listening() {
-      let count = rewrites.length;
+      let count = rewrites.length + listeners.length;
       for (const fns of Object.values(changes)) count += fns.length;
       return count;
     },

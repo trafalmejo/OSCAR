@@ -117,6 +117,81 @@ test("a widget that can drive DMX sends numbers", () => {
   }
 });
 
+// --- receiving --------------------------------------------------------------
+
+const receivers = WIDGETS.filter((w) => w.receives);
+
+test("a widget that receives has a Listen switch right after Message", () => {
+  assert.ok(receivers.length >= 3, "button, slider and pad all follow the rig");
+  for (const widget of receivers) {
+    const keys = widget.fields.map((f) => f.key);
+    assert.ok(keys.includes("message"), widget.name + " has an address to follow");
+    assert.strictEqual(keys[keys.indexOf("message") + 1], "listen", widget.name);
+  }
+});
+
+test("Listen is off by default on every control, so nothing starts moving on its own", () => {
+  for (const widget of receivers) {
+    if (widget.sends) assert.strictEqual(widget.defaults.listen, false, widget.name);
+  }
+  for (const widget of WIDGETS) {
+    if (widget.receives) continue;
+    assert.ok(!widget.fields.some((f) => f.key === "listen"), widget.name + " has a Listen switch wired to nothing");
+  }
+});
+
+test("a receiver without a Listen switch, or a Listen switch without a receiver, is refused", () => {
+  const complete = Object.assign({}, receivers[0]);
+  const withoutListen = complete.fields.filter((f) => f.key !== "listen");
+  assert.throws(() => validate(Object.assign({}, complete, { fields: withoutListen })), /listen/);
+  assert.throws(
+    () => validate(Object.assign({}, complete, { defaults: Object.assign({}, complete.defaults, { listen: true }) })),
+    /listen must default to false/
+  );
+  assert.throws(() => validate(Object.assign({}, complete, { receives: false })), /receives: false/);
+  const display = Object.assign({}, complete, {
+    sends: false,
+    dmx: false,
+    defaults: Object.assign({}, complete.defaults, { listen: true }),
+  });
+  assert.strictEqual(validate(display), display, "a display-only widget may listen from the start");
+});
+
+test("no widget ever answers an incoming message with an outgoing one", () => {
+  // An incoming value that triggers an outgoing message is an endless loop
+  // between OSCAR and any software that echoes its own state. The fake host
+  // throws on a send made while delivering, so a widget that walks its send
+  // path from its receive path cannot pass this, whatever it would have sent.
+  const { mount } = require("./helpers/widgets");
+  const payloads = [[1], [0], [1, 1], [0.5, 0.5], ["go"], ["1"], [true], [false], [], [null], ["abc"]];
+  for (const widget of WIDGETS) {
+    const overrides = widget.receives ? { listen: true } : {};
+    const message = widget.defaults.message || "/x";
+    for (const mode of [undefined, "toggle", "two"]) {
+      const { ctx, detach } = mount(widget, Object.assign({}, overrides, mode ? { mode, sendMode: mode } : {}));
+      for (const address of [message, message + "/x", message + "/y", "/*", "/*/*"]) {
+        for (const args of payloads) {
+          assert.doesNotThrow(() => ctx.receive(address, args), widget.name + " " + address + " " + JSON.stringify(args));
+        }
+      }
+      assert.deepStrictEqual(ctx.sent, [], widget.name + " sent something back");
+      detach();
+    }
+  }
+});
+
+test("a widget with Listen off is deaf: the network changes nothing on it", () => {
+  const { mount } = require("./helpers/widgets");
+  for (const widget of receivers) {
+    const { el, ctx, state } = mount(widget);
+    const before = state() + JSON.stringify(ctx.config);
+    ctx.receive(widget.defaults.message, [1, 1]);
+    ctx.receive("/*", [1]);
+    assert.strictEqual(state() + JSON.stringify(ctx.config), before, widget.name + " moved with Listen off");
+    assert.ok(el, widget.name);
+  }
+});
+
 // --- the Enabled switch -----------------------------------------------------
 
 test("a disabled widget sends nothing at all", () => {

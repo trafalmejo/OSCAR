@@ -181,3 +181,87 @@ test("detaching removes every listener it added", () => {
   assert.strictEqual(el.listenerCount("pointerdown"), 0);
   assert.strictEqual(ctx.listening(), 0);
 });
+
+// --- following the rig ------------------------------------------------------
+
+test("a listening toggle adopts the state the rig reports, and sends nothing back", () => {
+  const { ctx } = mount(button, { listen: true, mode: "toggle", valueOn: "1", valueOff: "0" });
+  ctx.receive("/push1", [1]);
+  assert.strictEqual(ctx.classes.toggle, true, "lit");
+  assert.deepStrictEqual(ctx.sent, [], "nothing went back out");
+  ctx.receive("/push1", [0]);
+  assert.strictEqual(ctx.classes.toggle, false);
+});
+
+test("a toggle that adopted ON from the rig sends OFF on the next press", () => {
+  // Otherwise the operator presses a lit button and the rig gets a second ON.
+  const { el, ctx } = mount(button, { listen: true, mode: "toggle", valueOn: "1", valueOff: "0", argType: "i" });
+  ctx.receive("/push1", [1]);
+  el.fire("click");
+  assert.deepStrictEqual(ctx.sent.map((m) => m.args[0].value), [0]);
+});
+
+test("a momentary button lights up from the rig but its state stays the finger's", () => {
+  const { el, ctx } = mount(button, { listen: true, valueOn: "1", valueOff: "0", argType: "i" });
+  ctx.receive("/push1", [1]);
+  assert.strictEqual(ctx.classes.toggle, true, "lit");
+  assert.deepStrictEqual(ctx.sent, []);
+
+  // A press still sends a real ON edge -- the echo did not swallow it.
+  el.fire("pointerdown");
+  assert.deepStrictEqual(ctx.sent.map((m) => m.args[0].value), [1]);
+  el.fire("pointerup");
+  assert.deepStrictEqual(ctx.sent.map((m) => m.args[0].value), [1, 0]);
+  assert.strictEqual(ctx.classes.toggle, false, "the release is the latest word; a stale echo does not keep it lit");
+});
+
+test("a held momentary button ignores the rig until it is released", () => {
+  const { el, ctx } = mount(button, { listen: true, valueOn: "1", valueOff: "0" });
+  el.fire("pointerdown");
+  ctx.receive("/push1", [0]);
+  assert.strictEqual(ctx.classes.toggle, true, "still lit under the finger");
+  el.fire("pointerup");
+  ctx.receive("/push1", [1]);
+  assert.strictEqual(ctx.classes.toggle, true, "follows again once released");
+});
+
+test("the button reads its own Value ON and Value OFF coming back, whatever the type", () => {
+  const { ctx } = mount(button, { listen: true, mode: "toggle", argType: "s", valueOn: "go", valueOff: "stop" });
+  ctx.receive("/push1", ["go"]);
+  assert.strictEqual(ctx.classes.toggle, true);
+  ctx.receive("/push1", ["stop"]);
+  assert.strictEqual(ctx.classes.toggle, false);
+  ctx.receive("/push1", [true]);
+  assert.strictEqual(ctx.classes.toggle, true, "a bool is itself");
+  ctx.receive("/push1", [false]);
+  ctx.receive("/push1", [0.7]);
+  assert.strictEqual(ctx.classes.toggle, true, "a number is on unless it is zero");
+});
+
+test("a value the button cannot read is ignored, not taken as OFF", () => {
+  const { ctx } = mount(button, { listen: true, mode: "toggle", valueOn: "1", valueOff: "0" });
+  ctx.receive("/push1", [1]);
+  for (const args of [[], [null], ["maybe"], [""], [" "], [{}]]) {
+    ctx.receive("/push1", args);
+    assert.strictEqual(ctx.classes.toggle, true, JSON.stringify(args));
+  }
+});
+
+test("a button with Listen off ignores the network", () => {
+  const { ctx } = mount(button, { mode: "toggle" });
+  ctx.receive("/push1", [1]);
+  assert.ok(!ctx.classes || !ctx.classes.toggle);
+});
+
+test("a state adopted from the rig survives the host rewriting the element", () => {
+  const { ctx, rewrite } = mount(button, { listen: true, mode: "toggle" });
+  ctx.receive("/push1", [1]);
+  rewrite();
+  assert.strictEqual(ctx.classes.toggle, true);
+});
+
+test("Listen sits right after Message, and is off by default", () => {
+  const keys = button.fields.map((f) => f.key);
+  assert.strictEqual(keys[keys.indexOf("message") + 1], "listen");
+  assert.strictEqual(button.defaults.listen, false);
+});
