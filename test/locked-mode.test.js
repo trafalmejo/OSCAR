@@ -111,6 +111,14 @@ test("locked: another device can use the controls but not edit", async () => {
 
       const save = await post(base, "/save", { name: "Nope", pages: [{}] });
       assert.strictEqual(save.status, 403, "saving is refused");
+
+      // Exporting walks the canvas and writes a file: an editing action, not a
+      // performing one.
+      const exported = await post(base, "/export", {
+        html: "<body></body>",
+        connection: { host: "192.168.0.5", port: 8081 },
+      });
+      assert.strictEqual(exported.status, 403, "exporting is refused");
     },
     { locked: true, remote: true }
   );

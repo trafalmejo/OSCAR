@@ -7,6 +7,9 @@
  * this file; the widgets themselves do not change.
  */
 
+var { WIDGETS } = require("../../../lib/widgets");
+var { exportAttributes, NAME_ATTR, CONFIG_ATTR } = require("../../../lib/export/config");
+
 /** Neutral field descriptor -> GrapesJS trait. */
 function toTrait(field) {
   var trait = {
@@ -186,4 +189,78 @@ function matches(definition, el) {
   return true;
 }
 
-module.exports = { register: register, toTrait: toTrait, matches: matches };
+/** Run `fn` for every OSCAR widget on the canvas, with its definition. */
+function eachWidget(editor, fn) {
+  var byName = {};
+  WIDGETS.forEach(function (widget) {
+    byName[widget.name] = widget;
+  });
+
+  editor.getWrapper().onAll(function (component) {
+    var definition = byName[component.get("type")];
+    if (definition) fn(component, definition);
+  });
+}
+
+/**
+ * The markup and stylesheet an export is built from.
+ *
+ * Each widget's settings are written onto its element as data-oscar attributes
+ * for exactly as long as getHtml() takes to run, and taken off again. Leaving
+ * them on would undo the decision toTrait explains: attributes are saved into
+ * the project file, and a project carrying a copy of every setting has two
+ * places for the truth to live and one of them goes stale on the next edit.
+ *
+ * Undo is paused and the writes are marked avoidStore, so neither the undo
+ * stack nor the autosave notices anything happened.
+ */
+function exportSnapshot(editor) {
+  var undo = editor.UndoManager;
+  var restore = [];
+
+  undo.stop();
+  eachWidget(editor, function (component, definition) {
+    var attributes = exportAttributes(definition.name, configOf(component, definition));
+    if (!attributes) return;
+
+    // The raw attributes object, not getAttributes(): that one folds in the
+    // classes and id GrapesJS computes, and writing those back as literal
+    // attributes would leave a component styled by a frozen copy of its
+    // classes.
+    var before = Object.assign({}, component.get("attributes"));
+    // Changing attributes makes GrapesJS rewrite the element's attribute list
+    // from the model, and the pad's handle position is not in the model -- it
+    // is a custom property the widget writes straight onto the element. Without
+    // this every pad's handle jumps to the corner after an export.
+    var view = component.getView && component.getView();
+    var el = view && view.el;
+
+    restore.push({
+      component: component,
+      attributes: before,
+      el: el,
+      style: el ? el.getAttribute("style") : null,
+    });
+    component.set("attributes", Object.assign({}, before, attributes), { avoidStore: true });
+  });
+
+  try {
+    return { html: editor.getHtml(), css: editor.getCss() };
+  } finally {
+    restore.forEach(function (entry) {
+      entry.component.set("attributes", entry.attributes, { avoidStore: true });
+      if (entry.el && entry.style !== null) entry.el.setAttribute("style", entry.style);
+    });
+    undo.start();
+  }
+}
+
+module.exports = {
+  register: register,
+  toTrait: toTrait,
+  matches: matches,
+  eachWidget: eachWidget,
+  exportSnapshot: exportSnapshot,
+  NAME_ATTR: NAME_ATTR,
+  CONFIG_ATTR: CONFIG_ATTR,
+};

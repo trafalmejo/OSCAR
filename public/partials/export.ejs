@@ -1,0 +1,53 @@
+<div id="export-panel" style="display: none;">
+  <div class="oscar-export">
+    <p class="oscar-export-lead">
+      This saves your interface as one HTML file. Open it on a tablet, a phone
+      or another computer &mdash; there is nothing else to install and nothing
+      to unzip.
+    </p>
+
+    <!-- The misunderstanding behind every "my exported page does nothing"
+         report. It is stated before the button, not after it. -->
+    <div class="oscar-export-warning">
+      <strong>OSCAR has to stay running.</strong>
+      A browser cannot send OSC on its own, so the exported page hands every
+      message to OSCAR, which puts it on the network. Keep OSCAR running on the
+      address below, and make sure the device showing the page can reach it.
+    </div>
+
+    <div class="form-group">
+      <label for="export-name">File name</label>
+      <input
+        id="export-name"
+        class="form-control"
+        type="text"
+        placeholder="my-interface"
+      />
+    </div>
+
+    <div class="form-row">
+      <div class="form-group col-8">
+        <label for="export-host">OSCAR is reachable at</label>
+        <input id="export-host" class="form-control" type="text" />
+      </div>
+      <div class="form-group col-4">
+        <label for="export-port">Bridge port</label>
+        <input id="export-port" class="form-control" type="number" min="1" max="65535" />
+      </div>
+    </div>
+
+    <p class="oscar-export-hint">
+      Use the address other devices see, not <code>localhost</code>, unless the
+      page will only ever be opened on this computer. You can change it later
+      without exporting again: add
+      <code>?oscar-host=&hellip;&amp;oscar-port=&hellip;</code> to the page's
+      address.
+    </p>
+
+    <div id="export-error" class="oscar-export-error" style="display: none;"></div>
+
+    <button id="export-button" class="btn btn-gradient btn-block" type="button">
+      Download the interface
+    </button>
+  </div>
+</div>
