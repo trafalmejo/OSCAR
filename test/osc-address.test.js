@@ -64,7 +64,9 @@ test("the incoming side is the pattern; a widget's own address is literal", () =
   // Someone who types /pad[1] in the settings panel means that address.
   assert.ok(!matchesAddress("/pad1", "/pad[1]"));
   assert.ok(matchesAddress("/pad[1]", "/pad1"));
-  assert.ok(!matchesAddress("/pad[1]", "/pad[1]"), "a bracketed widget address is only reached by a wider pattern");
+  // The matcher alone does not reach a bracketed address by its own text;
+  // incoming() in lib/widgets adds that, so a verbatim echo still lands.
+  assert.ok(!matchesAddress("/pad[1]", "/pad[1]"), "read as a pattern, [1] does not match a bracket");
   assert.ok(matchesAddress("/pad*", "/pad[1]"));
   assert.ok(matchesAddress("/pad*", "/pad*"), "a literal star is reached by a star");
 });

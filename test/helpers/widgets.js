@@ -7,7 +7,7 @@
  * widgets never edit the same test file; this is what keeps those files short.
  */
 
-const { fakeElement, fakeContext } = require("./fake-dom");
+const { fakeElement, fakeWindow, fakeContext } = require("./fake-dom");
 
 /**
  * Wire a widget to a fake element with its defaults, overridden by `overrides`.
@@ -48,4 +48,19 @@ function lastArgs(ctx) {
   return last && last.args;
 }
 
-module.exports = { mount, lastArgs };
+/**
+ * Run `fn(win)` with a fake `window` installed, so a widget mounted inside
+ * can be alt-tabbed with `win.fire("blur")`. Restored afterwards, whatever
+ * happens, so no other test sees a window.
+ */
+function withWindow(fn) {
+  const win = fakeWindow();
+  global.window = win;
+  try {
+    return fn(win);
+  } finally {
+    delete global.window;
+  }
+}
+
+module.exports = { mount, lastArgs, withWindow };

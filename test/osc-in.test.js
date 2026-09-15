@@ -5,7 +5,9 @@ const assert = require("node:assert");
 const dgram = require("node:dgram");
 const osc = require("osc");
 
-const { parse, plainValue, receiver } = require("../lib/osc-in");
+const { EventEmitter } = require("node:events");
+
+const { parse, plainValue, receiver, listenOn, atMostOncePer } = require("../lib/osc-in");
 const { MAX_ARGS } = require("../lib/osc-message");
 
 // --- reading a packet -------------------------------------------------------
@@ -142,6 +144,145 @@ test("a bundle is unpacked into its messages", async () => {
   } finally {
     handle.close();
   }
+});
+
+test("a packet that is not OSC is reported as such, and the socket keeps listening", async () => {
+  // A device blasting non-OSC traffic at the port must neither take the
+  // listener down nor be mistaken for the socket failing.
+  const heard = [];
+  const bad = [];
+  const failed = [];
+  let wake;
+  const arrived = new Promise((resolve) => (wake = resolve));
+  const { handle, port } = await open({
+    port: 0,
+    onMessage: (message) => {
+      heard.push(message);
+      wake();
+    },
+    onBadPacket: (err) => bad.push(err),
+    onError: (err) => failed.push(err),
+  });
+  try {
+    const garbage = dgram.createSocket("udp4");
+    await new Promise((resolve) => garbage.send(Buffer.from("garbage!!"), port, "127.0.0.1", () => resolve()));
+    await new Promise((resolve) => garbage.send(Buffer.from([0, 1, 2]), port, "127.0.0.1", () => { garbage.close(); resolve(); }));
+    await sendPacket(port, { address: "/after", args: [{ type: "i", value: 1 }] });
+    await arrived;
+    assert.deepStrictEqual(heard, [{ address: "/after", args: [1] }], "a good packet still gets through");
+    assert.ok(bad.length >= 1, "the garbage was reported as a bad packet");
+    assert.deepStrictEqual(failed, [], "and not as the socket failing");
+  } finally {
+    handle.close();
+  }
+});
+
+test("replies to the port a message was sent from are heard too", async () => {
+  // Software that answers the sender sends to OSCAR's source port, not to the
+  // OSC-in port; listenOn hangs the same reader on the sending sockets.
+  const udp = new osc.UDPPort({ localAddress: "127.0.0.1", localPort: 0, metadata: true });
+  const heard = [];
+  let wake;
+  const arrived = new Promise((resolve) => (wake = resolve));
+  const stop = listenOn(udp, (message) => {
+    heard.push(message);
+    wake();
+  });
+  udp.on("error", () => {});
+  await new Promise((resolve) => {
+    udp.on("ready", resolve);
+    udp.open();
+  });
+  try {
+    await sendPacket(udp.socket.address().port, { address: "/reply", args: [{ type: "s", value: "ok" }] });
+    await arrived;
+    assert.deepStrictEqual(heard, [{ address: "/reply", args: ["ok"] }]);
+    stop();
+    assert.strictEqual(udp.listenerCount("message"), 0, "stopping lets go of the port");
+  } finally {
+    udp.close();
+  }
+});
+
+/** A stand-in osc.UDPPort whose bind fails, or succeeds, on cue. */
+class FakePort extends EventEmitter {
+  constructor(options) {
+    super();
+    this.options = options;
+    this.closed = 0;
+  }
+  open() {
+    setImmediate(() => {
+      if (this.options.localPort === 80) this.emit("error", Object.assign(new Error("forbidden"), { code: "EACCES" }));
+      else this.emit("ready");
+    });
+  }
+  close() {
+    this.closed++;
+  }
+}
+
+test("any failed bind -- not only a busy port -- is reported and the dead socket closed", async () => {
+  // EACCES on a low port, EADDRNOTAVAIL on an address this machine lacks:
+  // the banner must say OSCAR is not listening, and nothing may dangle.
+  const err = await new Promise((resolve, reject) => {
+    receiver({
+      UDPPort: FakePort,
+      port: 80,
+      onMessage: () => reject(new Error("nothing should arrive")),
+      onReady: () => reject(new Error("the bind failed; it must not be ready")),
+      onError: resolve,
+    });
+  });
+  assert.strictEqual(err.code, "EACCES");
+});
+
+test("a failed bind closes the socket it could not open", async () => {
+  let port;
+  await new Promise((resolve) => {
+    port = receiver({ UDPPort: FakePort, port: 80, onMessage: () => {}, onError: resolve }).port;
+  });
+  assert.strictEqual(port.closed, 1);
+});
+
+test("after the socket is up, its errors are about what arrived and are throttled", async () => {
+  // One line per bad packet at packet rate buries everything else in the log.
+  let now = 1000;
+  const reports = [];
+  const failed = [];
+  const handle = await new Promise((resolve) => {
+    const h = receiver({
+      UDPPort: FakePort,
+      port: 9000,
+      quietMs: 5000,
+      now: () => now,
+      onMessage: () => {},
+      onReady: () => resolve(h),
+      onError: (err) => failed.push(err),
+      onBadPacket: (err, missed) => reports.push([err.message, missed]),
+    });
+  });
+  for (let i = 0; i < 4; i++) handle.port.emit("error", new Error("not OSC"));
+  now += 6000;
+  handle.port.emit("error", new Error("still not OSC"));
+  assert.deepStrictEqual(reports, [["not OSC", 0], ["still not OSC", 3]]);
+  assert.deepStrictEqual(failed, [], "none of it was a bind failure");
+  assert.strictEqual(handle.port.closed, 0, "and the socket stays up");
+});
+
+test("atMostOncePer counts what it skipped", () => {
+  let now = 0;
+  const calls = [];
+  const report = atMostOncePer(100, (value, missed) => calls.push([value, missed]), () => now);
+  report("a");
+  report("b");
+  report("c");
+  now = 99;
+  report("d");
+  now = 100;
+  report("e");
+  report("f");
+  assert.deepStrictEqual(calls, [["a", 0], ["e", 3]]);
 });
 
 test("a busy port is reported and does not throw", async () => {

@@ -157,25 +157,89 @@ test("a receiver without a Listen switch, or a Listen switch without a receiver,
   assert.strictEqual(validate(display), display, "a display-only widget may listen from the start");
 });
 
-test("no widget ever answers an incoming message with an outgoing one", () => {
+test("no widget ever answers an incoming message with an outgoing one", async () => {
   // An incoming value that triggers an outgoing message is an endless loop
   // between OSCAR and any software that echoes its own state. The fake host
   // throws on a send made while delivering, so a widget that walks its send
   // path from its receive path cannot pass this, whatever it would have sent.
+  //
+  // The host's refusal covers the delivery itself, so a widget that put its
+  // send on a frame or a timer instead would slip past it. Here every frame a
+  // widget asks for is recorded and run after the delivery, then timers get
+  // their turn; the pad already sends on a frame from a hand, and a widget
+  // copying that from its receive path must fail here.
   const { mount } = require("./helpers/widgets");
   const payloads = [[1], [0], [1, 1], [0.5, 0.5], ["go"], ["1"], [true], [false], [], [null], ["abc"]];
-  for (const widget of WIDGETS) {
-    const overrides = widget.receives ? { listen: true } : {};
-    const message = widget.defaults.message || "/x";
-    for (const mode of [undefined, "toggle", "two"]) {
-      const { ctx, detach } = mount(widget, Object.assign({}, overrides, mode ? { mode, sendMode: mode } : {}));
-      for (const address of [message, message + "/x", message + "/y", "/*", "/*/*"]) {
-        for (const args of payloads) {
-          assert.doesNotThrow(() => ctx.receive(address, args), widget.name + " " + address + " " + JSON.stringify(args));
+  const frames = [];
+  global.requestAnimationFrame = (fn) => frames.push(fn);
+  global.cancelAnimationFrame = () => {};
+  const mounted = [];
+  try {
+    for (const widget of WIDGETS) {
+      const overrides = widget.receives ? { listen: true } : {};
+      const message = widget.defaults.message || "/x";
+      for (const mode of [undefined, "toggle", "two"]) {
+        const { ctx, detach } = mount(widget, Object.assign({}, overrides, mode ? { mode, sendMode: mode } : {}));
+        for (const address of [message, message + "/x", message + "/y", "/*", "/*/*"]) {
+          for (const args of payloads) {
+            assert.doesNotThrow(() => ctx.receive(address, args), widget.name + " " + address + " " + JSON.stringify(args));
+          }
         }
+        assert.deepStrictEqual(ctx.sent, [], widget.name + " sent something back");
+        mounted.push({ widget, ctx, detach });
       }
-      assert.deepStrictEqual(ctx.sent, [], widget.name + " sent something back");
+    }
+    while (frames.length) frames.shift()();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    for (const { widget, ctx, detach } of mounted) {
+      assert.deepStrictEqual(ctx.sent, [], widget.name + " sent something back on a frame or a timer");
       detach();
+    }
+  } finally {
+    delete global.requestAnimationFrame;
+    delete global.cancelAnimationFrame;
+  }
+});
+
+test("the loop-guard test would catch a widget that answers on a frame", async () => {
+  // Proof that the frame flush above is real, with a widget that does exactly
+  // what a copied schedule()/flush() from the pad would do in its receive path.
+  const { mount } = require("./helpers/widgets");
+  const { follow } = require("../lib/widgets/incoming");
+  const frames = [];
+  global.requestAnimationFrame = (fn) => frames.push(fn);
+  try {
+    const deferred = Object.assign({}, WIDGETS[0], {
+      attach: (el, ctx) =>
+        follow(ctx, () => requestAnimationFrame(() => ctx.send({ ip: "localhost", port: 7000, address: "/x", args: [] }))) ||
+        (() => {}),
+    });
+    const { ctx } = mount(deferred, { listen: true });
+    ctx.receive(deferred.defaults.message, [1]);
+    assert.deepStrictEqual(ctx.sent, [], "nothing yet: the send is on a frame");
+    while (frames.length) frames.shift()();
+    assert.strictEqual(ctx.sent.length, 1, "which the flush ran, and the assertion above would have seen");
+  } finally {
+    delete global.requestAnimationFrame;
+  }
+});
+
+test("a receiver with Enabled off is deaf: Listen moves nothing on it", () => {
+  // Enabled is the master switch. A surface is switched off to be laid out
+  // while the rig is live, and a control jumping under the pointer is not
+  // being laid out.
+  const { mount } = require("./helpers/widgets");
+  for (const widget of receivers) {
+    for (const mode of [undefined, "toggle", "two"]) {
+      const overrides = Object.assign({ enabled: false, listen: true }, mode ? { mode, sendMode: mode } : {});
+      const { ctx, state } = mount(widget, overrides);
+      const before = state() + JSON.stringify(ctx.config);
+      const message = widget.defaults.message;
+      for (const address of [message, message + "/x", message + "/y", "/*"]) {
+        ctx.receive(address, [1, 1]);
+        ctx.receive(address, [1]);
+      }
+      assert.strictEqual(state() + JSON.stringify(ctx.config), before, widget.name + " moved with Enabled off");
     }
   }
 });

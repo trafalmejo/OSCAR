@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { slider } = require("../../lib/widgets/slider");
-const { mount } = require("../helpers/widgets");
+const { mount, withWindow } = require("../helpers/widgets");
 
 test("the slider sends its position, and honours the argument type", () => {
   const { el, ctx } = mount(slider, { min: 0, max: 100, argType: "i" });
@@ -157,6 +157,30 @@ test("a cancelled drag also lets the network back in", () => {
   el.fire("pointercancel");
   ctx.receive("/slider1", [90]);
   assert.strictEqual(el.value, "90");
+});
+
+test("a drag that loses the window also lets the network back in", () => {
+  withWindow((win) => {
+    const { el, ctx, detach } = mount(slider, { listen: true, min: 0, max: 100, value: 10 });
+    el.fire("pointerdown");
+    win.fire("blur");
+    ctx.receive("/slider1", [90]);
+    assert.strictEqual(el.value, "90");
+    detach();
+    assert.strictEqual(win.listenerCount("blur"), 0);
+  });
+});
+
+test("a slider with Enabled off is deaf as well as silent", () => {
+  // Enabled is the master switch: a surface is switched off to be laid out
+  // while the rig is live, and a thumb jumping under the pointer is not.
+  const { el, ctx } = mount(slider, { enabled: false, listen: true, min: 0, max: 100, value: 10 });
+  ctx.receive("/slider1", [90]);
+  assert.strictEqual(el.value, "10");
+  assert.strictEqual(ctx.config.value, 10);
+  ctx.edit("enabled", true);
+  ctx.receive("/slider1", [90]);
+  assert.strictEqual(el.value, "90", "and follows again once switched on");
 });
 
 test("Listen sits right after Message, and is off by default", () => {

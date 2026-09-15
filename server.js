@@ -12,7 +12,7 @@ const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
-const { receiver: oscReceiver } = require("./lib/osc-in");
+const { receiver: oscReceiver, listenOn, atMostOncePer } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
 const createRouter = require("./routes/index");
 
@@ -114,9 +114,33 @@ const udpLocal = new osc.UDPPort({
   metadata: true,
 });
 
+// Something that is not OSC arriving at a port is one error per packet, at
+// packet rate; a line every few seconds with a count says the same thing
+// without burying everything else in the log. The OSC-in receiver throttles
+// its own calls to this; the send sockets are wrapped below.
+function reportBadPacket(label) {
+  return (err, missed) => {
+    const more = missed ? " (and " + missed + " more since the last note)" : "";
+    console.error("Ignoring what is not OSC on the " + label + " port: " + reason(err) + more);
+  };
+}
+
+function reason(err) {
+  return String((err && err.message) || err);
+}
+
 for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
-  port.on("error", (err) => console.error("OSC " + label + " socket error:", err.message));
+  const badPacket = atMostOncePer(5000, reportBadPacket(label));
+  // osc.js reports a failed bind and an undecodable packet the same way; a
+  // code means the socket itself, and is worth every line.
+  port.on("error", (err) => {
+    if (err && err.code) console.error("OSC " + label + " socket error:", reason(err));
+    else badPacket(err);
+  });
   port.open();
+  // Software that answers to the port a request came from sends its reply
+  // here, not to the OSC-in port; a widget following the rig hears both.
+  listenOn(port, (message) => io.emit("osc:in", message));
 }
 
 /**
@@ -173,18 +197,19 @@ const oscIn = oscReceiver({
   onMessage: (message) => io.emit("osc:in", message),
   onReady: () => announceOscIn("  Listening for OSC on:  UDP " + OSC_IN_PORT),
   onError: (err) => {
-    // A busy port must not take OSCAR down with it. The editor, the tablets
-    // and sending all work without listening, and a show that will not start
-    // is a worse failure than one that cannot receive.
-    if (err.code === "EADDRINUSE") {
-      announceOscIn(
-        "  NOT listening for OSC: UDP " + OSC_IN_PORT + " is already in use.\n" +
-          "  Sending still works. Set OSCAR_OSC_IN_PORT to a free port to receive."
-      );
-      return;
-    }
-    console.error("OSC input socket error:", err.message);
+    // A port that cannot be opened must not take OSCAR down with it. The
+    // editor, the tablets and sending all work without listening, and a show
+    // that will not start is a worse failure than one that cannot receive.
+    const why =
+      err && err.code === "EADDRINUSE"
+        ? "is already in use"
+        : "could not be opened (" + ((err && err.code) || reason(err)) + ")";
+    announceOscIn(
+      "  NOT listening for OSC: UDP " + OSC_IN_PORT + " " + why + ".\n" +
+        "  Sending still works. Set OSCAR_OSC_IN_PORT to a free port to receive."
+    );
   },
+  onBadPacket: reportBadPacket("OSC-in"),
 });
 
 io.on("connection", (socket) => {

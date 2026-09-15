@@ -195,17 +195,22 @@ in two-message mode), and a toggle button lights up and adopts the state, so
 the next press sends the opposite edge. A momentary button only lights up,
 because its state is your finger's.
 
-Listen is off by default, so nothing starts moving on its own. A hand on a
-control outranks the network: while you are dragging a slider or a pad, or
-holding a button, what arrives is ignored until you let go. A widget never
-sends in answer to what it hears, so software that echoes its own state
-cannot start a loop with OSCAR. A value that cannot be read as a number is
-ignored, never treated as `0`.
+Listen is off by default, so nothing starts moving on its own, and a widget
+with **Enabled** off is deaf as well as silent, so you can lay a surface out
+while the rig is live. A hand on a control outranks the network: while you
+are dragging a slider or a pad, or holding a button, what arrives is ignored
+until you let go. A widget never sends in answer to what it hears, so software
+that echoes its own state cannot start a loop with OSCAR. A value that cannot
+be read as a number is ignored, never treated as `0`. A button that sends no
+argument has nothing to follow: a bare address says nothing about its state.
 
 Incoming addresses may be OSC 1.0 patterns -- `/layer*/clip`, `/ch[1-3]`,
 `/{play,stop}` -- and reach every widget they match; a widget's own Message is
-always taken literally. If the port is busy when OSCAR starts, it says so and
-carries on: sending is unaffected.
+always taken literally, and always reached by its own exact text, even one
+like `/layer[1]/opacity`. Software that answers to the port a message came
+from (OSCAR's source ports, `5001` and `5002`) is heard as well, so replies
+need no configuration. If the OSC-in port is busy or cannot be opened when
+OSCAR starts, it says so and carries on: sending is unaffected.
 
 ## Running a show
 

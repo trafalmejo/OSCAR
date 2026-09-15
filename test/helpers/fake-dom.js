@@ -77,6 +77,30 @@ function fakeElement(rect) {
 }
 
 /**
+ * Enough of a `window` for the blur listeners the widgets hang on it.
+ *
+ * The widgets read `window` at attach time and skip it where there is none,
+ * so a test that wants to alt-tab installs this as the global first.
+ */
+function fakeWindow() {
+  const listeners = {};
+  return {
+    addEventListener(type, fn) {
+      (listeners[type] = listeners[type] || []).push(fn);
+    },
+    removeEventListener(type, fn) {
+      listeners[type] = (listeners[type] || []).filter((f) => f !== fn);
+    },
+    fire(type) {
+      for (const fn of listeners[type] || []) fn({});
+    },
+    listenerCount(type) {
+      return (listeners[type] || []).length;
+    },
+  };
+}
+
+/**
  * The `ctx` an adapter would supply, recording what the widget sent so a test
  * can assert on the wire traffic rather than on internals.
  *
@@ -156,4 +180,4 @@ function fakeContext(config) {
   };
 }
 
-module.exports = { fakeElement, fakeContext };
+module.exports = { fakeElement, fakeWindow, fakeContext };

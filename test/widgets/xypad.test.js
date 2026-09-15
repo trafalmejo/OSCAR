@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { xypad } = require("../../lib/widgets/xypad");
-const { mount, lastArgs } = require("../helpers/widgets");
+const { mount, lastArgs, withWindow } = require("../helpers/widgets");
 
 const SQUARE = { left: 0, top: 0, width: 100, height: 100 };
 
@@ -142,6 +142,36 @@ test("a finger on the pad outranks the network until it lifts", () => {
   ctx.receive("/pad", [90, 90]);
   assert.strictEqual(ctx.config.x, 90, "and follows again once released");
   assert.strictEqual(el.style.properties["--oscar-x"], "90.00%");
+});
+
+test("a drag that loses the window counts as released, so the pad is not left deaf", () => {
+  // Alt-tab mid-drag: the pointerup lands on another window and never
+  // reaches the pad. The slider and the button already treat blur as a
+  // release; a pad that did not would ignore the rig until the next touch.
+  withWindow((win) => {
+    const { el, ctx, detach } = mount(xypad, { rect: SQUARE, listen: true, minX: 0, maxX: 100, minY: 0, maxY: 100 });
+    el.fire("pointerdown", { clientX: 30, clientY: 80 });
+    win.fire("blur");
+    assert.deepStrictEqual(lastArgs(ctx), [
+      { type: "f", value: 30 },
+      { type: "f", value: 20 },
+    ], "the position it had is what goes out");
+
+    ctx.receive("/pad", [90, 90]);
+    assert.strictEqual(ctx.config.x, 90, "the rig gets through again");
+    assert.strictEqual(el.style.properties["--oscar-x"], "90.00%");
+
+    detach();
+    assert.strictEqual(win.listenerCount("blur"), 0, "and detach lets go of the window");
+  });
+});
+
+test("a blur with no drag in progress sends nothing", () => {
+  withWindow((win) => {
+    const { ctx } = mount(xypad, { rect: SQUARE });
+    win.fire("blur");
+    assert.deepStrictEqual(ctx.sent, []);
+  });
 });
 
 test("a pad with Listen off ignores the network", () => {

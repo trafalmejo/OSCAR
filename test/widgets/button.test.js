@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { button } = require("../../lib/widgets/button");
-const { mount } = require("../helpers/widgets");
+const { mount, withWindow } = require("../helpers/widgets");
 
 // --- modes ------------------------------------------------------------------
 
@@ -245,6 +245,46 @@ test("a value the button cannot read is ignored, not taken as OFF", () => {
     ctx.receive("/push1", args);
     assert.strictEqual(ctx.classes.toggle, true, JSON.stringify(args));
   }
+});
+
+test("a blank Value ON or OFF matches nothing, so an empty string cannot light the button", () => {
+  // Value ON is blank on a button that sends no argument; the empty string a
+  // rig can send must not read as ON through it.
+  const { ctx } = mount(button, { listen: true, mode: "toggle", argType: "none", valueOn: "", valueOff: "0" });
+  for (const args of [[""], [" "], []]) {
+    ctx.receive("/push1", args);
+    assert.ok(!ctx.classes || !ctx.classes.toggle, JSON.stringify(args));
+  }
+  // A bare address is what a no-argument button sends on both edges, so it
+  // carries no state and is not followed either.
+  const both = mount(button, { listen: true, mode: "toggle", argType: "none", valueOn: "", valueOff: "" });
+  both.ctx.receive("/push1", []);
+  both.ctx.receive("/push1", [""]);
+  assert.ok(!both.ctx.classes || !both.ctx.classes.toggle);
+  // Numbers and bools still read as themselves through a blank Value ON.
+  ctx.receive("/push1", [1]);
+  assert.strictEqual(ctx.classes.toggle, true);
+  ctx.receive("/push1", [false]);
+  assert.strictEqual(ctx.classes.toggle, false);
+});
+
+test("a press that loses the window is released, and the rig is heard again", () => {
+  withWindow((win) => {
+    const { el, ctx, detach } = mount(button, { listen: true, valueOn: "1", valueOff: "0", argType: "i" });
+    el.fire("pointerdown");
+    win.fire("blur");
+    assert.deepStrictEqual(ctx.sent.map((m) => m.args[0].value), [1, 0], "the release went out");
+    ctx.receive("/push1", [1]);
+    assert.strictEqual(ctx.classes.toggle, true, "lit from the rig");
+    detach();
+    assert.strictEqual(win.listenerCount("blur"), 0);
+  });
+});
+
+test("a button with Enabled off is deaf as well as silent", () => {
+  const { ctx } = mount(button, { enabled: false, listen: true, mode: "toggle" });
+  ctx.receive("/push1", [1]);
+  assert.ok(!ctx.classes || !ctx.classes.toggle);
 });
 
 test("a button with Listen off ignores the network", () => {
