@@ -12,6 +12,7 @@ const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
+const { receiver: oscReceiver } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
 const createRouter = require("./routes/index");
 
@@ -26,6 +27,8 @@ const SOCKET_PORT = ports.socket;
 // Source ports OSCAR sends OSC from.
 const LAN_PORT = ports.lan;
 const LOCAL_PORT = ports.local;
+// Where the rig sends OSC back to.
+const OSC_IN_PORT = ports.oscIn;
 
 const PROJECTS_DIR =
   process.env.OSCAR_PROJECTS_DIR || path.join(__dirname, "projects");
@@ -145,6 +148,45 @@ const io = new Server(SOCKET_PORT, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
+// ---- OSC coming back ------------------------------------------------------
+
+// The other half of the bridge. A browser cannot hold a UDP socket any more
+// than it can open one, so OSCAR receives on its behalf and relays every
+// message to every browser; a widget with Listen on picks out its own address.
+//
+// The socket and the startup banner become ready in whichever order they
+// like, and the listening line belongs in the banner, below the addresses.
+// So the line is held until both have happened, and it is only ever the
+// truth: a banner claiming to listen above an error saying it does not would
+// be worse than saying nothing.
+let oscInLine = null;
+let bannerShown = false;
+
+function announceOscIn(line) {
+  oscInLine = line;
+  if (bannerShown) console.log(line);
+}
+
+const oscIn = oscReceiver({
+  port: OSC_IN_PORT,
+  UDPPort: osc.UDPPort,
+  onMessage: (message) => io.emit("osc:in", message),
+  onReady: () => announceOscIn("  Listening for OSC on:  UDP " + OSC_IN_PORT),
+  onError: (err) => {
+    // A busy port must not take OSCAR down with it. The editor, the tablets
+    // and sending all work without listening, and a show that will not start
+    // is a worse failure than one that cannot receive.
+    if (err.code === "EADDRINUSE") {
+      announceOscIn(
+        "  NOT listening for OSC: UDP " + OSC_IN_PORT + " is already in use.\n" +
+          "  Sending still works. Set OSCAR_OSC_IN_PORT to a free port to receive."
+      );
+      return;
+    }
+    console.error("OSC input socket error:", err.message);
+  },
+});
+
 io.on("connection", (socket) => {
   console.log("Editor connected (" + socket.id + ")");
 
@@ -179,6 +221,8 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("    On your network:    http://" + serverIP + ":" + HTTP_PORT);
   console.log("");
   console.log("  Projects folder:      " + PROJECTS_DIR);
+  bannerShown = true;
+  if (oscInLine) console.log(oscInLine);
   if (lock.isLocked()) {
     console.log("");
     console.log("  LOCKED: other devices can use the controls but not edit.");
@@ -208,6 +252,7 @@ function shutdown() {
   console.log("\nShutting OSCAR down...");
   udpLan.close();
   udpLocal.close();
+  oscIn.close();
   io.close();
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();

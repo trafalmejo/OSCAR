@@ -1,5 +1,6 @@
 /**
- * Connects the editor to OSCAR's OSC bridge.
+ * Connects the editor to OSCAR's OSC bridge, in both directions: messages out
+ * to the rig, and whatever the rig sends back.
  *
  * The page is served from one port while the bridge listens on another, so
  * this is a cross-origin connection by design -- the server opts back into it
@@ -31,6 +32,36 @@ function oscar_socket(editor, options) {
       address: address,
       args: Array.isArray(args) ? args : [args],
     });
+  };
+
+  // ---- OSC coming back ----------------------------------------------------
+  // One socket handler for the page rather than one per widget: a fader being
+  // driven from outside arrives sixty times a second, and every widget has to
+  // be offered it because any of them might be listening on that address.
+  // Deciding who cares is each widget's own job (lib/widgets/incoming.js).
+  var oscListeners = [];
+
+  editor.socket.on("osc:in", function (message) {
+    if (!message || typeof message.address !== "string" || !Array.isArray(message.args)) return;
+    // A copy, so a widget detaching mid-delivery cannot make the loop skip
+    // the one after it.
+    oscListeners.slice().forEach(function (fn) {
+      try {
+        fn(message);
+      } catch (err) {
+        console.warn("A widget mishandled an incoming OSC message:", err && err.message);
+      }
+    });
+  });
+
+  /** Subscribe to every incoming message. Returns an unsubscribe function. */
+  editor.onOscIn = function (fn) {
+    oscListeners.push(fn);
+    return function () {
+      oscListeners = oscListeners.filter(function (other) {
+        return other !== fn;
+      });
+    };
   };
 
   editor.socket.on("connect", function () {
