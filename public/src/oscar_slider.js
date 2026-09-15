@@ -136,16 +136,8 @@ function oscar_slider(editor, options) {
 
         model.set({ value: value }, { fromView: true });
 
-        if (!editor.socket) return;
-        editor.socket.emit(
-          "message",
-          editor.ip,
-          model.get("ip"),
-          model.get("port"),
-          model.get("message"),
-          "f",
-          value
-        );
+        if (!editor.sendOSC) return;
+        editor.sendOSC(model.get("ip"), model.get("port"), model.get("message"), value);
       },
     },
   });

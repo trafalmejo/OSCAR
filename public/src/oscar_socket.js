@@ -19,6 +19,20 @@ function oscar_socket(editor, options) {
     reconnectionDelayMax: 5000,
   });
 
+  /**
+   * Send an OSC message. `args` may be a single value or a list -- a button
+   * sends one, an XY pad two, a colour three or four.
+   */
+  editor.sendOSC = function (ip, port, address, args) {
+    if (!editor.socket) return;
+    editor.socket.emit("osc", {
+      ip: ip,
+      port: port,
+      address: address,
+      args: Array.isArray(args) ? args : [args],
+    });
+  };
+
   editor.socket.on("connect", function () {
     console.log("OSC bridge connected");
   });

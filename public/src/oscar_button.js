@@ -13,16 +13,8 @@ function oscar_button(editor, options) {
     /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/;
 
   function send(component, value) {
-    if (!editor.socket) return;
-    editor.socket.emit(
-      "message",
-      editor.ip,
-      component.get("ip"),
-      component.get("port"),
-      component.get("message"),
-      "f",
-      value
-    );
+    if (!editor.sendOSC) return;
+    editor.sendOSC(component.get("ip"), component.get("port"), component.get("message"), value);
   }
 
   editor.DomComponents.addType("oscar-button", {

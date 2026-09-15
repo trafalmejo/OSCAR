@@ -11,6 +11,7 @@ const { ProjectStore } = require("./lib/projects");
 const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
+const { buildMessage, isPort } = require("./lib/osc-message");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -110,9 +111,20 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
   port.open();
 }
 
-function sendOSCMessage(ip, port, address, type, value) {
+/**
+ * @param {string} ip
+ * @param {number|string} port
+ * @param {string} address
+ * @param {Array} args - one entry per value; an XY pad sends two, a colour three
+ */
+function sendOSC(ip, port, address, args) {
+  const message = buildMessage(address, args);
+  if (!message || !isPort(port)) {
+    console.error("Ignoring a malformed OSC message for", address);
+    return;
+  }
+
   const target = ip === "localhost" || ip === "127.0.0.1" ? udpLocal : udpLan;
-  const message = { address, args: [{ type, value }] };
 
   console.log("Sending", address, JSON.stringify(message.args), "to", ip + ":" + port);
   try {
@@ -131,11 +143,21 @@ const io = new Server(SOCKET_PORT, {
 io.on("connection", (socket) => {
   console.log("Editor connected (" + socket.id + ")");
 
-  // `clientIP` is accepted for backwards compatibility with saved projects
-  // that still emit it; the value is not used for routing.
+  // One message, any number of values: { ip, port, address, args }.
+  socket.on("osc", (msg) => {
+    try {
+      if (!msg) return;
+      sendOSC(msg.ip, msg.port, msg.address, msg.args);
+    } catch (err) {
+      console.error("Bad OSC message:", err.message);
+    }
+  });
+
+  // The single-value form OSCAR sent before. Kept for anything written
+  // against it, including custom code inside someone's project.
   socket.on("message", (clientIP, ip, port, address, type, value) => {
     try {
-      sendOSCMessage(ip, port, address, type, value);
+      sendOSC(ip, port, address, [{ type, value }]);
     } catch (err) {
       console.error("Bad OSC message:", err.message);
     }
