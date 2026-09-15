@@ -12,6 +12,8 @@ const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
+const { parse: parseIncoming } = require("./lib/osc-in");
+const { SharedState } = require("./lib/shared-state");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -21,6 +23,9 @@ const SOCKET_PORT = Number(process.env.OSCAR_SOCKET_PORT) || 8081;
 // Source ports OSCAR sends OSC from.
 const LAN_PORT = Number(process.env.OSCAR_LAN_PORT) || 5001;
 const LOCAL_PORT = Number(process.env.OSCAR_LOCAL_PORT) || 5002;
+// Where OSCAR listens for OSC coming back. 9000 is what TouchOSC, Lemur and
+// most of the software OSCAR drives offer first when asked where to send.
+const OSC_IN_PORT = Number(process.env.OSCAR_OSC_IN_PORT) || 9000;
 
 const PROJECTS_DIR =
   process.env.OSCAR_PROJECTS_DIR || path.join(__dirname, "projects");
@@ -31,6 +36,10 @@ const app = express();
 // The OSCAR version is recorded in every saved project, so a file can always
 // say what wrote it.
 const store = new ProjectStore(PROJECTS_DIR, { oscarVersion: pkg.version });
+
+// What every device showing the surface agrees on, so two tablets do not each
+// hold their own idea of whether a button is down.
+const shared = new SharedState();
 
 // Locked mode is remembered across restarts, so an installation that reboots
 // overnight comes back locked rather than open. OSCAR_LOCKED forces it on at
@@ -85,7 +94,14 @@ app.use(
     updates,
     diagnostics,
     // `io` is created below; this only runs once a request arrives.
-    onPreviewPush: () => io.emit("preview:updated"),
+    onPreviewPush: () => {
+      // A new layout makes the old state meaningless -- the widget ids may not
+      // even exist in it -- and a stale position on a fresh surface is worse
+      // than none at all.
+      shared.clear();
+      io.emit("state:all", {});
+      io.emit("preview:updated");
+    },
     lock,
   })
 );
@@ -140,8 +156,78 @@ const io = new Server(SOCKET_PORT, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
+// ---- OSC coming back ------------------------------------------------------
+
+// The other half of the bridge. A browser cannot hold a UDP socket any more
+// than it can open one, so OSCAR receives on its behalf and relays what
+// arrives; a widget with Listen on picks out the addresses it cares about.
+const udpIn = new osc.UDPPort({
+  localAddress: "0.0.0.0",
+  localPort: OSC_IN_PORT,
+  metadata: true,
+});
+
+// The startup banner and this socket become ready in whichever order they
+// like, and the line belongs in the banner. Whichever happens second prints
+// it, and it is only ever printed once the socket is genuinely bound -- a
+// banner claiming to listen, printed above an error saying it does not, would
+// be worse than saying nothing.
+let oscInReady = false;
+let bannerShown = false;
+
+function announceOscIn() {
+  if (oscInReady && bannerShown) console.log("  Listening for OSC on: UDP " + OSC_IN_PORT);
+}
+
+udpIn.on("ready", () => {
+  oscInReady = true;
+  announceOscIn();
+});
+
+udpIn.on("message", (packet) => {
+  const message = parseIncoming(packet);
+  // Anything that isn't a message OSCAR can act on is dropped here rather than
+  // shipped to every browser for each of them to reject separately.
+  if (!message) return;
+  io.emit("osc:in", message);
+});
+
+udpIn.on("error", (err) => {
+  // A busy port must not take OSCAR down with it: everything else -- the
+  // editor, the tablets, sending -- works perfectly well without listening,
+  // and a show that will not start is a worse failure than one that cannot
+  // receive. Say so once, clearly, and carry on.
+  if (err.code === "EADDRINUSE") {
+    console.error("");
+    console.error("  Nothing is listening for OSC: port " + OSC_IN_PORT + " is already in use.");
+    console.error("  Sending still works. Set OSCAR_OSC_IN_PORT to a free port to receive.");
+    console.error("");
+    return;
+  }
+  console.error("OSC input socket error:", err.message);
+});
+
+udpIn.open();
+
 io.on("connection", (socket) => {
   console.log("Editor connected (" + socket.id + ")");
+
+  // A device arriving mid-show has to be told where everything already is,
+  // or it draws a surface that disagrees with the one next to it until
+  // somebody touches every control on it.
+  socket.emit("state:all", shared.snapshot());
+
+  // One widget's state, from whoever moved it.
+  socket.on("state:set", (msg) => {
+    if (!msg) return;
+    const state = shared.apply(msg.id, msg.state);
+    // Nothing changed: this was a device repeating back what it was told.
+    // Stopping here is what keeps two tablets from trading the same value
+    // between them for the rest of the evening.
+    if (!state) return;
+    // To everyone except the sender, which already has it.
+    socket.broadcast.emit("state:changed", { id: msg.id, state });
+  });
 
   // One message, any number of values: { ip, port, address, args }.
   socket.on("osc", (msg) => {
@@ -174,6 +260,8 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("    On your network:    http://" + serverIP + ":" + HTTP_PORT);
   console.log("");
   console.log("  Projects folder:      " + PROJECTS_DIR);
+  bannerShown = true;
+  announceOscIn();
   if (lock.isLocked()) {
     console.log("");
     console.log("  LOCKED: other devices can use the controls but not edit.");
@@ -201,8 +289,15 @@ httpServer.on("error", (err) => {
 
 function shutdown() {
   console.log("\nShutting OSCAR down...");
-  udpLan.close();
-  udpLocal.close();
+  // A socket that never bound -- the input port was busy -- throws on close,
+  // and refusing to shut down over that would be an odd way to go.
+  for (const port of [udpLan, udpLocal, udpIn]) {
+    try {
+      port.close();
+    } catch (err) {
+      /* it was never open */
+    }
+  }
   io.close();
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();

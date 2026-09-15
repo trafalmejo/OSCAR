@@ -49,6 +49,11 @@ function configOf(model, definition) {
  * the validators or a re-render -- the old slider needed a `fromView` flag
  * threaded through its model to dodge exactly that, and the pad would have
  * fought its own handle.
+ *
+ * `onOsc`, `share` and `onShared` are the network coming the other way. They
+ * only ever hand a widget a value; none of them can make it send one, which is
+ * deliberate -- that asymmetry is what stops a value arriving from outside
+ * being bounced straight back out.
  */
 function contextFor(view, editor) {
   var model = view.model;
@@ -86,8 +91,27 @@ function contextFor(view, editor) {
         model.off(event, fn);
       };
     },
+
+    onOsc: function (fn) {
+      if (!editor.onOscIn) return noop;
+      return editor.onOscIn(fn);
+    },
+
+    // A component's GrapesJS id is saved into the project, so the same widget
+    // carries the same id on every device the layout was pushed to. That is
+    // what lets two tablets recognise each other's state at all.
+    share: function (state) {
+      if (editor.shareState) editor.shareState(model.getId(), state);
+    },
+
+    onShared: function (fn) {
+      if (!editor.onSharedState) return noop;
+      return editor.onSharedState(model.getId(), fn);
+    },
   };
 }
+
+function noop() {}
 
 /**
  * Register one widget definition with GrapesJS.

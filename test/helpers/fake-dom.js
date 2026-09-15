@@ -63,9 +63,14 @@ function fakeElement(rect) {
  */
 function fakeContext(config) {
   const changes = {};
+  let oscListeners = [];
+  let sharedListeners = [];
+
   return {
     config,
     sent: [],
+    /** Every state this widget published to the other devices. */
+    shared: [],
     get(key) {
       return this.config[key];
     },
@@ -88,6 +93,34 @@ function fakeContext(config) {
     edit(key, value) {
       this.config[key] = value;
       for (const fn of changes[key] || []) fn();
+    },
+
+    onOsc(fn) {
+      oscListeners.push(fn);
+      return () => {
+        oscListeners = oscListeners.filter((other) => other !== fn);
+      };
+    },
+
+    share(state) {
+      this.shared.push(state);
+    },
+
+    onShared(fn) {
+      sharedListeners.push(fn);
+      return () => {
+        sharedListeners = sharedListeners.filter((other) => other !== fn);
+      };
+    },
+
+    /** Pretend an OSC message arrived from the target software. */
+    receive(address, args) {
+      for (const fn of oscListeners.slice()) fn({ address, args });
+    },
+
+    /** Pretend another device published a state for this widget. */
+    remote(state) {
+      for (const fn of sharedListeners.slice()) fn(state);
     },
   };
 }

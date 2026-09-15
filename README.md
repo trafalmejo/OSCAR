@@ -50,12 +50,16 @@ OSCAR opens your browser at `http://localhost:8080` and also prints a LAN
 address such as `http://192.168.1.20:8080`. Open that second address on a phone
 or tablet on the same Wi-Fi to use the interface as a control surface.
 
+OSCAR also listens for OSC on UDP port `9000`, so controls can follow the
+software they drive. If that port is already taken, OSCAR says so and keeps
+running — sending still works.
+
 Make sure your firewall allows communication between devices on the network.
 
 To run two copies of OSCAR on one machine, give the second one its own ports:
 
 ```bash
-OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT=5004 npm run serve
+OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT=5004 OSCAR_OSC_IN_PORT=9001 npm run serve
 ```
 
 ### Useful commands
@@ -121,6 +125,7 @@ All optional, set as environment variables:
 | `OSCAR_SOCKET_PORT` | `8081` | Browser-to-server OSC bridge (browsers are told the port) |
 | `OSCAR_LAN_PORT` | `5001` | Source port for OSC sent to the network |
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
+| `OSCAR_OSC_IN_PORT` | `9000` | Port OSCAR listens on for OSC coming back |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |
 | `OSCAR_NO_OPEN` | unset | Set to `1` to not open a browser on start |
 | `OSCAR_NO_UPDATE_CHECK` | unset | Set to `1` to never check for new versions |
@@ -151,6 +156,46 @@ On the XY pad, Y increases upward, and either axis can be inverted. Dragging
 sends at most one message per frame, and always sends the exact value where
 you let go.
 
+## Following the software back
+
+Every widget has a **Listen** setting. Turn it on and the widget watches its own
+Message address for OSC arriving on port `9000`, so a fader moves when the
+software moves it, and a button lights up when whatever it drives comes on.
+
+Point your software at OSCAR's LAN address on port `9000` — in Resolume,
+TouchDesigner or Ableton this is usually the same "send OSC to" box you already
+use for feedback.
+
+| Widget | What an incoming message does |
+| --- | --- |
+| **Button** | Lights up or clears. It recognises its own Value ON and Value OFF, and otherwise reads `0`, `F`, `off` and an empty string as off |
+| **Slider** | Moves the thumb, clamped to Min and Max |
+| **XY Pad** | Moves the handle — two values in one message, or `/pad/x` and `/pad/y` if that is how it is set to send |
+
+Listen is off by default, so nothing starts moving on its own, and a surface
+built before this existed behaves exactly as it did.
+
+**A widget never answers an incoming message with an outgoing one.** A value
+that arrived from outside moves the control and stops there. Plenty of software
+echoes back what it was just sent, and a control that replied to the echo would
+put the two of them in a loop that only ends when someone pulls a cable.
+
+OSCAR matches OSC address patterns, so software that addresses `/layer*/opacity`
+or `/ch[1-3]` reaches the widgets it means to. A widget's own Message setting is
+always taken literally.
+
+## Several tablets, one surface
+
+Open `/preview` on as many devices as you like: they now agree with each other.
+Toggle a button on one tablet and it lights up on the others, move a fader and
+they all follow, and a device that joins halfway through a show is handed the
+current state of every control rather than a surface full of defaults.
+
+This needs no setting, and it costs no extra OSC: the device that was touched
+is the one that sends, and the others only update what they draw. Pushing a new
+layout to the tablets clears the shared state, since the old controls may not
+exist in it.
+
 ## Running a show
 
 The editor lives at `/`. The control surface lives at `/preview` — the same
@@ -180,8 +225,9 @@ setting is remembered, so a machine that reboots overnight comes back locked.
 
 This stops editing, not sending: the OSC bridge stays open, because that is how
 the tablets work at all. Anyone who can reach OSCAR can still send OSC to your
-rig. If that matters, the answer is a separate network for the control devices,
-not a setting in OSCAR.
+rig, move a control on everyone else's tablet, or send OSC to port `9000` and
+be believed by any widget listening for it. If that matters, the answer is a
+separate network for the control devices, not a setting in OSCAR.
 
 ## Saving your work
 
@@ -199,17 +245,23 @@ can copy, back up and share them however you like.
 
 ```
 Browser (grapesjs editor + OSCAR widgets)
-   |  socket.io  :8081
-   v
-OSCAR server (Node/Express)
-   |  UDP
-   v
+   |  socket.io  :8081                 ^
+   v                                   |  osc:in / shared widget state
+OSCAR server (Node/Express)            |
+   |  UDP out                          |  UDP in  :9000
+   v                                   |
 Your lighting / video / sound software
 ```
 
 Widgets carry their own OSC settings (IP, port, address, value). When you press
 a button or move a slider the browser sends that over socket.io to the OSCAR
 server, which emits the actual OSC packet over UDP.
+
+A browser can neither open nor listen on a UDP socket, so the server does both
+on its behalf. OSC arriving on port `9000` is relayed to every connected
+browser, and each widget picks out the addresses it was told to listen for. The
+same socket carries widget state between devices, so several tablets showing one
+surface stay in step.
 
 ## Tutorials
 
