@@ -1,0 +1,55 @@
+/* The Serial panel: picking which board on a USB cable OSCAR talks to. */
+
+.oscar-serial {
+  padding: 10px 14px 16px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.oscar-serial-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.75;
+  margin-bottom: 12px;
+}
+
+.oscar-serial-hint code {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: #ec5896;
+}
+
+.oscar-serial-status {
+  font-size: 13px;
+  border-radius: 4px;
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Connected is the state worth spotting across a room. */
+.oscar-serial-open {
+  background: rgba(236, 88, 150, 0.22);
+}
+
+.oscar-serial-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.oscar-serial-controls select {
+  flex: 1;
+  min-width: 0;
+}
+
+.oscar-serial-bitrate {
+  width: 120px;
+  flex: 0 0 auto;
+}
+
+.oscar-serial-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

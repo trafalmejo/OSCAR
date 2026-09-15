@@ -1,0 +1,33 @@
+<div id="serial-panel" style="display: none;">
+  <div class="oscar-serial">
+    <p class="oscar-serial-hint">
+      OSCAR can send to a board on a USB cable as well as over the network.
+      Connect the port below, then set a widget's <b>Ip</b> to
+      <code>serial</code> — its Port is ignored. Messages go out as OSC framed
+      with SLIP, which is what the Arduino OSC libraries read.
+    </p>
+
+    <div id="serial-status" class="oscar-serial-status">Checking…</div>
+
+    <div class="oscar-serial-controls">
+      <select id="serial-port" class="form-control"></select>
+      <input
+        id="serial-bitrate"
+        class="form-control oscar-serial-bitrate"
+        type="number"
+        min="300"
+        max="2000000"
+        value="115200"
+        title="Baud rate — match Serial.begin in your sketch"
+      />
+    </div>
+
+    <div class="oscar-serial-actions">
+      <button id="serial-refresh" class="btn btn-secondary" type="button">Refresh</button>
+      <button id="serial-connect" class="btn btn-secondary btn-gradient" type="button">
+        Connect
+      </button>
+      <button id="serial-disconnect" class="btn btn-secondary" type="button">Disconnect</button>
+    </div>
+  </div>
+</div>

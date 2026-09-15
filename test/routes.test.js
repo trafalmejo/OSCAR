@@ -44,6 +44,78 @@ const postJSON = (base, url, body) =>
     body: JSON.stringify(body),
   });
 
+// --- serial ----------------------------------------------------------------
+
+/** A SerialLink stand-in: the router only ever asks it these four things. */
+function fakeSerial() {
+  return {
+    calls: [],
+    state: { supported: true, state: "closed", path: null, bitrate: 115200 },
+    status() {
+      return Object.assign({}, this.state);
+    },
+    async list() {
+      return [{ path: "COM3", label: "Arduino Uno" }];
+    },
+    connect(path, bitrate) {
+      this.calls.push(["connect", path, bitrate]);
+      this.state = { supported: true, state: "opening", path, bitrate: bitrate || 115200 };
+      return this.status();
+    },
+    disconnect() {
+      this.calls.push(["disconnect"]);
+      this.state = { supported: true, state: "closed", path: null, bitrate: 115200 };
+      return this.status();
+    },
+  };
+}
+
+test("GET /serial reports the ports and what OSCAR is doing with them", async () => {
+  await withServer(
+    async (base) => {
+      const body = await (await fetch(base + "/serial")).json();
+      assert.strictEqual(body.supported, true);
+      assert.strictEqual(body.state, "closed");
+      assert.deepStrictEqual(body.ports, [{ path: "COM3", label: "Arduino Uno" }]);
+    },
+    { serial: fakeSerial() }
+  );
+});
+
+test("POST /serial connects and disconnects, and the choice is remembered", async () => {
+  const serial = fakeSerial();
+  const remembered = [];
+
+  await withServer(
+    async (base) => {
+      const opened = await (
+        await postJSON(base, "/serial", { connect: true, path: "COM3", bitrate: 57600 })
+      ).json();
+      assert.strictEqual(opened.state, "opening");
+      assert.strictEqual(opened.path, "COM3");
+
+      const closed = await (await postJSON(base, "/serial", { connect: false })).json();
+      assert.strictEqual(closed.state, "closed");
+    },
+    { serial, onSerialChange: (status) => remembered.push(status.path) }
+  );
+
+  assert.deepStrictEqual(serial.calls, [["connect", "COM3", 57600], ["disconnect"]]);
+  assert.deepStrictEqual(remembered, ["COM3", null], "and forgotten again on disconnect");
+});
+
+test("an OSCAR built without serial answers rather than 500s", async () => {
+  await withServer(async (base) => {
+    const body = await (await fetch(base + "/serial")).json();
+    assert.strictEqual(body.supported, false);
+    assert.ok(body.reason, "with something the panel can print");
+    assert.deepStrictEqual(body.ports, []);
+
+    const posted = await (await postJSON(base, "/serial", { connect: true, path: "COM3" })).json();
+    assert.strictEqual(posted.supported, false);
+  });
+});
+
 test("GET /ipserver reports the LAN address", async () => {
   await withServer(async (base) => {
     const res = await fetch(base + "/ipserver");
@@ -140,6 +212,12 @@ test("a GrapesJS 0.21+ project round-trips through save and load unchanged", asy
             },
           ],
           id: "page-1",
+          name: "Front truss",
+        },
+        {
+          frames: [{ component: { type: "wrapper", components: [{ type: "oscar-xypad" }] } }],
+          id: "page-2",
+          name: "Haze",
         },
       ],
       symbols: [],
@@ -157,7 +235,10 @@ test("a GrapesJS 0.21+ project round-trips through save and load unchanged", asy
 
 test("GET /load returns the project, and {} when missing", async () => {
   await withServer(async (base) => {
-    const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }], styles: [] };
+    const project = {
+      pages: [{ name: "Page 1", frames: [{ component: { type: "wrapper" } }] }],
+      styles: [],
+    };
     await postJSON(base, "/save", Object.assign({ name: "Loadable" }, project));
 
     const found = await (await fetch(base + "/load/loadable")).json();
@@ -165,6 +246,22 @@ test("GET /load returns the project, and {} when missing", async () => {
 
     const missing = await (await fetch(base + "/load/nope")).json();
     assert.deepStrictEqual(missing, {});
+  });
+});
+
+test("a page the designer never named is saved with a name anyway", async () => {
+  // GrapesJS drops the empty name off the page it creates itself, so this is
+  // what an untouched project actually sends.
+  await withServer(async (base, store) => {
+    const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }, { frames: [] }] };
+    await postJSON(base, "/save", Object.assign({ name: "Unnamed" }, project));
+
+    const record = await store.read("unnamed");
+    assert.deepStrictEqual(
+      record.data.pages.map((page) => page.name),
+      ["Page 1", "Page 2"],
+      "the switcher has a label for each without having to invent one"
+    );
   });
 });
 
@@ -203,7 +300,7 @@ test("GET /load refuses a 1.x-era file instead of half-loading it", async () => 
 test("saved files carry the format and the versions that wrote them", async () => {
   await withServer(
     async (base, store) => {
-      const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }] };
+      const project = { pages: [{ name: "Page 1", frames: [{ component: { type: "wrapper" } }] }] };
       await postJSON(
         base,
         "/save",

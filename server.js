@@ -12,6 +12,7 @@ const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
+const { SerialLink, isSerialTarget } = require("./lib/serial");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -73,7 +74,20 @@ function diagnostics() {
     arch: process.arch,
     node: process.versions.node,
     electron: process.versions.electron || null,
+    // "Serial does nothing" is a report OSCAR would otherwise have to guess at;
+    // on some builds the driver simply isn't there.
+    serial: serial.supported,
   };
+}
+
+// ---- serial ---------------------------------------------------------------
+// A board on a USB cable is another place a widget can send to, alongside the
+// network. The chosen port is remembered so an installation that reboots comes
+// back talking to its hardware without anyone opening the editor.
+const serial = new SerialLink();
+
+if (settings.get("serialPath")) {
+  serial.connect(settings.get("serialPath"), settings.get("serialBitrate"));
 }
 
 app.use(
@@ -87,6 +101,11 @@ app.use(
     // `io` is created below; this only runs once a request arrives.
     onPreviewPush: () => io.emit("preview:updated"),
     lock,
+    serial,
+    onSerialChange: (status) => {
+      settings.set("serialPath", status.state === "closed" ? null : status.path);
+      settings.set("serialBitrate", status.bitrate);
+    },
   })
 );
 
@@ -119,7 +138,21 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
  */
 function sendOSC(ip, port, address, args) {
   const message = buildMessage(address, args);
-  if (!message || !isPort(port)) {
+  if (!message) {
+    console.error("Ignoring a malformed OSC message for", address);
+    return;
+  }
+
+  // A widget aimed at `serial` goes down the cable, SLIP-framed, which is what
+  // an Arduino OSC library reads. It carries no port number to check.
+  if (isSerialTarget(ip)) {
+    if (!serial.send(message)) {
+      console.error("Nothing is connected on serial; dropped", address);
+    }
+    return;
+  }
+
+  if (!isPort(port)) {
     console.error("Ignoring a malformed OSC message for", address);
     return;
   }
@@ -203,6 +236,7 @@ function shutdown() {
   console.log("\nShutting OSCAR down...");
   udpLan.close();
   udpLocal.close();
+  serial.disconnect();
   io.close();
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();

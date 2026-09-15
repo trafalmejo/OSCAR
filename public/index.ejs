@@ -20,6 +20,8 @@
     <link href="css/oscar_table.css" rel="stylesheet" />
     <link href="css/oscar_messages.css" rel="stylesheet" />
     <link href="css/oscar_update.css" rel="stylesheet" />
+    <link href="css/oscar_pages.css" rel="stylesheet" />
+    <link href="css/oscar_serial.css" rel="stylesheet" />
 
     <!-- jQuery must come before Popper, which must come before Bootstrap. -->
     <script src="node_modules/jquery/dist/jquery.min.js"></script>
@@ -40,7 +42,8 @@
   <body>
     <div id="gjs" style="height: 0px; overflow: hidden;"></div>
 
-    <%- include('partials/table') %> <%- include('partials/about') %>
+    <%- include('partials/table') %> <%- include('partials/about') %> <%-
+    include('partials/pages') %> <%- include('partials/serial') %>
 
     <!-- OSCAR component types, registered as grapesjs plugins by name. -->
     <script src="src/oscar_socket.js"></script>

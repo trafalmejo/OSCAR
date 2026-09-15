@@ -6,6 +6,8 @@ const assert = require("node:assert");
 const {
   CURRENT_FORMAT,
   stripEditorState,
+  namePages,
+  defaultPageName,
   MIGRATIONS,
   isGrapesProject,
   detectFormat,
@@ -14,7 +16,7 @@ const {
 } = require("../lib/project-format");
 
 const project = () => ({
-  pages: [{ frames: [{ component: { type: "wrapper", components: [] } }] }],
+  pages: [{ name: "Page 1", frames: [{ component: { type: "wrapper", components: [] } }] }],
   styles: [],
   assets: [],
 });
@@ -192,6 +194,74 @@ test("a CURRENT-format file carrying editor state is still repaired", () => {
   assert.strictEqual(opened.migrated, false, "nothing to migrate -- it is current");
   const button = opened.data.pages[0].frames[0].component.components[0];
   assert.ok(!("draggable" in button), "but the editor state is gone anyway");
+});
+
+// --- format 3: a surface can hold more than one page ------------------------
+
+test("format 3 names the pages of a project written before multi-page", () => {
+  // What OSCAR 2.1 saved: one page, and GrapesJS dropped its empty name.
+  const record = {
+    format: 2,
+    oscar: "2.1.0",
+    name: "One page show",
+    data: { pages: [{ frames: [{ component: { type: "wrapper" } }] }] },
+  };
+
+  const opened = openProject(record);
+  assert.strictEqual(opened.status, "ok");
+  assert.strictEqual(opened.migrated, true);
+  assert.strictEqual(opened.data.pages[0].name, "Page 1", "the tab has something to print");
+});
+
+test("a multi-page project keeps the names the designer gave it", () => {
+  const data = {
+    pages: [
+      { name: "Front truss", frames: [] },
+      { frames: [] },
+      { name: "Haze", frames: [] },
+    ],
+  };
+
+  assert.deepStrictEqual(
+    namePages(data).pages.map((page) => page.name),
+    ["Front truss", "Page 2", "Haze"],
+    "only the unnamed one is filled in, and with its own position"
+  );
+});
+
+test("naming pages is idempotent and leaves everything else alone", () => {
+  const once = namePages({ pages: [{ frames: [] }, { name: "  ", frames: [] }] });
+  const twice = namePages(JSON.parse(JSON.stringify(once)));
+  assert.deepStrictEqual(twice, once);
+
+  // A whitespace-only name is no name at all -- it would print a blank tab.
+  assert.strictEqual(once.pages[1].name, "Page 2");
+});
+
+test("the label a file gets is the label the switcher shows", () => {
+  // These two must not drift: an unnamed page is called the same thing whether
+  // it has been through a save or not.
+  assert.strictEqual(defaultPageName(0), "Page 1");
+  assert.strictEqual(namePages({ pages: [{}] }).pages[0].name, defaultPageName(0));
+});
+
+test("every page of a multi-page project is cleaned, not just the first", () => {
+  const locked = () => ({
+    frames: [{ component: { type: "wrapper", components: [{ type: "oscar-button", draggable: false }] } }],
+  });
+
+  const opened = openProject({
+    format: CURRENT_FORMAT,
+    name: "Four groups",
+    data: { pages: [locked(), locked(), locked()] },
+  });
+
+  assert.strictEqual(opened.status, "ok");
+  for (const page of opened.data.pages) {
+    const button = page.frames[0].component.components[0];
+    assert.ok(!("draggable" in button), "a widget on a later page is movable too");
+    assert.ok(page.name, "and every page is named");
+  }
 });
 
 test("every format below the current one has a migration to the next", () => {
