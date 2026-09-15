@@ -12,15 +12,20 @@ const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
+const { portsFromEnv } = require("./lib/ports");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
 
-const HTTP_PORT = Number(process.env.OSCAR_HTTP_PORT) || 8080;
-const SOCKET_PORT = Number(process.env.OSCAR_SOCKET_PORT) || 8081;
+// Every port in one object (lib/ports.js), so a feature that needs one --
+// OSC in, DMX out -- reads ports.oscIn or ports.dmx rather than the
+// environment. A bad value stops the server here, with the variable named.
+const ports = portsFromEnv(process.env);
+const HTTP_PORT = ports.http;
+const SOCKET_PORT = ports.socket;
 // Source ports OSCAR sends OSC from.
-const LAN_PORT = Number(process.env.OSCAR_LAN_PORT) || 5001;
-const LOCAL_PORT = Number(process.env.OSCAR_LOCAL_PORT) || 5002;
+const LAN_PORT = ports.lan;
+const LOCAL_PORT = ports.local;
 
 const PROJECTS_DIR =
   process.env.OSCAR_PROJECTS_DIR || path.join(__dirname, "projects");

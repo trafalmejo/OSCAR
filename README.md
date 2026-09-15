@@ -22,6 +22,7 @@ Get the installer for your machine from the
 | **Mac** with an Intel processor | `OSCAR-*-mac-x64.dmg` |
 | **Linux** (most distributions) | `OSCAR-*-linux-x86_64.AppImage` |
 | **Linux** (Debian, Ubuntu) | `OSCAR-*-linux-amd64.deb` |
+| **Raspberry Pi** and other ARM Linux (64-bit OS) | `OSCAR-*-linux-arm64.AppImage` or `OSCAR-*-linux-arm64.deb` |
 
 These builds aren't code signed, so your system warns you the first time. On
 Windows, click *More info* then *Run anyway*. On macOS, right-click the app and
@@ -52,20 +53,40 @@ or tablet on the same Wi-Fi to use the interface as a control surface.
 
 Make sure your firewall allows communication between devices on the network.
 
-To run two copies of OSCAR on one machine, give the second one its own ports:
-
-```bash
-OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT=5004 npm run serve
-```
-
 ### Useful commands
 
 | Command | What it does |
 | --- | --- |
 | `npm start` | Build the browser bundle, then run the server |
 | `npm run serve` | Run the server without rebuilding |
+| `npm run serve:at -- 18100` | Run the server on explicit ports (see below) |
 | `npm run dev` | Rebuild on change and restart on change |
 | `npm test` | Run the test suite |
+
+### Running on explicit ports
+
+To run a second copy of OSCAR on one machine -- while developing next to a
+running show, say -- every port has to move, including the two source ports
+OSC is sent from. `serve:at` takes the HTTP port and derives the rest from it,
+so one number keeps a copy out of everyone else's way:
+
+```bash
+npm run serve:at -- 18100                 # http 18100, socket 18101, OSC in 18102, sources 18103/18104
+npm run serve:at -- 18100 18101 18102     # the same, with socket and OSC-in ports given explicitly
+```
+
+It works the same in PowerShell, cmd and a Unix shell, and does not open a
+browser. Any `OSCAR_*_PORT` variable already set in the environment wins over
+the derived value. To set ports by hand instead, use the variables under
+[Configuration](#configuration):
+
+```bash
+OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT=5004 npm run serve
+```
+
+A variable set to something that is not a port stops the server with a
+message naming it, rather than falling back to the default and colliding with
+whatever you were trying to avoid.
 
 ### Building a desktop app
 
@@ -77,11 +98,12 @@ the `dist` scripts produce installers under `release-builds/`:
 | `npm run electron` | Run the desktop app from source |
 | `npm run dist:win` | Windows installer (NSIS) |
 | `npm run dist:mac` | macOS disk image |
-| `npm run dist:linux` | Linux AppImage and .deb |
+| `npm run dist:linux` | Linux AppImage and .deb, for x64 and arm64 |
 
-Each platform's installer has to be built on that platform. Windows and macOS
-are built for both Intel (`x64`) and ARM (`arm64`); Electron no longer ships a
-32-bit Windows build. Icons are generated from `build/icon.png`.
+Each platform's installer has to be built on that platform. All three are
+built for both Intel (`x64`) and ARM (`arm64`); on Linux the ARM build is what
+runs on a Raspberry Pi with a 64-bit OS. Electron no longer ships a 32-bit
+Windows build. Icons are generated from `build/icon.png`.
 
 ### Cutting a release
 
@@ -121,6 +143,8 @@ All optional, set as environment variables:
 | `OSCAR_SOCKET_PORT` | `8081` | Browser-to-server OSC bridge (browsers are told the port) |
 | `OSCAR_LAN_PORT` | `5001` | Source port for OSC sent to the network |
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
+| `OSCAR_OSC_IN_PORT` | `9000` | Where OSC coming back from the rig is received |
+| `OSCAR_DMX_PORT` | `6454` | DMX over the network (Art-Net) |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |
 | `OSCAR_NO_OPEN` | unset | Set to `1` to not open a browser on start |
 | `OSCAR_NO_UPDATE_CHECK` | unset | Set to `1` to never check for new versions |
