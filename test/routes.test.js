@@ -8,20 +8,22 @@ const path = require("node:path");
 const express = require("express");
 
 const { ProjectStore } = require("../lib/projects");
+const { CURRENT_FORMAT } = require("../lib/project-format");
 const createRouter = require("../routes/index");
 
 // Spin the real router up on an ephemeral port so the tests exercise the same
 // request path the editor uses.
-async function withServer(run) {
+async function withServer(run, deps = {}) {
+  const { storeOptions, ...routerDeps } = deps;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-routes-"));
-  const store = new ProjectStore(dir);
+  const store = new ProjectStore(dir, storeOptions);
 
   const app = express();
   app.set("views", path.join(__dirname, "..", "public"));
   app.set("view engine", "ejs");
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ limit: "25mb", extended: true }));
-  app.use("/", createRouter({ store, serverIP: () => "192.168.0.5" }));
+  app.use("/", createRouter(Object.assign({ store, serverIP: () => "192.168.0.5" }, routerDeps)));
 
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s));
@@ -115,16 +117,107 @@ test("save strips OSCAR metadata out of the stored project", async () => {
   });
 });
 
+test("a GrapesJS 0.21+ project round-trips through save and load unchanged", async () => {
+  await withServer(async (base) => {
+    // The shape editor.getProjectData() produces. The editor sends it flat,
+    // alongside OSCAR's own name/overwrite fields, and hands whatever /load
+    // returns straight to editor.loadProjectData().
+    const project = {
+      dataSources: [],
+      assets: [],
+      styles: [{ selectors: ["#i1"], style: { color: "red" } }],
+      pages: [
+        {
+          frames: [
+            {
+              component: {
+                type: "wrapper",
+                components: [
+                  { type: "oscar-button", message: "/push1", port: 7000 },
+                  { type: "oscar-slider", message: "/slider1", invert: true },
+                ],
+              },
+            },
+          ],
+          id: "page-1",
+        },
+      ],
+      symbols: [],
+    };
+
+    const saved = await (
+      await postJSON(base, "/save", Object.assign({ name: "Round Trip", overwrite: false }, project))
+    ).json();
+    assert.match(saved.msg, /Saved/);
+
+    const loaded = await (await fetch(base + "/load/round-trip")).json();
+    assert.deepStrictEqual(loaded, project, "loaded project is exactly what was saved, minus OSCAR's fields");
+  });
+});
+
 test("GET /load returns the project, and {} when missing", async () => {
   await withServer(async (base) => {
-    await postJSON(base, "/save", { name: "Loadable", "gjs-components": "abc" });
+    const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }], styles: [] };
+    await postJSON(base, "/save", Object.assign({ name: "Loadable" }, project));
 
     const found = await (await fetch(base + "/load/loadable")).json();
-    assert.strictEqual(found["gjs-components"], "abc");
+    assert.deepStrictEqual(found, project);
 
     const missing = await (await fetch(base + "/load/nope")).json();
     assert.deepStrictEqual(missing, {});
   });
+});
+
+test("GET /load refuses a project saved by a newer OSCAR", async () => {
+  await withServer(async (base, store, dir) => {
+    // Hand-write a file claiming a future format, the way a newer OSCAR would.
+    fs.writeFileSync(
+      path.join(dir, "from-the-future.json"),
+      JSON.stringify({
+        format: 99,
+        oscar: "9.9.9",
+        name: "From The Future",
+        data: { pages: [{ frames: [{ component: { type: "wrapper" } }] }] },
+      })
+    );
+
+    const body = await (await fetch(base + "/load/from-the-future")).json();
+    assert.match(body.error, /newer version of OSCAR/i);
+    assert.match(body.error, /9\.9\.9/, "the message names the version that wrote it");
+    assert.strictEqual(body.pages, undefined, "no data is handed back to be mangled");
+  });
+});
+
+test("GET /load refuses a 1.x-era file instead of half-loading it", async () => {
+  await withServer(async (base, store, dir) => {
+    fs.writeFileSync(
+      path.join(dir, "ancient.json"),
+      JSON.stringify({ name: "Ancient", data: { "gjs-components": "[]" } })
+    );
+
+    const body = await (await fetch(base + "/load/ancient")).json();
+    assert.match(body.error, /isn't an OSCAR project|damaged/i);
+  });
+});
+
+test("saved files carry the format and the versions that wrote them", async () => {
+  await withServer(
+    async (base, store) => {
+      const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }] };
+      await postJSON(
+        base,
+        "/save",
+        Object.assign({ name: "Stamped", grapesjs: "0.23.6" }, project)
+      );
+
+      const record = await store.read("stamped");
+      assert.strictEqual(record.format, CURRENT_FORMAT);
+      assert.strictEqual(record.oscar, "2.0.0");
+      assert.strictEqual(record.grapesjs, "0.23.6");
+      assert.deepStrictEqual(record.data, project, "the version fields stay out of the project");
+    },
+    { storeOptions: { oscarVersion: "2.0.0" } }
+  );
 });
 
 test("traversal ids cannot read or delete files outside the store", async () => {
@@ -160,6 +253,20 @@ test("DELETE /remove deletes once and then reports it is gone", async () => {
   });
 });
 
+test("pushing a preview notifies open preview pages", async () => {
+  let notified = 0;
+  await withServer(
+    async (base) => {
+      await postJSON(base, "/save/preview", { project: { pages: [] } });
+      assert.strictEqual(notified, 1, "a push tells the preview pages to pick it up");
+
+      await fetch(base + "/show/preview");
+      assert.strictEqual(notified, 1, "merely reading it notifies nobody");
+    },
+    { onPreviewPush: () => (notified += 1) }
+  );
+});
+
 test("preview hand-off round-trips through the server", async () => {
   await withServer(async (base) => {
     assert.deepStrictEqual(await (await fetch(base + "/show/preview")).json(), {});
@@ -169,6 +276,83 @@ test("preview hand-off round-trips through the server", async () => {
 
     assert.deepStrictEqual(await (await fetch(base + "/show/preview")).json(), project);
   });
+});
+
+test("GET /connection tells the browser where the OSC bridge is", async () => {
+  await withServer(
+    async (base) => {
+      const body = await (await fetch(base + "/connection")).json();
+      assert.strictEqual(body.address, "192.168.0.5");
+      assert.strictEqual(body.socketPort, 18091, "the configured port, not the default");
+    },
+    { socketPort: () => 18091 }
+  );
+});
+
+test("GET /connection falls back to the default bridge port", async () => {
+  await withServer(async (base) => {
+    const body = await (await fetch(base + "/connection")).json();
+    assert.strictEqual(body.socketPort, 8081);
+  });
+});
+
+test("GET /diagnostics reports what a bug report needs", async () => {
+  await withServer(
+    async (base) => {
+      const body = await (await fetch(base + "/diagnostics")).json();
+      assert.strictEqual(body.oscar, "2.0.0");
+      assert.strictEqual(body.platform, "linux");
+      assert.strictEqual(body.projectFormat, CURRENT_FORMAT);
+    },
+    {
+      diagnostics: () => ({
+        oscar: "2.0.0",
+        platform: "linux",
+        arch: "x64",
+        projectFormat: CURRENT_FORMAT,
+      }),
+    }
+  );
+});
+
+test("GET /diagnostics is empty rather than broken when unwired", async () => {
+  await withServer(async (base) => {
+    assert.deepStrictEqual(await (await fetch(base + "/diagnostics")).json(), {});
+  });
+});
+
+test("GET /update passes on what the checker found", async () => {
+  await withServer(
+    async (base) => {
+      const body = await (await fetch(base + "/update")).json();
+      assert.strictEqual(body.available, true);
+      assert.strictEqual(body.version, "2.1.0");
+    },
+    { updates: { check: async () => ({ available: true, version: "2.1.0", current: "2.0.0" }) } }
+  );
+});
+
+test("GET /update says nothing when no checker is wired", async () => {
+  await withServer(async (base) => {
+    assert.deepStrictEqual(await (await fetch(base + "/update")).json(), { available: false });
+  });
+});
+
+test("a failing update check never breaks the request", async () => {
+  await withServer(
+    async (base) => {
+      const res = await fetch(base + "/update");
+      assert.strictEqual(res.status, 200);
+      assert.deepStrictEqual(await res.json(), { available: false });
+    },
+    {
+      updates: {
+        check: async () => {
+          throw new Error("boom");
+        },
+      },
+    }
+  );
 });
 
 test("editor pages render", async () => {

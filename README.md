@@ -52,6 +52,12 @@ or tablet on the same Wi-Fi to use the interface as a control surface.
 
 Make sure your firewall allows communication between devices on the network.
 
+To run two copies of OSCAR on one machine, give the second one its own ports:
+
+```bash
+OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT=5004 npm run serve
+```
+
 ### Useful commands
 
 | Command | What it does |
@@ -112,11 +118,70 @@ All optional, set as environment variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `OSCAR_HTTP_PORT` | `8080` | Web interface |
-| `OSCAR_SOCKET_PORT` | `8081` | Browser-to-server OSC bridge |
+| `OSCAR_SOCKET_PORT` | `8081` | Browser-to-server OSC bridge (browsers are told the port) |
 | `OSCAR_LAN_PORT` | `5001` | Source port for OSC sent to the network |
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |
 | `OSCAR_NO_OPEN` | unset | Set to `1` to not open a browser on start |
+| `OSCAR_NO_UPDATE_CHECK` | unset | Set to `1` to never check for new versions |
+
+### Update checks
+
+Once a day at most, OSCAR asks GitHub whether a newer version has been
+released, and shows a dismissible notice in the editor if so. Nothing is
+downloaded or installed automatically, and you can skip a version or turn the
+check off entirely with `OSCAR_NO_UPDATE_CHECK=1`.
+
+This is the only request OSCAR makes to the internet. It sends nothing about
+you or your projects, times out quickly, and failing silently is the expected
+case on a venue network with no internet access.
+
+## Widgets
+
+Drag these in from the **OSC** category, then set each one's IP, port and
+message in the settings panel (the gear icon).
+
+| Widget | Sends |
+| --- | --- |
+| **Button** | `max` when pressed, `0` on release. As a toggle, it alternates |
+| **Slider** | its value as it moves, with optional inverted range |
+| **XY Pad** | both values at once — `/pad 30 70` — or as `/pad/x` and `/pad/y` |
+
+On the XY pad, Y increases upward, and either axis can be inverted. Dragging
+sends at most one message per frame, and always sends the exact value where
+you let go.
+
+## Running a show
+
+The editor lives at `/`. The control surface lives at `/preview` — the same
+layout with every editing tool stripped out, which is what you open on a phone
+or tablet.
+
+Press **Push to preview** (the eye icon) to send the current layout to it.
+Every device showing `/preview` picks the new layout up straight away; there is
+no need to walk over and reload them.
+
+### Locking an installation
+
+By default anyone on the network can open the editor at `/` and change things.
+For an installation or a show, press the padlock in the toolbar.
+
+While OSCAR is locked:
+
+- Other devices can still open `/preview` and use the controls
+- Visiting `/` from another device sends them to `/preview` instead
+- Saving, loading and deleting projects are refused
+- Only the computer running OSCAR can edit, or unlock it again
+
+Physical access to that computer is what grants editing, so there is no
+password to leak over a venue's network or forget before doors open. The
+setting is remembered, so a machine that reboots overnight comes back locked.
+`OSCAR_LOCKED=1` starts it locked.
+
+This stops editing, not sending: the OSC bridge stays open, because that is how
+the tablets work at all. Anyone who can reach OSCAR can still send OSC to your
+rig. If that matters, the answer is a separate network for the control devices,
+not a setting in OSCAR.
 
 ## Saving your work
 

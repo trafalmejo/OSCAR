@@ -1,0 +1,115 @@
+/* Update notice: a quiet corner toast, never a modal. OSCAR is often on
+   screen during a show, so nothing here may steal focus or cover the
+   toolbar. */
+
+.oscar-update {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10000;
+  max-width: 330px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: #444;
+  border-left: 4px solid #ff3663;
+  color: #ddd;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+.oscar-update-title {
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.oscar-update-current {
+  opacity: 0.75;
+  font-size: 12px;
+}
+
+.oscar-update-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.oscar-update-actions a,
+.oscar-update-actions button {
+  font: inherit;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.oscar-update-get {
+  background-image: linear-gradient(to right, #ff623a 0%, #ff3663 100%);
+  color: #fff;
+}
+
+.oscar-update-later,
+.oscar-update-skip {
+  background: transparent;
+  color: #bbb;
+}
+
+.oscar-update-later:hover,
+.oscar-update-skip:hover {
+  color: #fff;
+}
+
+.oscar-update-skip {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* About panel: report/suggest actions */
+
+.about-actions {
+  display: flex;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+
+.about-actions .btn {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+  padding: 8px 12px;
+}
+
+.about-note {
+  font-size: 12px;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+#about-version {
+  margin-top: 10px;
+  font-family: monospace;
+  opacity: 0.55;
+}
+
+/* While previewing, hide the editor's own overlays. They sit outside the
+   canvas, so blocking events inside it doesn't reach them -- and a delete
+   button floating over a control surface during a show is a hazard. */
+.oscar-previewing .gjs-toolbar,
+.oscar-previewing .gjs-badge,
+.oscar-previewing .gjs-resizer-h,
+.oscar-previewing .gjs-highlighter,
+.oscar-previewing .gjs-highlighter-sel,
+.oscar-previewing .gjs-placeholder {
+  display: none !important;
+}
+
+/* Locked mode: the toolbar button states the condition plainly, because a
+   locked OSCAR that looked unlocked would be its own hazard. */
+.gjs-pn-btn.oscar-locked {
+  color: #ff3663;
+}

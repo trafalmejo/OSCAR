@@ -8,7 +8,13 @@ const { Server } = require("socket.io");
 
 const { lanAddress } = require("./lib/net");
 const { ProjectStore } = require("./lib/projects");
+const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
+const { CURRENT_FORMAT } = require("./lib/project-format");
+const { Settings } = require("./lib/settings");
+const { buildMessage, isPort } = require("./lib/osc-message");
 const createRouter = require("./routes/index");
+
+const pkg = require("./package.json");
 
 const HTTP_PORT = Number(process.env.OSCAR_HTTP_PORT) || 8080;
 const SOCKET_PORT = Number(process.env.OSCAR_SOCKET_PORT) || 8081;
@@ -22,7 +28,22 @@ const PROJECTS_DIR =
 let serverIP = lanAddress();
 
 const app = express();
-const store = new ProjectStore(PROJECTS_DIR);
+// The OSCAR version is recorded in every saved project, so a file can always
+// say what wrote it.
+const store = new ProjectStore(PROJECTS_DIR, { oscarVersion: pkg.version });
+
+// Locked mode is remembered across restarts, so an installation that reboots
+// overnight comes back locked rather than open. OSCAR_LOCKED forces it on at
+// startup for anyone scripting a kiosk.
+const settings = new Settings(
+  process.env.OSCAR_SETTINGS_FILE || path.join(path.dirname(PROJECTS_DIR), "oscar-settings.json")
+);
+if (process.env.OSCAR_LOCKED === "1") settings.set("locked", true);
+
+const lock = {
+  isLocked: () => !!settings.get("locked"),
+  setLocked: (value) => settings.set("locked", value),
+};
 
 app.set("views", path.join(__dirname, "public"));
 app.set("view engine", "ejs");
@@ -35,7 +56,39 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 
-app.use("/", createRouter({ store, serverIP: () => serverIP }));
+// Checking for a new release is the only request OSCAR makes to the internet.
+// Set OSCAR_NO_UPDATE_CHECK=1 to switch it off; everything else still works.
+const updates = createUpdateChecker({
+  currentVersion: pkg.version,
+  repo: repoFromUrl(pkg.repository && pkg.repository.url),
+  enabled: process.env.OSCAR_NO_UPDATE_CHECK !== "1",
+});
+
+// What a bug report always needs: which OSCAR, on what, run how.
+function diagnostics() {
+  return {
+    oscar: pkg.version,
+    projectFormat: CURRENT_FORMAT,
+    platform: process.platform,
+    arch: process.arch,
+    node: process.versions.node,
+    electron: process.versions.electron || null,
+  };
+}
+
+app.use(
+  "/",
+  createRouter({
+    store,
+    serverIP: () => serverIP,
+    socketPort: () => SOCKET_PORT,
+    updates,
+    diagnostics,
+    // `io` is created below; this only runs once a request arrives.
+    onPreviewPush: () => io.emit("preview:updated"),
+    lock,
+  })
+);
 
 // ---- OSC transport --------------------------------------------------------
 
@@ -58,9 +111,20 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
   port.open();
 }
 
-function sendOSCMessage(ip, port, address, type, value) {
+/**
+ * @param {string} ip
+ * @param {number|string} port
+ * @param {string} address
+ * @param {Array} args - one entry per value; an XY pad sends two, a colour three
+ */
+function sendOSC(ip, port, address, args) {
+  const message = buildMessage(address, args);
+  if (!message || !isPort(port)) {
+    console.error("Ignoring a malformed OSC message for", address);
+    return;
+  }
+
   const target = ip === "localhost" || ip === "127.0.0.1" ? udpLocal : udpLan;
-  const message = { address, args: [{ type, value }] };
 
   console.log("Sending", address, JSON.stringify(message.args), "to", ip + ":" + port);
   try {
@@ -79,11 +143,21 @@ const io = new Server(SOCKET_PORT, {
 io.on("connection", (socket) => {
   console.log("Editor connected (" + socket.id + ")");
 
-  // `clientIP` is accepted for backwards compatibility with saved projects
-  // that still emit it; the value is not used for routing.
+  // One message, any number of values: { ip, port, address, args }.
+  socket.on("osc", (msg) => {
+    try {
+      if (!msg) return;
+      sendOSC(msg.ip, msg.port, msg.address, msg.args);
+    } catch (err) {
+      console.error("Bad OSC message:", err.message);
+    }
+  });
+
+  // The single-value form OSCAR sent before. Kept for anything written
+  // against it, including custom code inside someone's project.
   socket.on("message", (clientIP, ip, port, address, type, value) => {
     try {
-      sendOSCMessage(ip, port, address, type, value);
+      sendOSC(ip, port, address, [{ type, value }]);
     } catch (err) {
       console.error("Bad OSC message:", err.message);
     }
@@ -100,6 +174,10 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("    On your network:    http://" + serverIP + ":" + HTTP_PORT);
   console.log("");
   console.log("  Projects folder:      " + PROJECTS_DIR);
+  if (lock.isLocked()) {
+    console.log("");
+    console.log("  LOCKED: other devices can use the controls but not edit.");
+  }
   console.log("");
 
   // When Electron forks this file it waits for this before opening a window.

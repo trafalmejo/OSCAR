@@ -1,93 +1,107 @@
 window.$ = window.jQuery = require("jquery");
 
+var oscarButton = require("./oscar_button");
+var oscarSlider = require("./oscar_slider");
+var oscarXypad = require("./oscar_xypad");
+
 var editor;
+
+/** Hand a widget plugin the address other devices should send to. */
+function withIp(plugin, ipServer) {
+  return function (ed) {
+    plugin(ed, { ipserver: ipServer });
+  };
+}
 
 // One browserify bundle serves both the editor and the preview page, so each
 // entry point only boots when its own container is on the page.
 if (document.getElementById("gjs-oscar-preview")) {
   // Ask the server which address it is reachable on, so widgets default to
   // something other devices on the network can actually talk to.
-  $.get("/ipserver", function (data) {
-    initGrape(data || window.location.hostname || "localhost");
-  });
+  fetch("/connection")
+    .then(function (res) {
+      return res.json();
+    })
+    .catch(function () {
+      return {};
+    })
+    .then(function (conn) {
+      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081);
+    });
 }
 
-function initGrape(ipServer) {
+function initGrape(ipServer, socketPort) {
   editor = grapesjs.init({
     height: "100%",
     container: "#gjs-oscar-preview",
     allowScripts: 1,
     panels: { defaults: [] },
     canvas: { styles: ["assets/css/toggle.css"] },
-    storageManager: {
-      id: "gjs-",
-      type: "remote",
-      urlLoad: "/show/preview",
-      contentTypeJson: true,
-      autosave: false,
-      autoload: false,
-    },
-    plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider", "grapesjs-touch"],
+    // The preview only displays whatever the editor handed over; it must never
+    // write into the editor's autosave.
+    storageManager: false,
+    plugins: [
+      "oscar_socket",
+      "oscar_ip",
+      withIp(oscarButton, ipServer),
+      withIp(oscarSlider, ipServer),
+      withIp(oscarXypad, ipServer),
+      "grapesjs-touch",
+    ],
     pluginsOpts: {
-      oscar_socket: { ipserver: ipServer },
-      oscar_slider: { ipserver: ipServer },
-      oscar_button: { ipserver: ipServer },
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort },
     },
   });
 
-  // A preview is for driving the show, not editing it: lock everything down
-  // once the project has loaded.
-  editor.on("storage:end:load", function () {
-    var lock = function (model) {
-      model.set({
-        editable: false,
-        selectable: false,
-        hoverable: false,
-        draggable: false,
-      });
-      model.get("components").each(lock);
-    };
-    lock(editor.DomComponents.getWrapper());
+  editor.on("load", function () {
+    showLatest();
+
+    // The editor's "Push to preview" button tells the server, which tells
+    // every open preview page. Without this a tablet keeps showing the
+    // previous push until someone walks over and reloads it.
+    if (editor.socket) {
+      editor.socket.on("preview:updated", showLatest);
+    }
+  });
+}
+
+/** Fetch whatever was last pushed and display it, ready to drive a show. */
+function showLatest() {
+  return fetch("/show/preview")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (data) {
+      // loadProjectData tears down the current page before reading the new
+      // one, so only hand it something shaped like a GrapesJS project.
+      if (!data || !Array.isArray(data.pages) || !data.pages.length) return;
+
+      editor.loadProjectData(data);
+      lockDown();
+    })
+    .catch(function (err) {
+      console.log("Could not load the preview", err);
+    });
+}
+
+/**
+ * A preview is for driving the show, not editing it.
+ *
+ * Safe to set on the components here, unlike in the editor: this page never
+ * saves anything (storageManager is off), so none of it can reach a file.
+ */
+function lockDown() {
+  editor.getWrapper().onAll(function (component) {
+    component.set({
+      editable: false,
+      selectable: false,
+      hoverable: false,
+      draggable: false,
+      highlightable: false,
+    });
   });
 
-  editor.Commands.add("production", {
-    run: function () {
-      var cmdVis = "sw-visibility";
-      if (!this.shouldRunSwVisibility) {
-        this.shouldRunSwVisibility = editor.Commands.isActive(cmdVis);
-      }
-      this.shouldRunSwVisibility && editor.stopCommand(cmdVis);
-      editor.getModel().stopDefault();
-
-      var panels = editor.Panels.getPanels();
-      var canvas = editor.Canvas.getElement();
-
-      // Make every widget clickable: in edit mode grapesjs disables pointer
-      // events on some elements, which would swallow OSC triggers.
-      var pfx = editor.Config.stylePrefix || "gjs-";
-      var body = editor.Canvas.getBody();
-      var blocked = body.querySelectorAll("." + pfx + "no-pointer");
-      Array.prototype.forEach.call(blocked, function (item) {
-        item.style.pointerEvents = "all";
-      });
-
-      panels.forEach(function (panel) {
-        editor.Panels.removePanel(panel.get("id"));
-      });
-
-      var style = canvas.style;
-      style.width = "100%";
-      style.height = "100%";
-      style.top = "0";
-      style.left = "0";
-      style.padding = "0";
-      style.margin = "0";
-      editor.refresh();
-    },
-    stop: function () {},
-  });
-
-  editor.load(function () {
-    editor.runCommand("production");
-  });
+  // GrapesJS's own preview mode hides the panels and makes the canvas full
+  // size. Its "exit preview" button is hidden in preview.ejs.
+  if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }

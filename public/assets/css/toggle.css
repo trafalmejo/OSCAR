@@ -29,3 +29,43 @@ button:hover {
 button {
   opacity: 0.8;
 }
+/* XY pad. Same family as the slider: a light grey ground that brightens on
+   hover, and the browser's own control colour on the handle, so a layout
+   mixing the two looks like one instrument.
+
+   The handle is a pseudo-element, not a child: a child element would swallow
+   the drag the way a button's label once did. */
+.oscar-xypad {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  background: #d3d3d3;
+  outline: none;
+  opacity: 0.8;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+  /* Without this a finger drag scrolls the page instead of moving the handle. */
+  touch-action: none;
+  --oscar-x: 0%;
+  --oscar-y: 100%;
+}
+
+.oscar-xypad:hover {
+  opacity: 1;
+}
+
+.oscar-xypad::after {
+  content: "";
+  position: absolute;
+  left: var(--oscar-x);
+  top: var(--oscar-y);
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  /* AccentColor is the colour the browser paints its own slider thumb, so the
+     two widgets match without guessing at a hex. */
+  background: #1a73e8;
+  background: AccentColor;
+  pointer-events: none;
+}

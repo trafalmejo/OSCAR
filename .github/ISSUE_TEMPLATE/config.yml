@@ -1,0 +1,15 @@
+# Most OSCAR users are VJs and lighting operators rather than developers, and
+# many have no GitHub account. Offer routes that don't need one.
+blank_issues_enabled: true
+contact_links:
+  - name: Email us
+    url: mailto:hello@createwithoscar.com
+    about: No GitHub account needed. Bugs, ideas and questions all welcome.
+
+  - name: OSCAR news by email
+    url: https://forms.gle/1pGiDJDh3jur8Tq68
+    about: Hear about new releases, features and tutorials.
+
+  - name: Tutorials on YouTube
+    url: https://www.youtube.com/channel/UCyIxOoajn_4Nj8Mjz2k-3qA
+    about: Videos showing what OSCAR can do.

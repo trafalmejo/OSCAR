@@ -2,42 +2,115 @@
 
 const express = require("express");
 
+const { openProject, stripEditorState } = require("../lib/project-format");
+const { isLoopbackAddress } = require("../lib/net");
+
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
-const META_KEYS = new Set(["name", "overwrite", "visibility"]);
+const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
 
 /**
  * @param {object} deps
  * @param {import('../lib/projects').ProjectStore} deps.store
  * @param {() => string} deps.serverIP
+ * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
  */
-module.exports = function createRouter({ store, serverIP }) {
+module.exports = function createRouter({
+  store,
+  serverIP,
+  socketPort,
+  updates,
+  diagnostics,
+  onPreviewPush,
+  lock,
+}) {
   const router = express.Router();
+
+  // ---- locked mode --------------------------------------------------------
+  // When OSCAR is locked, the control surface stays open to the network and
+  // the editor answers only the machine OSCAR runs on. Physical access to that
+  // machine is the credential: no passwords to leak over a venue's plain-HTTP
+  // network, and nothing to forget before doors open.
+  //
+  // This stops editing, not sending: the OSC bridge has to stay reachable or
+  // no tablet could drive anything.
+  const isLocked = () => !!(lock && lock.isLocked());
+  const isLocal = (req) => isLoopbackAddress(req.socket && req.socket.remoteAddress);
+
+  function editorOnly(req, res, next) {
+    if (!isLocked() || isLocal(req)) return next();
+    res.status(403).json({
+      error: "OSCAR is locked. It can only be edited on the computer running it.",
+    });
+  }
 
   // The live preview payload is deliberately in-memory: it is a scratch copy
   // of the canvas handed from the editor tab to the preview tab.
   let preview = null;
 
-  router.get("/", (req, res) => res.render("index"));
+  router.get("/", (req, res) => {
+    // Send a locked-out visitor to the control surface rather than an error.
+    if (isLocked() && !isLocal(req)) return res.redirect("/preview");
+    res.render("index");
+  });
+
+  // Is OSCAR locked, and may this device change that?
+  router.get("/lock", (req, res) =>
+    res.json({ locked: isLocked(), canToggle: isLocal(req) })
+  );
+
+  router.post("/lock", (req, res) => {
+    if (!isLocal(req)) {
+      return res.status(403).json({
+        error: "Only the computer running OSCAR can lock or unlock it.",
+      });
+    }
+    if (!lock) return res.json({ locked: false });
+    lock.setLocked(!!(req.body && req.body.locked));
+    res.json({ locked: isLocked() });
+  });
   router.get("/preview", (req, res) => res.render("preview"));
 
+  // Where the browser should reach OSCAR. The OSC bridge does not always
+  // listen on 8081 -- OSCAR_SOCKET_PORT moves it, and a second instance on the
+  // same machine has to -- so the port is reported rather than assumed.
+  router.get("/connection", (req, res) =>
+    res.json({ address: serverIP(), socketPort: socketPort ? socketPort() : 8081 })
+  );
+
+  // Kept for anything written against older OSCARs.
   router.get("/ipserver", (req, res) => res.send(serverIP()));
 
-  // Kept for the editor's startup check. There is no update service any more,
-  // so this always reports "nothing to announce".
-  router.post("/update", (req, res) => res.json({}));
-  router.get("/upgrade", (req, res) => res.json({ success: true }));
+  // Version details for the "Report a problem" button. Nothing identifying:
+  // just what a bug report always has to ask for anyway.
+  router.get("/diagnostics", (req, res) => res.json(diagnostics ? diagnostics() : {}));
+
+  // Is a newer OSCAR out? Answers { available: false } when the check is
+  // switched off, offline, or already up to date -- the editor treats every
+  // one of those the same way, by saying nothing.
+  router.get("/update", async (req, res) => {
+    if (!updates) return res.json({ available: false });
+    try {
+      res.json(await updates.check());
+    } catch (err) {
+      console.error("Update check failed:", err.message);
+      res.json({ available: false });
+    }
+  });
 
   // ---- Preview hand-off -------------------------------------------------
-  router.post("/save/preview", (req, res) => {
+  router.post("/save/preview", editorOnly, (req, res) => {
     preview = req.body && req.body.project ? req.body.project : req.body;
+    // Tell any open preview pages to pick it up. Without this a tablet keeps
+    // showing the previous push until someone reloads it by hand.
+    if (onPreviewPush) onPreviewPush();
     res.json({ msg: "Preview updated" });
   });
 
   router.get("/show/preview", (req, res) => res.json(preview || {}));
 
   // ---- Local project library --------------------------------------------
-  router.get("/projects", async (req, res) => {
+  router.get("/projects", editorOnly, async (req, res) => {
     try {
       res.json(await store.list());
     } catch (err) {
@@ -46,7 +119,7 @@ module.exports = function createRouter({ store, serverIP }) {
     }
   });
 
-  router.post("/save", async (req, res) => {
+  router.post("/save", editorOnly, async (req, res) => {
     const body = req.body || {};
     const name = typeof body.name === "string" ? body.name.trim() : "";
 
@@ -77,7 +150,8 @@ module.exports = function createRouter({ store, serverIP }) {
         });
       }
 
-      await store.save(name, data);
+      // Editor state has no business in a project, in either direction.
+      await store.save(name, stripEditorState(data), { grapesjs: body.grapesjs });
       res.json({ msg: 'Saved "' + name + '"', id });
     } catch (err) {
       console.error("Could not save project:", err.message);
@@ -85,18 +159,38 @@ module.exports = function createRouter({ store, serverIP }) {
     }
   });
 
-  router.get("/load/:id", async (req, res) => {
+  router.get("/load/:id", editorOnly, async (req, res) => {
     try {
       const record = await store.read(req.params.id);
       if (!record) return res.json({});
-      res.json(record.data || {});
+
+      const opened = openProject(record);
+
+      if (opened.status === "too-new") {
+        // Opening it anyway would drop whatever this version doesn't know
+        // about, and the next save would write that loss back over the file.
+        return res.json({
+          error:
+            "This project was saved with a newer version of OSCAR" +
+            (opened.savedBy ? " (" + opened.savedBy + ")" : "") +
+            ". Update OSCAR to open it.",
+        });
+      }
+
+      if (opened.status !== "ok") {
+        return res.json({
+          error: "This file isn't an OSCAR project, or it is damaged.",
+        });
+      }
+
+      res.json(opened.data);
     } catch (err) {
       console.error("Could not load project:", err.message);
       res.json({ error: "Could not be loaded" });
     }
   });
 
-  router.delete("/remove/:id", async (req, res) => {
+  router.delete("/remove/:id", editorOnly, async (req, res) => {
     try {
       const removed = await store.remove(req.params.id);
       if (!removed) return res.json({ error: "That project no longer exists" });
