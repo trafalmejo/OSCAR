@@ -494,7 +494,7 @@ module.exports = {
 
 const { field, enabled, listen, connection, connectionChecks } = require("./fields");
 const { outgoing } = require("./outgoing");
-const { incoming } = require("./incoming");
+const { onIncoming } = require("./incoming");
 const { ARG_TYPES, isSendable, isFalsy } = require("../osc-args");
 
 const DEFAULT_LABEL = "Insert here your text";
@@ -668,18 +668,12 @@ const button = {
     el.addEventListener("keydown", onKeyDown);
     el.addEventListener("keyup", onKeyUp);
 
-    const stopOsc = ctx.onOsc
-      ? ctx.onOsc(function (message) {
-          const match = incoming(
-            { listen: ctx.get("listen"), message: ctx.get("message") },
-            message
-          );
-          // A bare address carries no state to adopt -- /play says a thing
-          // happened, not whether anything is now on.
-          if (!match || !match.values.length) return;
-          if (adopt(stateFor(match.values[0]))) share();
-        })
-      : null;
+    const stopOsc = onIncoming(ctx, function (values) {
+      // A bare address carries no state to adopt -- /play says a thing
+      // happened, not whether anything is now on.
+      if (!values.length) return;
+      if (adopt(stateFor(values[0]))) share();
+    });
 
     const stopShared = ctx.onShared
       ? ctx.onShared(function (state) {
@@ -874,7 +868,26 @@ function incoming(config, message) {
   return { address: message.address, values: message.args };
 }
 
-module.exports = { incoming };
+/**
+ * Follow the messages a widget's own Message address attracts.
+ *
+ * The subscription every widget would otherwise write out for itself: read
+ * Listen and Message off the context each time, because both can be edited
+ * while the widget is live, and hand on only the values. A widget that answers
+ * to more than one address -- the pad in two-message mode -- calls incoming()
+ * directly instead.
+ *
+ * @returns an unsubscribe function, or null where the host cannot receive.
+ */
+function onIncoming(ctx, fn) {
+  if (!ctx.onOsc) return null;
+  return ctx.onOsc(function (message) {
+    const match = incoming({ listen: ctx.get("listen"), message: ctx.get("message") }, message);
+    if (match) fn(match.values, match.address);
+  });
+}
+
+module.exports = { incoming, onIncoming };
 
 },{"../osc-in":2}],8:[function(require,module,exports){
 "use strict";
@@ -918,7 +931,7 @@ module.exports = { outgoing };
 
 const { field, enabled, listen, connection, connectionChecks, checkNumber } = require("./fields");
 const { outgoing } = require("./outgoing");
-const { incoming } = require("./incoming");
+const { onIncoming } = require("./incoming");
 const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
 
 const ORIENTATIONS = [
@@ -1046,19 +1059,12 @@ const slider = {
     // that is already somewhere; re-apply rather than leave the two disagreeing.
     const stop = ctx.onChange(["min", "max", "value", "orientation", "invert"], apply);
 
-    const stopOsc = ctx.onOsc
-      ? ctx.onOsc(function (message) {
-          const match = incoming(
-            { listen: ctx.get("listen"), message: ctx.get("message") },
-            message
-          );
-          if (!match) return;
-          // Passing on what the rig said keeps a tablet that connects later in
-          // step with one that heard it. Both tablets report the same value, so
-          // the second report changes nothing and is dropped server-side.
-          if (adopt(match.values[0])) share(Number(ctx.get("value")));
-        })
-      : null;
+    const stopOsc = onIncoming(ctx, function (values) {
+      // Passing on what the rig said keeps a tablet that connects later in step
+      // with one that heard it. Both tablets report the same value, so the
+      // second report changes nothing and is dropped server-side.
+      if (adopt(values[0])) share(Number(ctx.get("value")));
+    });
 
     const stopShared = ctx.onShared
       ? ctx.onShared(function (state) {

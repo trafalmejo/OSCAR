@@ -4,8 +4,9 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { parse, matchesAddress, plainValue } = require("../lib/osc-in");
-const { incoming } = require("../lib/widgets/incoming");
+const { incoming, onIncoming } = require("../lib/widgets/incoming");
 const { MAX_ARGS } = require("../lib/osc-message");
+const { fakeContext } = require("./helpers/fake-dom");
 
 // --- reading a packet -------------------------------------------------------
 
@@ -121,6 +122,41 @@ test("a listening widget takes the values at its own address and no other", () =
   assert.strictEqual(incoming(config, { address: "/slider2", args: [50] }), null);
   assert.strictEqual(incoming(config, null), null);
   assert.strictEqual(incoming(config, { address: "/slider1" }), null, "unparsed message");
+});
+
+test("a subscription reads Listen and Message afresh for every message", () => {
+  // Both can be edited while the widget is live, and a subscription that
+  // captured them once would keep answering to the old address.
+  const ctx = fakeContext({ listen: false, message: "/a" });
+  const heard = [];
+  onIncoming(ctx, (values) => heard.push(values[0]));
+
+  ctx.receive("/a", [1]);
+  assert.deepStrictEqual(heard, [], "Listen was off");
+
+  ctx.edit("listen", true);
+  ctx.receive("/a", [2]);
+  ctx.edit("message", "/b");
+  ctx.receive("/a", [3]);
+  ctx.receive("/b", [4]);
+  assert.deepStrictEqual(heard, [2, 4]);
+});
+
+test("a host with no network behind it can leave onOsc off entirely", () => {
+  const ctx = fakeContext({ listen: true, message: "/a" });
+  delete ctx.onOsc;
+  assert.strictEqual(onIncoming(ctx, () => {}), null, "and gets no subscription to undo");
+});
+
+test("unsubscribing stops the messages", () => {
+  const ctx = fakeContext({ listen: true, message: "/a" });
+  let heard = 0;
+  const stop = onIncoming(ctx, () => heard++);
+
+  ctx.receive("/a", [1]);
+  stop();
+  ctx.receive("/a", [1]);
+  assert.strictEqual(heard, 1);
 });
 
 test("routing hands back values and never a message to send", () => {
