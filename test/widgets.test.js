@@ -269,6 +269,14 @@ test("the pad clamps to its edges rather than running past them", () => {
 
 // --- shared shape -----------------------------------------------------------
 
+test("Enabled leads on every widget, above even the label", () => {
+  // Whether a control is live matters more than what it is called, and a
+  // master switch buried mid-panel is one you do not find mid-show.
+  for (const widget of WIDGETS) {
+    assert.strictEqual(widget.fields[0].key, "enabled", widget.name);
+  }
+});
+
 test("every widget offers the same four settings, so they feel like one instrument", () => {
   for (const widget of WIDGETS) {
     const keys = widget.fields.map((f) => f.key);

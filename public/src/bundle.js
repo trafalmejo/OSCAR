@@ -241,7 +241,7 @@ module.exports = {
 },{}],3:[function(require,module,exports){
 "use strict";
 
-const { field, connection, connectionChecks } = require("./fields");
+const { field, enabled, connection, connectionChecks } = require("./fields");
 const { outgoing } = require("./outgoing");
 const { ARG_TYPES, isSendable } = require("../osc-args");
 
@@ -289,7 +289,7 @@ const button = {
     argType: "i",
   },
 
-  fields: [field("label", "Label", "text")]
+  fields: [enabled(), field("label", "Label", "text")]
     .concat(connection())
     .concat([
       field("mode", "Mode", "select", { options: MODES }),
@@ -445,16 +445,23 @@ function field(key, label, type, extra) {
 }
 
 /**
- * Every widget carries these, in this order, so a button and a pad feel like
- * the same instrument when you click between them.
+ * The master switch, and the first field on every widget.
  *
- * "Enabled" comes first and reads as the master switch it is: a widget can be
- * laid out, positioned and styled while silent, which is how you build a
- * surface without firing cues at a rig that is mid-show.
+ * It reads as what it is: a widget can be laid out, positioned and styled
+ * while silent, which is how you build a surface without firing cues at a rig
+ * that is mid-show. It sits above even the label, because whether a control is
+ * live matters more than what it is called.
+ */
+function enabled() {
+  return field("enabled", "Enabled", "checkbox");
+}
+
+/**
+ * Where a widget sends. Every widget carries these, in this order, so a button
+ * and a pad feel like the same instrument when you click between them.
  */
 function connection() {
   return [
-    field("enabled", "Enabled", "checkbox"),
     field("ip", "Ip", "text", { placeholder: "localhost" }),
     field("port", "Port", "number", { min: 1, max: 65535 }),
     field("message", "Message", "text", { placeholder: "/address" }),
@@ -503,6 +510,7 @@ function connectionChecks() {
 
 module.exports = {
   field: field,
+  enabled: enabled,
   connection: connection,
   connectionChecks: connectionChecks,
   checkIp: checkIp,
@@ -552,7 +560,7 @@ module.exports = { outgoing };
 },{"../osc-args":1}],6:[function(require,module,exports){
 "use strict";
 
-const { field, connection, connectionChecks, checkNumber } = require("./fields");
+const { field, enabled, connection, connectionChecks, checkNumber } = require("./fields");
 const { outgoing } = require("./outgoing");
 const { NUMERIC_ARG_TYPES } = require("../osc-args");
 
@@ -594,7 +602,7 @@ const slider = {
     argType: "f",
   },
 
-  fields: connection().concat([
+  fields: [enabled()].concat(connection()).concat([
     field("min", "Min", "number", { step: "any" }),
     field("max", "Max", "number", { step: "any" }),
     field("value", "Value", "number", { step: "any" }),
@@ -683,7 +691,7 @@ module.exports = { slider, ORIENTATIONS };
 },{"../osc-args":1,"./fields":4,"./outgoing":5}],7:[function(require,module,exports){
 "use strict";
 
-const { field, connection, connectionChecks, checkNumber } = require("./fields");
+const { field, enabled, connection, connectionChecks, checkNumber } = require("./fields");
 const { outgoing } = require("./outgoing");
 const { NUMERIC_ARG_TYPES } = require("../osc-args");
 
@@ -740,7 +748,7 @@ const xypad = {
     argType: "f",
   },
 
-  fields: connection().concat([
+  fields: [enabled()].concat(connection()).concat([
     field("sendMode", "Send", "select", { options: SEND_MODES }),
     field("minX", "Min X", "number", { step: "any" }),
     field("maxX", "Max X", "number", { step: "any" }),
