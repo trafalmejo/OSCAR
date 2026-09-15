@@ -35,7 +35,25 @@ module.exports = function createRouter({
   // This stops editing, not sending: the OSC bridge has to stay reachable or
   // no tablet could drive anything.
   const isLocked = () => !!(lock && lock.isLocked());
-  const isLocal = (req) => isLoopbackAddress(req.socket && req.socket.remoteAddress);
+
+  // A loopback source address can't be forged over the network, but a
+  // malicious page open in a browser on this same machine (or reached via
+  // DNS rebinding) can still get the browser to fire a same-machine request.
+  // Requiring same-origin Origin/Referer closes that gap without adding the
+  // passwords this project deliberately avoids.
+  function isSameOrigin(req) {
+    const origin = req.get("origin") || req.get("referer");
+    if (!origin) return true;
+    try {
+      const hostname = new URL(origin).hostname;
+      return hostname === "localhost" || isLoopbackAddress(hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  const isLocal = (req) =>
+    isLoopbackAddress(req.socket && req.socket.remoteAddress) && isSameOrigin(req);
 
   function editorOnly(req, res, next) {
     if (!isLocked() || isLocal(req)) return next();
