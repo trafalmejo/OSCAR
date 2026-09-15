@@ -97,7 +97,17 @@ test("two ports landing on the same number are refused before anything binds", (
   assert.throws(() => planPorts(["18200", "18200"], {}), /OSCAR_HTTP_PORT.*OSCAR_SOCKET_PORT/);
   assert.throws(() => planPorts(["18100"], { OSCAR_LAN_PORT: "18101" }), /18101/);
   // Including one the derivation does not touch.
-  assert.throws(() => planPorts([String(DEFAULTS.dmx - 4)], {}), /OSCAR_DMX_PORT/);
+  assert.throws(() => planPorts(["18100"], { OSCAR_DMX_PORT: "18101" }), /OSCAR_DMX_PORT/);
+});
+
+test("the DMX source port is any free port unless pinned, and 0 may be asked for by name", () => {
+  // Binding Art-Net's own port would collide with node software on the same
+  // machine, and the nodes do not care which port a packet came from.
+  assert.strictEqual(DEFAULTS.dmx, 0);
+  assert.strictEqual(portsFromEnv({ OSCAR_DMX_PORT: "6454" }).dmx, 6454);
+  assert.strictEqual(portsFromEnv({ OSCAR_DMX_PORT: "0" }).dmx, 0, "an explicit 0 overrides a pinned profile");
+  assert.throws(() => portsFromEnv({ OSCAR_HTTP_PORT: "0" }), /OSCAR_HTTP_PORT/, "only where any port is meaningful");
+  assert.doesNotThrow(() => planPorts(["18100"], { OSCAR_DMX_PORT: "0" }), "0 collides with nothing");
 });
 
 test("a derived port past the top of the range is refused", () => {
