@@ -1,7 +1,7 @@
 /**
- * Connects the editor to OSCAR's OSC bridge, in both directions: messages out
- * to the rig, OSC coming back in, and the widget state this page shares with
- * every other device showing the same surface.
+ * Connects the editor to OSCAR's OSC and DMX bridge, in both directions:
+ * messages out to the rig and to fixtures, OSC coming back in, and the widget
+ * state this page shares with every other device showing the same surface.
  *
  * The page is served from one port while the bridge listens on another, so
  * this is a cross-origin connection by design -- the server opts back into it
@@ -119,11 +119,30 @@ function oscar_socket(editor, options) {
     };
   };
 
+  /**
+   * Drive a block of DMX channels.
+   *
+   * Unlike an OSC message this does not describe a single packet. It tells the
+   * server what this widget's channels are worth from now on; the server keeps
+   * a frame per universe and repeats it, because fixtures that stop hearing
+   * from a source do not hold their look, they time out.
+   */
+  editor.sendDMX = function (request) {
+    if (!editor.socket) return;
+    editor.socket.emit("dmx", request);
+  };
+
+  /** Give a widget's channels up. Sent when a widget is deleted. */
+  editor.stopDMX = function (source) {
+    if (!editor.socket) return;
+    editor.socket.emit("dmx:stop", { source: source });
+  };
+
   editor.socket.on("connect", function () {
-    console.log("OSC bridge connected");
+    console.log("OSCAR bridge connected");
   });
 
   editor.socket.on("connect_error", function (err) {
-    console.warn("OSC bridge unavailable:", err && err.message);
+    console.warn("OSCAR bridge unavailable:", err && err.message);
   });
 }

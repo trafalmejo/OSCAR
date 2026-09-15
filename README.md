@@ -126,6 +126,8 @@ All optional, set as environment variables:
 | `OSCAR_LAN_PORT` | `5001` | Source port for OSC sent to the network |
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
 | `OSCAR_OSC_IN_PORT` | `9000` | Port OSCAR listens on for OSC coming back |
+| `OSCAR_DMX_PORT` | any free port | Source port for Art-Net and sACN; set to `6454` for a node that insists |
+| `OSCAR_DMX_HOLD_ON_EXIT` | unset | Set to `1` to leave fixtures on their last look when OSCAR quits |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |
 | `OSCAR_NO_OPEN` | unset | Set to `1` to not open a browser on start |
 | `OSCAR_NO_UPDATE_CHECK` | unset | Set to `1` to never check for new versions |
@@ -195,6 +197,42 @@ This needs no setting, and it costs no extra OSC: the device that was touched
 is the one that sends, and the others only update what they draw. Pushing a new
 layout to the tablets clears the shared state, since the old controls may not
 exist in it.
+## Driving lights directly (Art-Net and sACN)
+
+Every widget has an **Output** setting: *OSC*, *DMX*, or *OSC and DMX*. Choose
+one of the DMX options and the rest of the DMX settings appear underneath.
+
+| Setting | Meaning |
+| --- | --- |
+| **DMX protocol** | Art-Net (UDP 6454) or sACN / ANSI E1.31 (UDP 5568) |
+| **DMX node** | The interface's address. Leave it blank to broadcast (Art-Net) or to use the universe's multicast group (sACN) |
+| **DMX universe** | Art-Net counts from 0, sACN from 1 |
+| **DMX channel** | The first channel this widget owns, 1–512 |
+| **DMX channels** | How many channels it owns from there |
+
+A widget's full travel is the channel's full travel: wherever Min and Max are
+set, the bottom of a slider is 0 and the top is 255. A button is a bump — full
+while it is on, out when it is off. An XY pad puts X on its first channel and Y
+on the next, which is pan and tilt on a moving head. A widget covering several
+channels drives them all to the same level, so one fader can dim an RGB fixture
+as a whole.
+
+Several widgets can share a universe. Each owns its own block of channels, and
+where two blocks overlap the higher value wins, the way a lighting desk merges
+two faders.
+
+**DMX is a stream, not a message.** Fixtures go dark when a source stops talking
+to them — sACN receivers give up after 2.5 seconds — so OSCAR keeps sending
+every universe in use several times a second, whether or not anyone is touching
+anything. It only does this for universes a widget is actually driving, and it
+stops as soon as the last one lets go.
+
+Deleting a widget hands its channels back. Quitting OSCAR releases every channel
+it was driving, so you are never left with a lit rig and nothing to control it
+with; set `OSCAR_DMX_HOLD_ON_EXIT=1` if an installation should instead hold its
+last look across a restart. Simply turning a widget's **Enabled** off leaves its
+channels where they are — a control going quiet mid-show should not black out
+what it was driving.
 
 ## Running a show
 
@@ -251,11 +289,28 @@ OSCAR server (Node/Express)            |
    |  UDP out                          |  UDP in  :9000
    v                                   |
 Your lighting / video / sound software
+   |  socket.io  :8081
+   v
+OSCAR server (Node/Express)
+   |  UDP                      |  UDP
+   v                           v
+Your lighting / video /        Art-Net or sACN nodes,
+sound software (OSC)           and the fixtures behind them
 ```
 
-Widgets carry their own OSC settings (IP, port, address, value). When you press
-a button or move a slider the browser sends that over socket.io to the OSCAR
-server, which emits the actual OSC packet over UDP.
+Widgets carry their own output settings. When you press a button or move a
+slider the browser sends that over socket.io to the OSCAR server, which emits
+the actual packet over UDP — browsers cannot send UDP themselves, which is why
+the server exists at all.
+
+The two outputs behave differently on purpose. OSC is fire-and-forget: one
+message, sent once. DMX is a stream the server keeps running, because that is
+what the protocols and the fixtures expect.
+
+Neither path ever invents a value. If a value cannot be read — a blank field, a
+range that makes no sense, something that arrived as `null` — the update is
+dropped and whatever it was driving stays where it is. Coercing it to a number
+would send 0, and on a lighting rig 0 is a blackout.
 
 A browser can neither open nor listen on a UDP socket, so the server does both
 on its behalf. OSC arriving on port `9000` is relayed to every connected

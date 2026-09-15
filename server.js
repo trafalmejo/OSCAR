@@ -1,6 +1,7 @@
 "use strict";
 
 const path = require("path");
+const dgram = require("dgram");
 const express = require("express");
 const cors = require("cors");
 const osc = require("osc");
@@ -14,6 +15,7 @@ const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
 const { parse: parseIncoming } = require("./lib/osc-in");
 const { SharedState } = require("./lib/shared-state");
+const { buildRequest, readSource, createDmxOutput } = require("./lib/dmx");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -26,6 +28,14 @@ const LOCAL_PORT = Number(process.env.OSCAR_LOCAL_PORT) || 5002;
 // Where OSCAR listens for OSC coming back. 9000 is what TouchOSC, Lemur and
 // most of the software OSCAR drives offer first when asked where to send.
 const OSC_IN_PORT = Number(process.env.OSCAR_OSC_IN_PORT) || 9000;
+// Source port OSCAR sends Art-Net and sACN from. 0 takes whatever is free,
+// which is what you want on a machine that may also be running node software
+// listening on 6454; set OSCAR_DMX_PORT=6454 for a node that insists on it.
+const DMX_PORT = Number(process.env.OSCAR_DMX_PORT) || 0;
+// Quitting OSCAR releases the DMX channels it owns, so a rig is never left lit
+// with nothing able to change it. A permanent installation that should hold its
+// last look through a restart sets this instead.
+const DMX_HOLD_ON_EXIT = process.env.OSCAR_DMX_HOLD_ON_EXIT === "1";
 
 const PROJECTS_DIR =
   process.env.OSCAR_PROJECTS_DIR || path.join(__dirname, "projects");
@@ -150,6 +160,49 @@ function sendOSC(ip, port, address, args) {
   }
 }
 
+// ---- DMX transport --------------------------------------------------------
+
+// A plain UDP socket rather than one of the osc.UDPPort pairs above: Art-Net
+// and sACN packets are raw bytes, and an OSC port would try to read what comes
+// back as OSC.
+const udpDmx = dgram.createSocket({ type: "udp4", reuseAddr: true });
+udpDmx.on("error", (err) => console.error("DMX socket error:", err.message));
+udpDmx.bind(DMX_PORT, () => {
+  // Art-Net's default target is a broadcast address, and a UDP socket refuses
+  // to send to one until it has been bound and told to allow it.
+  try {
+    udpDmx.setBroadcast(true);
+  } catch (err) {
+    console.error("Could not enable UDP broadcast, Art-Net may not reach its nodes:", err.message);
+  }
+});
+
+const dmx = createDmxOutput(
+  (packet, port, host) =>
+    new Promise((resolve, reject) => {
+      udpDmx.send(packet, port, host, (err) => (err ? reject(err) : resolve()));
+    }),
+  {
+    sourceName: "OSCAR " + pkg.version,
+    onError: (err) => console.error("DMX stream error:", err.message),
+  }
+);
+
+/**
+ * @param {object} input {protocol, host, universe, channel, levels, source}
+ */
+function sendDMX(input) {
+  const request = buildRequest(input);
+  if (!request) {
+    console.error("Ignoring a malformed DMX request");
+    return;
+  }
+
+  dmx
+    .set(request.source, request)
+    .catch((err) => console.error("Could not send DMX:", err.message));
+}
+
 const io = new Server(SOCKET_PORT, {
   // socket.io v3+ blocks cross-origin by default, and the page is served from
   // a different port than this socket, so it must be opted back in.
@@ -249,6 +302,30 @@ io.on("connection", (socket) => {
     }
   });
 
+  // One widget's claim on a block of DMX channels:
+  // { protocol, host, universe, channel, levels, source }.
+  socket.on("dmx", (msg) => {
+    try {
+      sendDMX(msg);
+    } catch (err) {
+      console.error("Bad DMX request:", err.message);
+    }
+  });
+
+  // Give a widget's channels back, or every channel when no source is named.
+  socket.on("dmx:stop", (msg) => {
+    try {
+      const source = msg && msg.source !== undefined ? readSource(msg.source) : undefined;
+      if (source === null) return;
+      dmx.stop(source).catch((err) => console.error("Could not release DMX:", err.message));
+    } catch (err) {
+      console.error("Bad DMX release:", err.message);
+    }
+  });
+
+  // Deliberately no DMX release here. A phone locking its screen or a wifi
+  // blip would black out the rig, and holding the last look is the far safer
+  // failure: the stream stays alive until a widget is deleted or OSCAR quits.
   socket.on("disconnect", () => console.log("Editor disconnected (" + socket.id + ")"));
 });
 
@@ -289,17 +366,27 @@ httpServer.on("error", (err) => {
 
 function shutdown() {
   console.log("\nShutting OSCAR down...");
-  // A socket that never bound -- the input port was busy -- throws on close,
-  // and refusing to shut down over that would be an odd way to go.
-  for (const port of [udpLan, udpLocal, udpIn]) {
-    try {
-      port.close();
-    } catch (err) {
-      /* it was never open */
+
+  // Releasing is an instruction, not a dropped value: it is the one moment
+  // OSCAR knows for certain that nobody is driving these channels any more.
+  const released = DMX_HOLD_ON_EXIT
+    ? Promise.resolve(dmx.close())
+    : dmx.stop().catch((err) => console.error("Could not release DMX:", err.message));
+
+  released.then(() => {
+    // A socket that never bound -- the input port was busy -- throws on close,
+    // and refusing to shut down over that would be an odd way to go.
+    for (const port of [udpLan, udpLocal, udpIn, udpDmx]) {
+      try {
+        port.close();
+      } catch (err) {
+        /* it was never open */
+      }
     }
-  }
-  io.close();
-  httpServer.close(() => process.exit(0));
+    io.close();
+    httpServer.close(() => process.exit(0));
+  });
+
   setTimeout(() => process.exit(0), 2000).unref();
 }
 
