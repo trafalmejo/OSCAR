@@ -267,6 +267,223 @@ test("the pad clamps to its edges rather than running past them", () => {
   ]);
 });
 
+// --- DMX --------------------------------------------------------------------
+
+test("a widget left on OSC puts nothing on the DMX wire", () => {
+  // The default has to be exactly the OSCAR that existed before DMX did, or
+  // every saved project starts driving channel 1 of universe 1 on load.
+  for (const widget of WIDGETS) {
+    assert.strictEqual(widget.defaults.transport, "osc", widget.name);
+  }
+
+  const { el, ctx } = mount(slider, { min: 0, max: 100 });
+  el.value = "50";
+  el.fire("input");
+  assert.strictEqual(ctx.sent[0].dmx, undefined);
+});
+
+test("a slider on DMX scales its own travel onto the channel's", () => {
+  const { el, ctx } = mount(slider, {
+    transport: "dmx",
+    min: 0,
+    max: 100,
+    dmxChannel: 12,
+    dmxUniverse: 3,
+    dmxProtocol: "sacn",
+    dmxHost: "10.0.0.7",
+  });
+
+  el.value = "66.7";
+  el.fire("input");
+
+  assert.deepStrictEqual(ctx.sent[0].dmx, {
+    protocol: "sacn",
+    host: "10.0.0.7",
+    universe: 3,
+    channel: 12,
+    levels: [170],
+    source: "widget-1",
+  });
+  assert.strictEqual(ctx.sent[0].address, undefined, "and no OSC, because DMX is all it was asked for");
+});
+
+test("OSC and DMX travel together when a widget is set to both", () => {
+  const { el, ctx } = mount(slider, { transport: "both", min: 0, max: 100, argType: "f" });
+
+  el.value = "100";
+  el.fire("input");
+
+  const message = ctx.sent[0];
+  assert.deepStrictEqual(message.args, [{ type: "f", value: 100 }]);
+  assert.deepStrictEqual(message.dmx.levels, [255]);
+});
+
+test("Invert flips DMX as well as OSC, because it is one fader", () => {
+  const { el, ctx } = mount(slider, { transport: "dmx", min: 0, max: 100, invert: true });
+  el.value = "0";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [255]);
+});
+
+test("one value covers the whole block, so a fader dims a fixture as a unit", () => {
+  const { el, ctx } = mount(slider, { transport: "dmx", min: 0, max: 100, dmxCount: 3 });
+  el.value = "100";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [255, 255, 255]);
+});
+
+test("a block that would run past channel 512 is cut to what fits", () => {
+  // The panel refuses this while someone is looking; a hand-edited project file
+  // arrives here instead, and a packet claiming channel 513 is one no node reads.
+  const { el, ctx } = mount(slider, {
+    transport: "dmx",
+    min: 0,
+    max: 100,
+    dmxChannel: 511,
+    dmxCount: 8,
+  });
+  el.value = "100";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [255, 255]);
+});
+
+test("a button bumps its channels to full and back out", () => {
+  const { el, ctx } = mount(button, { transport: "dmx", mode: "toggle", dmxChannel: 5 });
+
+  el.fire("click");
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [255]);
+  assert.strictEqual(ctx.sent[0].dmx.channel, 5);
+
+  el.fire("click");
+  assert.deepStrictEqual(ctx.sent[1].dmx.levels, [0], "a deliberate zero is a real instruction");
+});
+
+test("a button whose OSC value cannot be sent still drives DMX", () => {
+  // The two halves fail independently: "go" is unsendable as a float and
+  // perfectly sendable as a level.
+  const { el, ctx } = mount(button, {
+    transport: "both",
+    mode: "toggle",
+    argType: "f",
+    valueOn: "go",
+  });
+
+  el.fire("click");
+  assert.strictEqual(ctx.sent[0].address, undefined, "the OSC half was dropped");
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [255]);
+});
+
+test("an XY pad lands on two consecutive channels, which is pan and tilt", () => {
+  const { el, ctx } = mount(xypad, {
+    rect: { left: 0, top: 0, width: 100, height: 100 },
+    transport: "dmx",
+    dmxChannel: 20,
+  });
+
+  el.fire("pointerdown", { clientX: 30, clientY: 80 });
+  el.fire("pointerup", { clientX: 30, clientY: 80 });
+
+  const dmx = ctx.sent[ctx.sent.length - 1].dmx;
+  assert.strictEqual(dmx.channel, 20);
+  // X is 30% across; Y reads upward, so 80px down a 100px pad is 20%.
+  assert.deepStrictEqual(dmx.levels, [77, 51]);
+});
+
+test("a pad splitting into /x and /y still claims its channels exactly once", () => {
+  // Two DMX requests under one widget id would replace rather than add, so X
+  // would be erased by Y and the light would only ever tilt.
+  const { el, ctx } = mount(xypad, {
+    rect: { left: 0, top: 0, width: 100, height: 100 },
+    transport: "both",
+    sendMode: "two",
+  });
+
+  el.fire("pointerdown", { clientX: 30, clientY: 80 });
+  el.fire("pointerup", { clientX: 30, clientY: 80 });
+
+  const dmx = ctx.sent.filter((m) => m.dmx);
+  const osc = ctx.sent.filter((m) => m.address);
+  assert.deepStrictEqual([...new Set(osc.map((m) => m.address))].sort(), ["/pad/x", "/pad/y"]);
+  // One DMX claim per position rather than one per OSC address, and it carries
+  // both axes.
+  assert.strictEqual(dmx.length, osc.length / 2);
+  assert.deepStrictEqual(dmx[dmx.length - 1].dmx.levels, [77, 51]);
+});
+
+test("a value that cannot be read sends nothing at all, never a zero", () => {
+  // The whole of the DMX safety rule in one test: a range that cannot be
+  // scaled produces no level, and no level means the rig holds where it is.
+  const { el, ctx } = mount(slider, { transport: "dmx", min: 50, max: 50 });
+  el.value = "50";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent, []);
+
+  const pad = mount(xypad, {
+    rect: { left: 0, top: 0, width: 100, height: 100 },
+    transport: "dmx",
+    minY: "",
+    maxY: "",
+  });
+  pad.el.fire("pointerdown", { clientX: 10, clientY: 10 });
+  pad.el.fire("pointerup", { clientX: 10, clientY: 10 });
+  assert.deepStrictEqual(pad.ctx.sent, [], "one unreadable axis drops the pair");
+});
+
+test("a disabled widget is silent on DMX too", () => {
+  const { el, ctx } = mount(slider, { enabled: false, transport: "dmx" });
+  el.value = "50";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("every widget can be pointed at DMX, in the same words", () => {
+  for (const widget of WIDGETS) {
+    const keys = widget.fields.map((f) => f.key);
+    for (const required of [
+      "transport",
+      "dmxProtocol",
+      "dmxHost",
+      "dmxUniverse",
+      "dmxChannel",
+      "dmxCount",
+    ]) {
+      assert.ok(keys.includes(required), widget.name + " has " + required);
+    }
+  }
+});
+
+test("the panel refuses a universe the chosen protocol does not have", () => {
+  const check = slider.checks.dmxUniverse;
+  assert.strictEqual(check(0, { dmxProtocol: "artnet" }), null, "Art-Net starts at 0");
+  assert.ok(check(0, { dmxProtocol: "sacn" }), "E1.31 reserves universe 0");
+  assert.ok(check(40000, { dmxProtocol: "artnet" }));
+  assert.strictEqual(check(40000, { dmxProtocol: "sacn" }), null);
+  assert.ok(check("", { dmxProtocol: "artnet" }));
+});
+
+test("the panel refuses a channel block that runs off the end of the universe", () => {
+  assert.strictEqual(slider.checks.dmxChannel(512), null);
+  assert.ok(slider.checks.dmxChannel(513));
+  assert.ok(slider.checks.dmxChannel(0));
+  assert.strictEqual(slider.checks.dmxCount(4, { dmxChannel: 509 }), null);
+  assert.ok(slider.checks.dmxCount(5, { dmxChannel: 509 }), "509 + 5 is past 512");
+});
+
+test("the DMX settings stay out of the way until a widget is pointed at DMX", () => {
+  // Every widget would otherwise gain six fields that most surfaces never use.
+  const { visibleFields, revealKeys } = require("../public/src/adapters/grapesjs");
+
+  const keysWhen = (transport) =>
+    visibleFields(slider, Object.assign({}, slider.defaults, { transport })).map((f) => f.key);
+
+  assert.ok(!keysWhen("osc").includes("dmxUniverse"), "hidden on an OSC widget");
+  assert.ok(keysWhen("dmx").includes("dmxUniverse"));
+  assert.ok(keysWhen("both").includes("dmxUniverse"));
+  assert.ok(keysWhen("osc").includes("transport"), "but the switch itself is always there");
+
+  assert.deepStrictEqual(revealKeys(slider), ["transport"], "and the adapter knows what to watch");
+});
+
 // --- shared shape -----------------------------------------------------------
 
 test("Enabled leads on every widget, above even the label", () => {

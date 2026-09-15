@@ -61,10 +61,12 @@ function fakeElement(rect) {
  * The `ctx` an adapter would supply, recording what the widget sent so a test
  * can assert on the wire traffic rather than on internals.
  */
-function fakeContext(config) {
+function fakeContext(config, id) {
   const changes = {};
   return {
     config,
+    // Widgets are identified by this when they claim DMX channels.
+    id: id || "widget-1",
     sent: [],
     get(key) {
       return this.config[key];
