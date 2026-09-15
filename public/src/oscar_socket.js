@@ -1,6 +1,6 @@
 /**
- * Connects the editor to OSCAR's OSC bridge, in both directions: messages out
- * to the rig, and whatever the rig sends back.
+ * Connects the editor to OSCAR's bridge: OSC out to the rig, whatever the rig
+ * sends back, and DMX out to the fixtures.
  *
  * The page is served from one port while the bridge listens on another, so
  * this is a cross-origin connection by design -- the server opts back into it
@@ -32,6 +32,23 @@ function oscar_socket(editor, options) {
       address: address,
       args: Array.isArray(args) ? args : [args],
     });
+  };
+
+  // ---- DMX ----------------------------------------------------------------
+  // A separate event from `osc` on purpose: DMX is a stream the server keeps
+  // alive, not a message it forwards, and the two are validated by different
+  // gates (lib/dmx/request.js against lib/osc-message.js).
+
+  /** Put one widget's levels on its block of channels: { source, protocol, host, universe, channel, levels }. */
+  editor.sendDMX = function (request) {
+    if (!editor.socket) return;
+    editor.socket.emit("dmx", request);
+  };
+
+  /** Give a widget's channels up. Sent when a widget is deleted or leaves DMX. */
+  editor.stopDMX = function (source) {
+    if (!editor.socket) return;
+    editor.socket.emit("dmx:stop", { source: source });
   };
 
   // ---- OSC coming back ----------------------------------------------------

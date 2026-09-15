@@ -14,6 +14,7 @@ const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
 const { receiver: oscReceiver, listenOn, atMostOncePer } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
+const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket } = require("./lib/dmx");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -29,6 +30,12 @@ const LAN_PORT = ports.lan;
 const LOCAL_PORT = ports.local;
 // Where the rig sends OSC back to.
 const OSC_IN_PORT = ports.oscIn;
+// Source port Art-Net and sACN leave from; 0 is any free port.
+const DMX_PORT = ports.dmx;
+// Quitting OSCAR hands back the DMX channels it drives, so a rig is never left
+// lit with nothing able to change it. A permanent installation that should
+// hold its last look through a restart sets this.
+const DMX_HOLD_ON_EXIT = process.env.OSCAR_DMX_HOLD_ON_EXIT === "1";
 
 const PROJECTS_DIR =
   process.env.OSCAR_PROJECTS_DIR || path.join(__dirname, "projects");
@@ -166,6 +173,50 @@ function sendOSC(ip, port, address, args) {
   }
 }
 
+// ---- DMX transport --------------------------------------------------------
+
+// Unlike OSC, DMX is a stream the server keeps alive on the widgets' behalf
+// (lib/dmx/output.js). Every request is checked here as strictly as an OSC
+// message is; a request that fails is silence, never a guess.
+let dmxLine = null;
+
+const dmxSocket = openDmxSocket({
+  port: DMX_PORT,
+  onReady: (address) => {
+    dmxLine = "  DMX out (Art-Net, sACN) from UDP " + address.port;
+    if (bannerShown) console.log(dmxLine);
+  },
+  onError: (err) => {
+    dmxLine =
+      "  NOT sending DMX: UDP " + DMX_PORT + " " +
+      (err && err.code === "EADDRINUSE" ? "is already in use" : "could not be opened (" + reason(err) + ")") +
+      ".\n  OSC still works. Leave OSCAR_DMX_PORT unset to send from any free port.";
+    if (bannerShown) console.log(dmxLine);
+  },
+});
+
+const dmx = createDmxOutput(dmxSocket.send, {
+  sourceName: "OSCAR " + pkg.version,
+  // A node that cannot be reached fails on every keepalive; one line every
+  // few seconds with a count is the same news without burying the log.
+  onError: atMostOncePer(5000, (err, missed) => {
+    console.error("DMX could not be sent: " + reason(err) + (missed ? " (and " + missed + " more)" : ""));
+  }),
+  onStream: (event, stream) => {
+    const where = stream.protocol + " universe " + stream.universe + " at " + stream.host + ":" + stream.port;
+    console.log(event === "open" ? "DMX: driving " + where : "DMX: released " + where);
+  },
+});
+
+function sendDMX(input) {
+  const request = buildDmxRequest(input);
+  if (!request) {
+    console.error("Ignoring a malformed DMX request");
+    return;
+  }
+  dmx.set(request.source, request);
+}
+
 const io = new Server(SOCKET_PORT, {
   // socket.io v3+ blocks cross-origin by default, and the page is served from
   // a different port than this socket, so it must be opted back in.
@@ -235,6 +286,24 @@ io.on("connection", (socket) => {
     }
   });
 
+  // One widget's block of channels: { source, protocol, host, universe, channel, levels }.
+  socket.on("dmx", (request) => {
+    try {
+      sendDMX(request);
+    } catch (err) {
+      console.error("Bad DMX request:", err.message);
+    }
+  });
+
+  // A widget giving its channels up: deleted, or switched back to OSC. This
+  // is the only thing that releases channels short of quitting. A browser
+  // disconnecting deliberately does not, because a phone locking its screen
+  // mid-show must not black the stage out.
+  socket.on("dmx:stop", (msg) => {
+    const source = readSource(msg && msg.source);
+    if (source) dmx.stop(source);
+  });
+
   socket.on("disconnect", () => console.log("Editor disconnected (" + socket.id + ")"));
 });
 
@@ -248,6 +317,7 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("  Projects folder:      " + PROJECTS_DIR);
   bannerShown = true;
   if (oscInLine) console.log(oscInLine);
+  if (dmxLine) console.log(dmxLine);
   if (lock.isLocked()) {
     console.log("");
     console.log("  LOCKED: other devices can use the controls but not edit.");
@@ -279,7 +349,12 @@ function shutdown() {
   udpLocal.close();
   oscIn.close();
   io.close();
-  httpServer.close(() => process.exit(0));
+  // The channels are handed back before the socket goes, so the zero frames
+  // and sACN's terminated packets actually leave; the fallback exit below
+  // bounds how long an unreachable node can hold that up.
+  const letGo = DMX_HOLD_ON_EXIT ? Promise.resolve(dmx.close()) : dmx.stopAll();
+  letGo.then(() => dmxSocket.close());
+  httpServer.close(() => letGo.then(() => process.exit(0)));
   setTimeout(() => process.exit(0), 2000).unref();
 }
 

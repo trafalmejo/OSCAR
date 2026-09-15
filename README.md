@@ -148,7 +148,8 @@ All optional, set as environment variables:
 | `OSCAR_LAN_PORT` | `5001` | Source port for OSC sent to the network |
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
 | `OSCAR_OSC_IN_PORT` | `9000` | Where OSC coming back from the rig is received |
-| `OSCAR_DMX_PORT` | `6454` | DMX over the network (Art-Net) |
+| `OSCAR_DMX_PORT` | `0` (any free port) | Source port Art-Net and sACN are sent from; `6454` for a node that insists on it |
+| `OSCAR_DMX_HOLD_ON_EXIT` | unset | Set to `1` to leave DMX fixtures on their last look when OSCAR quits, instead of releasing them |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |
 | `OSCAR_NO_OPEN` | unset | Set to `1` to not open a browser on start |
 | `OSCAR_NO_UPDATE_CHECK` | unset | Set to `1` to never check for new versions |
@@ -211,6 +212,49 @@ like `/layer[1]/opacity`. Software that answers to the port a message came
 from (OSCAR's source ports, `5001` and `5002`) is heard as well, so replies
 need no configuration. If the OSC-in port is busy or cannot be opened when
 OSCAR starts, it says so and carries on: sending is unaffected.
+
+### Driving lights directly (DMX over Art-Net and sACN)
+
+A button, slider or XY pad can drive lighting fixtures directly, with no
+lighting software in between. Set a widget's **Output** to **DMX** (or **OSC
+and DMX** to keep driving software at the same time) and the DMX settings
+appear below the others:
+
+| Setting | Meaning |
+| --- | --- |
+| **DMX protocol** | Art-Net (UDP 6454) or sACN / E1.31 (UDP 5568) |
+| **DMX node** | The node's address. Blank broadcasts on Art-Net and multicasts on sACN, which every node on the network hears |
+| **DMX universe** | `0`-`32767` on Art-Net (the 15-bit Port-Address), `1`-`63999` on sACN |
+| **DMX channel** | The first channel of the widget's block, `1`-`512` |
+| **DMX channels** | How many channels from there |
+
+A slider sends its level (`0`-`255` across its own Min-Max range, so a slider
+labelled 20-2000 still means full at the top; Invert mirrors it). A button
+sends full while on and out while off, whatever its Value ON and OFF say for
+OSC. An XY pad puts X on the first channel and Y on the next: pan and tilt on
+a moving head. Values fill the block in order and the last one repeats, so a
+slider over three channels dims an RGB fixture as a whole. A block that would
+run past channel 512, or is too narrow for the widget's values, is refused in
+the panel and never sent. Output is OSC on every widget until you change it,
+so a project made before this existed behaves exactly as it did.
+
+DMX is a stream, not a message: fixtures expect the frame to be repeated, and
+an sACN receiver drops a source that goes quiet for 2.5 seconds. So OSCAR
+keeps every universe it drives on the air until the widget driving it is
+deleted or switched back to OSC, or OSCAR quits, and then hands the channels
+back by sending them at zero (on sACN, with the stream-terminated packets the
+standard asks for). Several widgets on one universe are merged
+highest-takes-precedence where their blocks overlap, as a lighting desk
+would. A tablet disconnecting or a phone locking its screen releases nothing:
+whatever it last set stays up until something changes it. Quitting OSCAR
+releases everything unless `OSCAR_DMX_HOLD_ON_EXIT=1`, for a permanent
+installation that should hold its look through a restart. As with OSC, a
+value that cannot be read is dropped rather than sent as `0`: a dropped value
+must never black a rig out.
+
+Packets leave from any free port (`OSCAR_DMX_PORT`), so OSCAR can run next to
+lighting software that itself receives Art-Net on 6454. If the port you pin
+cannot be opened, OSCAR says so at startup and everything else still works.
 
 ## Running a show
 

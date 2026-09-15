@@ -8,6 +8,7 @@
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
+var { sendsDmx } = require("../../../lib/widgets/fields");
 
 /** Neutral field descriptor -> GrapesJS trait. */
 function toTrait(field) {
@@ -45,6 +46,38 @@ function configOf(model, definition) {
 }
 
 /**
+ * The fields that apply to a widget as it is currently configured.
+ *
+ * A field may carry `showIf: { key, in: [...] }` (lib/widgets/fields.js),
+ * which is how the DMX half of a panel stays out of the way of anyone sending
+ * only OSC. It is data rather than a callback so this file can also work out
+ * which settings it has to watch for the panel to keep up.
+ */
+function visibleFields(definition, config) {
+  return definition.fields.filter(function (field) {
+    var rule = field.showIf;
+    return !rule || rule.in.indexOf(config[rule.key]) !== -1;
+  });
+}
+
+/** The settings some field's visibility depends on. */
+function revealKeys(definition) {
+  var keys = [];
+  definition.fields.forEach(function (field) {
+    if (field.showIf && keys.indexOf(field.showIf.key) === -1) keys.push(field.showIf.key);
+  });
+  return keys;
+}
+
+function changeEvent(keys) {
+  return keys
+    .map(function (key) {
+      return "change:" + key;
+    })
+    .join(" ");
+}
+
+/**
  * Build the `ctx` a widget's behaviour runs against.
  *
  * `set` writes with `silent` so that storing a value mid-drag cannot trigger
@@ -57,6 +90,14 @@ function configOf(model, definition) {
  * loop guard: a widget has no way to lift it, so a value that arrived from
  * outside cannot be bounced straight back out by any widget, however it is
  * written. (The widgets' half is in lib/widgets/incoming.js.)
+ *
+ * A message may carry an OSC half, a DMX half, or both (lib/widgets/outgoing.js);
+ * each goes out on its own bridge. The DMX half is stamped with the
+ * component's id on the way, which is what names this widget's claim on its
+ * channels: the same widget replaces its own claim on every move, and hands
+ * it back when deleted. The id lives in the project file, so a tablet that
+ * reloads the surface resumes driving the same channels instead of turning
+ * up as a second source fighting the first.
  */
 function contextFor(view, editor) {
   var model = view.model;
@@ -85,8 +126,13 @@ function contextFor(view, editor) {
         console.warn("OSCAR: a widget tried to answer incoming OSC with outgoing OSC; dropped", message);
         return;
       }
-      if (!message || !editor.sendOSC) return;
-      editor.sendOSC(message.ip, message.port, message.address, message.args);
+      if (!message) return;
+      if (message.address && editor.sendOSC) {
+        editor.sendOSC(message.ip, message.port, message.address, message.args);
+      }
+      if (message.dmx && editor.sendDMX) {
+        editor.sendDMX(Object.assign({ source: model.getId() }, message.dmx));
+      }
     },
 
     setClass: function (name, on) {
@@ -98,11 +144,7 @@ function contextFor(view, editor) {
     },
 
     onChange: function (keys, fn) {
-      var event = keys
-        .map(function (key) {
-          return "change:" + key;
-        })
-        .join(" ");
+      var event = changeEvent(keys);
       model.on(event, fn);
       return function () {
         model.off(event, fn);
@@ -164,7 +206,7 @@ function register(definition) {
             attributes: Object.assign({}, definition.attributes),
             droppable: false,
             resizable: true,
-            traits: definition.fields.map(toTrait),
+            traits: visibleFields(definition, defaults).map(toTrait),
           },
           defaults,
           // A widget whose label is its text content renders that text as its
@@ -174,6 +216,34 @@ function register(definition) {
 
         init: function () {
           var model = this;
+
+          // The type's trait list was built from its defaults. A component
+          // read back from a saved project may be set to DMX already, and
+          // switching Output has to bring the right half of the panel with
+          // it. GrapesJS rebuilds its traits on change:traits and redraws the
+          // panel itself, so the list is only ever set when it would differ.
+          var reveals = revealKeys(definition);
+          if (reveals.length) {
+            var refresh = function () {
+              var wanted = visibleFields(definition, configOf(model, definition));
+              var current = model.get("traits");
+              if (current && current.length === wanted.length) return;
+              model.set("traits", wanted.map(toTrait));
+            };
+            refresh();
+            model.on(changeEvent(reveals), refresh);
+          }
+
+          // A widget switched away from DMX must hand its channels back, or
+          // the rig holds that widget's last look with nothing left able to
+          // change it. Enabled off does not release: a disabled fader holds
+          // its level the way a silent OSC fader leaves the software where it
+          // was, and a blackout is not "no change".
+          if (definition.dmx) {
+            model.on("change:transport", function () {
+              if (!sendsDmx(configOf(model, definition)) && editor.stopDMX) editor.stopDMX(model.getId());
+            });
+          }
 
           if (definition.text) {
             model.on("change:" + definition.text, function () {
@@ -220,6 +290,13 @@ function register(definition) {
         },
 
         removed: function () {
+          // DMX is a stream: a deleted widget that was driving channels hands
+          // them back, or the rig holds its last look with nothing on the
+          // surface able to change it. (A browser merely disconnecting does
+          // not release anything; that is the server's rule, and a phone
+          // locking its screen must not black out a show.)
+          if (definition.dmx && editor.stopDMX) editor.stopDMX(this.model.getId());
+
           if (!this.oscarDetach) return;
           this.oscarDetach();
           this.oscarDetach = null;
@@ -273,4 +350,6 @@ module.exports = {
   widgetPlugins: widgetPlugins,
   toTrait: toTrait,
   matches: matches,
+  visibleFields: visibleFields,
+  revealKeys: revealKeys,
 };

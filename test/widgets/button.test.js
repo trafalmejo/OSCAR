@@ -182,6 +182,42 @@ test("detaching removes every listener it added", () => {
   assert.strictEqual(ctx.listening(), 0);
 });
 
+// --- DMX --------------------------------------------------------------------
+
+test("on DMX a button is full while on and out while off, whatever its values say", () => {
+  const { el, ctx } = mount(button, { transport: "dmx", valueOn: "go", valueOff: "stop", argType: "s" });
+  el.fire("pointerdown");
+  el.fire("pointerup");
+  assert.deepStrictEqual(ctx.sent.map((m) => m.dmx.levels), [[255], [0]]);
+  assert.ok(ctx.sent.every((m) => !("address" in m)), "and no OSC");
+});
+
+test("a toggle on DMX alternates full and out", () => {
+  const { el, ctx } = mount(button, { transport: "dmx", mode: "toggle", dmxChannel: 12, dmxCount: 2 });
+  el.fire("click");
+  el.fire("click");
+  assert.deepStrictEqual(ctx.sent.map((m) => m.dmx.levels), [[255, 255], [0, 0]]);
+  assert.strictEqual(ctx.sent[0].dmx.channel, 12);
+});
+
+test("on both, a value OSC cannot carry still drives the dimmer", () => {
+  // "go" is a fine string and an impossible float; the DMX half does not
+  // depend on it.
+  const { el, ctx } = mount(button, { transport: "both", valueOn: "go", valueOff: "0", argType: "f" });
+  el.fire("pointerdown");
+  assert.deepStrictEqual(ctx.sent, [{ dmx: { protocol: "artnet", host: "", universe: 1, channel: 1, levels: [255] } }]);
+  el.fire("pointerup");
+  assert.strictEqual(ctx.sent[1].address, "/push1", "the release is sendable as a float, so both halves go");
+  assert.deepStrictEqual(ctx.sent[1].dmx.levels, [0]);
+});
+
+test("Output is OSC by default, so a saved button sends exactly what it always did", () => {
+  assert.strictEqual(button.defaults.transport, "osc");
+  const { el, ctx } = mount(button);
+  el.fire("pointerdown");
+  assert.ok(!("dmx" in ctx.sent[0]));
+});
+
 // --- following the rig ------------------------------------------------------
 
 test("a listening toggle adopts the state the rig reports, and sends nothing back", () => {

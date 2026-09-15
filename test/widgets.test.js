@@ -117,6 +117,66 @@ test("a widget that can drive DMX sends numbers", () => {
   }
 });
 
+test("a widget that can drive DMX offers Output and the DMX settings, hidden until asked for", () => {
+  // The same DMX vocabulary on every such widget, and OSC by default, so a
+  // project made before DMX existed behaves exactly as it did.
+  const DMX_KEYS = ["dmxProtocol", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"];
+  for (const widget of WIDGETS) {
+    const keys = widget.fields.map((f) => f.key);
+    if (!widget.dmx) {
+      for (const key of ["transport"].concat(DMX_KEYS)) {
+        assert.ok(!keys.includes(key), widget.name + " cannot drive DMX but has " + key);
+      }
+      continue;
+    }
+    assert.ok(keys.includes("transport"), widget.name + " has an Output setting");
+    assert.strictEqual(widget.defaults.transport, "osc", widget.name + " sends OSC by default");
+    for (const key of DMX_KEYS) {
+      const field = widget.fields.find((f) => f.key === key);
+      assert.ok(field, widget.name + " has " + key);
+      assert.deepStrictEqual(field.showIf, { key: "transport", in: ["dmx", "both"] }, widget.name + "." + key + " is shown only for DMX");
+    }
+    for (const key of ["dmxProtocol", "dmxUniverse", "dmxChannel", "dmxCount"]) {
+      assert.strictEqual(typeof widget.checks[key], "function", widget.name + " checks " + key);
+    }
+  }
+});
+
+test("every field that is shown conditionally depends on a setting the widget has", () => {
+  for (const widget of WIDGETS) {
+    const keys = widget.fields.map((f) => f.key);
+    for (const field of widget.fields) {
+      if (!field.showIf) continue;
+      assert.ok(keys.includes(field.showIf.key), widget.name + "." + field.key + " depends on " + field.showIf.key + " which it has no field for");
+    }
+  }
+});
+
+test("on DMX, every such widget puts a level on the wire that a channel can carry", () => {
+  // The DMX half is stamped by the host with the widget's identity; the
+  // widget's half is levels 0-255, one per channel of its block.
+  const { mount } = require("./helpers/widgets");
+  for (const widget of WIDGETS) {
+    if (!widget.dmx) continue;
+    const { el, ctx } = mount(widget, { transport: "dmx", rect: { left: 0, top: 0, width: 100, height: 100 } });
+    el.value = "100";
+    el.fire("pointerdown", { clientX: 100, clientY: 0 });
+    el.fire("input");
+    el.fire("pointerup", { clientX: 100, clientY: 0 });
+    assert.ok(ctx.sent.length >= 1, widget.name + " sent");
+    for (const message of ctx.sent) {
+      assert.ok(!("address" in message), widget.name + " sent OSC while set to DMX only");
+      assert.ok(message.dmx, widget.name + " sent no DMX half");
+      assert.strictEqual(message.dmx.protocol, "artnet");
+      assert.strictEqual(message.dmx.universe, 1);
+      assert.strictEqual(message.dmx.channel, 1);
+      for (const level of message.dmx.levels) {
+        assert.ok(Number.isInteger(level) && level >= 0 && level <= 255, widget.name + " level " + level);
+      }
+    }
+  }
+});
+
 // --- receiving --------------------------------------------------------------
 
 const receivers = WIDGETS.filter((w) => w.receives);

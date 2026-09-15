@@ -81,6 +81,56 @@ test("the definition carries no copy of what the settings decide", () => {
   }
 });
 
+// --- DMX --------------------------------------------------------------------
+
+test("on DMX the slider sends its level as 0-255 within its own range", () => {
+  const { el, ctx } = mount(slider, { transport: "dmx", min: 0, max: 100, dmxChannel: 5 });
+  el.value = "50";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent, [{ dmx: { protocol: "artnet", host: "", universe: 1, channel: 5, levels: [128] } }]);
+});
+
+test("a slider labelled in other units still means full at the top", () => {
+  const { el, ctx } = mount(slider, { transport: "dmx", min: 20, max: 2000 });
+  el.value = "2000";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [255]);
+  el.value = "20";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent[1].dmx.levels, [0]);
+});
+
+test("Invert mirrors the DMX level with the OSC value", () => {
+  const { el, ctx } = mount(slider, { transport: "both", min: 0, max: 100, invert: true });
+  el.value = "25";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "f", value: 75 }]);
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [191]);
+});
+
+test("a slider over several channels dims them all", () => {
+  const { el, ctx } = mount(slider, { transport: "dmx", dmxCount: 3 });
+  el.value = "100";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent[0].dmx.levels, [255, 255, 255]);
+});
+
+test("a slider with a degenerate range sends no level rather than zero", () => {
+  const { el, ctx } = mount(slider, { transport: "dmx", min: 5, max: 5 });
+  el.value = "5";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("Output is OSC by default, so a saved slider sends exactly what it always did", () => {
+  assert.strictEqual(slider.defaults.transport, "osc");
+  const { el, ctx } = mount(slider);
+  el.value = "50";
+  el.fire("input");
+  assert.ok(!("dmx" in ctx.sent[0]));
+  assert.strictEqual(ctx.sent[0].address, "/slider1");
+});
+
 // --- following the rig ------------------------------------------------------
 
 test("an incoming value moves the thumb and the stored value, and sends nothing back", () => {
