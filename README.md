@@ -110,6 +110,21 @@ This is the only request OSCAR makes to the internet. It sends nothing about
 you or your projects, times out quickly, and failing silently is the expected
 case on a venue network with no internet access.
 
+## Widgets
+
+Drag these in from the **OSC** category, then set each one's IP, port and
+message in the settings panel (the gear icon).
+
+| Widget | Sends |
+| --- | --- |
+| **Button** | `max` when pressed, `0` on release. As a toggle, it alternates |
+| **Slider** | its value as it moves, with optional inverted range |
+| **XY Pad** | both values at once — `/pad 30 70` — or as `/pad/x` and `/pad/y` |
+
+On the XY pad, Y increases upward, and either axis can be inverted. Dragging
+sends at most one message per frame, and always sends the exact value where
+you let go.
+
 ## Running a show
 
 The editor lives at `/`. The control surface lives at `/preview` — the same

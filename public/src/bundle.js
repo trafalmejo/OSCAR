@@ -11180,6 +11180,7 @@ function initGrape(ipServer, socketPort) {
       "oscar_ip",
       "oscar_button",
       "oscar_slider",
+      "oscar_xypad",
       "grapesjs-preset-webpage",
       "gjs-blocks-basic",
       "grapesjs-custom-code",
@@ -11191,6 +11192,7 @@ function initGrape(ipServer, socketPort) {
       oscar_socket: { ipserver: ipServer, socketPort: socketPort },
       oscar_slider: { ipserver: ipServer },
       oscar_button: { ipserver: ipServer },
+      oscar_xypad: { ipserver: ipServer },
       "grapesjs-tooltip": {},
       "gjs-blocks-basic": { flexGrid: true },
       "grapesjs-preset-webpage": {
@@ -11420,65 +11422,60 @@ function initGrape(ipServer, socketPort) {
   };
 
   // ---- preview mode ------------------------------------------------------
-  // GrapesJS's preview hides the panels, but in absolute drag mode it leaves
-  // components draggable -- dragging a button in preview pulls its label out.
+  // GrapesJS's preview hides the panels but leaves components draggable in
+  // absolute mode, so dragging a button in preview pulls it apart.
   //
-  // This blocks the drag in the canvas rather than marking components
-  // undraggable. An earlier version set draggable/selectable/... to false and
-  // restored them on exit, but those values are part of the project: saving
-  // while previewing wrote "don't move me" into the file permanently.
-  // Component data must never carry editor state.
+  // This locks the components rather than swallowing events in the canvas. An
+  // earlier version did the latter, and it blocked pointerdown and touchmove
+  // -- which is exactly what a drag-based widget like the XY pad needs, so it
+  // would have been dead in preview. The button survived only because it uses
+  // click, and the slider because its dragging is a browser default action.
   //
-  // Only mousedown and dragstart are swallowed, and only propagation -- never
-  // the default action. Clicks are still generated, and a range slider still
-  // drags natively, so widgets keep sending OSC while previewing.
-  // touchstart is deliberately NOT in this list: OSCAR's buttons listen for it,
-  // and swallowing it would stop every widget working on a tablet -- the whole
-  // point of the preview. Blocking touchmove stops a touch-driven drag without
-  // affecting a range slider, whose touch dragging is a default action and so
-  // survives stopped propagation.
-  var BLOCKED_IN_PREVIEW = ["mousedown", "pointerdown", "dragstart", "touchmove"];
-  var swallow = null;
-
-  function blockCanvasEditing() {
-    var doc = editor.Canvas.getDocument();
-    if (!doc || swallow) return;
-
-    swallow = function (e) {
-      e.stopImmediatePropagation();
-    };
-    BLOCKED_IN_PREVIEW.forEach(function (type) {
-      doc.addEventListener(type, swallow, true);
-    });
-
-    // The selection toolbar, badges and resize handles live outside the canvas
-    // and would otherwise float over the control surface -- including a delete
-    // button. Hide the lot while previewing.
-    editor.getEl().classList.add("oscar-previewing");
-  }
-
-  function unblockCanvasEditing() {
-    var doc = editor.Canvas.getDocument();
-    if (!doc || !swallow) return;
-
-    BLOCKED_IN_PREVIEW.forEach(function (type) {
-      doc.removeEventListener(type, swallow, true);
-    });
-    swallow = null;
-    editor.getEl().classList.remove("oscar-previewing");
-  }
+  // Locking components is what corrupted projects once, by being saved. It is
+  // safe now: editor state is stripped on every path in and out of storage, so
+  // it cannot persist. The /preview page has always worked this way.
+  var PREVIEW_LOCK = {
+    draggable: false,
+    selectable: false,
+    hoverable: false,
+    editable: false,
+    highlightable: false,
+  };
+  var beforePreview = null;
 
   editor.on("command:run:preview", function () {
-    // Hand the canvas to the preview page (read back from /show/preview).
+    // Hand the canvas to the preview page before locking, so the lock doesn't
+    // travel with it.
     postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
       console.log("Could not hand off preview", err);
     });
 
     editor.select();
-    blockCanvasEditing();
+    beforePreview = [];
+    editor.getWrapper().onAll(function (component) {
+      var previous = {};
+      Object.keys(PREVIEW_LOCK).forEach(function (key) {
+        previous[key] = component.get(key);
+      });
+      beforePreview.push([component, previous]);
+      component.set(PREVIEW_LOCK, { avoidStore: true });
+    });
+
+    // The selection toolbar, badges and resize handles live outside the canvas
+    // and would otherwise float over the control surface, delete button and
+    // all.
+    editor.getEl().classList.add("oscar-previewing");
   });
 
-  editor.on("command:stop:preview", unblockCanvasEditing);
+  editor.on("command:stop:preview", function () {
+    if (beforePreview) {
+      beforePreview.forEach(function (entry) {
+        entry[0].set(entry[1], { avoidStore: true });
+      });
+      beforePreview = null;
+    }
+    editor.getEl().classList.remove("oscar-previewing");
+  });
 
   // ---- panel buttons -----------------------------------------------------
   pn.addButton("options", {
@@ -11656,11 +11653,13 @@ function initGrape(ipServer, socketPort) {
     // The preview only displays whatever the editor handed over; it must never
     // write into the editor's autosave.
     storageManager: false,
-    plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider", "grapesjs-touch"],
+    plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider",
+      "oscar_xypad", "grapesjs-touch"],
     pluginsOpts: {
       oscar_socket: { ipserver: ipServer, socketPort: socketPort },
       oscar_slider: { ipserver: ipServer },
       oscar_button: { ipserver: ipServer },
+      oscar_xypad: { ipserver: ipServer },
     },
   });
 

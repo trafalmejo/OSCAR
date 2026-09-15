@@ -29,11 +29,13 @@ function initGrape(ipServer, socketPort) {
     // The preview only displays whatever the editor handed over; it must never
     // write into the editor's autosave.
     storageManager: false,
-    plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider", "grapesjs-touch"],
+    plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider",
+      "oscar_xypad", "grapesjs-touch"],
     pluginsOpts: {
       oscar_socket: { ipserver: ipServer, socketPort: socketPort },
       oscar_slider: { ipserver: ipServer },
       oscar_button: { ipserver: ipServer },
+      oscar_xypad: { ipserver: ipServer },
     },
   });
 
