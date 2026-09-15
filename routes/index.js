@@ -1,9 +1,29 @@
 "use strict";
 
+const fs = require("fs");
+const path = require("path");
 const express = require("express");
 
 const { openProject, stripEditorState } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
+const { buildDocument } = require("../lib/export/document");
+const { createAssetReader } = require("../lib/export/assets");
+const { slugify } = require("../lib/projects");
+
+const PUBLIC_DIR = path.join(__dirname, "..", "public");
+
+// The pieces an exported file is built from. The runtime is OSCAR's own build
+// output; the socket.io client is the same copy the editor loads, so the two
+// ends of the bridge can never be different versions.
+const RUNTIME_FILE = path.join(PUBLIC_DIR, "src", "runtime.bundle.js");
+const SOCKET_CLIENT_FILE = path.join(
+  PUBLIC_DIR,
+  "node_modules",
+  "socket.io-client",
+  "dist",
+  "socket.io.min.js"
+);
+const WIDGET_CSS_FILE = path.join(PUBLIC_DIR, "assets", "css", "toggle.css");
 
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
@@ -109,6 +129,82 @@ module.exports = function createRouter({
 
   router.get("/show/preview", (req, res) => res.json(preview || {}));
 
+  // ---- Export -------------------------------------------------------------
+  // The editor sends the markup (with each widget's settings written into it)
+  // and the stylesheet; this side adds the runtime, the socket.io client and
+  // the widget styling, and hands back one file that works on its own.
+  //
+  // Wrapped here rather than in the browser because this is the side that can
+  // read those files off disk, and inline the images a project refers to.
+  router.post("/export", editorOnly, (req, res) => {
+    const body = req.body || {};
+
+    if (typeof body.html !== "string" || !body.html.trim()) {
+      return res.status(400).json({ error: "There is nothing on the canvas to export yet." });
+    }
+
+    const host = String((body.connection && body.connection.host) || "").trim();
+    const port = Number(body.connection && body.connection.port);
+
+    if (!host) {
+      return res.status(400).json({ error: "Say where OSCAR can be reached." });
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return res
+        .status(400)
+        .json({ error: "The bridge port has to be a whole number between 1 and 65535." });
+    }
+
+    let runtime;
+    let socketio;
+    try {
+      runtime = fs.readFileSync(RUNTIME_FILE, "utf8");
+      socketio = fs.readFileSync(SOCKET_CLIENT_FILE, "utf8");
+    } catch (err) {
+      // Shipping a half-built file would produce exactly the silent, dead page
+      // this feature exists to stop, so say so instead.
+      console.error("Could not read the export runtime:", err.message);
+      return res.status(500).json({
+        error:
+          "This OSCAR install is missing its export runtime. Run `npm run build` " +
+          "and `npm install`, then try again.",
+      });
+    }
+
+    let widgetCss = "";
+    try {
+      widgetCss = fs.readFileSync(WIDGET_CSS_FILE, "utf8");
+    } catch (err) {
+      // Unstyled controls still send. Worth continuing for.
+      console.error("Could not read the widget stylesheet:", err.message);
+    }
+
+    try {
+      const page = buildDocument({
+        title: typeof body.title === "string" ? body.title : "OSCAR interface",
+        html: body.html,
+        css: typeof body.css === "string" ? body.css : "",
+        connection: { host, port },
+        runtime,
+        socketio,
+        styles: [widgetCss],
+        oscarVersion: diagnostics ? diagnostics().oscar : null,
+        readAsset: createAssetReader(PUBLIC_DIR),
+      });
+
+      // The name goes into a header, so it is rebuilt from scratch rather than
+      // quoted: a quote or a newline in it would be a header injection.
+      const filename = slugify(body.fileName || body.title) + ".html";
+
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="' + filename + '"');
+      res.send(page);
+    } catch (err) {
+      console.error("Could not build the export:", err.message);
+      res.status(500).json({ error: "Your interface could not be exported." });
+    }
+  });
+
   // ---- Local project library --------------------------------------------
   router.get("/projects", editorOnly, async (req, res) => {
     try {
@@ -138,7 +234,6 @@ module.exports = function createRouter({
     }
 
     try {
-      const { slugify } = require("../lib/projects");
       const id = slugify(name);
       const overwrite = body.overwrite === true || body.overwrite === "true";
 

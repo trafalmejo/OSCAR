@@ -66,7 +66,7 @@ OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT
 
 | Command | What it does |
 | --- | --- |
-| `npm start` | Build the browser bundle, then run the server |
+| `npm start` | Build the browser bundles, then run the server |
 | `npm run serve` | Run the server without rebuilding |
 | `npm run dev` | Rebuild on change and restart on change |
 | `npm test` | Run the test suite |
@@ -279,6 +279,32 @@ can copy, back up and share them however you like.
 > `account.createwithoscar.com` no longer exist. OSCAR now stores everything on
 > your own machine, and no longer asks you to log in.
 
+## Exporting an interface
+
+**Export** (the download icon in the toolbar) saves your surface as a single
+`.html` file. Everything is inside it — the controls, their OSC settings, the
+styling and the code that makes them work — so there is nothing to unzip and no
+folder to keep together. Open it by double-clicking it, or put it on any web
+server you like.
+
+The dialog asks where OSCAR can be reached, prefilled with the address other
+devices on your network see. That address is written into the file.
+
+**OSCAR still has to be running.** A browser cannot open a UDP socket, so an
+exported page does not send OSC itself — it hands each message to OSCAR, which
+puts it on the network. For the controls to do anything, OSCAR must be running
+on the address you exported with, and the device showing the page must be able
+to reach it. The page says so on screen when it cannot.
+
+Moving OSCAR to another machine does not mean exporting again: open the page
+with `?oscar-host=ADDRESS&oscar-port=PORT` on the end of its address.
+
+Each control carries its own target in a `data-oscar-config` attribute, so an
+exported file can be re-aimed in a text editor.
+
+This is different from **See code**, next to it, which only shows you the
+markup GrapesJS produced.
+
 ## How it works
 
 ```
@@ -289,6 +315,7 @@ OSCAR server (Node/Express)            |
    |  UDP out                          |  UDP in  :9000
    v                                   |
 Your lighting / video / sound software
+Browser (grapesjs editor, /preview, or an exported .html)
    |  socket.io  :8081
    v
 OSCAR server (Node/Express)
@@ -317,6 +344,13 @@ on its behalf. OSC arriving on port `9000` is relayed to every connected
 browser, and each widget picks out the addresses it was told to listen for. The
 same socket carries widget state between devices, so several tablets showing one
 surface stay in step.
+
+A widget is defined once, in `lib/widgets/`, in plain DOM and with no idea what
+is hosting it. An adapter supplies the little it needs from its surroundings:
+`public/src/adapters/grapesjs.js` inside the editor, and
+`public/src/adapters/standalone.js` on an exported page. That is why an export
+runs the same button, slider and pad as the editor rather than a second
+implementation of them.
 
 ## Tutorials
 

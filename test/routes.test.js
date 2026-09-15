@@ -366,3 +366,71 @@ test("editor pages render", async () => {
     }
   });
 });
+
+// ---- export ---------------------------------------------------------------
+
+const EXPORTABLE = {
+  title: "Stage Left",
+  fileName: "stage left",
+  html:
+    '<body><input type="range" data-oscar="oscar-slider" ' +
+    'data-oscar-config=\'{"ip":"10.0.0.9","port":9000,"message":"/level"}\'></body>',
+  css: ".oscar-xypad { width: 220px; }",
+  connection: { host: "192.168.0.5", port: 8081 },
+};
+
+/** Exporting needs the built runtime and the browser libraries on disk. */
+function runtimeIsBuilt(t) {
+  const publicDir = path.join(__dirname, "..", "public");
+  const needed = [
+    path.join(publicDir, "src", "runtime.bundle.js"),
+    path.join(publicDir, "node_modules", "socket.io-client", "dist", "socket.io.min.js"),
+  ];
+  if (needed.every((file) => fs.existsSync(file))) return true;
+  t.skip("export runtime not built (run npm install, then npm run build)");
+  return false;
+}
+
+test("POST /export hands back one self-contained file", async (t) => {
+  if (!runtimeIsBuilt(t)) return;
+
+  await withServer(async (base) => {
+    const res = await postJSON(base, "/export", EXPORTABLE);
+    assert.strictEqual(res.status, 200);
+    assert.match(res.headers.get("content-type"), /text\/html/);
+    assert.match(res.headers.get("content-disposition"), /filename="stage-left\.html"/);
+
+    const page = await res.text();
+
+    // Everything it needs travels with it: nothing is fetched from anywhere
+    // once the file leaves this machine.
+    assert.ok(!/<link\b/i.test(page), "no external stylesheet");
+    assert.ok(!/<script[^>]+\bsrc=/i.test(page), "no external script");
+
+    assert.match(page, /window\.OSCAR_EXPORT/, "the bridge address is baked in");
+    assert.match(page, /"host":"192\.168\.0\.5"/);
+    assert.match(page, /data-oscar="oscar-slider"/, "the control kept its settings");
+    assert.match(page, /\.oscar-xypad/, "the widget styling came too");
+    assert.match(page, /CANNOT SEND OSC ON ITS OWN/, "and it says what it needs");
+  });
+});
+
+test("POST /export refuses an empty canvas rather than shipping a blank page", async () => {
+  await withServer(async (base) => {
+    const res = await postJSON(base, "/export", {
+      html: "   ",
+      connection: { host: "x", port: 1 },
+    });
+    assert.strictEqual(res.status, 400);
+    assert.match((await res.json()).error, /nothing on the canvas/i);
+  });
+});
+
+test("POST /export refuses a bridge address it cannot use", async () => {
+  await withServer(async (base) => {
+    for (const connection of [{ host: "", port: 8081 }, { host: "x", port: 0 }, { host: "x" }]) {
+      const res = await postJSON(base, "/export", { html: "<body></body>", connection });
+      assert.strictEqual(res.status, 400, JSON.stringify(connection));
+    }
+  });
+});

@@ -1,0 +1,57 @@
+/* The export dialog. Bootstrap does the form controls; this is the wording
+   around them, which is most of the point of the dialog.
+
+   Light on dark, because a GrapesJS modal is dark (gjs-one-bg, #3d3d3d in
+   oscar_colors.css). Bootstrap's own defaults are the other way round and come
+   out near-invisible in here. */
+
+.oscar-export {
+  padding: 4px 6px 8px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.oscar-export label {
+  font-size: 13px;
+  margin-bottom: 2px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.oscar-export-lead {
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+/* A light panel, so the one thing people have repeatedly not known about is
+   the brightest thing in the dialog. */
+.oscar-export-warning {
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  color: #3d3d3d;
+  border-left: 4px solid #ec5896;
+  background: #fdf1f5;
+}
+
+.oscar-export-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 14px;
+}
+
+.oscar-export-hint code {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.oscar-export-error {
+  font-size: 13px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  color: #8a1c13;
+  background: #fde8e6;
+  border-radius: 3px;
+}
