@@ -6,6 +6,10 @@ const assert = require("node:assert");
 const { button } = require("../lib/widgets/button");
 const { slider } = require("../lib/widgets/slider");
 const { xypad } = require("../lib/widgets/xypad");
+const { colour } = require("../lib/widgets/colour");
+const { textInput } = require("../lib/widgets/text-input");
+const { numberInput } = require("../lib/widgets/number-input");
+const { selectInput, parseOptions } = require("../lib/widgets/select-input");
 const { outgoing } = require("../lib/widgets/outgoing");
 const { WIDGETS } = require("../lib/widgets");
 const { fakeElement, fakeContext } = require("./helpers/fake-dom");
@@ -265,6 +269,340 @@ test("the pad clamps to its edges rather than running past them", () => {
     { type: "f", value: 0 },
     { type: "f", value: 0 },
   ]);
+});
+
+// --- colour picker ----------------------------------------------------------
+
+/** Pick a colour the way the native control does: set it, then commit. */
+function pick(el, hex) {
+  el.value = hex;
+  el.fire("change");
+}
+
+test("the colour picker sends r,g,b normalised by default", () => {
+  const { el, ctx } = mount(colour, { format: "rgb", scale: "unit", argType: "f" });
+  pick(el, "#ff8000");
+
+  assert.strictEqual(ctx.sent.length, 1);
+  assert.deepStrictEqual(ctx.sent[0].args, [
+    { type: "f", value: 1 },
+    { type: "f", value: 0.502 },
+    { type: "f", value: 0 },
+  ]);
+});
+
+test("the 0-255 range is a setting, because Resolume and TouchDesigner differ", () => {
+  const { el, ctx } = mount(colour, { format: "rgb", scale: "byte", argType: "i" });
+  pick(el, "#ff8000");
+
+  assert.deepStrictEqual(ctx.sent[0].args, [
+    { type: "i", value: 255 },
+    { type: "i", value: 128 },
+    { type: "i", value: 0 },
+  ]);
+});
+
+test("rgba appends alpha, scaled the same way as the colour channels", () => {
+  const unit = mount(colour, { format: "rgba", scale: "unit", alpha: 0.5, argType: "f" });
+  pick(unit.el, "#000000");
+  assert.deepStrictEqual(
+    unit.ctx.sent[0].args.map((a) => a.value),
+    [0, 0, 0, 0.5]
+  );
+
+  const byte = mount(colour, { format: "rgba", scale: "byte", alpha: 0.5, argType: "i" });
+  pick(byte.el, "#000000");
+  assert.deepStrictEqual(
+    byte.ctx.sent[0].args.map((a) => a.value),
+    [0, 0, 0, 128]
+  );
+});
+
+test("hex mode sends one string, whatever the numeric argument type says", () => {
+  const { el, ctx } = mount(colour, { format: "hex", argType: "f" });
+  pick(el, "#A1B2C3");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "s", value: "#a1b2c3" }]);
+});
+
+test("shorthand hex expands rather than being refused", () => {
+  const { el, ctx } = mount(colour, { format: "hex" });
+  pick(el, "#f0a");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "s", value: "#ff00aa" }]);
+});
+
+test("an unreadable colour sends nothing rather than black", () => {
+  // Black is a colour somebody chooses on purpose; it must not double as the
+  // value we fall back to when the hex could not be parsed.
+  const { el, ctx } = mount(colour, { format: "rgb" });
+  pick(el, "not a colour");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("a blank alpha drops the message instead of guessing at fully opaque", () => {
+  const { el, ctx } = mount(colour, { format: "rgba", alpha: "" });
+  pick(el, "#ffffff");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("a disabled colour picker stays silent", () => {
+  const { el, ctx } = mount(colour, { enabled: false });
+  pick(el, "#123456");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("the picker shows the saved colour, and ignores a bad one", () => {
+  assert.strictEqual(mount(colour, { value: "#0a0B0c" }).el.value, "#0a0b0c");
+  // The native control silently falls back to black for anything it dislikes,
+  // so a project with a typo would come back black and look deliberate.
+  assert.strictEqual(mount(colour, { value: "puce" }).el.value, "");
+});
+
+test("the panel refuses a colour that is not a hex code", () => {
+  assert.strictEqual(colour.checks.value("#ff8800"), null);
+  assert.ok(colour.checks.value("rgb(1,2,3)"));
+  assert.ok(colour.checks.alpha("2"), "alpha lives in 0..1");
+  assert.strictEqual(colour.checks.alpha("0"), null);
+});
+
+// --- text input -------------------------------------------------------------
+
+test("text is sent on Enter, not on every keystroke", () => {
+  const { el, ctx } = mount(textInput, { argType: "s", message: "/clip" });
+
+  // Typing fires `input`; the widget must not be listening to it.
+  el.value = "go";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent, [], "a half-typed word is not a cue");
+
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "s", value: "go" }]);
+  assert.strictEqual(ctx.sent[0].address, "/clip");
+});
+
+test("the change a browser fires right after Enter does not double-send", () => {
+  const { el, ctx } = mount(textInput);
+  el.value = "go";
+  el.fire("keydown", { key: "Enter" });
+  el.fire("change");
+  assert.strictEqual(ctx.sent.length, 1);
+});
+
+test("leaving the field commits it, so a tap elsewhere is not lost", () => {
+  const { el, ctx } = mount(textInput);
+  el.value = "scene 2";
+  el.fire("change");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "s", value: "scene 2" }]);
+});
+
+test("Enter re-fires the same text, because re-sending a cue is normal", () => {
+  const { el, ctx } = mount(textInput);
+  el.value = "go";
+  el.fire("keydown", { key: "Enter" });
+  el.fire("keydown", { key: "Enter" });
+  assert.strictEqual(ctx.sent.length, 2);
+});
+
+test("a key that is not Enter commits nothing", () => {
+  const { el, ctx } = mount(textInput);
+  el.value = "go";
+  el.fire("keydown", { key: "g" });
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("a text input can send its contents as a number", () => {
+  const { el, ctx } = mount(textInput, { argType: "i" });
+  el.value = "12.6";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "i", value: 13 }]);
+});
+
+test("text that the chosen type cannot carry is dropped, not coerced", () => {
+  const { el, ctx } = mount(textInput, { argType: "f" });
+  el.value = "abc";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent, [], "not 0");
+});
+
+test("a disabled text input stays silent", () => {
+  const { el, ctx } = mount(textInput, { enabled: false });
+  el.value = "go";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("the text input shows its stored value and placeholder", () => {
+  const { el } = mount(textInput, { value: "saved", placeholder: "hint" });
+  assert.strictEqual(el.value, "saved");
+  assert.strictEqual(el.placeholder, "hint");
+});
+
+// --- number input -----------------------------------------------------------
+
+test("a typed number is sent on Enter, honouring the argument type", () => {
+  const { el, ctx } = mount(numberInput, { argType: "i", message: "/cue" });
+  el.value = "12.6";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "i", value: 13 }]);
+  assert.strictEqual(ctx.sent[0].address, "/cue");
+});
+
+test("an empty number box sends nothing -- Number('') is 0, and 0 means off", () => {
+  const { el, ctx } = mount(numberInput, { argType: "f" });
+  el.value = "";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.strictEqual(el.value, "", "the box is left as typed, not filled with 0");
+});
+
+test("a half-typed number sends nothing rather than a guess", () => {
+  const { el, ctx } = mount(numberInput);
+  for (const junk of ["-", ".", "1e", "abc"]) {
+    el.value = junk;
+    el.fire("keydown", { key: "Enter" });
+  }
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("min and max clamp, and the box shows what actually went out", () => {
+  const { el, ctx } = mount(numberInput, { min: 0, max: 255, argType: "i" });
+
+  el.value = "500";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "i", value: 255 }]);
+  assert.strictEqual(el.value, "255");
+
+  el.value = "-40";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent[1].args, [{ type: "i", value: 0 }]);
+  assert.strictEqual(el.value, "0");
+});
+
+test("blank limits mean no limit, not a limit of zero", () => {
+  const { el, ctx } = mount(numberInput, { min: "", max: "", argType: "f" });
+  el.value = "-999.5";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "f", value: -999.5 }]);
+  assert.strictEqual(el.min, "");
+  assert.strictEqual(el.max, "");
+});
+
+test("the stepper arrows commit, because they fire change", () => {
+  const { el, ctx } = mount(numberInput, { argType: "f" });
+  el.value = "1";
+  el.fire("change");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "f", value: 1 }]);
+});
+
+test("the number box puts its range on the element for the on-screen keypad", () => {
+  const { el } = mount(numberInput, { min: 1, max: 64, step: "1", value: 8 });
+  assert.strictEqual(el.min, "1");
+  assert.strictEqual(el.max, "64");
+  assert.strictEqual(el.step, "1");
+  assert.strictEqual(el.value, "8");
+});
+
+test("a disabled number input stays silent", () => {
+  const { el, ctx } = mount(numberInput, { enabled: false });
+  el.value = "5";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("the panel refuses a number outside its own limits, and blank limits", () => {
+  assert.ok(numberInput.checks.value("300", { min: 0, max: 255 }));
+  assert.strictEqual(numberInput.checks.value("128", { min: 0, max: 255 }), null);
+  assert.strictEqual(numberInput.checks.value("-5", { min: "", max: "" }), null);
+  assert.ok(numberInput.checks.value("", {}), "empty is not a number");
+  assert.strictEqual(numberInput.checks.min(""), null, "empty means unbounded");
+  assert.ok(numberInput.checks.max("lots"));
+});
+
+// --- dropdown ---------------------------------------------------------------
+
+test("the option list is comma separated, with = for label and value", () => {
+  assert.deepStrictEqual(parseOptions("Red=1, Green=2"), [
+    { label: "Red", value: "1" },
+    { label: "Green", value: "2" },
+  ]);
+  // A bare list is the quickest thing to type, and each item is its own label.
+  assert.deepStrictEqual(parseOptions("1, 2"), [
+    { label: "1", value: "1" },
+    { label: "2", value: "2" },
+  ]);
+  assert.deepStrictEqual(parseOptions("  ,, a ,"), [{ label: "a", value: "a" }]);
+  assert.deepStrictEqual(parseOptions(""), []);
+});
+
+test("the dropdown renders its options and restores the saved one", () => {
+  const { el } = mount(selectInput, { options: "Red=1, Green=2, Blue=3", value: "2" });
+  assert.match(el.innerHTML, /<option value="1">Red<\/option>/);
+  assert.match(el.innerHTML, /<option value="3">Blue<\/option>/);
+  assert.strictEqual(el.value, "2");
+});
+
+test("an option label is content, never markup", () => {
+  const { el } = mount(selectInput, { options: '<b>x</b>="a&b"' });
+  assert.ok(!el.innerHTML.includes("<b>"), "the designer's text is escaped");
+  assert.match(el.innerHTML, /&lt;b&gt;x&lt;\/b&gt;/);
+});
+
+test("picking an option sends its configured value", () => {
+  const { el, ctx } = mount(selectInput, {
+    options: "Red=1, Green=2",
+    value: "1",
+    argType: "i",
+    message: "/preset",
+  });
+
+  el.value = "2";
+  el.fire("change");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "i", value: 2 }]);
+  assert.strictEqual(ctx.sent[0].address, "/preset");
+  assert.strictEqual(ctx.config.value, "2", "the pick is remembered");
+});
+
+test("a dropdown can send strings as easily as numbers", () => {
+  const { el, ctx } = mount(selectInput, { options: "Wash=wash, Spot=spot", argType: "s" });
+  el.value = "spot";
+  el.fire("change");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "s", value: "spot" }]);
+});
+
+test("a saved value the list no longer offers falls back to what is showing", () => {
+  // Otherwise the panel claims one preset while the dropdown displays another.
+  const { ctx } = mount(selectInput, { options: "Red=1, Green=2", value: "9" });
+  assert.strictEqual(ctx.config.value, "1");
+});
+
+test("a disabled dropdown stays silent", () => {
+  const { el, ctx } = mount(selectInput, { enabled: false });
+  el.value = "2";
+  el.fire("change");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("the panel refuses an empty or unsendable option list", () => {
+  assert.ok(selectInput.checks.options("", { argType: "s" }));
+  assert.strictEqual(selectInput.checks.options("a, b", { argType: "s" }), null);
+  assert.ok(selectInput.checks.options("Red=red", { argType: "i" }), "red is not an int");
+});
+
+// --- detaching --------------------------------------------------------------
+
+test("every widget unhooks itself, so a re-render cannot stack listeners", () => {
+  const cases = [
+    [colour, "change"],
+    [textInput, "keydown"],
+    [numberInput, "change"],
+    [selectInput, "change"],
+  ];
+
+  for (const [widget, type] of cases) {
+    const { el, detach } = mount(widget);
+    assert.strictEqual(el.listenerCount(type), 1, widget.name);
+    detach();
+    assert.strictEqual(el.listenerCount(type), 0, widget.name + " after detach");
+  }
 });
 
 // --- shared shape -----------------------------------------------------------
