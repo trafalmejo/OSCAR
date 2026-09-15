@@ -29,28 +29,29 @@ button:hover {
 button {
   opacity: 0.8;
 }
-/* XY pad. The handle is a pseudo-element, not a child: a child element would
-   swallow the drag the way a button's label once did. */
+/* XY pad. Same family as the slider: a light grey ground that brightens on
+   hover, and the browser's own control colour on the handle, so a layout
+   mixing the two looks like one instrument.
+
+   The handle is a pseudo-element, not a child: a child element would swallow
+   the drag the way a button's label once did. */
 .oscar-xypad {
   position: relative;
   width: 220px;
   height: 220px;
-  background: #2b2b2b;
-  border: 1px solid #5a5a5a;
-  border-radius: 4px;
+  background: #d3d3d3;
+  outline: none;
+  opacity: 0.8;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
   /* Without this a finger drag scrolls the page instead of moving the handle. */
   touch-action: none;
   --oscar-x: 0%;
   --oscar-y: 100%;
 }
 
-.oscar-xypad::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / 25% 100%,
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / 100% 25%;
-  pointer-events: none;
+.oscar-xypad:hover {
+  opacity: 1;
 }
 
 .oscar-xypad::after {
@@ -58,11 +59,13 @@ button {
   position: absolute;
   left: var(--oscar-x);
   top: var(--oscar-y);
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
   border-radius: 50%;
-  background: #ff3663;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+  /* AccentColor is the colour the browser paints its own slider thumb, so the
+     two widgets match without guessing at a hex. */
+  background: #1a73e8;
+  background: AccentColor;
   pointer-events: none;
 }
