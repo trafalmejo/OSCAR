@@ -7,9 +7,41 @@
  * is what makes this possible: no browser, no GrapesJS, no bundler.
  */
 
+/**
+ * The document a widget reaches for through `el.ownerDocument` when it has to
+ * build its own children -- the media browser's thumbnails, for instance.
+ *
+ * Kept as small as the elements themselves: enough to create a node, not a DOM
+ * implementation.
+ */
+const fakeDocument = {
+  createElement(tag) {
+    const el = fakeElement();
+    el.tagName = String(tag).toUpperCase();
+    return el;
+  },
+};
+
 function fakeElement(rect) {
   const listeners = {};
   return {
+    ownerDocument: fakeDocument,
+    children: [],
+    parentNode: null,
+    appendChild(child) {
+      this.children.push(child);
+      child.parentNode = this;
+      return child;
+    },
+    removeChild(child) {
+      // Matching a browser: removing something that is not a child is a bug,
+      // not a no-op, and a widget that gets this wrong should hear about it.
+      const at = this.children.indexOf(child);
+      if (at === -1) throw new Error("removeChild: not a child");
+      this.children.splice(at, 1);
+      child.parentNode = null;
+      return child;
+    },
     style: {
       properties: {},
       setProperty(name, value) {
@@ -92,4 +124,4 @@ function fakeContext(config) {
   };
 }
 
-module.exports = { fakeElement, fakeContext };
+module.exports = { fakeElement, fakeContext, fakeDocument };

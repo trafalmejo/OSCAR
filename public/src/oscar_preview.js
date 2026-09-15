@@ -3,6 +3,8 @@ window.$ = window.jQuery = require("jquery");
 var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
 var oscarXypad = require("./oscar_xypad");
+var oscarMeter = require("./oscar_meter");
+var oscarMedia = require("./oscar_media");
 
 var editor;
 
@@ -46,6 +48,8 @@ function initGrape(ipServer, socketPort) {
       withIp(oscarButton, ipServer),
       withIp(oscarSlider, ipServer),
       withIp(oscarXypad, ipServer),
+      withIp(oscarMeter, ipServer),
+      withIp(oscarMedia, ipServer),
       "grapesjs-touch",
     ],
     pluginsOpts: {
