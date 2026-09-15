@@ -98,10 +98,12 @@ test("locked: another device can use the controls but not edit", async () => {
       assert.strictEqual((await fetch(base + "/show/preview")).status, 200);
       assert.strictEqual((await fetch(base + "/connection")).status, 200);
 
-      // The editor does not.
+      // The editor does not -- including which board the cable goes to, which
+      // is not something a tablet should be able to move mid-show.
       for (const [method, url] of [
         ["GET", "/projects"],
         ["GET", "/load/anything"],
+        ["GET", "/serial"],
         ["DELETE", "/remove/anything"],
       ]) {
         const res = await fetch(base + url, { method });
@@ -119,6 +121,8 @@ test("locked: another device can use the controls but not edit", async () => {
         connection: { host: "192.168.0.5", port: 8081 },
       });
       assert.strictEqual(exported.status, 403, "exporting is refused");
+      const serial = await post(base, "/serial", { connect: false });
+      assert.strictEqual(serial.status, 403, "so is unplugging the hardware");
     },
     { locked: true, remote: true }
   );

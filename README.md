@@ -244,6 +244,33 @@ Press **Push to preview** (the eye icon) to send the current layout to it.
 Every device showing `/preview` picks the new layout up straight away; there is
 no need to walk over and reload them.
 
+### Several pages
+
+A surface can hold more than one page — one per fixture group, say, or per
+scene. Open **Pages** in the toolbar to add, rename or delete them; click a page
+to work on it. Pages stay in the order they were added, which is the order the
+tabs appear in.
+
+On the control surface the pages appear as tabs along the bottom, sized for a
+finger. A surface with a single page shows no tabs at all. Pushing a new layout
+mid-show leaves whoever is driving on the page they were already on.
+
+### Talking to an Arduino
+
+Widgets can send to a board as well as to software. If the board has networking
+of its own (ESP32, Uno R4 WiFi, Nano 33 IoT, an Ethernet shield), point the
+widget's **Ip** and **Port** straight at it — there is nothing to configure in
+OSCAR.
+
+For a board on a USB cable, open **Serial** in the toolbar, connect its port,
+and set the widget's **Ip** to `serial` (its Port is then ignored). OSCAR sends
+ordinary OSC framed with SLIP, which is what the Arduino OSC libraries read.
+The chosen port is remembered across restarts and reopened by itself if the
+cable is pulled.
+
+Ready-to-upload sketches for both routes, with no libraries to install, are in
+[`tools/arduino/`](tools/arduino).
+
 ### Locking an installation
 
 By default anyone on the network can open the editor at `/` and change things.
@@ -351,6 +378,16 @@ is hosting it. An adapter supplies the little it needs from its surroundings:
 `public/src/adapters/standalone.js` on an exported page. That is why an export
 runs the same button, slider and pad as the editor rather than a second
 implementation of them.
+   |  UDP                       |  serial (SLIP-framed OSC)
+   v                            v
+Your lighting / video /      An Arduino on a USB cable
+sound software
+```
+
+Widgets carry their own OSC settings (IP, port, address, value). When you press
+a button or move a slider the browser sends that over socket.io to the OSCAR
+server, which emits the actual OSC packet — over UDP, or down the serial cable
+for a widget whose IP is `serial`.
 
 ## Tutorials
 

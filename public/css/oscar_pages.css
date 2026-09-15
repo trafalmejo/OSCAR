@@ -1,0 +1,141 @@
+/* Multiple pages: the designer's list in the editor, and the switcher the
+   person driving the show taps on the tablet. Loaded by both pages. */
+
+/* ---- editor: the Pages modal -------------------------------------------- */
+
+.oscar-pages {
+  padding: 10px 14px 16px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.oscar-pages-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.75;
+  margin-bottom: 12px;
+}
+
+.oscar-page-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.oscar-page {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.oscar-page-current {
+  background: rgba(236, 88, 150, 0.22);
+}
+
+/* The name is the button that switches to the page: the whole row width, so
+   there is no small target to miss. */
+.oscar-page-open {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 10px 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oscar-page-open:hover {
+  color: #ec5896;
+}
+
+.oscar-page-action {
+  background: none;
+  border: 0;
+  color: inherit;
+  opacity: 0.6;
+  padding: 8px 10px;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.oscar-page-action:hover {
+  opacity: 1;
+  color: #ec5896;
+}
+
+.oscar-pages-add {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.oscar-pages-add .form-control {
+  flex: 1;
+}
+
+.oscar-page-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+}
+
+/* ---- control surface: the page switcher --------------------------------- */
+
+/* Fixed to the bottom of the screen and out of the canvas entirely, so a tab
+   can never be dragged, styled or deleted along with the widgets. The canvas
+   is shortened by exactly this height (see oscar_preview.js) rather than
+   covered -- a tab bar sitting on top of the bottom row of buttons would hide
+   controls mid-show. */
+.oscar-page-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  background: #3d3d3d;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  z-index: 10;
+  /* A finger swiping the tabs must not bounce the whole page. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.oscar-page-tab {
+  /* Share the width while the tabs fit, and stop shrinking at a size a finger
+     can still hit -- past that the bar scrolls sideways instead. */
+  flex: 1 0 auto;
+  min-width: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: inherit;
+  font-size: 16px;
+  padding: 0 18px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Tapping twice quickly must not zoom the surface. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oscar-page-tab-current {
+  background: #ec5896;
+  color: #fff;
+}

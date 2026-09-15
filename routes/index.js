@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const express = require("express");
 
-const { openProject, stripEditorState } = require("../lib/project-format");
+const { openProject, stripEditorState, namePages } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
 const { buildDocument } = require("../lib/export/document");
 const { createAssetReader } = require("../lib/export/assets");
@@ -43,6 +43,8 @@ module.exports = function createRouter({
   diagnostics,
   onPreviewPush,
   lock,
+  serial,
+  onSerialChange,
 }) {
   const router = express.Router();
 
@@ -116,6 +118,33 @@ module.exports = function createRouter({
       console.error("Update check failed:", err.message);
       res.json({ available: false });
     }
+  });
+
+  // ---- Serial -------------------------------------------------------------
+  // Choosing which board OSCAR talks to is editing, not driving: a tablet on
+  // the network must not be able to move the cable out from under a show.
+  const NO_SERIAL = {
+    supported: false,
+    reason: "This build of OSCAR has no serial support.",
+    state: "closed",
+    ports: [],
+  };
+
+  router.get("/serial", editorOnly, async (req, res) => {
+    if (!serial) return res.json(NO_SERIAL);
+    res.json(Object.assign(serial.status(), { ports: await serial.list() }));
+  });
+
+  router.post("/serial", editorOnly, async (req, res) => {
+    if (!serial) return res.json(NO_SERIAL);
+
+    const body = req.body || {};
+    const status = body.connect
+      ? serial.connect(body.path, body.bitrate)
+      : serial.disconnect();
+
+    if (onSerialChange) onSerialChange(status);
+    res.json(Object.assign(status, { ports: await serial.list() }));
   });
 
   // ---- Preview hand-off -------------------------------------------------
@@ -245,8 +274,10 @@ module.exports = function createRouter({
         });
       }
 
-      // Editor state has no business in a project, in either direction.
-      await store.save(name, stripEditorState(data), { grapesjs: body.grapesjs });
+      // Editor state has no business in a project, in either direction; a page
+      // with no name is written out with one so the file is readable on its own
+      // rather than only after an open.
+      await store.save(name, namePages(stripEditorState(data)), { grapesjs: body.grapesjs });
       res.json({ msg: 'Saved "' + name + '"', id });
     } catch (err) {
       console.error("Could not save project:", err.message);

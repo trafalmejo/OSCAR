@@ -20,6 +20,12 @@ var ICONS = {
     "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z",
   unlocked:
     "M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V10A2,2 0 0,1 6,8H15V6A3,3 0 0,0 12,3A3,3 0 0,0 9,6H7A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,17A2,2 0 0,0 14,15A2,2 0 0,0 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17Z",
+  pages:
+    "M15,7H20.5L15,1.5V7M8,0H16L22,6V18A2,2 0 0,1 20,20H8C6.89,20 6,19.1 6,18V2A2,2 0 0,1 8,0M4,4V22H20V24H4A2,2 0 0,1 2,22V4H4Z",
+  rename:
+    "M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z",
+  serial:
+    "M15,7V11H16V13H13V5H15L12,1L9,5H11V13H8V10.93C8.7,10.56 9.2,9.85 9.2,9C9.2,7.78 8.21,6.78 7,6.78C5.78,6.78 4.78,7.78 4.78,9C4.78,9.85 5.28,10.56 6,10.93V13A2,2 0 0,0 8,15H11V18.05C10.29,18.41 9.8,19.15 9.8,20A2.2,2.2 0 0,0 12,22.2A2.2,2.2 0 0,0 14.2,20C14.2,19.15 13.71,18.41 13,18.05V15H16A2,2 0 0,0 18,13V11H19V7H15Z",
 };
 
 function icon(name, size) {
@@ -274,7 +280,7 @@ function initGrape(ipServer, socketPort) {
       onStore: function (data) {
         return Object.assign(
           { oscarFormat: projectFormat.CURRENT_FORMAT },
-          projectFormat.stripEditorState(data)
+          projectFormat.namePages(projectFormat.stripEditorState(data))
         );
       },
       onLoad: function (data) {
@@ -303,7 +309,7 @@ function initGrape(ipServer, socketPort) {
         // wrote the preview lock in here, which left widgets unmovable on
         // every launch; that data carries the current stamp, so a version
         // check would not catch it.
-        data = projectFormat.stripEditorState(data);
+        data = projectFormat.namePages(projectFormat.stripEditorState(data));
 
         // An autosave with no pages (from a crash mid-load, say) would leave
         // the editor blank and unusable on every launch, with no way out short
@@ -567,6 +573,270 @@ function initGrape(ipServer, socketPort) {
     });
   };
 
+  // ---- pages -------------------------------------------------------------
+  // A surface can hold several pages -- a page per fixture group, or per scene
+  // -- and the person driving it switches between them from the tabs along the
+  // bottom of the control surface. This is the designer's end of that: the
+  // list, and the add/rename/delete around it.
+  var pages = editor.Pages;
+
+  /**
+   * GrapesJS leaves a page it created itself with an empty name, so there is
+   * always something to fall back to. The fallback is the same label the
+   * project format writes into the file, so the tab does not change wording
+   * the first time a project is saved.
+   */
+  function pageLabel(page, index) {
+    return page.getName() || projectFormat.defaultPageName(index);
+  }
+
+  function renamePage(page, index) {
+    $.confirm({
+      title: "Rename page",
+      content:
+        '<input id="page-rename-input" class="oscar-page-rename-input" type="text" />',
+      onContentReady: function () {
+        var input = this.$content.find("#page-rename-input");
+        input.val(pageLabel(page, index));
+        // Electron has no window.prompt, so this small form is the prompt.
+        input.trigger("focus").trigger("select");
+      },
+      buttons: {
+        confirm: function () {
+          var name = (this.$content.find("#page-rename-input").val() || "").trim();
+          if (!name) return;
+          page.setName(name);
+          renderPages();
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function deletePage(page, index) {
+    $.confirm({
+      title: "Delete Page",
+      content:
+        'Delete "' +
+        pageLabel(page, index) +
+        '" and everything on it? You won\'t be able to recover it afterwards.',
+      buttons: {
+        confirm: function () {
+          pages.remove(page);
+          renderPages();
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function pageAction(name, title, onClick) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "oscar-page-action";
+    button.innerHTML = icon(name, 16);
+    button.setAttribute("data-tooltip", title);
+    button.onclick = onClick;
+    return button;
+  }
+
+  function renderPages() {
+    var list = document.getElementById("pages-list");
+    if (!list) return;
+
+    var all = pages.getAll();
+    var selected = pages.getSelected();
+    list.innerHTML = "";
+
+    all.forEach(function (page, index) {
+      var row = document.createElement("li");
+      row.className = "oscar-page";
+      if (selected && selected.getId() === page.getId()) row.className += " oscar-page-current";
+
+      var open = document.createElement("button");
+      open.type = "button";
+      open.className = "oscar-page-open";
+      open.textContent = pageLabel(page, index);
+      open.onclick = function () {
+        pages.select(page);
+        modal.close();
+      };
+      row.appendChild(open);
+
+      row.appendChild(
+        pageAction("rename", "Rename", function () {
+          renamePage(page, index);
+        })
+      );
+
+      // The last page cannot go: GrapesJS would be left with no page to draw,
+      // and there would be no way back to a working canvas.
+      if (all.length > 1) {
+        row.appendChild(
+          pageAction("remove", "Delete", function () {
+            deletePage(page, index);
+          })
+        );
+      }
+
+      list.appendChild(row);
+    });
+  }
+
+  function addPage() {
+    var input = document.getElementById("new-page-name");
+    var name = ((input && input.value) || "").trim();
+    // Naming it is optional; an unnamed page is called what it would be called
+    // in the file anyway.
+    var page = pages.add(
+      { name: name || projectFormat.defaultPageName(pages.getAll().length) },
+      { select: true }
+    );
+    if (input) input.value = "";
+    if (!page) {
+      $.alert("That page could not be added");
+      return;
+    }
+    modal.close();
+  }
+
+  editor.Commands.add("open-pages", function () {
+    renderPages();
+    setModal("Pages", "pages-panel");
+  });
+
+  (function wirePagesPanel() {
+    var add = document.getElementById("add-page-button");
+    if (add) add.onclick = addPage;
+
+    var input = document.getElementById("new-page-name");
+    if (input) {
+      input.onkeydown = function (e) {
+        if (e.key === "Enter") addPage();
+      };
+    }
+  })();
+
+  // The list is also open while pages are added from elsewhere (undo, a
+  // project load), so keep it honest rather than only redrawing on our own
+  // actions.
+  editor.on("page:add page:remove page:select page:update", renderPages);
+
+  // ---- serial ------------------------------------------------------------
+  // Which board on a USB cable OSCAR talks to. Widgets aimed at it say
+  // `serial` in their Ip field; this panel only decides which cable that is.
+  var serialState = null;
+
+  function describeSerial(state) {
+    if (!state.supported) return state.reason || "Serial is not available in this build.";
+    if (state.state === "open") return "Connected to " + state.path + " at " + state.bitrate + " baud";
+    if (state.state === "opening") {
+      return (
+        "Trying " + state.path + "…" + (state.error ? " (" + state.error + ")" : "")
+      );
+    }
+    return state.error ? "Not connected — " + state.error : "Not connected";
+  }
+
+  function paintSerial(state) {
+    serialState = state || {};
+
+    var status = document.getElementById("serial-status");
+    if (status) {
+      status.textContent = describeSerial(serialState);
+      status.classList.toggle("oscar-serial-open", serialState.state === "open");
+    }
+
+    var select = document.getElementById("serial-port");
+    if (select) {
+      var wanted = serialState.path || select.value;
+      select.innerHTML = "";
+
+      var ports = serialState.ports || [];
+      if (!ports.length) {
+        var empty = document.createElement("option");
+        empty.textContent = serialState.supported
+          ? "No serial ports found — is the board plugged in?"
+          : "Serial unavailable";
+        empty.value = "";
+        select.appendChild(empty);
+      }
+
+      ports.forEach(function (port) {
+        var option = document.createElement("option");
+        option.value = port.path;
+        option.textContent = port.label && port.label !== port.path
+          ? port.path + " — " + port.label
+          : port.path;
+        if (port.path === wanted) option.selected = true;
+        select.appendChild(option);
+      });
+
+      select.disabled = !serialState.supported || !ports.length;
+    }
+
+    var bitrate = document.getElementById("serial-bitrate");
+    if (bitrate && serialState.bitrate) bitrate.value = serialState.bitrate;
+
+    ["serial-connect", "serial-disconnect", "serial-refresh"].forEach(function (id) {
+      var button = document.getElementById(id);
+      if (button) button.disabled = !serialState.supported;
+    });
+  }
+
+  function loadSerial() {
+    return fetch("/serial")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(paintSerial)
+      .catch(function () {
+        paintSerial({ supported: false, reason: "Could not reach the OSCAR server" });
+      });
+  }
+
+  function changeSerial(body) {
+    postJSON("/serial", body)
+      .then(paintSerial)
+      .catch(function () {
+        $.alert("Could not reach the OSCAR server");
+      });
+  }
+
+  editor.Commands.add("open-serial", function () {
+    loadSerial();
+    setModal("Serial", "serial-panel");
+  });
+
+  (function wireSerialPanel() {
+    var refresh = document.getElementById("serial-refresh");
+    if (refresh) refresh.onclick = loadSerial;
+
+    var connect = document.getElementById("serial-connect");
+    if (connect) {
+      connect.onclick = function () {
+        var select = document.getElementById("serial-port");
+        var bitrate = document.getElementById("serial-bitrate");
+        if (!select || !select.value) {
+          $.alert("Pick a serial port first");
+          return;
+        }
+        changeSerial({
+          connect: true,
+          path: select.value,
+          bitrate: Number(bitrate && bitrate.value) || 115200,
+        });
+      };
+    }
+
+    var disconnect = document.getElementById("serial-disconnect");
+    if (disconnect) {
+      disconnect.onclick = function () {
+        changeSerial({ connect: false });
+      };
+    }
+  })();
+
   // ---- preview mode ------------------------------------------------------
   // GrapesJS's preview hides the panels but leaves components draggable in
   // absolute mode, so dragging a button in preview pulls it apart.
@@ -588,17 +858,19 @@ function initGrape(ipServer, socketPort) {
     highlightable: false,
   };
   var beforePreview = null;
+  // Which components the lock has already been applied to. Switching pages
+  // mid-preview locks the page that comes into view, and switching back must
+  // not record the lock itself as the state to restore.
+  var previewLocked = null;
 
-  editor.on("command:run:preview", function () {
-    // Hand the canvas to the preview page before locking, so the lock doesn't
-    // travel with it.
-    postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
-      console.log("Could not hand off preview", err);
-    });
+  /** Lock whatever page is on the canvas right now. */
+  function lockVisiblePage() {
+    if (!beforePreview) return;
 
-    editor.select();
-    beforePreview = [];
     editor.getWrapper().onAll(function (component) {
+      if (previewLocked.indexOf(component.cid) !== -1) return;
+      previewLocked.push(component.cid);
+
       var previous = {};
       Object.keys(PREVIEW_LOCK).forEach(function (key) {
         previous[key] = component.get(key);
@@ -606,6 +878,19 @@ function initGrape(ipServer, socketPort) {
       beforePreview.push([component, previous]);
       component.set(PREVIEW_LOCK, { avoidStore: true });
     });
+  }
+
+  editor.on("command:run:preview", function () {
+    // Hand the canvas to the preview page before locking, so the lock doesn't
+    // travel with it. Every page goes across, not just the one on screen.
+    postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
+      console.log("Could not hand off preview", err);
+    });
+
+    editor.select();
+    beforePreview = [];
+    previewLocked = [];
+    lockVisiblePage();
 
     // The selection toolbar, badges and resize handles live outside the canvas
     // and would otherwise float over the control surface, delete button and
@@ -613,12 +898,17 @@ function initGrape(ipServer, socketPort) {
     editor.getEl().classList.add("oscar-previewing");
   });
 
+  // A page the designer opens while previewing arrives unlocked, and dragging
+  // a widget in absolute mode pulls it apart.
+  editor.on("page:select", lockVisiblePage);
+
   editor.on("command:stop:preview", function () {
     if (beforePreview) {
       beforePreview.forEach(function (entry) {
         entry[0].set(entry[1], { avoidStore: true });
       });
       beforePreview = null;
+      previewLocked = null;
     }
     editor.getEl().classList.remove("oscar-previewing");
   });
@@ -631,6 +921,24 @@ function initGrape(ipServer, socketPort) {
       editor.runCommand("open-projects", { type: "Save" });
     },
     attributes: { title: "Save project", "data-tooltip-pos": "bottom" },
+  });
+
+  pn.addButton("options", {
+    id: "open-pages",
+    label: icon("pages"),
+    command: function () {
+      editor.runCommand("open-pages");
+    },
+    attributes: { title: "Pages", "data-tooltip-pos": "bottom" },
+  });
+
+  pn.addButton("options", {
+    id: "open-serial",
+    label: icon("serial"),
+    command: function () {
+      editor.runCommand("open-serial");
+    },
+    attributes: { title: "Serial", "data-tooltip-pos": "bottom" },
   });
 
   pn.addButton("options", {
@@ -765,6 +1073,8 @@ function initGrape(ipServer, socketPort) {
     "canvas-clear": "Clear canvas",
     "toggle-lock": null,
     "open-save": "Save project",
+    "open-pages": "Pages",
+    "open-serial": "Serial",
     "open-load": "Load project",
     "oscar-export": "Export a working interface",
     "open-info": "About",
