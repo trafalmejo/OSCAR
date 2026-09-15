@@ -61,9 +61,28 @@ test("linux target declares a maintainer with an email", () => {
     fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")
   ).build;
 
-  const targets = (config.linux || {}).target || [];
+  // A target is either "deb" or { target: "deb", arch: [...] }. Reading only
+  // the string form would make this test quietly pass by skipping the moment
+  // an arch list is added, taking the guard with it.
+  const targets = ((config.linux || {}).target || []).map((t) =>
+    typeof t === "string" ? t : t && t.target
+  );
   if (!targets.includes("deb")) return;
 
   const maintainer = (config.linux || {}).maintainer || "";
   assert.match(maintainer, /<[^@\s]+@[^>\s]+>/, "build.linux.maintainer needs an email");
+});
+
+test("Linux ships for ARM as well as x64, so a Raspberry Pi has a build", () => {
+  const config = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")
+  ).build;
+
+  for (const target of (config.linux || {}).target || []) {
+    assert.ok(typeof target === "object", "declare an arch list per Linux target");
+    assert.ok(
+      (target.arch || []).includes("arm64"),
+      target.target + " should build for arm64"
+    );
+  }
 });

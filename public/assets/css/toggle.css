@@ -1,8 +1,23 @@
+/* Vertical sliders.
+   Three mechanisms, because no single one covers every engine OSCAR runs on:
+   the `orient` attribute is Firefox's, `slider-vertical` was Chromium's until
+   it was removed in 121, and `writing-mode: vertical-lr` is the standard that
+   replaced it. `direction: rtl` makes the value climb upward, which is the
+   only direction a fader reads correctly.
 
-  input[type=range][orient=vertical]
-{
-    writing-mode: bt-lr; /* IE */
-    -webkit-appearance: slider-vertical; /* WebKit */
+   What was here before was `writing-mode: bt-lr`, an IE-only value every
+   current engine drops at parse time, paired with the removed WebKit
+   appearance -- so choosing "Vertical" did nothing at all outside Firefox. */
+input[type=range][orient=vertical] {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  /* A range input keeps a horizontal box otherwise, so the track would be
+     vertical inside a control that is still wide and short. Inline sizes from
+     resizing the component in the editor still win over this. */
+  width: 2em;
+  height: 160px;
 }
 input {
   background: #d3d3d3;
