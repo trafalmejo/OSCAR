@@ -84,3 +84,55 @@ button {
   background: AccentColor;
   pointer-events: none;
 }
+
+/* Colour swatch, and the typed entry widgets (text, number, dropdown).
+
+   Same family again: the slider's light grey ground, the same 0.8 -> 1 hover,
+   and AccentColor wherever the browser would paint a handle of its own -- the
+   focus ring here, and the native dropdown arrow via accent-color. */
+.oscar-colour,
+.oscar-entry,
+.oscar-select {
+  background: #d3d3d3;
+  border: none;
+  outline: none;
+  opacity: 0.8;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+  accent-color: AccentColor;
+  font: inherit;
+  padding: 6px 8px;
+  /* Comfortably bigger than the 44px a fingertip needs on a tablet. */
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.oscar-colour:hover,
+.oscar-entry:hover,
+.oscar-select:hover {
+  opacity: 1;
+}
+
+.oscar-colour:focus,
+.oscar-entry:focus,
+.oscar-select:focus {
+  opacity: 1;
+  outline: 2px solid #1a73e8;
+  outline: 2px solid AccentColor;
+  outline-offset: -2px;
+}
+
+/* The swatch is the whole control, so it gets room to read as a colour rather
+   than as a form field. Padding is what browsers leave around the sample. */
+.oscar-colour {
+  width: 88px;
+  height: 56px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+/* Keep the platform's own dropdown chrome: on a tablet that is a full-height
+   picker, which is far easier to hit than anything drawn here. */
+.oscar-select {
+  cursor: pointer;
+}
