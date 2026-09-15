@@ -217,6 +217,8 @@ var oscarColour = require("./oscar_colour");
 var oscarText = require("./oscar_text");
 var oscarNumber = require("./oscar_number");
 var oscarSelect = require("./oscar_select");
+var oscarMeter = require("./oscar_meter");
+var oscarMedia = require("./oscar_media");
 
 /** Hand a widget plugin the address other devices should send to. */
 function withIp(plugin, ipServer) {
@@ -324,6 +326,8 @@ function initGrape(ipServer, socketPort) {
       withIp(oscarText, ipServer),
       withIp(oscarNumber, ipServer),
       withIp(oscarSelect, ipServer),
+      withIp(oscarMeter, ipServer),
+      withIp(oscarMedia, ipServer),
       "grapesjs-preset-webpage",
       "gjs-blocks-basic",
       "grapesjs-custom-code",
