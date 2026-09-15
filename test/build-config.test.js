@@ -54,16 +54,39 @@ test("packaging config matches electron-builder's schema", (t) => {
   assert.deepStrictEqual(invalid, [], "unrecognised electron-builder options");
 });
 
+function linuxConfig() {
+  return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")).build
+    .linux || {};
+}
+
+// electron-builder accepts a target as a bare name ("deb") or as an object
+// ({ target: "deb", arch: [...] }). Reading only one form would let a check
+// below quietly stop applying when the config switches to the other.
+function linuxTargets() {
+  const targets = linuxConfig().target || [];
+  return (Array.isArray(targets) ? targets : [targets]).map((t) =>
+    typeof t === "string" ? { target: t, arch: [] } : t
+  );
+}
+
 // The .deb target refuses to build without a maintainer carrying an email,
 // and package.json's author field has no address.
 test("linux target declares a maintainer with an email", () => {
-  const config = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")
-  ).build;
+  const names = linuxTargets().map((t) => t.target);
+  assert.ok(names.includes("deb"), "the deb target is still configured");
 
-  const targets = (config.linux || {}).target || [];
-  if (!targets.includes("deb")) return;
-
-  const maintainer = (config.linux || {}).maintainer || "";
+  const maintainer = linuxConfig().maintainer || "";
   assert.match(maintainer, /<[^@\s]+@[^>\s]+>/, "build.linux.maintainer needs an email");
+});
+
+// A Raspberry Pi is the natural thing to leave running a show. Without an
+// explicit arch, electron-builder packages only the host's, so a release cut
+// on an x64 runner never produced an ARM Linux build.
+test("every linux target is built for arm64 as well as x64", () => {
+  const targets = linuxTargets();
+  assert.ok(targets.length >= 2, "AppImage and deb");
+  for (const target of targets) {
+    assert.ok(target.arch.includes("arm64"), target.target + " builds for arm64");
+    assert.ok(target.arch.includes("x64"), target.target + " builds for x64");
+  }
 });

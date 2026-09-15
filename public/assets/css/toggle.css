@@ -1,8 +1,16 @@
-
-  input[type=range][orient=vertical]
-{
-    writing-mode: bt-lr; /* IE */
-    -webkit-appearance: slider-vertical; /* WebKit */
+/* A vertical slider. The two old declarations are kept as fallbacks for old
+   engines: bt-lr was IE only, and Chromium dropped slider-vertical in 121.
+   Every current engine turns a range input with writing-mode: vertical-lr,
+   and direction: rtl puts the minimum at the bottom, so the value climbs the
+   way a fader does. The box is set explicitly because a range input keeps its
+   wide, short default otherwise, and would draw the track sideways inside it. */
+input[type=range][orient=vertical] {
+  writing-mode: bt-lr;
+  -webkit-appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 2em;
+  height: 160px;
 }
 input {
   background: #d3d3d3;
