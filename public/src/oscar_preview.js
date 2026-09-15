@@ -1,17 +1,9 @@
 window.$ = window.jQuery = require("jquery");
 
-var oscarButton = require("./oscar_button");
-var oscarSlider = require("./oscar_slider");
-var oscarXypad = require("./oscar_xypad");
+// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
+var { widgetPlugins } = require("./adapters/grapesjs");
 
 var editor;
-
-/** Hand a widget plugin the address other devices should send to. */
-function withIp(plugin, ipServer) {
-  return function (ed) {
-    plugin(ed, { ipserver: ipServer });
-  };
-}
 
 // One browserify bundle serves both the editor and the preview page, so each
 // entry point only boots when its own container is on the page.
@@ -43,9 +35,7 @@ function initGrape(ipServer, socketPort) {
     plugins: [
       "oscar_socket",
       "oscar_ip",
-      withIp(oscarButton, ipServer),
-      withIp(oscarSlider, ipServer),
-      withIp(oscarXypad, ipServer),
+      ...widgetPlugins(ipServer),
       "grapesjs-touch",
     ],
     pluginsOpts: {

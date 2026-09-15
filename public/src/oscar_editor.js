@@ -210,16 +210,9 @@ function checkForUpdate() {
 // format number and the "is this a project?" rule can never drift apart.
 var projectFormat = require("../../lib/project-format");
 
-var oscarButton = require("./oscar_button");
-var oscarSlider = require("./oscar_slider");
-var oscarXypad = require("./oscar_xypad");
+// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
+var { widgetPlugins } = require("./adapters/grapesjs");
 
-/** Hand a widget plugin the address other devices should send to. */
-function withIp(plugin, ipServer) {
-  return function (editor) {
-    plugin(editor, { ipserver: ipServer });
-  };
-}
 var isProjectData = projectFormat.isGrapesProject;
 
 function postJSON(url, body) {
@@ -313,9 +306,7 @@ function initGrape(ipServer, socketPort) {
       // in as functions. Named plugins are resolved through window[name], which
       // silently does nothing when the name is wrong -- that is how the
       // gjs-blocks-basic mismatch went unnoticed.
-      withIp(oscarButton, ipServer),
-      withIp(oscarSlider, ipServer),
-      withIp(oscarXypad, ipServer),
+      ...widgetPlugins(ipServer),
       "grapesjs-preset-webpage",
       "gjs-blocks-basic",
       "grapesjs-custom-code",

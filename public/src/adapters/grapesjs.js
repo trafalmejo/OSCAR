@@ -7,6 +7,8 @@
  * this file; the widgets themselves do not change.
  */
 
+var { WIDGETS } = require("../../../lib/widgets");
+
 /** Neutral field descriptor -> GrapesJS trait. */
 function toTrait(field) {
   var trait = {
@@ -170,6 +172,20 @@ function register(definition) {
 }
 
 /**
+ * One plugin per registered widget, each told the address other devices
+ * should send to. This is the whole of what an entry point needs to do to get
+ * every widget: spread it into the editor's `plugins` list.
+ */
+function widgetPlugins(ipServer) {
+  return WIDGETS.map(function (definition) {
+    var plugin = register(definition);
+    return function (editor) {
+      plugin(editor, { ipserver: ipServer });
+    };
+  });
+}
+
+/**
  * Recognise an element as this widget when a project is parsed.
  *
  * Matching on the tag alone is too greedy: every <input> in an imported form
@@ -186,4 +202,9 @@ function matches(definition, el) {
   return true;
 }
 
-module.exports = { register: register, toTrait: toTrait, matches: matches };
+module.exports = {
+  register: register,
+  widgetPlugins: widgetPlugins,
+  toTrait: toTrait,
+  matches: matches,
+};

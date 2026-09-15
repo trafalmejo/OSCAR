@@ -1,0 +1,37 @@
+"use strict";
+
+/**
+ * The few lines every widget test starts with.
+ *
+ * Each widget has its own file under test/widgets/, so two people adding
+ * widgets never edit the same test file; this is what keeps those files short.
+ */
+
+const { fakeElement, fakeContext } = require("./fake-dom");
+
+/**
+ * Wire a widget to a fake element with its defaults, overridden by `overrides`.
+ *
+ * `overrides.rect` is the element's box, for widgets that read pointer
+ * positions; everything else is a setting. Returns { el, ctx, detach }:
+ * `el.fire(type, event)` delivers an event, `ctx.sent` is the wire traffic,
+ * `ctx.edit(key, value)` pretends someone changed a setting in the panel.
+ */
+function mount(widget, overrides) {
+  const options = Object.assign({}, overrides);
+  const rect = options.rect;
+  delete options.rect;
+
+  const el = fakeElement(rect);
+  const ctx = fakeContext(Object.assign({}, widget.defaults, options));
+  const detach = widget.attach(el, ctx);
+  return { el, ctx, detach };
+}
+
+/** The values of the last message sent, or undefined when nothing was. */
+function lastArgs(ctx) {
+  const last = ctx.sent[ctx.sent.length - 1];
+  return last && last.args;
+}
+
+module.exports = { mount, lastArgs };
