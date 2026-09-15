@@ -1,6 +1,17 @@
 window.$ = window.jQuery = require("jquery");
 
+var oscarButton = require("./oscar_button");
+var oscarSlider = require("./oscar_slider");
+var oscarXypad = require("./oscar_xypad");
+
 var editor;
+
+/** Hand a widget plugin the address other devices should send to. */
+function withIp(plugin, ipServer) {
+  return function (ed) {
+    plugin(ed, { ipserver: ipServer });
+  };
+}
 
 // One browserify bundle serves both the editor and the preview page, so each
 // entry point only boots when its own container is on the page.
@@ -29,13 +40,16 @@ function initGrape(ipServer, socketPort) {
     // The preview only displays whatever the editor handed over; it must never
     // write into the editor's autosave.
     storageManager: false,
-    plugins: ["oscar_socket", "oscar_ip", "oscar_button", "oscar_slider",
-      "oscar_xypad", "grapesjs-touch"],
+    plugins: [
+      "oscar_socket",
+      "oscar_ip",
+      withIp(oscarButton, ipServer),
+      withIp(oscarSlider, ipServer),
+      withIp(oscarXypad, ipServer),
+      "grapesjs-touch",
+    ],
     pluginsOpts: {
       oscar_socket: { ipserver: ipServer, socketPort: socketPort },
-      oscar_slider: { ipserver: ipServer },
-      oscar_button: { ipserver: ipServer },
-      oscar_xypad: { ipserver: ipServer },
     },
   });
 

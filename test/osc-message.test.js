@@ -87,8 +87,20 @@ test("isAddress and isPort judge what OSCAR can actually send to", () => {
   }
 });
 
-test("empty and oversized argument lists are refused", () => {
-  assert.strictEqual(buildMessage("/x", []), null);
+test("an empty list on purpose is a bare address, which is a real message", () => {
+  // /play, /stop, /next -- plenty of software wants the address alone.
+  assert.deepStrictEqual(buildMessage("/play", []), { address: "/play", args: [] });
+});
+
+test("arriving empty-handed is still refused, and stays distinct from sending nothing", () => {
+  // The dangerous case: a value that went missing must not look like a
+  // deliberate bare address, or a dropped number becomes a /stop.
+  assert.strictEqual(buildMessage("/x", undefined), null);
+  assert.strictEqual(buildMessage("/x", null), null);
+  assert.strictEqual(buildMessage("/x", [undefined]), null);
+});
+
+test("oversized argument lists are refused", () => {
   assert.ok(buildMessage("/x", new Array(MAX_ARGS).fill(0)));
   assert.strictEqual(buildMessage("/x", new Array(MAX_ARGS + 1).fill(0)), null);
 });

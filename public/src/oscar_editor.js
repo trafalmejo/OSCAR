@@ -209,6 +209,17 @@ function checkForUpdate() {
 // The same module the server uses to stamp and check project files, so the
 // format number and the "is this a project?" rule can never drift apart.
 var projectFormat = require("../../lib/project-format");
+
+var oscarButton = require("./oscar_button");
+var oscarSlider = require("./oscar_slider");
+var oscarXypad = require("./oscar_xypad");
+
+/** Hand a widget plugin the address other devices should send to. */
+function withIp(plugin, ipServer) {
+  return function (editor) {
+    plugin(editor, { ipserver: ipServer });
+  };
+}
 var isProjectData = projectFormat.isGrapesProject;
 
 function postJSON(url, body) {
@@ -298,9 +309,13 @@ function initGrape(ipServer, socketPort) {
     plugins: [
       "oscar_socket",
       "oscar_ip",
-      "oscar_button",
-      "oscar_slider",
-      "oscar_xypad",
+      // OSCAR's widgets are bundled rather than loaded as globals, so they go
+      // in as functions. Named plugins are resolved through window[name], which
+      // silently does nothing when the name is wrong -- that is how the
+      // gjs-blocks-basic mismatch went unnoticed.
+      withIp(oscarButton, ipServer),
+      withIp(oscarSlider, ipServer),
+      withIp(oscarXypad, ipServer),
       "grapesjs-preset-webpage",
       "gjs-blocks-basic",
       "grapesjs-custom-code",
@@ -310,9 +325,6 @@ function initGrape(ipServer, socketPort) {
     ],
     pluginsOpts: {
       oscar_socket: { ipserver: ipServer, socketPort: socketPort },
-      oscar_slider: { ipserver: ipServer },
-      oscar_button: { ipserver: ipServer },
-      oscar_xypad: { ipserver: ipServer },
       "grapesjs-tooltip": {},
       "gjs-blocks-basic": { flexGrid: true },
       "grapesjs-preset-webpage": {
