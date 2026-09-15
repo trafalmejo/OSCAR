@@ -246,9 +246,13 @@ function initGrape(ipServer, socketPort) {
       // A key distinct from 0.16's `gjs-*` entries, so a browser that ran an
       // older OSCAR ignores that data instead of half-loading it.
       options: { local: { key: "oscarProject" } },
-      // Stamp the autosave the same way saved files are stamped.
+      // Stamp the autosave the same way saved files are stamped, and never
+      // let editor state into it.
       onStore: function (data) {
-        return Object.assign({ oscarFormat: projectFormat.CURRENT_FORMAT }, data);
+        return Object.assign(
+          { oscarFormat: projectFormat.CURRENT_FORMAT },
+          projectFormat.stripEditorState(data)
+        );
       },
       onLoad: function (data) {
         if (!data || !Object.keys(data).length) return data;
@@ -271,6 +275,12 @@ function initGrape(ipServer, socketPort) {
           );
           return {};
         }
+
+        // Repair an autosave that already holds editor state. A build once
+        // wrote the preview lock in here, which left widgets unmovable on
+        // every launch; that data carries the current stamp, so a version
+        // check would not catch it.
+        data = projectFormat.stripEditorState(data);
 
         // An autosave with no pages (from a crash mid-load, say) would leave
         // the editor blank and unusable on every launch, with no way out short

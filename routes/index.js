@@ -2,7 +2,7 @@
 
 const express = require("express");
 
-const { openProject } = require("../lib/project-format");
+const { openProject, stripEditorState } = require("../lib/project-format");
 
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
@@ -110,7 +110,8 @@ module.exports = function createRouter({
         });
       }
 
-      await store.save(name, data, { grapesjs: body.grapesjs });
+      // Editor state has no business in a project, in either direction.
+      await store.save(name, stripEditorState(data), { grapesjs: body.grapesjs });
       res.json({ msg: 'Saved "' + name + '"', id });
     } catch (err) {
       console.error("Could not save project:", err.message);

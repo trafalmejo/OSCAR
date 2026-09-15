@@ -164,6 +164,36 @@ test("a damaged format 1 file is repaired on open", () => {
   assert.ok(!("draggable" in slider), "the widget can be moved again");
 });
 
+test("a CURRENT-format file carrying editor state is still repaired", () => {
+  // The gap a version-gated migration leaves: damaged data that has since been
+  // re-saved, so it claims the current format and skips every migration.
+  const record = {
+    format: CURRENT_FORMAT,
+    oscar: "2.1.0",
+    name: "Re-saved while damaged",
+    data: {
+      pages: [
+        {
+          frames: [
+            {
+              component: {
+                type: "wrapper",
+                components: [{ type: "oscar-button", draggable: false, selectable: false }],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const opened = openProject(record);
+  assert.strictEqual(opened.status, "ok");
+  assert.strictEqual(opened.migrated, false, "nothing to migrate -- it is current");
+  const button = opened.data.pages[0].frames[0].component.components[0];
+  assert.ok(!("draggable" in button), "but the editor state is gone anyway");
+});
+
 test("every format below the current one has a migration to the next", () => {
   for (let version = 0; version < CURRENT_FORMAT; version++) {
     assert.strictEqual(
