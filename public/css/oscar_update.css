@@ -107,3 +107,9 @@
 .oscar-previewing .gjs-placeholder {
   display: none !important;
 }
+
+/* Locked mode: the toolbar button states the condition plainly, because a
+   locked OSCAR that looked unlocked would be its own hazard. */
+.gjs-pn-btn.oscar-locked {
+  color: #ff3663;
+}

@@ -10,6 +10,7 @@ const { lanAddress } = require("./lib/net");
 const { ProjectStore } = require("./lib/projects");
 const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
+const { Settings } = require("./lib/settings");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -29,6 +30,19 @@ const app = express();
 // The OSCAR version is recorded in every saved project, so a file can always
 // say what wrote it.
 const store = new ProjectStore(PROJECTS_DIR, { oscarVersion: pkg.version });
+
+// Locked mode is remembered across restarts, so an installation that reboots
+// overnight comes back locked rather than open. OSCAR_LOCKED forces it on at
+// startup for anyone scripting a kiosk.
+const settings = new Settings(
+  process.env.OSCAR_SETTINGS_FILE || path.join(path.dirname(PROJECTS_DIR), "oscar-settings.json")
+);
+if (process.env.OSCAR_LOCKED === "1") settings.set("locked", true);
+
+const lock = {
+  isLocked: () => !!settings.get("locked"),
+  setLocked: (value) => settings.set("locked", value),
+};
 
 app.set("views", path.join(__dirname, "public"));
 app.set("view engine", "ejs");
@@ -71,6 +85,7 @@ app.use(
     diagnostics,
     // `io` is created below; this only runs once a request arrives.
     onPreviewPush: () => io.emit("preview:updated"),
+    lock,
   })
 );
 
@@ -137,6 +152,10 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("    On your network:    http://" + serverIP + ":" + HTTP_PORT);
   console.log("");
   console.log("  Projects folder:      " + PROJECTS_DIR);
+  if (lock.isLocked()) {
+    console.log("");
+    console.log("  LOCKED: other devices can use the controls but not edit.");
+  }
   console.log("");
 
   // When Electron forks this file it waits for this before opening a window.

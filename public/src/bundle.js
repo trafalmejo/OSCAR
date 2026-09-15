@@ -10895,6 +10895,10 @@ var ICONS = {
   open: "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
   remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
+  locked:
+    "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z",
+  unlocked:
+    "M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V10A2,2 0 0,1 6,8H15V6A3,3 0 0,0 12,3A3,3 0 0,0 9,6H7A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,17A2,2 0 0,0 14,15A2,2 0 0,0 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17Z",
 };
 
 function icon(name, size) {
@@ -11495,6 +11499,55 @@ function initGrape(ipServer, socketPort) {
     attributes: { title: "Load project", "data-tooltip-pos": "bottom" },
   });
 
+  // ---- locked mode -------------------------------------------------------
+  // Locking leaves the control surface open to the network while the editor
+  // answers only this computer. A locked OSCAR that looked unlocked would be
+  // its own hazard, so the button states its condition plainly.
+  var lockButtonId = "toggle-lock";
+
+  function paintLockButton(locked) {
+    var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
+    if (!el) return;
+    el.innerHTML = icon(locked ? "locked" : "unlocked");
+    el.setAttribute("data-tooltip", locked ? "Locked: tap to allow editing" : "Lock editing");
+    el.setAttribute("data-tooltip-pos", "bottom");
+    el.classList.toggle("oscar-locked", !!locked);
+  }
+
+  function setLocked(locked) {
+    postJSON("/lock", { locked: locked })
+      .then(function (res) {
+        if (res && res.error) {
+          $.alert(res.error);
+          return;
+        }
+        paintLockButton(res && res.locked);
+      })
+      .catch(function () {
+        $.alert("Could not change the lock");
+      });
+  }
+
+  pn.addButton("options", {
+    id: lockButtonId,
+    className: "oscar-lock-btn",
+    label: icon("unlocked"),
+    command: function () {
+      var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
+      setLocked(!(el && el.classList.contains("oscar-locked")));
+    },
+    attributes: { title: "Lock editing", "data-tooltip-pos": "bottom" },
+  });
+
+  fetch("/lock")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (state) {
+      paintLockButton(state && state.locked);
+    })
+    .catch(function () {});
+
   pn.addButton("options", {
     id: "open-info",
     label: icon("help"),
@@ -11547,6 +11600,7 @@ function initGrape(ipServer, socketPort) {
     redo: "Redo",
     "gjs-open-import-webpage": "Import",
     "canvas-clear": "Clear canvas",
+    "toggle-lock": null,
     "open-save": "Save project",
     "open-load": "Load project",
     "open-info": "About",

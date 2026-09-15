@@ -120,8 +120,27 @@ Press **Push to preview** (the eye icon) to send the current layout to it.
 Every device showing `/preview` picks the new layout up straight away; there is
 no need to walk over and reload them.
 
-`/preview` cannot be edited, but the editor is still reachable at `/` on the
-same address, so anyone on the network can open it.
+### Locking an installation
+
+By default anyone on the network can open the editor at `/` and change things.
+For an installation or a show, press the padlock in the toolbar.
+
+While OSCAR is locked:
+
+- Other devices can still open `/preview` and use the controls
+- Visiting `/` from another device sends them to `/preview` instead
+- Saving, loading and deleting projects are refused
+- Only the computer running OSCAR can edit, or unlock it again
+
+Physical access to that computer is what grants editing, so there is no
+password to leak over a venue's network or forget before doors open. The
+setting is remembered, so a machine that reboots overnight comes back locked.
+`OSCAR_LOCKED=1` starts it locked.
+
+This stops editing, not sending: the OSC bridge stays open, because that is how
+the tablets work at all. Anyone who can reach OSCAR can still send OSC to your
+rig. If that matters, the answer is a separate network for the control devices,
+not a setting in OSCAR.
 
 ## Saving your work
 

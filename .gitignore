@@ -12,3 +12,6 @@ projects/
 
 # Private working notes, kept out of the public repo
 docs/
+
+# Local OSCAR settings (locked mode)
+oscar-settings.json
