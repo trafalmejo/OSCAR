@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { portsFromEnv, DEFAULTS, VARIABLES } = require("../lib/ports");
+const { portsFromEnv, planPorts, DEFAULTS, VARIABLES } = require("../lib/ports");
 
 test("with nothing set, every port is its default", () => {
   assert.deepStrictEqual(portsFromEnv({}), DEFAULTS);
@@ -31,4 +31,75 @@ test("a value that is not a port is refused rather than silently defaulted", () 
 
 test("an empty variable counts as unset", () => {
   assert.strictEqual(portsFromEnv({ OSCAR_SOCKET_PORT: "" }).socket, DEFAULTS.socket);
+});
+
+// --- serve:at ---------------------------------------------------------------
+
+test("one number on the command line places every port a copy needs", () => {
+  const { variables, ports, notes } = planPorts(["18100"], {});
+  assert.deepStrictEqual(variables, {
+    OSCAR_HTTP_PORT: "18100",
+    OSCAR_SOCKET_PORT: "18101",
+    OSCAR_OSC_IN_PORT: "18102",
+    OSCAR_LAN_PORT: "18103",
+    OSCAR_LOCAL_PORT: "18104",
+  });
+  assert.strictEqual(ports.dmx, DEFAULTS.dmx, "DMX is not derived");
+  assert.deepStrictEqual(notes, []);
+});
+
+test("a port typed on the command line beats one left in the environment", () => {
+  // OSCAR_HTTP_PORT=8080 in a shell profile must not put the copy started
+  // with `serve:at 18100` on the show's port; the typed number is the ask.
+  const { variables, ports, notes } = planPorts(["18100"], { OSCAR_HTTP_PORT: "8080" });
+  assert.strictEqual(variables.OSCAR_HTTP_PORT, "18100");
+  assert.strictEqual(ports.http, 18100);
+  assert.strictEqual(ports.socket, 18101, "the rest derive from the typed port");
+  assert.strictEqual(notes.length, 1, "and the operator is told");
+  assert.match(notes[0], /OSCAR_HTTP_PORT=8080/);
+  assert.match(notes[0], /18100/);
+
+  // Agreeing values are not worth a note.
+  assert.deepStrictEqual(planPorts(["18100"], { OSCAR_HTTP_PORT: "18100" }).notes, []);
+});
+
+test("a derived port yields to a variable already in the environment", () => {
+  const { variables, ports } = planPorts(["18100"], { OSCAR_LAN_PORT: "5010" });
+  assert.strictEqual(variables.OSCAR_LAN_PORT, undefined);
+  assert.strictEqual(ports.lan, 5010);
+  assert.strictEqual(ports.local, 18104);
+});
+
+test("explicit socket and osc-in arguments are honoured", () => {
+  const { ports } = planPorts(["18200", "18250", "18260"], {});
+  assert.strictEqual(ports.socket, 18250);
+  assert.strictEqual(ports.oscIn, 18260);
+});
+
+test("a malformed argument is refused, not silently replaced by the derived port", () => {
+  // `serve:at 18200 1820l` used to start on 18201 with no message.
+  for (const bad of ["1820l", "0", "70000", "", "8080.5"]) {
+    assert.throws(() => planPorts(["18200", bad], {}), /OSCAR_SOCKET_PORT/, JSON.stringify(bad));
+    assert.throws(() => planPorts(["18200", "18201", bad], {}), /OSCAR_OSC_IN_PORT/, JSON.stringify(bad));
+  }
+  assert.throws(() => planPorts(["808O"], {}), /OSCAR_HTTP_PORT/);
+  assert.throws(() => planPorts([], {}), /HTTP port/);
+});
+
+test("a malformed variable stops the plan the way it stops a plain start", () => {
+  assert.throws(() => planPorts(["18100"], { OSCAR_SOCKET_PORT: "18201x" }), /OSCAR_SOCKET_PORT/);
+});
+
+test("two ports landing on the same number are refused before anything binds", () => {
+  // An OSC-in port typed as http + 3 is the LAN source port, and UDP does
+  // not share.
+  assert.throws(() => planPorts(["18200", "18201", "18203"], {}), /OSCAR_LAN_PORT.*OSCAR_OSC_IN_PORT|OSCAR_OSC_IN_PORT.*OSCAR_LAN_PORT/);
+  assert.throws(() => planPorts(["18200", "18200"], {}), /OSCAR_HTTP_PORT.*OSCAR_SOCKET_PORT/);
+  assert.throws(() => planPorts(["18100"], { OSCAR_LAN_PORT: "18101" }), /18101/);
+  // Including one the derivation does not touch.
+  assert.throws(() => planPorts([String(DEFAULTS.dmx - 4)], {}), /OSCAR_DMX_PORT/);
+});
+
+test("a derived port past the top of the range is refused", () => {
+  assert.throws(() => planPorts(["65534"], {}), /OSCAR_OSC_IN_PORT/);
 });

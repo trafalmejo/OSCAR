@@ -72,3 +72,16 @@ test("the handle is placed from the saved position on load", () => {
   // Y reads upward, so 75 sits a quarter of the way down.
   assert.strictEqual(el.style.properties["--oscar-y"], "25.00%");
 });
+
+test("the handle stays where it was dragged after the host rewrites the element", () => {
+  // The position is an inline property, which goes with the style attribute
+  // when GrapesJS re-applies its copy of the attributes.
+  const { el, rewrite } = mount(xypad, { rect: SQUARE, minX: 0, maxX: 100, minY: 0, maxY: 100 });
+  el.fire("pointerdown", { clientX: 30, clientY: 80 });
+  el.fire("pointerup", { clientX: 30, clientY: 80 });
+  assert.strictEqual(el.style.properties["--oscar-x"], "30.00%");
+
+  rewrite();
+  assert.strictEqual(el.style.properties["--oscar-x"], "30.00%");
+  assert.strictEqual(el.style.properties["--oscar-y"], "80.00%");
+});

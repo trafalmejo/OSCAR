@@ -143,6 +143,35 @@ test("the panel refuses a value the chosen type cannot carry", () => {
   assert.strictEqual(button.checks.valueOn("1.5", { argType: "f" }), null);
 });
 
+test("a blank value is refused by the panel and dropped by the wire, never sent as zero", () => {
+  // A space in Value ON with argType f went out as f 0: a blackout.
+  for (const argType of ["f", "i"]) {
+    assert.ok(button.checks.valueOn(" ", { argType }), argType + " panel");
+    const { el, ctx } = mount(button, { mode: "toggle", argType, valueOn: " ", valueOff: "0" });
+    el.fire("click");
+    assert.deepStrictEqual(ctx.sent, [], argType + " wire");
+  }
+  // As a string, a space is a string.
+  assert.strictEqual(button.checks.valueOn(" ", { argType: "s" }), null);
+});
+
+test("a toggle that is on still shows it after the host rewrites its element", () => {
+  // Adding a class in the Style Manager wiped the on class: the button
+  // painted as off while the rig stayed on, and the next click sent OFF from
+  // a button that already looked off.
+  const { el, ctx, rewrite } = mount(button, { mode: "toggle" });
+  el.fire("click");
+  assert.strictEqual(ctx.classes.toggle, true);
+
+  rewrite();
+  assert.strictEqual(ctx.classes.toggle, true, "on is painted again");
+
+  el.fire("click");
+  assert.strictEqual(ctx.classes.toggle, false);
+  rewrite();
+  assert.strictEqual(ctx.classes.toggle, false, "and off stays off");
+});
+
 test("detaching removes every listener it added", () => {
   const { el, ctx, detach } = mount(button);
   detach();
@@ -150,4 +179,5 @@ test("detaching removes every listener it added", () => {
   el.fire("click");
   assert.deepStrictEqual(ctx.sent, []);
   assert.strictEqual(el.listenerCount("pointerdown"), 0);
+  assert.strictEqual(ctx.listening(), 0);
 });

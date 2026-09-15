@@ -54,6 +54,25 @@ function fakeElement(rect) {
     listenerCount(type) {
       return (listeners[type] || []).length;
     },
+    /**
+     * What an editor does when it re-applies its copy of the element: every
+     * attribute, class and inline property goes. Listeners and the value
+     * property stay, as they do in a browser.
+     */
+    wipe() {
+      this.attributes = {};
+      this.classList.names.clear();
+      this.style.properties = {};
+    },
+    /** Everything a widget may have written onto the element. */
+    snapshot() {
+      return JSON.stringify({
+        attributes: this.attributes,
+        classes: Array.from(this.classList.names).sort(),
+        style: this.style.properties,
+        value: this.value,
+      });
+    },
   };
 }
 
@@ -63,6 +82,7 @@ function fakeElement(rect) {
  */
 function fakeContext(config) {
   const changes = {};
+  let rewrites = [];
   return {
     config,
     sent: [],
@@ -82,12 +102,31 @@ function fakeContext(config) {
     },
     onChange(keys, fn) {
       for (const key of keys) (changes[key] = changes[key] || []).push(fn);
-      return () => {};
+      return () => {
+        for (const key of keys) changes[key] = (changes[key] || []).filter((f) => f !== fn);
+      };
+    },
+    onRewrite(fn) {
+      rewrites.push(fn);
+      return () => {
+        rewrites = rewrites.filter((f) => f !== fn);
+      };
     },
     /** Pretend someone edited a setting in the panel. */
     edit(key, value) {
       this.config[key] = value;
       for (const fn of changes[key] || []) fn();
+    },
+    /** Pretend the host has just rewritten the element, classes included. */
+    rewrite() {
+      this.classes = {};
+      for (const fn of rewrites) fn();
+    },
+    /** How many handlers the widget still has on the host. */
+    listening() {
+      let count = rewrites.length;
+      for (const fns of Object.values(changes)) count += fns.length;
+      return count;
     },
   };
 }

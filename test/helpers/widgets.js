@@ -13,9 +13,12 @@ const { fakeElement, fakeContext } = require("./fake-dom");
  * Wire a widget to a fake element with its defaults, overridden by `overrides`.
  *
  * `overrides.rect` is the element's box, for widgets that read pointer
- * positions; everything else is a setting. Returns { el, ctx, detach }:
+ * positions; everything else is a setting. Returns { el, ctx, detach, rewrite }:
  * `el.fire(type, event)` delivers an event, `ctx.sent` is the wire traffic,
- * `ctx.edit(key, value)` pretends someone changed a setting in the panel.
+ * `ctx.edit(key, value)` pretends someone changed a setting in the panel,
+ * `rewrite()` does what an editor does on a class or style edit -- wipes the
+ * element and tells the widget -- and `state()` is everything the widget has
+ * put on the element, so a test can check it comes back.
  */
 function mount(widget, overrides) {
   const options = Object.assign({}, overrides);
@@ -25,7 +28,16 @@ function mount(widget, overrides) {
   const el = fakeElement(rect);
   const ctx = fakeContext(Object.assign({}, widget.defaults, options));
   const detach = widget.attach(el, ctx);
-  return { el, ctx, detach };
+  const rewrite = () => {
+    el.wipe();
+    ctx.rewrite();
+  };
+  const state = () => {
+    const classes = ctx.classes || {};
+    const on = Object.keys(classes).filter((name) => classes[name]).sort();
+    return el.snapshot() + JSON.stringify(on);
+  };
+  return { el, ctx, detach, rewrite, state };
 }
 
 /** The values of the last message sent, or undefined when nothing was. */

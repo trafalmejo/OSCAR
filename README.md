@@ -76,9 +76,13 @@ npm run serve:at -- 18100 18101 18102     # the same, with socket and OSC-in por
 ```
 
 It works the same in PowerShell, cmd and a Unix shell, and does not open a
-browser. Any `OSCAR_*_PORT` variable already set in the environment wins over
-the derived value. To set ports by hand instead, use the variables under
-[Configuration](#configuration):
+browser. A port given on the command line always wins, even over an
+`OSCAR_HTTP_PORT` left in your shell profile (you are told when that
+happens). A port you did not give is derived from the HTTP port unless the
+matching `OSCAR_*_PORT` variable is already set, in which case the variable
+wins. Two ports landing on the same number, or a value that is not a port,
+stop the start with both named. To set ports by hand instead, use the
+variables under [Configuration](#configuration):
 
 ```bash
 OSCAR_HTTP_PORT=8090 OSCAR_SOCKET_PORT=8091 OSCAR_LAN_PORT=5003 OSCAR_LOCAL_PORT=5004 npm run serve
@@ -174,6 +178,11 @@ message in the settings panel (the gear icon).
 On the XY pad, Y increases upward, and either axis can be inverted. Dragging
 sends at most one message per frame, and always sends the exact value where
 you let go.
+
+A slider can be **Vertical** from its Orientation setting. A size you have
+given a slider with the resize handles is kept when it turns: a wide, short
+box makes a squashed vertical control, so switch the orientation first and
+resize afterwards, or clear the width and height in the Style Manager.
 
 ## Running a show
 

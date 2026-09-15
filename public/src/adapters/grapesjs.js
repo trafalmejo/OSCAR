@@ -56,6 +56,15 @@ function contextFor(view, editor) {
   var model = view.model;
 
   return {
+    onRewrite: function (fn) {
+      view.oscarRewrites = (view.oscarRewrites || []).concat([fn]);
+      return function () {
+        view.oscarRewrites = (view.oscarRewrites || []).filter(function (f) {
+          return f !== fn;
+        });
+      };
+    },
+
     get: function (key) {
       return model.get(key);
     },
@@ -91,6 +100,13 @@ function contextFor(view, editor) {
   };
 }
 
+/** Let the widget put back what GrapesJS just wiped off its element. */
+function rewritten(view) {
+  (view.oscarRewrites || []).forEach(function (fn) {
+    fn();
+  });
+}
+
 /**
  * Register one widget definition with GrapesJS.
  *
@@ -100,7 +116,13 @@ function register(definition) {
   return function (editor, options) {
     var ipserver = (options && options.ipserver) || "localhost";
 
-    var defaults = Object.assign({}, definition.defaults, { ip: ipserver });
+    // A widget that talks to the network starts pointed at this machine. One
+    // that does not has no ip setting, and must not carry a hidden one.
+    var defaults = Object.assign(
+      {},
+      definition.defaults,
+      definition.sends || definition.receives ? { ip: ipserver } : {}
+    );
 
     editor.DomComponents.addType(definition.name, {
       isComponent: function (el) {
@@ -147,7 +169,23 @@ function register(definition) {
         },
       },
 
+      // GrapesJS's own updateAttributes strips every attribute off the element
+      // and re-applies the model's copy, and updateClasses does the same for
+      // the class list, on every class or style edit. Whatever the widget
+      // wrote straight onto the element goes with them, so each runs the
+      // widget's onRewrite handlers afterwards (extendFnView calls the
+      // original first).
+      extendFnView: ["updateAttributes", "updateClasses"],
+
       view: {
+        updateAttributes: function () {
+          rewritten(this);
+        },
+
+        updateClasses: function () {
+          rewritten(this);
+        },
+
         onRender: function () {
           if (this.oscarDetach) this.oscarDetach();
           this.oscarDetach = definition.attach(this.el, contextFor(this, editor));

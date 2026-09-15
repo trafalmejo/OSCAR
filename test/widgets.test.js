@@ -64,6 +64,23 @@ test("a definition missing a capability flag is refused, not read as false", () 
   assert.throws(() => validate(Object.assign({}, complete, { sends: false, dmx: true })), /dmx without sends/);
 });
 
+test("a text key that names no default is refused, rather than rendering an empty label", () => {
+  const complete = Object.assign({}, WIDGETS[0]);
+  assert.throws(() => validate(Object.assign({}, complete, { text: "lable" })), /text.*lable/);
+  assert.throws(() => validate(Object.assign({}, complete, { text: 7 })), /text/);
+  const key = Object.keys(complete.defaults)[0];
+  assert.strictEqual(validate(Object.assign({}, complete, { text: key })).text, key);
+});
+
+test("a block missing its label, category or icon is refused", () => {
+  const complete = Object.assign({}, WIDGETS[0]);
+  for (const key of ["label", "category", "icon"]) {
+    const block = Object.assign({}, complete.block);
+    delete block[key];
+    assert.throws(() => validate(Object.assign({}, complete, { block })), new RegExp("block\\." + key), key);
+  }
+});
+
 // --- capability flags -------------------------------------------------------
 
 test("a widget that sends offers the same connection settings as every other", () => {
@@ -166,6 +183,31 @@ test("every widget attaches and detaches cleanly against a bare element", () => 
     const { detach } = mount(widget);
     assert.strictEqual(typeof detach, "function", widget.name + " returns a detach function");
     detach();
+  }
+});
+
+test("detaching lets go of every handler on the host, not only those on the element", () => {
+  // The editor attaches again on every re-render. A widget that keeps its
+  // onChange or onRewrite handler would apply each edit N times by the end of
+  // a session, and the element-listener check alone cannot see it.
+  const { mount } = require("./helpers/widgets");
+  for (const widget of WIDGETS) {
+    const { ctx, detach } = mount(widget);
+    detach();
+    assert.strictEqual(ctx.listening(), 0, widget.name + " still listens to the host after detach");
+  }
+});
+
+test("what a widget puts on its element survives the host rewriting it", () => {
+  // GrapesJS strips every attribute, class and inline property and re-applies
+  // its own copy on any class or style edit; a widget that wrote something
+  // straight onto the element must put it back through onRewrite.
+  const { mount } = require("./helpers/widgets");
+  for (const widget of WIDGETS) {
+    const { state, rewrite } = mount(widget);
+    const before = state();
+    rewrite();
+    assert.strictEqual(state(), before, widget.name + " loses its element state on a rewrite");
   }
 });
 

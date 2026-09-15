@@ -52,3 +52,31 @@ test("the panel refuses a value outside the range", () => {
   assert.strictEqual(slider.checks.value("50", { min: 0, max: 100 }), null);
   assert.ok(slider.checks.value("abc", { min: 0, max: 100 }));
 });
+
+test("the panel refuses a blank value, which the wire would otherwise read as zero", () => {
+  for (const blank of ["", " ", "  ", null]) {
+    assert.ok(slider.checks.value(blank, { min: 0, max: 100 }), JSON.stringify(blank));
+    assert.ok(slider.checks.min(blank), "min " + JSON.stringify(blank));
+    assert.ok(slider.checks.max(blank), "max " + JSON.stringify(blank));
+  }
+});
+
+test("a vertical slider stays vertical after the host rewrites its element", () => {
+  // Adding a class in the Style Manager made GrapesJS re-apply its copy of
+  // the attributes, and the slider flipped flat while the setting said vertical.
+  const { el, rewrite } = mount(slider, { orientation: "vertical", min: 0, max: 255, value: 200 });
+  assert.strictEqual(el.getAttribute("orient"), "vertical");
+
+  rewrite();
+  assert.strictEqual(el.getAttribute("orient"), "vertical");
+  assert.strictEqual(el.max, "255", "the range comes back with it");
+  assert.strictEqual(el.value, "200", "and the thumb, which a lost max would have clamped");
+});
+
+test("the definition carries no copy of what the settings decide", () => {
+  // A default orient, min or max in the attributes is exactly what the host
+  // would re-apply over the real ones.
+  for (const key of ["orient", "min", "max"]) {
+    assert.ok(!(key in slider.attributes), key + " is set by attach, not declared");
+  }
+});

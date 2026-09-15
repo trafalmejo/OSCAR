@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { toArgs, isSendable, ARG_TYPES, NUMERIC_ARG_TYPES } = require("../lib/osc-args");
+const { toArgs, isSendable, toNumber, ARG_TYPES, NUMERIC_ARG_TYPES } = require("../lib/osc-args");
 const { buildMessage } = require("../lib/osc-message");
 
 test("each argument type produces the OSC type it promises", () => {
@@ -36,6 +36,31 @@ test("a value that cannot be sent is refused, never coerced to zero", () => {
     assert.strictEqual(toArgs("f", bad), null, "f: " + String(bad));
     assert.strictEqual(toArgs("i", bad), null, "i: " + String(bad));
   }
+});
+
+test("blank text and wrapped values are refused too -- Number() reads them as zero", () => {
+  // A stray space left in a field, or an empty list, is the same trap as an
+  // empty string: Number("  ") and Number([]) are both 0.
+  for (const bad of [" ", "  ", "\t", "\n", [], [[]], {}, [1]]) {
+    assert.strictEqual(toArgs("f", bad), null, "f: " + JSON.stringify(bad));
+    assert.strictEqual(toArgs("i", bad), null, "i: " + JSON.stringify(bad));
+    assert.strictEqual(toNumber(bad), null, JSON.stringify(bad));
+  }
+  // Space around a real number is fine; it is only nothing-but-space that
+  // hides a missing value.
+  assert.deepStrictEqual(toArgs("f", " 5 "), [{ type: "f", value: 5 }]);
+});
+
+test("an int past 32 bits is refused rather than wrapped by the encoder", () => {
+  assert.deepStrictEqual(toArgs("i", 2147483647), [{ type: "i", value: 2147483647 }]);
+  assert.deepStrictEqual(toArgs("i", -2147483648), [{ type: "i", value: -2147483648 }]);
+  for (const wide of [2147483648, -2147483649, 1e12, "1e12"]) {
+    assert.strictEqual(toArgs("i", wide), null, String(wide));
+  }
+  // Rounding decides first: 2147483647.4 is still an int32.
+  assert.deepStrictEqual(toArgs("i", 2147483647.4), [{ type: "i", value: 2147483647 }]);
+  // A float has the range to carry it.
+  assert.deepStrictEqual(toArgs("f", 1e12), [{ type: "f", value: 1e12 }]);
 });
 
 test("a string argument carries text a number never could", () => {

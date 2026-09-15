@@ -8,41 +8,33 @@
  * port at all -- including the two source ports OSC is sent from, which the
  * defaults would otherwise put on 5001/5002 for every copy.
  *
- * Every port not given is derived from the HTTP port, so one number is enough
- * to keep a copy out of everyone else's way:
- *   socket = http + 1, osc-in = http + 2, lan = http + 3, local = http + 4
- * A variable already set in the environment is left alone. The browser is not
+ * The port arithmetic lives in lib/ports.js planPorts(), where it is tested:
+ * a port typed here always wins, every port not typed is derived from the
+ * HTTP port unless the environment already sets it, and a collision or a
+ * malformed value stops the start with the port named. The browser is not
  * opened; this is a tool for running alongside other things, not for a show.
  */
 
 const path = require("path");
-const { VARIABLES, isPort } = require("../lib/ports");
+const { planPorts } = require("../lib/ports");
 
 const args = process.argv.slice(2);
-const http = Number(args[0]);
 
-if (!isPort(http)) {
+if (args.length === 0) {
   console.error("usage: npm run serve:at -- <http-port> [socket-port] [osc-in-port]");
   process.exit(2);
 }
 
-const chosen = {
-  http: http,
-  socket: Number(args[1]) || http + 1,
-  oscIn: Number(args[2]) || http + 2,
-  lan: http + 3,
-  local: http + 4,
-};
-
-for (const name of Object.keys(chosen)) {
-  const variable = VARIABLES[name];
-  if (process.env[variable] !== undefined && process.env[variable] !== "") continue;
-  if (!isPort(chosen[name])) {
-    console.error(variable + " would be " + chosen[name] + ", which is not a port");
-    process.exit(2);
-  }
-  process.env[variable] = String(chosen[name]);
+let plan;
+try {
+  plan = planPorts(args, process.env);
+} catch (err) {
+  console.error(err.message);
+  process.exit(2);
 }
+
+for (const note of plan.notes) console.error(note);
+Object.assign(process.env, plan.variables);
 
 if (process.env.OSCAR_NO_OPEN === undefined) process.env.OSCAR_NO_OPEN = "1";
 

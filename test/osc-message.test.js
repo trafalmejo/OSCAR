@@ -69,6 +69,30 @@ test("a missing value is refused, never read as zero", () => {
   assert.deepStrictEqual(buildMessage("/x", [0]).args, [{ type: "f", value: 0 }]);
 });
 
+test("blank text where a number belongs is refused: Number('  ') is zero too", () => {
+  // A space left in a Value field reached the wire as f 0 -- a blackout --
+  // because only the empty string was checked.
+  for (const type of ["f", "i"]) {
+    for (const blank of [" ", "  ", "\t"]) {
+      assert.strictEqual(buildMessage("/x", [{ type, value: blank }]), null, type + JSON.stringify(blank));
+    }
+  }
+  // Inferred as text, a blank string is still a string.
+  assert.deepStrictEqual(buildMessage("/x", ["  "]).args, [{ type: "s", value: "  " }]);
+});
+
+test("an int past 32 bits is refused rather than wrapped into some other number", () => {
+  assert.strictEqual(buildMessage("/x", [{ type: "i", value: 1e12 }]), null);
+  assert.strictEqual(buildMessage("/x", [{ type: "i", value: 2147483648 }]), null);
+  assert.deepStrictEqual(buildMessage("/x", [{ type: "i", value: 2147483647 }]).args, [
+    { type: "i", value: 2147483647 },
+  ]);
+  // Truncation decides first, as it always has.
+  assert.deepStrictEqual(buildMessage("/x", [{ type: "i", value: 2147483647.9 }]).args, [
+    { type: "i", value: 2147483647 },
+  ]);
+});
+
 test("an address has to be a path", () => {
   for (const bad of ["", "/", "nope", null, undefined, 42, {}]) {
     assert.strictEqual(buildMessage(bad, [1]), null, JSON.stringify(bad));
@@ -82,9 +106,11 @@ test("isAddress and isPort judge what OSCAR can actually send to", () => {
   assert.strictEqual(isAddress("master"), false);
 
   for (const port of [1, 7000, 65535, "8000"]) assert.strictEqual(isPort(port), true, String(port));
-  for (const port of [0, -1, 65536, 1.5, "", null, "abc"]) {
+  for (const port of [0, -1, 65536, 1.5, "", " ", null, undefined, "abc", [], true]) {
     assert.strictEqual(isPort(port), false, String(port));
   }
+  // One definition of a port for sending and for listening.
+  assert.strictEqual(isPort, require("../lib/ports").isPort);
 });
 
 test("an empty list on purpose is a bare address, which is a real message", () => {
