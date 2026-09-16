@@ -221,6 +221,7 @@ function checkForUpdate() {
 var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
+var htmlDocument = require("../../lib/html-document");
 var { followSurfaceStyle } = require("./adapters/grapesjs");
 
 var oscarButton = require("./oscar_button");
@@ -261,6 +262,34 @@ function initGrape(ipServer, socketPort) {
       (getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#ff3663") +
       " !important; }",
     dragMode: "absolute",
+    // Code pasted into Import, and templates, are read with these.
+    //
+    // A whole document is reduced to its CSS and its body first (see
+    // lib/html-document.js for why GrapesJS must not read it as a document),
+    // and the style named on its <body> is put on the surface. data-gjs-min-x
+    // becomes the minX setting, since HTML attribute names cannot hold
+    // capitals. The rest are GrapesJS's own defaults, restated because this
+    // option replaces them.
+    parser: {
+      optionsHtml: {
+        preParser: function (input, context) {
+          var doc = htmlDocument.readDocument(input);
+          if (!doc) return input;
+          var wrapper = context && context.editor && context.editor.getWrapper();
+          if (wrapper) {
+            wrapper.setAttributes(widgetStyles.withSurfaceStyle(wrapper.getAttributes(), doc.bodyAttributes));
+          }
+          return doc.html;
+        },
+        htmlType: "text/html",
+        allowScripts: false,
+        allowUnsafeAttr: false,
+        allowUnsafeAttrValue: false,
+        keepEmptyTextNodes: false,
+        convertDataGjsAttributesHyphens: true,
+        convertAttributeValues: false,
+      },
+    },
     height: "100%",
     container: "#gjs",
     fromElement: true,
@@ -398,6 +427,14 @@ function initGrape(ipServer, socketPort) {
   }
 
   function openProjects(mode) {
+    projectsMode = mode;
+    // Save leaves templates out of the list, so one picked in Load must not
+    // linger as the name a project is saved under.
+    if (mode === "Save" && selectedTemplate) {
+      selectedTemplate = null;
+      templateUrl = null;
+      $("#project-name").val("");
+    }
     setModal(mode, "table-panel");
     $("#save-button").toggle(mode === "Save");
     $("#load-button").toggle(mode === "Load");
@@ -413,6 +450,10 @@ function initGrape(ipServer, socketPort) {
   // Every cell is filled with textContent, because a project's name is text a
   // person typed. Sorting and formatting live in lib/projects-table.js.
   var projectRows = [];
+  var projectsMode = "Save";
+  // The template picked in the list, if any. Kept apart from the project id
+  // because a template and a saved project can share a name.
+  var selectedTemplate = null;
   var projectsProblem = null;
   var projectSort = projectsTable.DEFAULT_SORT;
   var projectsBody = document.querySelector("#projects-table tbody");
@@ -455,7 +496,14 @@ function initGrape(ipServer, socketPort) {
 
     projectsBody.textContent = "";
 
-    if (projectsProblem || !projectRows.length) {
+    var rows = projectsTable.orderProjects(
+      projectRows,
+      projectSort.key,
+      projectSort.direction,
+      projectsMode === "Load"
+    );
+
+    if (projectsProblem || !rows.length) {
       var empty = document.createElement("tr");
       empty.className = "o-empty";
       var message = projectCell(projectsProblem || "No saved projects yet");
@@ -465,32 +513,27 @@ function initGrape(ipServer, socketPort) {
       return;
     }
 
-    projectsTable
-      .sortProjects(projectRows, projectSort.key, projectSort.direction)
-      .forEach(function (row) {
+    rows.forEach(function (row) {
         var tr = document.createElement("tr");
         tr.tabIndex = 0;
-        tr.setAttribute("aria-selected", String(row._id === selectedId));
-        tr.appendChild(projectCell(row.name));
+        tr.setAttribute(
+          "aria-selected",
+          String(row.template ? row._id === selectedTemplate : !selectedTemplate && row._id === selectedId)
+        );
+        var name = projectCell(row.name);
+        if (row.template) {
+          var badge = document.createElement("span");
+          badge.className = "o-badge";
+          badge.textContent = "Template";
+          name.appendChild(badge);
+        }
+        tr.appendChild(name);
         tr.appendChild(projectCell(projectsTable.formatSize(row.size), "o-num"));
         tr.appendChild(projectCell(row.date, "o-date"));
 
         var actions = document.createElement("td");
         actions.className = "o-actions";
-        var remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "o-icon-btn";
-        remove.title = "Delete " + row.name;
-        remove.setAttribute("aria-label", "Delete " + row.name);
-        // A fixed SVG from ICONS, never anything a person typed.
-        remove.innerHTML = icon("remove", 16);
-        remove.onclick = function (e) {
-          e.stopPropagation();
-          confirmRemove(row);
-        };
-        actions.appendChild(remove);
         tr.appendChild(actions);
-
         tr.onclick = function () {
           selectProject(row, tr);
         };
@@ -503,13 +546,31 @@ function initGrape(ipServer, socketPort) {
           }
         };
         projectsBody.appendChild(tr);
+
+        // Templates ship with OSCAR and cannot be deleted.
+        if (row.template) return;
+
+        var remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "o-icon-btn";
+        remove.title = "Delete " + row.name;
+        remove.setAttribute("aria-label", "Delete " + row.name);
+        // A fixed SVG from ICONS, never anything a person typed.
+        remove.innerHTML = icon("remove", 16);
+        remove.onclick = function (e) {
+          e.stopPropagation();
+          confirmRemove(row);
+        };
+        actions.appendChild(remove);
       });
   }
 
   // Marks the row in place rather than re-rendering, so a keyboard user's
   // focus stays on the row they just chose.
   function selectProject(row, tr) {
-    $("#project-name").val(row.name).attr("id-project", row._id);
+    selectedTemplate = row.template ? row._id : null;
+    $("#project-name").val(row.name).attr("id-project", row.template ? "" : row._id);
+    templateUrl = row.template ? row.url : null;
     projectsBody.querySelectorAll("tr[aria-selected]").forEach(function (other) {
       other.setAttribute("aria-selected", String(other === tr));
     });
@@ -599,8 +660,14 @@ function initGrape(ipServer, socketPort) {
   }
 
   // ---- load --------------------------------------------------------------
+  var templateUrl = null;
+
   document.getElementById("load-button").onclick = function () {
     var id = projectName.getAttribute("id-project");
+    if (templateUrl) {
+      confirmLoadTemplate(templateUrl);
+      return;
+    }
     if (!id) {
       $.alert("Pick a project from the list first");
       return;
@@ -650,6 +717,55 @@ function initGrape(ipServer, socketPort) {
       },
     });
   };
+
+  /**
+   * Open a template: an HTML file with its CSS, read exactly the way Import
+   * reads pasted code. Everything in the current surface is replaced, and the
+   * name is cleared so the first save asks for a new one rather than
+   * suggesting the template's.
+   */
+  function confirmLoadTemplate(url) {
+    $.confirm({
+      title: "Load",
+      content:
+        "If you load this template, you will lose all unsaved changes in the current project.",
+      buttons: {
+        confirm: function () {
+          showLoader();
+
+          fetch(url)
+            .then(function (res) {
+              if (!res.ok) throw new Error("status " + res.status);
+              return res.text();
+            })
+            .then(function (html) {
+              hideLoader();
+              loadTemplate(html);
+              selectedTemplate = null;
+              templateUrl = null;
+              $("#project-name").val("").attr("id-project", "");
+              $.alert("Loaded successfully");
+              modal.close();
+            })
+            .catch(function () {
+              hideLoader();
+              $.alert("That template could not be opened");
+            });
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function loadTemplate(html) {
+    editor.select();
+    editor.Css.clear();
+    // Nothing from the surface being replaced carries over; the template's
+    // own style is put back while it is read.
+    editor.getWrapper().setAttributes({});
+    editor.setComponents(html);
+    editor.UndoManager.clear();
+  }
 
   // ---- preview mode ------------------------------------------------------
   // GrapesJS's preview hides the panels but leaves components draggable in

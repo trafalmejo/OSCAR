@@ -104,7 +104,7 @@ function register(definition) {
 
     editor.DomComponents.addType(definition.name, {
       isComponent: function (el) {
-        if (matches(definition, el)) return { type: definition.name };
+        return parsed(definition, el);
       },
 
       model: {
@@ -192,6 +192,24 @@ function register(definition) {
 }
 
 /**
+ * What an element parsed from HTML becomes: this widget, or nothing.
+ *
+ * A widget whose label is its text takes the label from the element too, so
+ * pasted or templated code such as <button>Strobe</button> is a button called
+ * Strobe in its settings, not one showing Strobe while its Label field says
+ * something else.
+ */
+function parsed(definition, el) {
+  if (!matches(definition, el)) return undefined;
+  var result = { type: definition.name };
+  if (definition.text) {
+    var label = String(el.textContent || "").trim();
+    if (label) result[definition.text] = label;
+  }
+  return result;
+}
+
+/**
  * Recognise an element as this widget when a project is parsed.
  *
  * Matching on the tag alone is too greedy: every <input> in an imported form
@@ -227,4 +245,10 @@ function followSurfaceStyle(editor, copy) {
   sync();
 }
 
-module.exports = { register: register, toTrait: toTrait, matches: matches, followSurfaceStyle: followSurfaceStyle };
+module.exports = {
+  register: register,
+  toTrait: toTrait,
+  matches: matches,
+  parsed: parsed,
+  followSurfaceStyle: followSurfaceStyle,
+};

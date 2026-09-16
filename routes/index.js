@@ -4,6 +4,7 @@ const express = require("express");
 
 const { openProject, stripEditorState } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
+const { listTemplates } = require("../lib/templates");
 
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
@@ -13,6 +14,7 @@ const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
  * @param {object} deps
  * @param {import('../lib/projects').ProjectStore} deps.store
  * @param {() => string} deps.serverIP
+ * @param {string} [deps.templatesDir] - where the templates in the Load list live
  * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
  */
 module.exports = function createRouter({
@@ -23,6 +25,7 @@ module.exports = function createRouter({
   diagnostics,
   onPreviewPush,
   lock,
+  templatesDir,
 }) {
   const router = express.Router();
 
@@ -112,7 +115,9 @@ module.exports = function createRouter({
   // ---- Local project library --------------------------------------------
   router.get("/projects", editorOnly, async (req, res) => {
     try {
-      res.json(await store.list());
+      // Templates come first and are always there; see lib/templates.js.
+      const templates = templatesDir ? await listTemplates(templatesDir) : [];
+      res.json(templates.concat(await store.list()));
     } catch (err) {
       console.error("Could not list projects:", err.message);
       res.status(500).json({ error: "Could not read your projects folder" });

@@ -175,3 +175,17 @@ th[aria-sort="descending"] .o-sort::after {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* Marks a template in the Load list: it ships with OSCAR and can't be deleted. */
+.o-table .o-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--o-border);
+  border-radius: 999px;
+  color: var(--o-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  vertical-align: 1px;
+}

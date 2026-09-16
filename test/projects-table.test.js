@@ -62,3 +62,16 @@ test("a header flips its own column, and a new column starts where people look f
   assert.deepStrictEqual(nextSort({ key: "name", direction: "ascending" }, "size"), { key: "size", direction: "descending" });
   assert.deepStrictEqual(DEFAULT_SORT, { key: "date", direction: "descending" });
 });
+
+test("templates stay on top whatever the sort, and only Load shows them", () => {
+  const { orderProjects } = require("../lib/projects-table");
+  const rows = [
+    { _id: "b", name: "B", date: "2026-01-01" },
+    { _id: "t", name: "Template", template: true },
+    { _id: "a", name: "A", date: "2026-02-01" },
+  ];
+  assert.deepStrictEqual(names(orderProjects(rows, "name", "descending", true)), ["Template", "B", "A"]);
+  assert.deepStrictEqual(names(orderProjects(rows, "date", "descending", true)), ["Template", "A", "B"]);
+  assert.deepStrictEqual(names(orderProjects(rows, "name", "ascending", false)), ["A", "B"]);
+  assert.deepStrictEqual(orderProjects(null, "name", "ascending", true), []);
+});

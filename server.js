@@ -87,6 +87,7 @@ app.use(
     // `io` is created below; this only runs once a request arrives.
     onPreviewPush: () => io.emit("preview:updated"),
     lock,
+    templatesDir: path.join(__dirname, "public", "templates"),
   })
 );
 
