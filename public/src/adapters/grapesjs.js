@@ -208,4 +208,23 @@ function matches(definition, el) {
   return true;
 }
 
-module.exports = { register: register, toTrait: toTrait, matches: matches };
+/**
+ * Keep the canvas body in the surface's style. The style is saved on the
+ * wrapper component, but the body is outside anything GrapesJS stores, so it
+ * is brought back in line on every canvas load, project load and attribute
+ * change. `copy(attributes, body)` does the copying.
+ */
+function followSurfaceStyle(editor, copy) {
+  function sync() {
+    var doc = editor.Canvas.getDocument();
+    var wrapper = editor.getWrapper();
+    if (doc && doc.body && wrapper) copy(wrapper.getAttributes(), doc.body);
+  }
+  editor.on("load canvas:frame:load project:load", sync);
+  editor.on("component:update:attributes", function (component) {
+    if (component === editor.getWrapper()) sync();
+  });
+  sync();
+}
+
+module.exports = { register: register, toTrait: toTrait, matches: matches, followSurfaceStyle: followSurfaceStyle };

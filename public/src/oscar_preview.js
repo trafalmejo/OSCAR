@@ -4,6 +4,7 @@ var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
 var oscarXypad = require("./oscar_xypad");
 var widgetStyles = require("../../lib/widget-styles");
+var { followSurfaceStyle } = require("./adapters/grapesjs");
 
 var editor;
 
@@ -59,6 +60,9 @@ function initGrape(ipServer, socketPort) {
       oscar_socket: { ipserver: ipServer, socketPort: socketPort },
     },
   });
+
+  // The canvas body follows the style the surface was designed in.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
 
   editor.on("load", function () {
     showLatest();

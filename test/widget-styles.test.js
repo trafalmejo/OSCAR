@@ -101,3 +101,16 @@ test("only whole appearance property names count, not look-alikes", () => {
     assert.strictEqual(styles.isAppearanceProperty(name), false, name);
   }
 });
+
+test("the canvas body takes the surface's style, and loses it when there is none", () => {
+  const attrs = {};
+  const body = {
+    setAttribute: (name, value) => { attrs[name] = value; },
+    removeAttribute: (name) => { delete attrs[name]; },
+  };
+  styles.copyToBody({ id: "irqz", "data-osc-style": "cyberpunk", "data-osc-appearance": "dark" }, body);
+  assert.deepStrictEqual(attrs, { "data-osc-style": "cyberpunk", "data-osc-appearance": "dark" });
+
+  styles.copyToBody({ id: "irqz" }, body);
+  assert.deepStrictEqual(attrs, {});
+});

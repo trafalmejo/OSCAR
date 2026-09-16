@@ -221,6 +221,7 @@ function checkForUpdate() {
 var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
+var { followSurfaceStyle } = require("./adapters/grapesjs");
 
 var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
@@ -372,6 +373,9 @@ function initGrape(ipServer, socketPort) {
       },
     },
   });
+
+  // The chosen style is saved on the wrapper; the canvas body follows it.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
 
   var pn = editor.Panels;
   var modal = editor.Modal;

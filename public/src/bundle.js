@@ -390,8 +390,8 @@ function canvasStylesheets() {
  */
 const SURFACE_CSS =
   "* { box-sizing: border-box; } body { margin: 0; } " +
-  // GrapesJS puts the style attributes on its wrapper element, which fills the
-  // canvas, not on the body; the body keeps the default style's colours.
+  // The style attributes live on GrapesJS's wrapper element, which is what gets
+  // saved; they are copied onto the body too (see copyToBody), so both paint.
   "body, [data-osc-style] { background-color: var(--osc-background); color: var(--osc-foreground); " +
   "font-family: var(--osc-font); letter-spacing: var(--osc-letter-spacing); }";
 
@@ -417,7 +417,23 @@ function withoutAppearance(style) {
   return kept;
 }
 
+/**
+ * Copy a surface's style from its saved attributes onto another element --
+ * the canvas body. GrapesJS keeps the attributes on its wrapper element and
+ * never saves the body, so the body has to be told again whenever the canvas
+ * loads, a project loads, or the style changes. A surface with no style takes
+ * the attributes off, so the body falls back to the default style.
+ */
+function copyToBody(attributes, body) {
+  [STYLE_ATTRIBUTE, APPEARANCE_ATTRIBUTE].forEach((name) => {
+    const value = attributes && attributes[name];
+    if (value) body.setAttribute(name, value);
+    else body.removeAttribute(name);
+  });
+}
+
 module.exports = {
+  copyToBody,
   STYLES,
   APPEARANCES,
   DEFAULT_STYLE,
@@ -12076,7 +12092,26 @@ function matches(definition, el) {
   return true;
 }
 
-module.exports = { register: register, toTrait: toTrait, matches: matches };
+/**
+ * Keep the canvas body in the surface's style. The style is saved on the
+ * wrapper component, but the body is outside anything GrapesJS stores, so it
+ * is brought back in line on every canvas load, project load and attribute
+ * change. `copy(attributes, body)` does the copying.
+ */
+function followSurfaceStyle(editor, copy) {
+  function sync() {
+    var doc = editor.Canvas.getDocument();
+    var wrapper = editor.getWrapper();
+    if (doc && doc.body && wrapper) copy(wrapper.getAttributes(), doc.body);
+  }
+  editor.on("load canvas:frame:load project:load", sync);
+  editor.on("component:update:attributes", function (component) {
+    if (component === editor.getWrapper()) sync();
+  });
+  sync();
+}
+
+module.exports = { register: register, toTrait: toTrait, matches: matches, followSurfaceStyle: followSurfaceStyle };
 
 },{}],13:[function(require,module,exports){
 /**
@@ -12314,6 +12349,7 @@ function checkForUpdate() {
 var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
+var { followSurfaceStyle } = require("./adapters/grapesjs");
 
 var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
@@ -12465,6 +12501,9 @@ function initGrape(ipServer, socketPort) {
       },
     },
   });
+
+  // The chosen style is saved on the wrapper; the canvas body follows it.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
 
   var pn = editor.Panels;
   var modal = editor.Modal;
@@ -13124,13 +13163,14 @@ function initGrape(ipServer, socketPort) {
   }
 }
 
-},{"../../lib/project-format":2,"../../lib/projects-table":3,"../../lib/widget-styles":4,"./oscar_button":13,"./oscar_slider":16,"./oscar_xypad":17,"jquery":11,"jquery-confirm":10}],15:[function(require,module,exports){
+},{"../../lib/project-format":2,"../../lib/projects-table":3,"../../lib/widget-styles":4,"./adapters/grapesjs":12,"./oscar_button":13,"./oscar_slider":16,"./oscar_xypad":17,"jquery":11,"jquery-confirm":10}],15:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
 var oscarXypad = require("./oscar_xypad");
 var widgetStyles = require("../../lib/widget-styles");
+var { followSurfaceStyle } = require("./adapters/grapesjs");
 
 var editor;
 
@@ -13187,6 +13227,9 @@ function initGrape(ipServer, socketPort) {
     },
   });
 
+  // The canvas body follows the style the surface was designed in.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
+
   editor.on("load", function () {
     showLatest();
 
@@ -13240,7 +13283,7 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"../../lib/widget-styles":4,"./oscar_button":13,"./oscar_slider":16,"./oscar_xypad":17,"jquery":11}],16:[function(require,module,exports){
+},{"../../lib/widget-styles":4,"./adapters/grapesjs":12,"./oscar_button":13,"./oscar_slider":16,"./oscar_xypad":17,"jquery":11}],16:[function(require,module,exports){
 /**
  * OSC slider, wired to GrapesJS.
  *
