@@ -15,3 +15,6 @@ docs/
 
 # Local OSCAR settings (locked mode)
 oscar-settings.json
+
+# Agent worktrees and local Claude Code state -- never part of the project.
+.claude/
