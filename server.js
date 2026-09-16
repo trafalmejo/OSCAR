@@ -15,6 +15,7 @@ const { buildMessage, isPort } = require("./lib/osc-message");
 const { receiver: oscReceiver, listenOn, atMostOncePer } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket } = require("./lib/dmx");
+const { sharedSync } = require("./lib/shared-sync");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -99,8 +100,13 @@ app.use(
     socketPort: () => SOCKET_PORT,
     updates,
     diagnostics,
-    // `io` is created below; this only runs once a request arrives.
-    onPreviewPush: () => io.emit("preview:updated"),
+    // `io` and `shared` are created below; this only runs once a request arrives.
+    onPreviewPush: () => {
+      // The widget ids in the old records may not exist in the new layout,
+      // and a stale position on a fresh surface is worse than none at all.
+      shared.reset();
+      io.emit("preview:updated");
+    },
     lock,
   })
 );
@@ -222,6 +228,11 @@ const io = new Server(SOCKET_PORT, {
   // a different port than this socket, so it must be opted back in.
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
+
+// What every device showing the surface agrees each widget is doing, so the
+// tablet next to the one that toggled a button draws it on too, and its next
+// press sends the right edge (lib/shared-sync.js).
+const shared = sharedSync(io);
 
 // ---- OSC coming back ------------------------------------------------------
 

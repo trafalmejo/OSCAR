@@ -104,19 +104,26 @@ function fakeWindow() {
  * The `ctx` an adapter would supply, recording what the widget sent so a test
  * can assert on the wire traffic rather than on internals.
  *
- * It is stricter than the real host in one place: the adapter drops a send()
- * made while an incoming message is being delivered, this throws. A widget
- * that so much as walks its send path from its receive path is a loop waiting
- * for software that echoes its state, and a test should not be able to miss it.
+ * It is stricter than the real host in one place: where the adapter drops a
+ * send() made while an incoming message is being delivered, and a send() or
+ * share() made while another device's state is being delivered, this throws.
+ * A widget that so much as walks its send path from its receive path is a
+ * loop waiting for software that echoes its state, and one that re-shares
+ * what it was handed is a loop between two tablets; a test should not be
+ * able to miss either.
  */
 function fakeContext(config) {
   const changes = {};
   let rewrites = [];
   let listeners = [];
+  let sharedListeners = [];
   let delivering = 0;
+  let adopting = 0;
   return {
     config,
     sent: [],
+    /** What the widget told the other devices, in order. */
+    shared: [],
     get(key) {
       return this.config[key];
     },
@@ -126,6 +133,9 @@ function fakeContext(config) {
     send(message) {
       if (delivering) {
         throw new Error("a widget answered an incoming OSC message by sending " + JSON.stringify(message));
+      }
+      if (adopting) {
+        throw new Error("a widget answered another device's state by sending " + JSON.stringify(message));
       }
       // Matching the adapter: null means stay silent, and is not recorded.
       if (message) this.sent.push(message);
@@ -143,6 +153,27 @@ function fakeContext(config) {
         for (const fn of listeners.slice()) fn({ address, args: args || [] });
       } finally {
         delivering--;
+      }
+    },
+    share(state) {
+      if (adopting) {
+        throw new Error("a widget re-shared the state it was handed: " + JSON.stringify(state));
+      }
+      this.shared.push(state);
+    },
+    onShared(fn) {
+      sharedListeners.push(fn);
+      return () => {
+        sharedListeners = sharedListeners.filter((f) => f !== fn);
+      };
+    },
+    /** Pretend another device changed this widget; `state` is what it shared. */
+    receiveShared(state) {
+      adopting++;
+      try {
+        for (const fn of sharedListeners.slice()) fn(state);
+      } finally {
+        adopting--;
       }
     },
     setClass(name, on) {
@@ -173,7 +204,7 @@ function fakeContext(config) {
     },
     /** How many handlers the widget still has on the host. */
     listening() {
-      let count = rewrites.length + listeners.length;
+      let count = rewrites.length + listeners.length + sharedListeners.length;
       for (const fns of Object.values(changes)) count += fns.length;
       return count;
     },

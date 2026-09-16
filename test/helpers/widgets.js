@@ -17,7 +17,10 @@ const { fakeElement, fakeWindow, fakeContext } = require("./fake-dom");
  * `el.fire(type, event)` delivers an event, `ctx.sent` is the wire traffic,
  * `ctx.edit(key, value)` pretends someone changed a setting in the panel,
  * `ctx.receive(address, args)` pretends the rig sent a message (and throws if
- * the widget answers it with a send), `rewrite()` does what an editor does on
+ * the widget answers it with a send), `ctx.shared` is what the widget told
+ * the other devices, `ctx.receiveShared(state)` pretends another device
+ * changed the widget (and throws if the widget sends or shares in answer),
+ * `rewrite()` does what an editor does on
  * a class or style edit -- wipes the element and tells the widget -- and
  * `state()` is everything the widget has put on the element, so a test can
  * check it comes back.

@@ -252,3 +252,97 @@ test("detaching stops the pad following the rig", () => {
   assert.strictEqual(ctx.config.x, 10);
   assert.strictEqual(ctx.listening(), 0);
 });
+
+// --- the other devices ------------------------------------------------------
+
+test("a drag is shared with the other devices as one position per send, whichever way it went out", () => {
+  // Outside a browser there are no frames, so every move goes out at once.
+  const { el, ctx } = mount(xypad, { rect: SQUARE });
+  el.fire("pointerdown", { clientX: 25, clientY: 75 });
+  el.fire("pointerup", { clientX: 50, clientY: 50 });
+  assert.deepStrictEqual(ctx.shared, [{ x: 25, y: 25 }, { x: 50, y: 50 }]);
+  assert.strictEqual(ctx.sent.length, 2);
+
+  const two = mount(xypad, { rect: SQUARE, sendMode: "two" });
+  two.el.fire("pointerdown", { clientX: 25, clientY: 75 });
+  two.el.fire("pointerup", { clientX: 50, clientY: 50 });
+  assert.deepStrictEqual(two.ctx.shared, [{ x: 25, y: 25 }, { x: 50, y: 50 }], "two messages each, one position each");
+});
+
+test("a position another device shows moves the handle, and is neither sent nor shared again", () => {
+  const { el, ctx } = mount(xypad, { x: 10, y: 10 });
+  ctx.receiveShared({ x: 50, y: 75 });
+  assert.strictEqual(ctx.config.x, 50);
+  assert.strictEqual(ctx.config.y, 75);
+  assert.strictEqual(el.style.properties["--oscar-x"], "50.00%");
+  assert.strictEqual(el.style.properties["--oscar-y"], "25.00%");
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.deepStrictEqual(ctx.shared, []);
+});
+
+test("sharing is not gated on Listen or Enabled", () => {
+  const { ctx } = mount(xypad, { enabled: false, listen: false, x: 10, y: 10 });
+  ctx.receiveShared({ x: 50, y: 75 });
+  assert.strictEqual(ctx.config.x, 50, "followed with Listen off and Enabled off");
+});
+
+test("a position adopted from the rig is shared once, and an axis on its own carries the other with it", () => {
+  const { ctx } = mount(xypad, { listen: true, x: 10, y: 10 });
+  ctx.receive("/pad", [30, 40]);
+  assert.deepStrictEqual(ctx.shared, [{ x: 30, y: 40 }]);
+  assert.deepStrictEqual(ctx.sent, []);
+  ctx.receive("/pad", [30]);
+  assert.strictEqual(ctx.shared.length, 1, "half a position was not taken, so there is nothing to share");
+
+  const two = mount(xypad, { listen: true, sendMode: "two", x: 10, y: 10 });
+  two.ctx.receive("/pad/x", [30]);
+  assert.deepStrictEqual(two.ctx.shared, [{ x: 30, y: 10 }]);
+});
+
+test("a hand on the pad outranks the other devices until it lets go", () => {
+  const { el, ctx } = mount(xypad, { rect: SQUARE, x: 10, y: 10 });
+  el.fire("pointerdown", { clientX: 50, clientY: 50 });
+  ctx.receiveShared({ x: 90, y: 90 });
+  assert.strictEqual(ctx.config.x, 50);
+  el.fire("pointerup", { clientX: 50, clientY: 50 });
+  ctx.receiveShared({ x: 90, y: 90 });
+  assert.strictEqual(ctx.config.x, 90);
+  assert.strictEqual(ctx.config.y, 90);
+});
+
+test("a shared axis is taken on its own, kept inside its range, and one that cannot be read is left alone", () => {
+  const { ctx } = mount(xypad, { x: 10, y: 10 });
+  ctx.receiveShared({ x: 500 });
+  assert.strictEqual(ctx.config.x, 100, "inside the range");
+  assert.strictEqual(ctx.config.y, 10, "the other axis untouched");
+  for (const state of [{}, { x: null, y: null }, { x: "", y: " " }, { x: "abc" }, { on: true }]) {
+    ctx.receiveShared(state);
+    assert.strictEqual(ctx.config.x, 100, JSON.stringify(state));
+    assert.strictEqual(ctx.config.y, 10, JSON.stringify(state));
+  }
+  ctx.receiveShared({ x: "abc", y: "42" });
+  assert.strictEqual(ctx.config.x, 100, "the unreadable axis stays");
+  assert.strictEqual(ctx.config.y, 42, "the readable one moves");
+});
+
+test("a host with no other devices to speak of is fine: the pad neither shares nor subscribes", () => {
+  const { fakeElement, fakeContext } = require("../helpers/fake-dom");
+  const ctx = fakeContext(Object.assign({}, xypad.defaults));
+  delete ctx.share;
+  delete ctx.onShared;
+  const el = fakeElement(SQUARE);
+  const detach = xypad.attach(el, ctx);
+  el.fire("pointerdown", { clientX: 50, clientY: 50 });
+  el.fire("pointerup", { clientX: 50, clientY: 50 });
+  assert.strictEqual(ctx.sent.length, 2, "one per event, with no frames to wait for");
+  detach();
+  assert.strictEqual(ctx.listening(), 0);
+});
+
+test("detaching stops the pad following the other devices", () => {
+  const { ctx, detach } = mount(xypad, { x: 10, y: 10 });
+  detach();
+  ctx.receiveShared({ x: 50, y: 50 });
+  assert.strictEqual(ctx.config.x, 10);
+  assert.strictEqual(ctx.listening(), 0);
+});

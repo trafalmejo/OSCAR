@@ -1,6 +1,7 @@
 /**
  * Connects the editor to OSCAR's bridge: OSC out to the rig, whatever the rig
- * sends back, and DMX out to the fixtures.
+ * sends back, DMX out to the fixtures, and the widget state this page shares
+ * with every other device showing the same surface.
  *
  * The page is served from one port while the bridge listens on another, so
  * this is a cross-origin connection by design -- the server opts back into it
@@ -76,6 +77,70 @@ function oscar_socket(editor, options) {
     oscListeners.push(fn);
     return function () {
       oscListeners = oscListeners.filter(function (other) {
+        return other !== fn;
+      });
+    };
+  };
+
+  // ---- what the other devices show ----------------------------------------
+  // Several tablets on one surface have to agree: the operator who toggles a
+  // button and the one watching it must see the same thing, or the second
+  // one's next press sends an edge that has already been sent. The server
+  // keeps one record per widget (lib/shared-sync.js) and passes each change
+  // to every device but the one that made it.
+  var stateListeners = {};
+  // The last state the server told this page about, kept so a widget that
+  // attaches after the snapshot still gets it. The page loads its layout
+  // after connecting, so that order is the usual one, not the exception.
+  var stateById = {};
+
+  function deliverState(id, state) {
+    if (!state || typeof state !== "object") return;
+    stateById[id] = state;
+    (stateListeners[id] || []).slice().forEach(function (fn) {
+      try {
+        fn(state);
+      } catch (err) {
+        console.warn("A widget mishandled another device's state:", err && err.message);
+      }
+    });
+  }
+
+  // Everything at once: on connect, and emptied after a new layout is pushed,
+  // when the old records may name widgets that no longer exist.
+  editor.socket.on("state:all", function (all) {
+    stateById = {};
+    if (!all || typeof all !== "object") return;
+    Object.keys(all).forEach(function (id) {
+      deliverState(id, all[id]);
+    });
+  });
+
+  editor.socket.on("state:changed", function (msg) {
+    if (!msg || typeof msg.id !== "string") return;
+    deliverState(msg.id, msg.state);
+  });
+
+  /**
+   * Tell the other devices what one widget now shows. The server never
+   * echoes it back here, and drops a change that changes nothing, so a
+   * value adopted from another device goes no further than the server.
+   */
+  editor.shareState = function (id, state) {
+    if (!editor.socket || typeof id !== "string" || !id) return;
+    editor.socket.emit("state:set", { id: id, state: state });
+  };
+
+  /**
+   * Follow one widget's state as the other devices report it. Handed the
+   * state already known, if any, so a widget attaching after the snapshot
+   * arrived starts where the others are. Returns an unsubscribe function.
+   */
+  editor.onSharedState = function (id, fn) {
+    (stateListeners[id] = stateListeners[id] || []).push(fn);
+    if (stateById[id]) fn(stateById[id]);
+    return function () {
+      stateListeners[id] = (stateListeners[id] || []).filter(function (other) {
         return other !== fn;
       });
     };
