@@ -1,21 +1,23 @@
 /*
  * OSCAR's widgets, as they look on the canvas and on every tablet.
  *
- * Every rule here lives inside a cascade layer, and that is the whole point.
- * GrapesJS writes what someone sets in the Style Manager as ordinary,
- * unlayered CSS, and unlayered CSS beats layered CSS whatever its specificity.
- * So a colour or a corner changed in the editor always wins over these
- * defaults -- no !important, no specificity to out-guess -- and anything left
- * alone keeps the look defined here.
+ * The starting look follows shadcn/ui's light neutral theme: white controls
+ * with a hairline border and near-black text, a dark filled state for "on",
+ * a thin light track, and small soft shadows. Values are shadcn's zinc
+ * palette, radii and control heights, with two concessions to fingers on a
+ * tablet: buttons use shadcn's large size (40px) and the thumb is 20px rather
+ * than 16px.
  *
- * The look is driven by tokens (--osc-*). Set one on a single widget to
- * restyle that widget, or on the Body to restyle the whole surface; the Theme
- * section of the Style Manager edits them. A new widget should draw with these
- * tokens too, so it matches without being told to.
+ * Every rule lives inside a cascade layer, and that is what keeps the look
+ * overridable. GrapesJS writes whatever someone sets in the Style Manager as
+ * ordinary, unlayered CSS, and unlayered CSS beats layered CSS whatever its
+ * specificity. So a colour or corner changed in the editor always wins, and
+ * anything left alone keeps this look. To change the starting look itself,
+ * change the values in oscar.tokens below; the widgets all draw from them, so
+ * a new widget that does the same matches without further work.
  *
  * The surface background is left alone: GrapesJS gives the canvas body its own
- * white, and what a surface sits on is the designer's call. The widgets are
- * drawn to read on light and dark alike.
+ * white, and what a surface sits on is the designer's call.
  *
  * The file keeps its old name, toggle.css, because the editor and the preview
  * both load it by that name.
@@ -28,100 +30,83 @@
     --osc-font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
     --osc-font-size: 14px;
 
-    --osc-fg: #eeeeee;
-    --osc-control: #222222;
-    --osc-control-hover: #2a2a2a;
-    --osc-control-pressed: #313131;
-    --osc-border: #3a3a3a;
-    --osc-track: #3a3a3a;
+    /* shadcn/ui neutral (zinc), light */
+    --osc-background: #ffffff;
+    --osc-foreground: #09090b;
+    --osc-muted: #f4f4f5;
+    --osc-subtle: #fafafa;
+    --osc-border: #e4e4e7;
+    --osc-primary: #18181b;
+    --osc-primary-foreground: #fafafa;
+    --osc-ring: rgba(161, 161, 170, 0.5);
 
-    /* The accent follows the device the surface runs on -- system blue on an
-       iPad, the Windows accent on a PC -- so a control looks native wherever
-       it is. A browser that cannot name that colour gets this blue instead. */
-    --osc-accent: #1a73e8;
-    --osc-accent-fg: #ffffff;
-
-    --osc-radius: 10px;
-    /* Nothing a finger has to hit is smaller than this. */
-    --osc-touch: 44px;
-    --osc-thumb: 22px;
+    --osc-radius: 8px;
+    --osc-control-height: 40px;
+    --osc-thumb: 20px;
     --osc-track-size: 6px;
-  }
 
-  /* A custom property takes any value, so writing AccentColor unconditionally
-     would not fall back: an engine without it would paint nothing. */
-  @supports (color: AccentColor) {
-    :root {
-      --osc-accent: AccentColor;
-    }
-  }
-
-  @supports (color: AccentColorText) {
-    :root {
-      --osc-accent-fg: AccentColorText;
-    }
+    --osc-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --osc-shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
   }
 }
 
 @layer oscar.widgets {
   /* ---- button ------------------------------------------------------------ */
+  /* Off is shadcn's outline button; on is its default, filled button. */
 
   button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: var(--osc-touch);
-    min-height: var(--osc-touch);
-    padding: 0 16px;
+    gap: 8px;
+    min-height: var(--osc-control-height);
+    padding: 0 24px;
     border: 1px solid var(--osc-border);
     border-radius: var(--osc-radius);
-    background-color: var(--osc-control);
-    color: var(--osc-fg);
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-xs);
+    color: var(--osc-foreground);
     font-family: var(--osc-font);
     font-size: var(--osc-font-size);
     font-weight: 500;
-    line-height: 1.2;
+    line-height: 1.25;
+    white-space: nowrap;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
     /* Removes the tap delay without giving up scrolling past the button. */
     touch-action: manipulation;
-    transition: background-color 0.12s, border-color 0.12s, color 0.12s, transform 0.06s;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
   }
 
   button:hover {
-    background-color: var(--osc-control-hover);
-  }
-
-  button:active {
-    background-color: var(--osc-control-pressed);
-    transform: scale(0.97);
+    background-color: var(--osc-muted);
   }
 
   button:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--osc-accent) 40%, transparent);
+    box-shadow: 0 0 0 3px var(--osc-ring);
   }
 
   /* On: a toggle that is on, or a momentary button while it is held. The
-     widget sets this class; filled with the accent so it reads across a dark
-     room. */
+     widget sets this class. */
   button.toggle,
   button.toggle:hover {
-    border-color: var(--osc-accent);
-    background-color: var(--osc-accent);
-    color: var(--osc-accent-fg);
+    border-color: var(--osc-primary);
+    background-color: var(--osc-primary);
+    color: var(--osc-primary-foreground);
   }
 
   /* ---- slider ------------------------------------------------------------ */
-  /* The filled part of the track follows --oscar-fill, which the slider widget
-     keeps up to date: a native range input has no way to style "the part
-     before the thumb" in Chromium or WebKit. */
+  /* shadcn's slider: a thin muted track, the covered part in primary, a white
+     thumb with a primary edge. The covered part follows --oscar-fill, which
+     the slider widget keeps up to date: a native range input has no way to
+     style "the part before the thumb" in Chromium or WebKit. */
 
   input[type="range"] {
     --oscar-fill: 0%;
     width: 220px;
-    height: var(--osc-touch);
+    height: var(--osc-control-height);
     margin: 0;
     background: transparent;
     cursor: pointer;
@@ -138,8 +123,8 @@
     border-radius: 999px;
     background: linear-gradient(
       to right,
-      var(--osc-accent) var(--oscar-fill),
-      var(--osc-track) var(--oscar-fill)
+      var(--osc-primary) var(--oscar-fill),
+      var(--osc-muted) var(--oscar-fill)
     );
   }
 
@@ -147,45 +132,47 @@
     width: var(--osc-thumb);
     height: var(--osc-thumb);
     margin-top: calc((var(--osc-track-size) - var(--osc-thumb)) / 2);
-    border: 2px solid var(--osc-accent);
+    border: 1px solid var(--osc-primary);
     border-radius: 50%;
-    background: var(--osc-fg);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    background: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+    transition: box-shadow 0.15s;
     -webkit-appearance: none;
     appearance: none;
   }
 
+  input[type="range"]:hover::-webkit-slider-thumb,
   input[type="range"]:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--osc-accent) 40%, transparent);
+    box-shadow: var(--osc-shadow-sm), 0 0 0 4px var(--osc-ring);
   }
 
   /* Firefox has a real progress element, so it needs no --oscar-fill. */
   input[type="range"]::-moz-range-track {
     height: var(--osc-track-size);
     border-radius: 999px;
-    background: var(--osc-track);
+    background: var(--osc-muted);
   }
 
   input[type="range"]::-moz-range-progress {
     height: var(--osc-track-size);
     border-radius: 999px;
-    background: var(--osc-accent);
+    background: var(--osc-primary);
   }
 
   input[type="range"]::-moz-range-thumb {
     width: var(--osc-thumb);
     height: var(--osc-thumb);
-    border: 2px solid var(--osc-accent);
+    border: 1px solid var(--osc-primary);
     border-radius: 50%;
-    background: var(--osc-fg);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    background: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
   }
 
   /* Vertical: the standard writing-mode, with direction: rtl so the value
      climbs upward -- the only direction a fader reads correctly. The orient
      attribute is what the slider widget sets. */
   input[type="range"][orient="vertical"] {
-    width: var(--osc-touch);
+    width: var(--osc-control-height);
     height: 220px;
     writing-mode: vertical-lr;
     direction: rtl;
@@ -196,8 +183,8 @@
     height: 100%;
     background: linear-gradient(
       to top,
-      var(--osc-accent) var(--oscar-fill),
-      var(--osc-track) var(--oscar-fill)
+      var(--osc-primary) var(--oscar-fill),
+      var(--osc-muted) var(--oscar-fill)
     );
   }
 
@@ -212,9 +199,10 @@
   }
 
   /* ---- XY pad ------------------------------------------------------------ */
-  /* The handle is a pseudo-element, not a child: a child would swallow the
-     drag the way a button's label once did. It is drawn exactly like the
-     slider thumb, so a layout mixing the two reads as one instrument. */
+  /* A light card in shadcn's manner, with a handle drawn exactly like the
+     slider thumb so a layout mixing the two reads as one instrument. The
+     handle is a pseudo-element, not a child: a child would swallow the drag
+     the way a button's label once did. */
 
   .oscar-xypad {
     --oscar-x: 0%;
@@ -223,8 +211,9 @@
     width: 220px;
     height: 220px;
     border: 1px solid var(--osc-border);
-    border-radius: var(--osc-radius);
-    background-color: var(--osc-control);
+    border-radius: calc(var(--osc-radius) + 4px);
+    background-color: var(--osc-subtle);
+    box-shadow: var(--osc-shadow-xs);
     cursor: crosshair;
     /* Without this a finger drag scrolls the page instead of moving the handle. */
     touch-action: none;
@@ -238,10 +227,10 @@
     width: var(--osc-thumb);
     height: var(--osc-thumb);
     margin: calc(var(--osc-thumb) / -2) 0 0 calc(var(--osc-thumb) / -2);
-    border: 2px solid var(--osc-accent);
+    border: 1px solid var(--osc-primary);
     border-radius: 50%;
-    background: var(--osc-fg);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    background: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
     pointer-events: none;
   }
 }

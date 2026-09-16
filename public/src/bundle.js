@@ -12314,29 +12314,6 @@ function initGrape(ipServer, socketPort) {
     },
   });
 
-  // ---- widget theme ------------------------------------------------------
-  // The widgets draw with tokens (--osc-*, in assets/css/toggle.css). This
-  // section edits them for whatever is selected: one widget restyles that
-  // widget, and the Body restyles the whole surface, because the tokens
-  // cascade. The values land in the component's own CSS rule, which is why
-  // they beat the layered defaults.
-  editor.StyleManager.addSector(
-    "oscar-theme",
-    {
-      name: "Theme",
-      open: false,
-      properties: [
-        { name: "Accent", property: "--osc-accent", type: "color", default: "" },
-        { name: "Control", property: "--osc-control", type: "color", default: "" },
-        { name: "Text", property: "--osc-fg", type: "color", default: "" },
-        { name: "Border", property: "--osc-border", type: "color", default: "" },
-        { name: "Track", property: "--osc-track", type: "color", default: "" },
-        { name: "Corner radius", property: "--osc-radius", type: "number", units: ["px"], min: 0, default: "" },
-      ],
-    },
-    { at: 0 }
-  );
-
   var pn = editor.Panels;
   var modal = editor.Modal;
 
