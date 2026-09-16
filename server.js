@@ -343,7 +343,12 @@ httpServer.on("error", (err) => {
   throw err;
 });
 
+let shuttingDown = false;
+
 function shutdown() {
+  // The app's request and its fallback signal can both arrive.
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log("\nShutting OSCAR down...");
   udpLan.close();
   udpLocal.close();
@@ -360,5 +365,17 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// The packaged app forks this file with an IPC channel and cannot deliver a
+// signal on Windows (its kill() is TerminateProcess, which runs nothing
+// here), so it asks over the channel instead. The channel closing without a
+// request means the app is gone; shutting down then releases the rig as a
+// quit would and leaves no orphaned server holding the ports.
+if (process.send) {
+  process.on("message", (msg) => {
+    if (msg && msg.type === "shutdown") shutdown();
+  });
+  process.on("disconnect", shutdown);
+}
 
 module.exports = { app, httpServer, io };

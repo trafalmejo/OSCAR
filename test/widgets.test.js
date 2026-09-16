@@ -136,7 +136,7 @@ test("a widget that can drive DMX offers Output and the DMX settings, hidden unt
       assert.ok(field, widget.name + " has " + key);
       assert.deepStrictEqual(field.showIf, { key: "transport", in: ["dmx", "both"] }, widget.name + "." + key + " is shown only for DMX");
     }
-    for (const key of ["dmxProtocol", "dmxUniverse", "dmxChannel", "dmxCount"]) {
+    for (const key of DMX_KEYS) {
       assert.strictEqual(typeof widget.checks[key], "function", widget.name + " checks " + key);
     }
   }

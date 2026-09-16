@@ -15,15 +15,27 @@ const assert = require("node:assert");
 const { register, toTrait, matches, visibleFields, revealKeys } = require("../public/src/adapters/grapesjs");
 const { WIDGETS } = require("../lib/widgets");
 const { slider } = require("../lib/widgets/slider");
+const { field } = require("../lib/widgets/fields");
 const { fakeElement } = require("./helpers/fake-dom");
 
 function fakeEditor() {
   const types = {};
   const blocks = {};
+  const handlers = {};
   return {
     types,
     blocks,
     sendOSC: null,
+    on(event, fn) {
+      (handlers[event] = handlers[event] || []).push(fn);
+    },
+    trigger(event, ...args) {
+      for (const fn of handlers[event] || []) fn(...args);
+    },
+    /** What GrapesJS announces when someone deletes a component, before its views go. */
+    deleting(component, opts) {
+      this.trigger("component:remove:before", component, () => {}, opts || {});
+    },
     DomComponents: {
       addType(name, definition) {
         types[name] = definition;
@@ -53,6 +65,12 @@ function fakeModel(config, id) {
     },
     previous() {
       return undefined;
+    },
+    children: [],
+    /** Visit this component and everything inside it, as GrapesJS's onAll does. */
+    onAll(fn) {
+      fn(this);
+      for (const child of this.children) child.onAll(fn);
     },
     on(event, fn) {
       (handlers[event] = handlers[event] || []).push(fn);
@@ -261,14 +279,101 @@ test("deleting a widget that can drive DMX hands its channels back; one that can
   register(slider)(editor, {});
   const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults), "igone") };
   editor.types[slider.name].view.onRender.call(view);
+  // In the order GrapesJS does it: Component.remove() announces itself on the
+  // editor, then the collection lets go and the view is removed.
+  editor.deleting(view.model);
   editor.types[slider.name].view.removed.call(view);
   assert.deepStrictEqual(stopped, ["igone"]);
 
   register(Object.assign({}, display, { name: "oscar-display-probe-2" }))(editor, {});
   const probe = { el: fakeElement(), model: fakeModel({}, "iprobe") };
   editor.types["oscar-display-probe-2"].view.onRender.call(probe);
+  editor.deleting(probe.model);
   editor.types["oscar-display-probe-2"].view.removed.call(probe);
   assert.deepStrictEqual(stopped, ["igone"], "a widget with dmx: false never had channels");
+});
+
+test("a surface being reloaded, or a widget being moved, keeps every channel where it is", () => {
+  // Opening a project and "Push to preview" both tear the whole surface down
+  // and build it again, removing every view without anyone deleting anything.
+  // A release there would black the stage out under a tablet mid-show, so
+  // the only removal that releases is one Component.remove() announced.
+  const editor = fakeEditor();
+  const stopped = [];
+  editor.stopDMX = (source) => stopped.push(source);
+  register(slider)(editor, {});
+  const type = editor.types[slider.name];
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }), "ilive") };
+
+  type.view.onRender.call(view);
+  type.view.removed.call(view);
+  assert.deepStrictEqual(stopped, [], "a reload is not a deletion");
+
+  // A move is a remove-and-append that GrapesJS flags as temporary.
+  type.view.onRender.call(view);
+  editor.deleting(view.model, { temporary: 1 });
+  type.view.removed.call(view);
+  assert.deepStrictEqual(stopped, [], "a move is not a deletion");
+
+  type.view.onRender.call(view);
+  editor.deleting(view.model);
+  type.view.removed.call(view);
+  assert.deepStrictEqual(stopped, ["ilive"], "a deletion afterwards still releases");
+
+  // The mark is spent: the next reload of a widget with the same identity
+  // holds again.
+  type.view.onRender.call(view);
+  type.view.removed.call(view);
+  assert.deepStrictEqual(stopped, ["ilive"]);
+});
+
+test("the page's own wrapper going, which is how a load tears the surface down, deletes nothing", () => {
+  // GrapesJS removes the wrapper (the <body>) through Component.remove() on
+  // every project load, the one such announcement a load makes. Seen live:
+  // marking its descendants there released every widget on "Push to preview".
+  const editor = fakeEditor();
+  const stopped = [];
+  editor.stopDMX = (source) => stopped.push(source);
+  register(slider)(editor, {});
+  const type = editor.types[slider.name];
+
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }), "iheld") };
+  const body = fakeModel({ type: "wrapper" }, "ibody");
+  body.children = [view.model];
+  type.view.onRender.call(view);
+
+  editor.deleting(body, { root: true });
+  type.view.removed.call(view);
+  assert.deepStrictEqual(stopped, []);
+});
+
+test("deleting a container takes the widgets inside it with it", () => {
+  const editor = fakeEditor();
+  const stopped = [];
+  editor.stopDMX = (source) => stopped.push(source);
+  register(slider)(editor, {});
+  const type = editor.types[slider.name];
+
+  const inner = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }), "iinner") };
+  const box = fakeModel({}, "ibox");
+  box.children = [inner.model];
+  type.view.onRender.call(inner);
+
+  editor.deleting(box);
+  type.view.removed.call(inner);
+  assert.deepStrictEqual(stopped, ["iinner"]);
+});
+
+test("a host with no events cannot tell a deletion from a reload, and holds", () => {
+  const editor = fakeEditor();
+  delete editor.on;
+  const stopped = [];
+  editor.stopDMX = (source) => stopped.push(source);
+  register(slider)(editor, {});
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults), "ideaf") };
+  editor.types[slider.name].view.onRender.call(view);
+  editor.types[slider.name].view.removed.call(view);
+  assert.deepStrictEqual(stopped, []);
 });
 
 test("switching Output away from DMX hands the channels back; switching to it does not", () => {
@@ -310,6 +415,31 @@ test("the DMX settings are traits only while Output asks for DMX, and follow an 
   assert.strictEqual(visibleFields(slider, { transport: "osc" }).length, slider.fields.length - 5);
   assert.strictEqual(visibleFields(slider, { transport: "dmx" }).length, slider.fields.length);
   assert.strictEqual(visibleFields(slider, {}).length, slider.fields.length - 5, "no transport at all reads as OSC");
+});
+
+test("the panel follows a setting whose states show different fields of the same number", () => {
+  // Whether to rebuild is judged by which fields the panel holds, not how
+  // many: two states of one setting can each show one field, a different one.
+  const probe = Object.assign({}, display, {
+    name: "oscar-mode-probe",
+    defaults: { mode: "x", a: 1, b: 2 },
+    fields: [
+      field("mode", "Mode", "select", { options: [{ id: "x", name: "X" }, { id: "y", name: "Y" }] }),
+      field("a", "A", "number", { showIf: { key: "mode", in: ["x"] } }),
+      field("b", "B", "number", { showIf: { key: "mode", in: ["y"] } }),
+    ],
+  });
+  const type = registered(probe);
+  const names = (traits) => traits.map((t) => t.name);
+  assert.deepStrictEqual(names(type.model.defaults.traits), ["mode", "a"]);
+
+  const model = fakeModel({ mode: "x", a: 1, b: 2 });
+  type.model.init.call(model);
+  assert.deepStrictEqual(names(model.get("traits")), ["mode", "a"]);
+  model.edit("mode", "y");
+  assert.deepStrictEqual(names(model.get("traits")), ["mode", "b"]);
+  model.edit("mode", "x");
+  assert.deepStrictEqual(names(model.get("traits")), ["mode", "a"]);
 });
 
 test("a widget with nothing conditional is left alone: its trait list is never rebuilt", () => {

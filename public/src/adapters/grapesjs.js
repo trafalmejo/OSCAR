@@ -34,6 +34,18 @@ function toTrait(field) {
   return trait;
 }
 
+/** The fields a trait list holds, in order, as one comparable string. */
+function traitKeys(traits) {
+  if (!traits || typeof traits.map !== "function") return null;
+  return traits
+    .map(function (trait) {
+      // A GrapesJS trait is a model once the component has built it, and a
+      // plain descriptor before.
+      return trait.key || (typeof trait.get === "function" ? trait.get("name") : trait.name);
+    })
+    .join(" ");
+}
+
 /** Read every configured value off a component, for validators that need context. */
 function configOf(model, definition) {
   var config = {};
@@ -75,6 +87,49 @@ function changeEvent(keys) {
       return "change:" + key;
     })
     .join(" ");
+}
+
+/**
+ * Which components are on their way out because someone deleted them.
+ *
+ * GrapesJS removes a widget's view for more reasons than deletion: opening a
+ * project, and the preview page taking a push, tear the whole surface down
+ * and build the new one (an undo does the same). Releasing DMX on every one
+ * of those would black the stage out on "Push to preview" while a tablet is
+ * mid-show. Only an actual deletion -- the trash icon, the Delete key, a
+ * script calling remove() -- goes through Component.remove(), which announces
+ * itself with component:remove:before; a load resets the wrapper's children
+ * and never does -- what it does remove that way is the wrapper itself, the
+ * page's body, and the whole surface going is not a widget being deleted.
+ * A move is a remove-and-append flagged `temporary`, so it does not count
+ * either. The set is per editor and filled once, however many widgets
+ * register against it.
+ */
+var deletionsByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
+
+function deletionsOf(editor) {
+  var marked = deletionsByEditor && deletionsByEditor.get(editor);
+  if (marked) return marked;
+
+  marked = new WeakSet();
+  if (deletionsByEditor) deletionsByEditor.set(editor, marked);
+
+  // A host without events cannot tell a deletion from a reload, and holding
+  // the rig is the safe answer to not knowing.
+  if (typeof editor.on !== "function") return marked;
+
+  editor.on("component:remove:before", function (component, remove, opts) {
+    if (!component || (opts && opts.temporary)) return;
+    if (typeof component.get === "function" && component.get("type") === "wrapper") return;
+    var mark = function (model) {
+      marked.add(model);
+    };
+    // A deleted container takes the widgets inside it with it.
+    if (typeof component.onAll === "function") component.onAll(mark);
+    else mark(component);
+  });
+
+  return marked;
 }
 
 /**
@@ -185,6 +240,7 @@ function rewritten(view) {
 function register(definition) {
   return function (editor, options) {
     var ipserver = (options && options.ipserver) || "localhost";
+    var deletions = definition.dmx ? deletionsOf(editor) : null;
 
     // A widget that talks to the network starts pointed at this machine. One
     // that does not has no ip setting, and must not carry a hidden one.
@@ -221,13 +277,14 @@ function register(definition) {
           // read back from a saved project may be set to DMX already, and
           // switching Output has to bring the right half of the panel with
           // it. GrapesJS rebuilds its traits on change:traits and redraws the
-          // panel itself, so the list is only ever set when it would differ.
+          // panel itself, so the list is only ever set when it would differ --
+          // judged by which fields it holds, since two states of a widget can
+          // show the same number of different fields.
           var reveals = revealKeys(definition);
           if (reveals.length) {
             var refresh = function () {
               var wanted = visibleFields(definition, configOf(model, definition));
-              var current = model.get("traits");
-              if (current && current.length === wanted.length) return;
+              if (traitKeys(model.get("traits")) === traitKeys(wanted)) return;
               model.set("traits", wanted.map(toTrait));
             };
             refresh();
@@ -292,10 +349,15 @@ function register(definition) {
         removed: function () {
           // DMX is a stream: a deleted widget that was driving channels hands
           // them back, or the rig holds its last look with nothing on the
-          // surface able to change it. (A browser merely disconnecting does
-          // not release anything; that is the server's rule, and a phone
-          // locking its screen must not black out a show.)
-          if (definition.dmx && editor.stopDMX) editor.stopDMX(this.model.getId());
+          // surface able to change it. Only a deletion, though (see
+          // deletionsOf): a surface being reloaded keeps every channel where
+          // it is, and so does a browser merely disconnecting -- that is the
+          // server's rule, and a phone locking its screen must not black out
+          // a show.
+          if (deletions && deletions.has(this.model)) {
+            deletions.delete(this.model);
+            if (editor.stopDMX) editor.stopDMX(this.model.getId());
+          }
 
           if (!this.oscarDetach) return;
           this.oscarDetach();

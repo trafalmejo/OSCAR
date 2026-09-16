@@ -3,12 +3,14 @@
 const path = require("path");
 const { fork } = require("child_process");
 const { app, BrowserWindow, Menu, shell, dialog } = require("electron");
+const { stopServer } = require("./lib/stop-server");
 
 const START_TIMEOUT_MS = 30000;
 
 let mainWindow = null;
 let serverProcess = null;
 let serverExited = false;
+let stopping = null;
 
 // Two OSCAR windows would fight over port 8080, so hand focus to the running
 // instance instead of starting a second server.
@@ -127,12 +129,22 @@ app.on("activate", () => {
 
 app.on("window-all-closed", () => app.quit());
 
-app.on("before-quit", stopServer);
-app.on("will-quit", stopServer);
-
-function stopServer() {
-  if (serverProcess && !serverProcess.killed) {
-    serverProcess.kill();
+// The server releases the DMX channels it drives as it shuts down, and needs
+// to be asked rather than killed for that to happen (lib/stop-server.js).
+// Electron will not wait on its own, so the first quit is held back until
+// the server has gone and then asked for again.
+app.on("before-quit", (event) => {
+  if (!serverProcess) return;
+  event.preventDefault();
+  if (stopping) return;
+  stopping = stopServer(serverProcess).then(() => {
     serverProcess = null;
-  }
-}
+    app.quit();
+  });
+});
+
+// Nothing should reach here with a server still running; if it does, the
+// kill is the last resort it always was.
+app.on("will-quit", () => {
+  if (serverProcess) serverProcess.kill();
+});

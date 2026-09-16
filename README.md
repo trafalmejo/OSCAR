@@ -223,7 +223,7 @@ appear below the others:
 | Setting | Meaning |
 | --- | --- |
 | **DMX protocol** | Art-Net (UDP 6454) or sACN / E1.31 (UDP 5568) |
-| **DMX node** | The node's address. Blank broadcasts on Art-Net and multicasts on sACN, which every node on the network hears |
+| **DMX node** | The node's address. Blank broadcasts on Art-Net and multicasts on sACN, which every node on that network hears |
 | **DMX universe** | `0`-`32767` on Art-Net (the 15-bit Port-Address), `1`-`63999` on sACN |
 | **DMX channel** | The first channel of the widget's block, `1`-`512` |
 | **DMX channels** | How many channels from there |
@@ -255,6 +255,14 @@ must never black a rig out.
 Packets leave from any free port (`OSCAR_DMX_PORT`), so OSCAR can run next to
 lighting software that itself receives Art-Net on 6454. If the port you pin
 cannot be opened, OSCAR says so at startup and everything else still works.
+
+On a computer with more than one network connection -- Wi-Fi for the internet
+and a cable to the lighting switch, say, or a virtual machine's adapter -- a
+blank node is not enough: the operating system puts a broadcast on one
+connection only, usually the one with internet on it, and the node on the
+other never hears it. Name the node's address, or the lighting network's own
+broadcast address (`2.255.255.255` or `10.255.255.255` for the ranges Art-Net
+nodes ship on), and the packets go the right way.
 
 ## Running a show
 

@@ -151,6 +151,20 @@ test("the DMX checks refuse what the wire would refuse, while there is still a h
   assert.match(checks.dmxCount(3, { dmxChannel: 511 }), /past the end/);
   assert.match(checks.dmxCount("", { dmxChannel: 1 }), /between/);
   assert.strictEqual(dmxChecks(1).dmxCount(1, { dmxChannel: 1 }), null);
+
+  // A node the wire would refuse, or one no packet could reach, is refused
+  // in the panel: the server's only complaint is a console line the packaged
+  // app never shows, and a widget driving nothing looks like a broken light.
+  assert.strictEqual(checks.dmxHost("", {}), null, "blank is the protocol's default");
+  assert.strictEqual(checks.dmxHost(undefined, {}), null);
+  assert.strictEqual(checks.dmxHost(" 192.168.1.20 ", {}), null);
+  assert.strictEqual(checks.dmxHost("2.255.255.255", {}), null, "a subnet's broadcast");
+  assert.strictEqual(checks.dmxHost("node-1.local", {}), null);
+  assert.match(checks.dmxHost("192.168.1.300", {}), /DMX node/, "digits and dots must be an IPv4 address");
+  assert.match(checks.dmxHost("1.2.3", {}), /DMX node/);
+  assert.match(checks.dmxHost("bad host", {}), /DMX node/);
+  assert.match(checks.dmxHost("node_1", {}), /DMX node/);
+  assert.match(checks.dmxHost(12, {}), /DMX node/);
 });
 
 test("the DMX defaults name a universe both protocols accept, and a block as wide as the widget", () => {
