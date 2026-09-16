@@ -114,3 +114,12 @@ test("the canvas body takes the surface's style, and loses it when there is none
   styles.copyToBody({ id: "irqz" }, body);
   assert.deepStrictEqual(attrs, {});
 });
+
+test("Reset to style is offered on the widgets and on the body, and nowhere else", () => {
+  for (const type of ["oscar-button", "oscar-slider", "oscar-xypad", "wrapper"]) {
+    assert.strictEqual(styles.offersReset(type), true, type);
+  }
+  for (const type of ["text", "image", "default", "", undefined]) {
+    assert.strictEqual(styles.offersReset(type), false, String(type));
+  }
+});

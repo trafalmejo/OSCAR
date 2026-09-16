@@ -869,11 +869,11 @@ function initGrape(ipServer, socketPort) {
     component.setStyle(widgetStyles.withoutAppearance(component.getStyle()));
   });
 
-  // Offered on OSCAR's own widgets only, in the toolbar over a selection.
-  // GrapesJS never saves a component's toolbar into the project, so this
-  // editor-only button cannot leak into a saved file.
+  // Offered on OSCAR's own widgets and on the body, in the toolbar over a
+  // selection. GrapesJS never saves a component's toolbar into the project,
+  // so this editor-only button cannot leak into a saved file.
   editor.on("component:selected", function (component) {
-    if (!/^oscar-/.test(component.get("type") || "")) return;
+    if (!widgetStyles.offersReset(component.get("type"))) return;
     var toolbar = component.get("toolbar") || [];
     var present = toolbar.some(function (item) {
       return item.command === "oscar-reset-style";
