@@ -11853,6 +11853,8 @@ function register(definition) {
 
     var defaults = Object.assign({}, definition.defaults, { ip: ipserver });
 
+    var ownClass = definition.attributes && definition.attributes.class;
+
     editor.DomComponents.addType(definition.name, {
       isComponent: function (el) {
         if (matches(definition, el)) return { type: definition.name };
@@ -11875,6 +11877,26 @@ function register(definition) {
 
         init: function () {
           var model = this;
+
+          // A widget's own class is how its stylesheet finds it and how a
+          // project's HTML is recognised, not something to style through.
+          // GrapesJS styles a component through its classes whenever it has
+          // any, so every edit to one XY pad -- a resize, a move, a colour --
+          // went to the rule all pads share, and they changed together.
+          // Private keeps the class on the element but out of styling, so
+          // edits land on this one component; protected stops it being
+          // removed from the Classes list by accident.
+          //
+          // Flagged here, per component, rather than once when the plugin
+          // loads: loading a project creates the selector afresh, and a flag
+          // set on the earlier one is lost with it.
+          if (ownClass) {
+            model.get("classes").forEach(function (selector) {
+              if (selector.get("name") === ownClass) {
+                selector.set({ private: true, protected: true });
+              }
+            });
+          }
 
           if (definition.text) {
             model.on("change:" + definition.text, function () {
