@@ -81,3 +81,39 @@ for (const [template, entry] of Object.entries(PAGES)) {
     assert.deepStrictEqual(unresolved, [], "plugins no loaded script registers");
   });
 }
+
+// OSCAR runs at venues with no internet. A font or stylesheet fetched from a
+// CDN would fail there without an error, and every measurement in the theme
+// would shift to a fallback face.
+for (const template of Object.keys(PAGES)) {
+  test(template + ": loads every stylesheet from OSCAR itself, never from the internet", () => {
+    const remote = [...read(template).matchAll(/<link[^>]*\bhref="([^"]+)"/g)]
+      .map((m) => m[1])
+      .filter((ref) => /^(https?:)?\/\//.test(ref));
+    assert.deepStrictEqual(remote, [], "stylesheets loaded from another host");
+  });
+
+  test(template + ": the theme loads after the vendor stylesheets, so its tokens win", () => {
+    const links = [...read(template).matchAll(/<link[^>]*\bhref="([^"]+)"/g)].map((m) => m[1]);
+    const theme = links.indexOf("css/oscar_theme.css");
+    assert.ok(theme !== -1, "oscar_theme.css is loaded");
+    const vendor = links.filter((ref) => ref.startsWith("node_modules/"));
+    for (const ref of vendor) {
+      assert.ok(links.indexOf(ref) < theme, ref + " loads before the theme");
+    }
+  });
+
+  // GrapesJS injects Font Awesome from a CDN at runtime unless told not to,
+  // so the template test above cannot see it. Every tablet on the preview
+  // page would make that request, and it fails without a word offline.
+  test(template + ": tells GrapesJS not to fetch its icon font from the internet", () => {
+    assert.match(read(PAGES[template]), /cssIcons:\s*""/);
+  });
+
+  // Bootstrap was replaced by the theme: its reset set the page's fonts,
+  // colours and line-height, and every themed rule had to fight it.
+  test(template + ": does not load Bootstrap, Popper or bootstrap-table", () => {
+    const refs = assetRefs(template).join("\n");
+    assert.doesNotMatch(refs, /bootstrap|popper/i);
+  });
+}

@@ -1,0 +1,677 @@
+/*
+ * OSCAR's editor theme: one palette, decided once.
+ *
+ * Colours are Radix Colors 3.0 (gray and ruby, dark scales), with the accent's
+ * solid step replaced by the brand colour from the logo -- Radix's own advice
+ * for bringing a brand into a scale. Type is Inter. Radii, control heights and
+ * focus rings follow shadcn/ui's proportions.
+ *
+ * Everything below the tokens reads them: GrapesJS's chrome through its own
+ * --gjs-* variables, OSCAR's dialogs through the --o-* ones. Change a colour
+ * here, never in a rule.
+ *
+ * Canvas widgets are deliberately not themed from here. They use the viewer's
+ * own AccentColor so a slider matches the tablet it runs on -- see toggle.css.
+ */
+
+:root {
+  /* Radix Colors 3.0 -- gray, dark */
+  --gray-1: #111111;
+  --gray-2: #191919;
+  --gray-3: #222222;
+  --gray-4: #2a2a2a;
+  --gray-5: #313131;
+  --gray-6: #3a3a3a;
+  --gray-7: #484848;
+  --gray-8: #606060;
+  --gray-9: #6e6e6e;
+  --gray-10: #7b7b7b;
+  --gray-11: #b4b4b4;
+  --gray-12: #eeeeee;
+
+  /* Radix Colors 3.0 -- ruby, dark. The closest Radix scale to the brand. */
+  --ruby-3: #3a141e;
+  --ruby-4: #4e1325;
+  --ruby-6: #6f2539;
+  --ruby-7: #883447;
+  --ruby-11: #ff949d;
+
+  /* Radix Colors 3.0 -- red, dark. Only for destroying things: a delete must
+     not look like the brand, and the brand is already a red. */
+  --red-9: #e5484d;
+  --red-11: #ff9592;
+
+  /* The logo is a gradient from orange-red to pink-red, measured off the icon.
+     The pink end is the brand colour. */
+  --brand: #ff3663;
+  --brand-from: #ff623a;
+  --brand-gradient: linear-gradient(90deg, var(--brand-from), var(--brand));
+
+  /* What the rules use. */
+  --o-bg: var(--gray-1);
+  --o-panel: var(--gray-2);
+  --o-surface: var(--gray-3);
+  --o-surface-hover: var(--gray-4);
+  --o-border: var(--gray-6);
+  --o-border-strong: var(--gray-7);
+  --o-text: var(--gray-12);
+  --o-text-muted: var(--gray-11);
+  --o-text-faint: var(--gray-10);
+  --o-accent: var(--brand);
+  --o-accent-subtle: var(--ruby-3);
+  --o-accent-subtle-hover: var(--ruby-4);
+  --o-accent-border: var(--ruby-7);
+  --o-accent-text: var(--ruby-11);
+  /* Text and icons on the brand are white, the logo's own treatment. A
+     trade-off, chosen knowingly: white measures 3.5:1 on the pink end and
+     3.0:1 on the orange end, under the 4.5:1 guideline for small text, where
+     near-black measured 5.4:1 and 6.4:1. Button text is set at 600 to help. */
+  --o-on-accent: #ffffff;
+  --o-danger: var(--red-11);
+  --o-danger-subtle: color-mix(in srgb, var(--red-9) 16%, transparent);
+
+  --o-font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --o-font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  --o-text-xs: 0.75rem;
+  --o-text-sm: 0.8125rem;
+  --o-text-base: 0.875rem;
+
+  --o-radius: 0.5rem;
+  --o-radius-md: calc(var(--o-radius) - 2px);
+  --o-radius-sm: calc(var(--o-radius) - 4px);
+  --o-control: 2.25rem;
+  /* The size OSCAR's own widget icons were drawn at. */
+  --o-block-icon: 48px;
+  --o-ring: 0 0 0 3px color-mix(in srgb, var(--o-accent) 30%, transparent);
+  --o-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+
+  /* GrapesJS 0.23 draws its whole chrome from these. What each one reaches was
+     read off grapes.min.css rather than guessed from the names. */
+  --gjs-primary-color: var(--o-panel); /* panels */
+  --gjs-main-color: var(--o-panel); /* menus, select options */
+  --gjs-secondary-color: var(--o-text-muted); /* panel text and icons */
+  --gjs-tertiary-color: var(--o-accent);
+  --gjs-quaternary-color: var(--o-accent); /* active icons */
+  --gjs-font-color: var(--o-text-muted);
+  --gjs-font-color-active: var(--o-text);
+  /* Both input wells and divider lines, 29 rules between them. It is set dark
+     for the wells, and the dividers get real borders further down. */
+  --gjs-main-dark-color: var(--o-bg);
+  /* Header rows: separated by a line, not filled. */
+  --gjs-secondary-dark-color: transparent;
+  --gjs-main-light-color: var(--o-surface-hover);
+  --gjs-secondary-light-color: var(--o-text-muted);
+  --gjs-soft-light-color: var(--o-surface);
+  --gjs-light-border: var(--o-border);
+  --gjs-dark-text-shadow: var(--o-border);
+  --gjs-arrow-color: var(--o-text-muted);
+  /* Despite the name, this is the selection outline and the floating toolbar
+     on the canvas. --gjs-color-highlight only colours a helper class. */
+  --gjs-color-blue: var(--o-accent);
+  --gjs-color-highlight: var(--o-accent);
+  --gjs-color-red: var(--red-9);
+  --gjs-placeholder-background-color: var(--o-accent);
+  --gjs-main-font: var(--o-font);
+  --gjs-font-size: var(--o-text-sm);
+}
+
+/* ---- base ---------------------------------------------------------------- */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+/* Bootstrap's reset used to set these, and the editor's layout was built on
+   them; keep them now that Bootstrap is gone. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+body {
+  background: var(--o-bg);
+  color: var(--o-text);
+  font-family: var(--o-font);
+  font-size: var(--o-text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scrollbar-color: var(--gray-7) transparent;
+}
+
+::selection {
+  background: var(--ruby-6);
+  color: var(--o-text);
+}
+
+a {
+  color: var(--o-accent);
+}
+
+/* ---- primitives: OSCAR's own dialogs ------------------------------------- */
+
+.o-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: var(--o-control);
+  padding: 0 1rem;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  background: var(--o-surface);
+  color: var(--o-text);
+  font-family: var(--o-font);
+  font-size: var(--o-text-sm);
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, filter 0.15s;
+}
+
+.o-btn:hover {
+  background: var(--o-surface-hover);
+  border-color: var(--o-border-strong);
+  color: var(--o-text);
+  text-decoration: none;
+}
+
+.o-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--o-ring);
+}
+
+.o-btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* The one filled button on a screen: the action the dialog exists for. */
+.o-btn-primary,
+.o-btn-primary:hover {
+  border-color: transparent;
+  background: var(--brand-gradient);
+  color: var(--o-on-accent);
+  font-weight: 600;
+}
+
+.o-btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.o-input {
+  height: var(--o-control);
+  width: 100%;
+  min-width: 0;
+  padding: 0 0.75rem;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  background: var(--o-surface);
+  color: var(--o-text);
+  font-family: var(--o-font);
+  font-size: var(--o-text-sm);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.o-input::placeholder {
+  color: var(--o-text-faint);
+}
+
+.o-input:hover {
+  border-color: var(--o-border-strong);
+}
+
+.o-input:focus {
+  outline: none;
+  border-color: var(--o-accent);
+  box-shadow: var(--o-ring);
+}
+
+.o-link {
+  color: var(--o-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--o-accent) 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+.o-link:hover {
+  color: var(--o-accent);
+  text-decoration-color: currentColor;
+}
+
+.o-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 2rem auto;
+  border: 3px solid var(--o-border);
+  border-top-color: var(--o-accent);
+  border-radius: 50%;
+  animation: o-spin 0.8s linear infinite;
+}
+
+@keyframes o-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .o-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.o-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- GrapesJS chrome ----------------------------------------------------- */
+
+/* Regions are separated by hairlines rather than drop shadows. */
+.gjs-pn-commands,
+.gjs-pn-views-container {
+  box-shadow: none;
+}
+
+.gjs-pn-commands,
+.gjs-pn-views {
+  border-bottom: 1px solid var(--o-border);
+}
+
+.gjs-pn-views-container {
+  border-left: 1px solid var(--o-border);
+}
+
+/* The four tabs over the right column: style, settings, layers, blocks.
+   GrapesJS lays them out space-between, which pins the first and last to the
+   edges and leaves wide gaps; space-around gives every tab equal room. */
+.gjs-pn-views .gjs-pn-buttons {
+  justify-content: space-around;
+}
+
+.gjs-pn-views .gjs-pn-btn {
+  margin: 0;
+}
+
+.gjs-cv-canvas {
+  background-color: var(--o-bg);
+}
+
+.gjs-pn-btn {
+  border-radius: var(--o-radius-sm);
+  transition: color 0.15s, background-color 0.15s;
+}
+
+/* Every toolbar icon at one size, centred the same way. GrapesJS's own icons
+   declare no size and fill the button, which comes to 22px; OSCAR's are drawn
+   with width="18" and sat inline on the text baseline, so Save, Load, Lock
+   and About came out 4px smaller and 2px higher than their neighbours. */
+.gjs-pn-btn svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.gjs-pn-btn:hover {
+  background-color: var(--o-surface);
+  color: var(--o-text);
+}
+
+.gjs-pn-btn.gjs-pn-active {
+  background-color: var(--o-accent-subtle);
+  box-shadow: none;
+  color: var(--o-accent);
+}
+
+/* The server address is information, not a button. GrapesJS marks it
+   disabled and fades it to half opacity, which on top of muted text made the
+   one address people need to read the hardest thing on screen to read. */
+.gjs-pn-btn.oscar-ip-label,
+.gjs-pn-btn.oscar-ip-label:hover {
+  background: none;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 1;
+  cursor: default;
+}
+
+/* A locked OSCAR that looked unlocked would be its own hazard, so the lock
+   button states its condition in colour as well as shape. */
+.gjs-pn-btn.oscar-locked,
+.gjs-pn-btn.oscar-locked:hover {
+  background-color: var(--o-accent-subtle);
+  color: var(--o-accent);
+}
+
+/* 400 is the lightest weight anywhere in the editor.
+
+   GrapesJS sets font-weight: lighter on these nine rules. Lighter is relative
+   to the parent, and Inter is a variable font that really has a 100, so every
+   one of them -- block labels, layer names, dialog text -- came out hair-thin.
+   Helvetica, which GrapesJS assumed, has no weight that light and quietly
+   stayed normal. This is the complete list from grapes.min.css 0.23.6; the
+   section headers below then raise themselves to 500. */
+.gjs-category-title,
+.gjs-layer-title,
+.gjs-block-category .gjs-title,
+.gjs-sm-sector-title,
+.gjs-trait-category .gjs-title,
+.gjs-traits-label,
+.gjs-trt-header,
+.gjs-trt-trait,
+.gjs-sm-header,
+.gjs-sm-sector,
+.gjs-block,
+.gjs-layer,
+.gjs-mdl-dialog {
+  font-weight: 400;
+}
+
+/* Section headers: blocks, settings, style manager. */
+.gjs-category-title,
+.gjs-block-category .gjs-title,
+.gjs-sm-sector-title,
+.gjs-traits-label {
+  border-bottom: 1px solid var(--o-border);
+  color: var(--o-text);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.gjs-traits-label {
+  padding: 10px 12px;
+}
+
+.gjs-block {
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  background-color: var(--o-surface);
+  box-shadow: none;
+  color: var(--o-text-muted);
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.gjs-block:hover {
+  border-color: var(--o-border-strong);
+  background-color: var(--o-surface-hover);
+  box-shadow: none;
+  color: var(--o-text);
+}
+
+/* Every block icon at one size, whatever its SVG declares. OSCAR's widgets
+   declare 48px; the Basic and Extra plugins declare no size at all, so their
+   icons stretched to fill the tile at 112px and made those tiles taller than
+   the rest. custom-code also sets an inline height, hence !important. */
+.gjs-block svg {
+  width: var(--o-block-icon) !important;
+  height: var(--o-block-icon) !important;
+}
+
+/* GrapesJS hardcodes Helvetica here, so the variable never reaches it. */
+.gjs-block-label {
+  font-family: var(--o-font);
+  font-size: var(--o-text-xs);
+}
+
+.gjs-trt-trait {
+  padding: 4px 12px;
+}
+
+.gjs-trt-trait .gjs-label,
+.gjs-sm-label {
+  color: var(--o-text-muted);
+}
+
+.gjs-field {
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-sm);
+  background-color: var(--o-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.gjs-field:hover {
+  border-color: var(--o-border-strong);
+}
+
+.gjs-field:focus-within {
+  border-color: var(--o-accent);
+  box-shadow: var(--o-ring);
+}
+
+.gjs-field input,
+.gjs-field select,
+.gjs-field textarea {
+  color: var(--o-text);
+  font-family: var(--o-font);
+}
+
+.gjs-layer.gjs-selected .gjs-layer-item {
+  background-color: var(--o-accent-subtle);
+  color: var(--o-text);
+}
+
+.gjs-clm-tags .gjs-clm-tag {
+  border-radius: var(--o-radius-sm);
+  background-color: var(--o-accent-subtle);
+  color: var(--o-accent-text);
+}
+
+/* The floating toolbar and name badge on a selected component. */
+.gjs-toolbar {
+  border-radius: var(--o-radius-sm);
+  color: var(--o-on-accent);
+  overflow: hidden;
+}
+
+.gjs-badge {
+  border-radius: var(--o-radius-sm) var(--o-radius-sm) 0 0;
+  color: var(--o-on-accent);
+  font-family: var(--o-font);
+}
+
+/* GrapesJS still draws three icons with Font Awesome class names: the caret
+   on a collapsible section, and the eye that leaves preview mode. OSCAR no
+   longer loads Font Awesome (cssIcons is off, so nothing is fetched from a
+   CDN), so they are drawn here from inline SVG in the current text colour. */
+.gjs-caret-icon.fa-caret-right,
+.gjs-caret-icon.fa-caret-down,
+.gjs-off-prv.fa-eye-slash {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  background-color: currentColor;
+  -webkit-mask: var(--o-icon) center / contain no-repeat;
+  mask: var(--o-icon) center / contain no-repeat;
+}
+
+.gjs-caret-icon.fa-caret-right {
+  --o-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 17l5-5-5-5v10z'/%3E%3C/svg%3E");
+}
+
+.gjs-caret-icon.fa-caret-down {
+  --o-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5H7z'/%3E%3C/svg%3E");
+}
+
+.gjs-off-prv.fa-eye-slash {
+  width: 18px;
+  height: 18px;
+  --o-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M11.83 9L15 12.16V12a3 3 0 0 0-3-3h-.17m-4.3.8l1.55 1.55c-.05.21-.08.42-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53a5 5 0 0 1-5-5c0-.79.2-1.53.53-2.2M2 4.27l2.28 2.28.45.45C3.08 8.3 1.78 10 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.43.42L19.73 22 21 20.73 3.27 3M12 7a5 5 0 0 1 5 5c0 .64-.13 1.26-.36 1.82l2.93 2.93c1.5-1.25 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-4 .7l2.17 2.15C10.74 7.13 11.35 7 12 7z'/%3E%3C/svg%3E");
+}
+
+/* The code viewer in the export dialog: GrapesJS's default CodeMirror theme
+   is a purple-brown that clashes with the neutral ground. Its token colours
+   still read on this background. */
+.gjs-mdl-dialog .CodeMirror,
+.gjs-mdl-dialog .CodeMirror-gutters {
+  background-color: var(--o-bg);
+}
+
+.gjs-btn-prim {
+  border-radius: var(--o-radius-md);
+  background: var(--brand-gradient);
+  color: var(--o-on-accent);
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+/* Dialogs opened through GrapesJS: save, load, about, export, import. */
+.gjs-mdl-container {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+.gjs-mdl-dialog {
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius);
+  background-color: var(--o-panel);
+  box-shadow: var(--o-shadow);
+  color: var(--o-text);
+  text-shadow: none;
+  overflow: hidden;
+}
+
+.gjs-mdl-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--o-border);
+}
+
+.gjs-mdl-title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.gjs-mdl-btn-close {
+  top: 12px;
+  right: 14px;
+  padding: 0 6px;
+  border-radius: var(--o-radius-sm);
+  color: var(--o-text-muted);
+}
+
+.gjs-mdl-btn-close:hover {
+  background-color: var(--o-surface);
+  color: var(--o-text);
+}
+
+.gjs-mdl-content {
+  padding: 16px 20px 20px;
+  font-size: var(--o-text-base);
+}
+
+/* GrapesJS puts a dialog's custom class on the full-screen container, not on
+   the dialog, so target the dialog inside it. */
+.modal-login .gjs-mdl-dialog {
+  max-width: 600px;
+}
+
+/* ---- confirm and alert prompts (jquery-confirm) -------------------------- */
+/* The "oscar" theme is set as the default in oscar_editor.js, so every
+   $.alert and $.confirm picks this up without touching a call site. */
+
+.jconfirm.jconfirm-oscar .jconfirm-bg {
+  background-color: #000;
+  opacity: 0.7;
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box {
+  /* The width is set inline from boxWidth; this keeps it on a narrow window. */
+  max-width: calc(100vw - 32px);
+  padding: 20px 20px 16px;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius);
+  background: var(--o-panel);
+  box-shadow: var(--o-shadow);
+  color: var(--o-text);
+  font-family: var(--o-font);
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-title-c {
+  padding-bottom: 6px;
+  color: var(--o-text);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box div.jconfirm-content-pane .jconfirm-content {
+  color: var(--o-text-muted);
+  font-size: var(--o-text-base);
+  line-height: 1.5;
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons {
+  float: right;
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button {
+  height: var(--o-control);
+  margin: 0;
+  padding: 0 1rem;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  background: var(--o-surface);
+  color: var(--o-text);
+  font-family: var(--o-font);
+  font-size: var(--o-text-sm);
+  font-weight: 500;
+  text-transform: none;
+  text-shadow: none;
+  box-shadow: none;
+  transition: background-color 0.15s, border-color 0.15s, filter 0.15s;
+}
+
+/* Labels come from the option keys -- "confirm", "cancel" -- so give them the
+   sentence case the rest of the interface uses. */
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button::first-letter {
+  text-transform: uppercase;
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button:hover {
+  background: var(--o-surface-hover);
+  border-color: var(--o-border-strong);
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button:focus-visible {
+  outline: none;
+  box-shadow: var(--o-ring);
+}
+
+/* The first button is the one the prompt is asking about -- OK, confirm,
+   delete, overwrite -- so it is the filled one. */
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button:first-child,
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button:first-child:hover {
+  border-color: transparent;
+  background: var(--brand-gradient);
+  color: var(--o-on-accent);
+  font-weight: 600;
+}
+
+.jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button:first-child:hover {
+  filter: brightness(1.08);
+}

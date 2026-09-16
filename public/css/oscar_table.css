@@ -1,16 +1,177 @@
+/* The project list in the Save and Load dialogs. */
 
-  th {
-    background-color: #FF3663;
-    color: white;
-  }
-  .page-link {
-    position: relative;
-    display: block;
-    padding: .5rem .75rem;
-    margin-left: -1px;
-    line-height: 1.25;
-    color: white;
+.o-table-wrap {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
 }
-.icon{
-  color: #FF3663;
+
+.o-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--o-text-sm);
+}
+
+.o-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  border-bottom: 1px solid var(--o-border);
+  background: var(--o-surface);
+  color: var(--o-text-muted);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* Column headers are buttons, so sorting works from the keyboard too. */
+.o-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 2.25rem;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.o-sort:hover {
+  color: var(--o-text);
+}
+
+.o-sort:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--o-accent);
+}
+
+th[aria-sort="ascending"] .o-sort,
+th[aria-sort="descending"] .o-sort {
+  color: var(--o-text);
+}
+
+th[aria-sort="ascending"] .o-sort::after,
+th[aria-sort="descending"] .o-sort::after {
+  color: var(--o-accent);
+  font-size: var(--o-text-xs);
+}
+
+th[aria-sort="ascending"] .o-sort::after {
+  content: "\2191";
+}
+
+th[aria-sort="descending"] .o-sort::after {
+  content: "\2193";
+}
+
+.o-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-4);
+  color: var(--o-text);
+}
+
+.o-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.o-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.o-table tbody tr:hover {
+  background: var(--o-surface);
+}
+
+.o-table tbody tr:focus-visible {
+  outline: none;
+  background: var(--o-surface);
+  box-shadow: inset 2px 0 0 var(--o-accent);
+}
+
+.o-table tbody tr[aria-selected="true"] {
+  background: var(--o-accent-subtle);
+}
+
+.o-table tbody tr[aria-selected="true"]:hover {
+  background: var(--o-accent-subtle-hover);
+}
+
+.o-table tbody tr[aria-selected="true"] td:first-child {
+  box-shadow: inset 2px 0 0 var(--o-accent);
+}
+
+.o-table .o-num,
+.o-table .o-date {
+  color: var(--o-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.o-table .o-num {
+  text-align: right;
+}
+
+.o-table th.o-num .o-sort {
+  justify-content: flex-end;
+}
+
+.o-table .o-actions {
+  width: 1%;
+  padding: 4px 8px;
+  text-align: right;
+}
+
+.o-table .o-empty td {
+  padding: 28px 12px;
+  color: var(--o-text-muted);
+  text-align: center;
+  cursor: default;
+}
+
+.o-table tbody tr.o-empty:hover {
+  background: none;
+}
+
+/* Delete is a ghost until it is aimed at, and then it is red, not the brand:
+   the brand colour means "go", which is the wrong thing to say here. */
+.o-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--o-radius-sm);
+  background: none;
+  color: var(--o-text-faint);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.o-icon-btn:hover {
+  background: var(--o-danger-subtle);
+  color: var(--o-danger);
+}
+
+.o-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--o-ring);
+}
+
+.o-icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.o-projects-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }

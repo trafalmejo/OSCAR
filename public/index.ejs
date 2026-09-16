@@ -10,21 +10,18 @@
     <link rel="icon" href="images/favicon_color.png" />
 
     <link href="node_modules/grapesjs/dist/css/grapes.min.css" rel="stylesheet" />
-    <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="node_modules/bootstrap-table/dist/bootstrap-table.min.css" />
     <link rel="stylesheet" href="node_modules/jquery-confirm/dist/jquery-confirm.min.css" />
+    <!-- Served locally, not from Google Fonts: OSCAR runs at venues with no
+         internet, and a missing font would change every measurement. -->
+    <link rel="stylesheet" href="node_modules/@fontsource-variable/inter/index.css" />
 
-    <link href="css/oscar_colors.css" rel="stylesheet" />
+    <!-- The theme comes after the vendor stylesheets so its tokens win. -->
+    <link href="css/oscar_theme.css" rel="stylesheet" />
     <link href="css/oscar_tooltip.css" rel="stylesheet" />
-    <link href="css/oscar_login.css" rel="stylesheet" />
     <link href="css/oscar_table.css" rel="stylesheet" />
-    <link href="css/oscar_messages.css" rel="stylesheet" />
     <link href="css/oscar_update.css" rel="stylesheet" />
 
-    <!-- jQuery must come before Popper, which must come before Bootstrap. -->
     <script src="node_modules/jquery/dist/jquery.min.js"></script>
-    <script src="node_modules/popper.js/dist/umd/popper.min.js"></script>
-    <script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
 
     <script src="node_modules/socket.io-client/dist/socket.io.js"></script>
 

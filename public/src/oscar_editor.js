@@ -1,18 +1,24 @@
 window.$ = $ = window.jQuery = require("jquery");
 
-// These plugins attach themselves to whichever jQuery they are handed. The
-// bundle carries its own copy of jQuery, so they must be required here rather
-// than loaded as separate <script> tags -- otherwise they extend the page's
-// jQuery and $.alert/$.confirm/.bootstrapTable go missing on this one.
-require("bootstrap-table");
-// jquery-confirm's CommonJS build exports an initialiser instead of running
-// itself, so it has to be invoked with the jQuery it should extend.
+// jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
+// carries its own copy of jQuery, so it must be required here rather than
+// loaded as a separate <script> tag -- otherwise it extends the page's jQuery
+// and $.alert/$.confirm go missing on this one. Its CommonJS build exports an
+// initialiser instead of running itself.
 require("jquery-confirm")(window, $);
+// Every $.alert and $.confirm draws with OSCAR's theme (css/oscar_theme.css)
+// without each call site having to ask for it. jquery-confirm sizes its box
+// with Bootstrap grid classes unless told otherwise, and with Bootstrap gone
+// those classes have no width, so a prompt stretched across the whole screen.
+window.jconfirm.defaults = { theme: "oscar", useBootstrap: false, boxWidth: "420px" };
 
 // GrapesJS 0.21+ no longer ships Font Awesome, so OSCAR's icons are inline SVG.
 var ICONS = {
-  save: "M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z",
-  open: "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
+  // Save and Load are a pair of folders, arrow up to send a project, arrow
+  // down to bring one back. mdi-folder-upload and mdi-folder-download,
+  // @mdi/svg 7.4.47 (Apache-2.0), copied from the package.
+  save: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4H10L12,6H20M10.75,13H14V17H16V13H19.25L15,8.75",
+  open: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H20M19.25,13H16V9H14V13H10.75L15,17.25",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
   remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
   locked:
@@ -209,6 +215,7 @@ function checkForUpdate() {
 // The same module the server uses to stamp and check project files, so the
 // format number and the "is this a project?" rule can never drift apart.
 var projectFormat = require("../../lib/project-format");
+var projectsTable = require("../../lib/projects-table");
 
 var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
@@ -234,6 +241,10 @@ function postJSON(url, body) {
 
 function initGrape(ipServer, socketPort) {
   editor = grapesjs.init({
+    // GrapesJS fetches Font Awesome from a CDN by default, which fails without
+    // a word at a venue with no internet. The few icons it still draws that
+    // way are supplied by css/oscar_theme.css instead.
+    cssIcons: "",
     dragMode: "absolute",
     height: "100%",
     container: "#gjs",
@@ -329,7 +340,7 @@ function initGrape(ipServer, socketPort) {
       "gjs-blocks-basic": { flexGrid: true },
       "grapesjs-preset-webpage": {
         blocks: [],
-        // Keep OSCAR's own palette (css/oscar_colors.css) rather than the
+        // Keep OSCAR's own palette (css/oscar_theme.css) rather than the
         // preset's theme.
         useCustomTheme: false,
         showStylesOnChange: true,
@@ -363,19 +374,11 @@ function initGrape(ipServer, socketPort) {
     $("#loader-table").hide();
   }
 
-  var tableReady = false;
-
   function openProjects(mode) {
     setModal(mode, "table-panel");
     $("#save-button").toggle(mode === "Save");
     $("#load-button").toggle(mode === "Load");
-
-    if (!tableReady) {
-      initTable();
-      tableReady = true;
-    } else {
-      $("#projects-table").bootstrapTable("refresh");
-    }
+    refreshProjects();
   }
 
   editor.Commands.add("open-projects", function (ed, sender, options) {
@@ -383,67 +386,139 @@ function initGrape(ipServer, socketPort) {
   });
 
   // ---- project table -----------------------------------------------------
-  function initTable() {
-    $("#projects-table").bootstrapTable({
-      url: "/projects",
-      height: 300,
-      columns: [
-        { title: "Name", field: "name", sortable: true },
-        { title: "Size", field: "size", sortable: true, formatter: sizeFormatter },
-        { title: "Saved", field: "date", sortable: true },
-        {
-          title: "",
-          field: "action",
-          clickToSelect: false,
-          events: window.operateEvents,
-          formatter: operateFormatter,
-        },
-      ],
-      pagination: false,
-      search: false,
-      sortable: true,
-      clickToSelect: true,
-      singleSelect: true,
-      onClickRow: function (row) {
-        $("#project-name").val(row.name).attr("id-project", row._id);
-      },
-      onLoadError: function (status, jqXHR) {
-        console.log("Could not load projects", jqXHR);
-      },
+  // A plain table rather than a plugin: it is one list with four columns.
+  // Every cell is filled with textContent, because a project's name is text a
+  // person typed. Sorting and formatting live in lib/projects-table.js.
+  var projectRows = [];
+  var projectsProblem = null;
+  var projectSort = projectsTable.DEFAULT_SORT;
+  var projectsBody = document.querySelector("#projects-table tbody");
+
+  function refreshProjects() {
+    return fetch("/projects")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (rows) {
+        projectRows = Array.isArray(rows) ? rows : [];
+        projectsProblem = null;
+        renderProjects();
+      })
+      .catch(function (err) {
+        console.log("Could not load projects", err);
+        projectRows = [];
+        projectsProblem = "Could not load projects";
+        renderProjects();
+      });
+  }
+
+  function projectCell(text, className) {
+    var td = document.createElement("td");
+    if (className) td.className = className;
+    td.textContent = text === null || text === undefined ? "" : String(text);
+    return td;
+  }
+
+  function renderProjects() {
+    var selectedId = document.getElementById("project-name").getAttribute("id-project");
+
+    document.querySelectorAll("#projects-table th[data-sort]").forEach(function (th) {
+      if (th.getAttribute("data-sort") === projectSort.key) {
+        th.setAttribute("aria-sort", projectSort.direction);
+      } else {
+        th.removeAttribute("aria-sort");
+      }
+    });
+
+    projectsBody.textContent = "";
+
+    if (projectsProblem || !projectRows.length) {
+      var empty = document.createElement("tr");
+      empty.className = "o-empty";
+      var message = projectCell(projectsProblem || "No saved projects yet");
+      message.colSpan = 4;
+      empty.appendChild(message);
+      projectsBody.appendChild(empty);
+      return;
+    }
+
+    projectsTable
+      .sortProjects(projectRows, projectSort.key, projectSort.direction)
+      .forEach(function (row) {
+        var tr = document.createElement("tr");
+        tr.tabIndex = 0;
+        tr.setAttribute("aria-selected", String(row._id === selectedId));
+        tr.appendChild(projectCell(row.name));
+        tr.appendChild(projectCell(projectsTable.formatSize(row.size), "o-num"));
+        tr.appendChild(projectCell(row.date, "o-date"));
+
+        var actions = document.createElement("td");
+        actions.className = "o-actions";
+        var remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "o-icon-btn";
+        remove.title = "Delete " + row.name;
+        remove.setAttribute("aria-label", "Delete " + row.name);
+        // A fixed SVG from ICONS, never anything a person typed.
+        remove.innerHTML = icon("remove", 16);
+        remove.onclick = function (e) {
+          e.stopPropagation();
+          confirmRemove(row);
+        };
+        actions.appendChild(remove);
+        tr.appendChild(actions);
+
+        tr.onclick = function () {
+          selectProject(row, tr);
+        };
+        tr.onkeydown = function (e) {
+          // Enter on the delete button belongs to the button.
+          if (e.target !== tr) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            selectProject(row, tr);
+          }
+        };
+        projectsBody.appendChild(tr);
+      });
+  }
+
+  // Marks the row in place rather than re-rendering, so a keyboard user's
+  // focus stays on the row they just chose.
+  function selectProject(row, tr) {
+    $("#project-name").val(row.name).attr("id-project", row._id);
+    projectsBody.querySelectorAll("tr[aria-selected]").forEach(function (other) {
+      other.setAttribute("aria-selected", String(other === tr));
     });
   }
 
-  function sizeFormatter(value) {
-    if (value !== 0 && !value) return "";
-    return value < 1024 ? value + " B" : Math.round(value / 1024) + " KB";
-  }
+  document.querySelectorAll("#projects-table th[data-sort] .o-sort").forEach(function (button) {
+    button.onclick = function () {
+      projectSort = projectsTable.nextSort(projectSort, button.parentNode.getAttribute("data-sort"));
+      renderProjects();
+    };
+  });
 
-  function operateFormatter() {
-    return '<a class="remove icon" href="javascript:void(0)" title="Remove">' + icon("remove") + "</a>";
-  }
-
-  window.operateEvents = {
-    "click .remove": function (e, value, row) {
-      $.confirm({
-        title: "Delete Project",
-        content:
-          "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
-        buttons: {
-          confirm: function () {
-            $.ajax({ type: "DELETE", url: "/remove/" + row._id })
-              .done(function (data) {
-                $("#projects-table").bootstrapTable("refresh");
-                $.alert(data.error || data.msg);
-              })
-              .fail(function () {
-                $.alert("Could not delete that project");
-              });
-          },
-          cancel: function () {},
+  function confirmRemove(row) {
+    $.confirm({
+      title: "Delete Project",
+      content:
+        "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
+      buttons: {
+        confirm: function () {
+          $.ajax({ type: "DELETE", url: "/remove/" + row._id })
+            .done(function (data) {
+              refreshProjects();
+              $.alert(data.error || data.msg);
+            })
+            .fail(function () {
+              $.alert("Could not delete that project");
+            });
         },
-      });
-    },
-  };
+        cancel: function () {},
+      },
+    });
+  }
 
   // ---- save --------------------------------------------------------------
   var projectName = document.getElementById("project-name");
@@ -490,7 +565,7 @@ function initGrape(ipServer, socketPort) {
           return;
         }
 
-        $("#projects-table").bootstrapTable("refresh");
+        refreshProjects();
         $.alert(res.msg);
         modal.close();
       })

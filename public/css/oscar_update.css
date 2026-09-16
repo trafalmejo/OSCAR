@@ -7,93 +7,130 @@
   right: 16px;
   bottom: 16px;
   z-index: 10000;
-  max-width: 330px;
+  max-width: 340px;
   padding: 14px 16px;
-  border-radius: 6px;
-  background: #444;
-  border-left: 4px solid #ff3663;
-  color: #ddd;
-  font-family: Helvetica, Arial, sans-serif;
-  font-size: 13px;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius);
+  background: var(--o-panel);
+  box-shadow: var(--o-shadow);
+  color: var(--o-text-muted);
+  font-family: var(--o-font);
+  font-size: var(--o-text-sm);
   line-height: 1.45;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* A short brand mark rather than a full coloured border: enough to say
+   "this is OSCAR talking" without shouting over a show. */
+.oscar-update::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: -1px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand-gradient);
 }
 
 .oscar-update-title {
-  font-weight: bold;
-  color: #fff;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  color: var(--o-text);
+  font-weight: 600;
 }
 
 .oscar-update-current {
-  opacity: 0.75;
-  font-size: 12px;
+  font-size: var(--o-text-xs);
 }
 
 .oscar-update-actions {
-  margin-top: 12px;
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 6px;
+  margin-top: 12px;
 }
 
 .oscar-update-actions a,
 .oscar-update-actions button {
-  font: inherit;
-  border: 0;
-  border-radius: 4px;
-  padding: 6px 10px;
-  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--o-radius-md);
+  font-family: var(--o-font);
+  font-size: var(--o-text-sm);
+  font-weight: 500;
   text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, filter 0.15s;
+}
+
+.oscar-update-actions a:focus-visible,
+.oscar-update-actions button:focus-visible {
+  outline: none;
+  box-shadow: var(--o-ring);
 }
 
 .oscar-update-get {
-  background-image: linear-gradient(to right, #ff623a 0%, #ff3663 100%);
-  color: #fff;
+  background: var(--brand-gradient);
+  color: var(--o-on-accent);
+  font-weight: 600;
+}
+
+.oscar-update-get:hover {
+  color: var(--o-on-accent);
+  filter: brightness(1.08);
 }
 
 .oscar-update-later,
 .oscar-update-skip {
   background: transparent;
-  color: #bbb;
+  color: var(--o-text-muted);
 }
 
 .oscar-update-later:hover,
 .oscar-update-skip:hover {
-  color: #fff;
+  background: var(--o-surface);
+  color: var(--o-text);
 }
 
 .oscar-update-skip {
   margin-left: auto;
-  font-size: 12px;
-  opacity: 0.8;
+  font-size: var(--o-text-xs);
 }
 
 /* About panel: report/suggest actions */
 
-.about-actions {
-  display: flex;
-  gap: 10px;
-  margin: 18px 0 10px;
+.info-panel-label {
+  color: var(--o-text-muted);
+  line-height: 1.6;
 }
 
-.about-actions .btn {
+.info-panel-label b {
+  color: var(--o-text);
+  font-weight: 600;
+}
+
+.about-actions {
+  display: flex;
+  gap: 8px;
+  margin: 20px 0 12px;
+}
+
+.about-actions .o-btn {
   flex: 1;
-  text-align: center;
-  text-decoration: none;
-  padding: 8px 12px;
 }
 
 .about-note {
-  font-size: 12px;
-  opacity: 0.8;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
   line-height: 1.5;
 }
 
 #about-version {
   margin-top: 10px;
-  font-family: monospace;
-  opacity: 0.55;
+  color: var(--o-text-faint);
+  font-family: var(--o-font-mono);
 }
 
 /* While previewing, hide the editor's own overlays. They sit outside the
@@ -106,10 +143,4 @@
 .oscar-previewing .gjs-highlighter-sel,
 .oscar-previewing .gjs-placeholder {
   display: none !important;
-}
-
-/* Locked mode: the toolbar button states the condition plainly, because a
-   locked OSCAR that looked unlocked would be its own hazard. */
-.gjs-pn-btn.oscar-locked {
-  color: #ff3663;
 }

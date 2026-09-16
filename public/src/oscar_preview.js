@@ -32,6 +32,9 @@ if (document.getElementById("gjs-oscar-preview")) {
 
 function initGrape(ipServer, socketPort) {
   editor = grapesjs.init({
+    // No Font Awesome from a CDN: every tablet would make a request that fails
+    // at a venue with no internet, and nothing on this page uses it.
+    cssIcons: "",
     height: "100%",
     container: "#gjs-oscar-preview",
     allowScripts: 1,
