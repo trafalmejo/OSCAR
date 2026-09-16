@@ -3,6 +3,7 @@ window.$ = window.jQuery = require("jquery");
 var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
 var oscarXypad = require("./oscar_xypad");
+var widgetStyles = require("../../lib/widget-styles");
 
 var editor;
 
@@ -39,9 +40,10 @@ function initGrape(ipServer, socketPort) {
     container: "#gjs-oscar-preview",
     allowScripts: 1,
     panels: { defaults: [] },
-    canvas: {
-      styles: ["node_modules/@fontsource-variable/inter/index.css", "assets/css/toggle.css"],
-    },
+    // The same fonts, styles and widgets as the editor, so a tablet shows the
+    // surface in the style it was designed in.
+    canvas: { styles: widgetStyles.canvasStylesheets() },
+    protectedCss: widgetStyles.SURFACE_CSS,
     // The preview only displays whatever the editor handed over; it must never
     // write into the editor's autosave.
     storageManager: false,

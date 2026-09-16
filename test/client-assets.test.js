@@ -82,49 +82,63 @@ for (const [template, entry] of Object.entries(PAGES)) {
   });
 }
 
-// The canvas is a separate document: its stylesheets are listed in each entry
-// point's GrapesJS config, not in the page template, so the template test
-// above never sees them. A missing one leaves every widget unstyled.
+// The canvas is a separate document: its stylesheets come from the style
+// registry, not from the page template, so the template test above never sees
+// them. A missing one leaves every widget unstyled.
 for (const [template, entry] of Object.entries(PAGES)) {
-  test(template + ": every stylesheet it loads into the canvas exists", () => {
-    const block = read(entry).match(/canvas:\s*\{[\s\S]*?styles:\s*\[([\s\S]*?)\]/);
-    assert.ok(block, entry + " lists canvas styles");
-    const refs = [...block[1].matchAll(/["']([^"']+)["']/g)].map((m) => m[1]);
-    assert.ok(refs.includes("assets/css/toggle.css"), "the widget stylesheet is loaded");
-    const missing = refs.filter((ref) => !fs.existsSync(path.join(PUBLIC, ref)));
-    if (missing.some((ref) => ref.startsWith("node_modules/")) && !fs.existsSync(path.join(PUBLIC, "node_modules"))) {
-      return;
-    }
-    assert.deepStrictEqual(missing, [], "canvas stylesheets not on disk");
+  test(template + ": loads the canvas stylesheets from the style registry", () => {
+    assert.match(read(entry), /canvas:\s*\{\s*styles:\s*widgetStyles\.canvasStylesheets\(\)\s*\}/);
+    assert.match(read(entry), /protectedCss:\s*widgetStyles\.SURFACE_CSS/);
   });
 }
+
+test("every stylesheet the canvas loads exists", (t) => {
+  const { canvasStylesheets } = require("../lib/widget-styles");
+  const refs = canvasStylesheets();
+  assert.strictEqual(refs[refs.length - 1], "assets/css/toggle.css", "the widgets load after the styles");
+  const missing = refs.filter((ref) => !fs.existsSync(path.join(PUBLIC, ref)));
+  if (missing.some((ref) => ref.startsWith("node_modules/")) && !fs.existsSync(path.join(PUBLIC, "node_modules"))) {
+    t.skip("browser libraries not installed (run npm install)");
+    return;
+  }
+  assert.deepStrictEqual(missing, [], "canvas stylesheets not on disk");
+});
 
 // Widget defaults must stay overridable. GrapesJS writes Style Manager edits as
 // unlayered CSS, which beats any layered rule whatever its specificity -- but
 // only if the defaults really are inside a layer. One rule written outside a
-// layer would silently start beating people's own styling.
-test("every widget style sits inside a cascade layer", () => {
-  const css = read("assets/css/toggle.css").replace(/\/\*[\s\S]*?\*\//g, "");
-  // Walk the top level only: every block opened there must be an @layer.
-  const outside = [];
-  let depth = 0;
-  let prelude = "";
-  for (const ch of css) {
-    if (ch === "{") {
-      if (depth === 0 && !prelude.trim().startsWith("@layer")) outside.push(prelude.trim());
-      depth++;
-      prelude = "";
-    } else if (ch === "}") {
-      depth--;
-      prelude = "";
-    } else if (depth === 0) {
-      // A top-level statement such as "@layer a, b;" ends at its semicolon.
-      prelude = ch === ";" ? "" : prelude + ch;
+// layer, in the widgets or in any style, would silently start beating
+// people's own styling.
+const LAYERED = ["assets/css/toggle.css"].concat(
+  fs.readdirSync(path.join(PUBLIC, "assets/css/styles")).map((file) => "assets/css/styles/" + file)
+);
+
+for (const file of LAYERED) {
+  test(file + ": every rule sits inside a cascade layer", () => {
+    const css = read(file).replace(/\/\*[\s\S]*?\*\//g, "");
+    // Walk the top level only: every block opened there must be an @layer.
+    const outside = [];
+    let depth = 0;
+    let prelude = "";
+    for (const ch of css) {
+      if (ch === "{") {
+        if (depth === 0 && !prelude.trim().startsWith("@layer")) outside.push(prelude.trim());
+        depth++;
+        prelude = "";
+      } else if (ch === "}") {
+        depth--;
+        prelude = "";
+      } else if (depth === 0) {
+        // A top-level statement such as "@layer a, b;" ends at its semicolon.
+        prelude = ch === ";" ? "" : prelude + ch;
+      }
     }
-  }
-  assert.deepStrictEqual(outside, [], "rules outside any @layer");
-  assert.match(css, /@layer\s+oscar\.tokens\s*,\s*oscar\.widgets\s*;/, "layer order is declared up front");
-});
+    assert.deepStrictEqual(outside, [], "rules outside any @layer");
+    // Whichever file the canvas reads first fixes the layer order, so every
+    // one of them states it.
+    assert.match(css, /@layer\s+oscar\.tokens\s*,\s*oscar\.widgets\s*;/, "layer order is declared up front");
+  });
+}
 
 // OSCAR runs at venues with no internet. A font or stylesheet fetched from a
 // CDN would fail there without an error, and every measurement in the theme

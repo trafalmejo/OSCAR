@@ -19,6 +19,10 @@ var ICONS = {
   // @mdi/svg 7.4.47 (Apache-2.0), copied from the package.
   save: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4H10L12,6H20M10.75,13H14V17H16V13H19.25L15,8.75",
   open: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H20M19.25,13H16V9H14V13H10.75L15,17.25",
+  // mdi-palette and mdi-restore, @mdi/svg 7.4.47 (Apache-2.0): the widget
+  // style gallery, and putting a widget back on its surface's style.
+  palette: "M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 17.5,12M14.5,8A1.5,1.5 0 0,1 13,6.5A1.5,1.5 0 0,1 14.5,5A1.5,1.5 0 0,1 16,6.5A1.5,1.5 0 0,1 14.5,8M9.5,8A1.5,1.5 0 0,1 8,6.5A1.5,1.5 0 0,1 9.5,5A1.5,1.5 0 0,1 11,6.5A1.5,1.5 0 0,1 9.5,8M6.5,12A1.5,1.5 0 0,1 5,10.5A1.5,1.5 0 0,1 6.5,9A1.5,1.5 0 0,1 8,10.5A1.5,1.5 0 0,1 6.5,12M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A1.5,1.5 0 0,0 13.5,19.5C13.5,19.11 13.35,18.76 13.11,18.5C12.88,18.23 12.73,17.88 12.73,17.5A1.5,1.5 0 0,1 14.23,16H16A5,5 0 0,0 21,11C21,6.58 16.97,3 12,3Z",
+  restore: "M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
   remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
   locked:
@@ -216,6 +220,7 @@ function checkForUpdate() {
 // format number and the "is this a project?" rule can never drift apart.
 var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
+var widgetStyles = require("../../lib/widget-styles");
 
 var oscarButton = require("./oscar_button");
 var oscarSlider = require("./oscar_slider");
@@ -259,11 +264,12 @@ function initGrape(ipServer, socketPort) {
     container: "#gjs",
     fromElement: true,
     allowScripts: 1,
-    // The canvas is its own document and loads nothing from the editor page,
-    // so the widgets' font comes in here too.
-    canvas: {
-      styles: ["node_modules/@fontsource-variable/inter/index.css", "assets/css/toggle.css"],
-    },
+    // The canvas is its own document and loads nothing from the editor page:
+    // fonts, every style's tokens and the widgets all come in here.
+    canvas: { styles: widgetStyles.canvasStylesheets() },
+    // The surface follows its style too; see SURFACE_CSS for why this one
+    // rule cannot sit in a layer.
+    protectedCss: widgetStyles.SURFACE_CSS,
     assetManager: {
       assets: [
         "images/fruits/emoji-apple.png",
@@ -698,6 +704,189 @@ function initGrape(ipServer, socketPort) {
   });
 
   // ---- panel buttons -----------------------------------------------------
+  // ---- widget styles -----------------------------------------------------
+  // A style is chosen for the whole surface and recorded as two attributes on
+  // its body, so it is saved with the project and reaches the preview and
+  // every tablet with nothing else to set. lib/widget-styles.js lists the
+  // styles; assets/css/styles/ holds their values.
+
+  function surfaceStyle() {
+    var attrs = editor.getWrapper().getAttributes();
+    var style = attrs[widgetStyles.STYLE_ATTRIBUTE];
+    var appearance = attrs[widgetStyles.APPEARANCE_ATTRIBUTE];
+    return {
+      style: widgetStyles.isStyle(style) ? style : widgetStyles.DEFAULT_STYLE,
+      appearance: widgetStyles.isAppearance(appearance) ? appearance : widgetStyles.DEFAULT_APPEARANCE,
+    };
+  }
+
+  function applySurfaceStyle(style, appearance) {
+    var attrs = {};
+    attrs[widgetStyles.STYLE_ATTRIBUTE] = style;
+    attrs[widgetStyles.APPEARANCE_ATTRIBUTE] = appearance;
+    editor.getWrapper().addAttributes(attrs);
+  }
+
+  /**
+   * A small document showing the real widgets in one style: the same fonts,
+   * tokens and widget rules the canvas loads, so a card looks exactly like the
+   * surface will. Everything in it comes from the style registry, never from
+   * anything a person typed.
+   */
+  function stylePreviewDocument(style, appearance) {
+    var links = widgetStyles
+      .canvasStylesheets()
+      .map(function (href) {
+        return '<link rel="stylesheet" href="' + href + '">';
+      })
+      .join("");
+
+    return (
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      links +
+      "<style>" +
+      widgetStyles.SURFACE_CSS +
+      " body { height: 100vh; display: flex; align-items: center; justify-content: center;" +
+      " gap: 10px; padding: 8px; overflow: hidden; }" +
+      " .col { display: flex; flex-direction: column; gap: 8px; }" +
+      " button { min-height: 28px; padding: 0 10px; font-size: 12px; }" +
+      " input[type=range] { width: 64px; height: 22px; }" +
+      " .oscar-xypad { width: 56px; height: 56px; flex-shrink: 0; }" +
+      "</style></head>" +
+      "<body " +
+      widgetStyles.STYLE_ATTRIBUTE + '="' + style + '" ' +
+      widgetStyles.APPEARANCE_ATTRIBUTE + '="' + appearance + '">' +
+      '<div class="col"><button type="button">Off</button>' +
+      '<button type="button" class="toggle">On</button>' +
+      '<input type="range" min="0" max="100" value="60" style="--oscar-fill: 60%"></div>' +
+      '<div class="oscar-xypad" style="--oscar-x: 65%; --oscar-y: 35%"></div>' +
+      "</body></html>"
+    );
+  }
+
+  var stylePanel = null;
+
+  function buildStylePanel() {
+    var panel = document.createElement("div");
+    panel.className = "o-style-panel";
+
+    var segmented = document.createElement("div");
+    segmented.className = "o-segmented";
+    segmented.setAttribute("role", "group");
+    segmented.setAttribute("aria-label", "Appearance");
+    widgetStyles.APPEARANCES.forEach(function (appearance) {
+      var segment = document.createElement("button");
+      segment.type = "button";
+      segment.className = "o-segment";
+      segment.setAttribute("data-appearance", appearance);
+      segment.textContent = appearance === "dark" ? "Dark" : "Light";
+      segment.onclick = function () {
+        applySurfaceStyle(surfaceStyle().style, appearance);
+        refreshStylePanel();
+      };
+      segmented.appendChild(segment);
+    });
+
+    var grid = document.createElement("div");
+    grid.className = "o-style-grid";
+    widgetStyles.STYLES.forEach(function (entry) {
+      var card = document.createElement("button");
+      card.type = "button";
+      card.className = "o-style-card";
+      card.setAttribute("data-style", entry.id);
+
+      // The preview is only a picture: the card is what gets clicked.
+      var preview = document.createElement("iframe");
+      preview.className = "o-style-preview";
+      preview.tabIndex = -1;
+      preview.setAttribute("aria-hidden", "true");
+      card.appendChild(preview);
+
+      var name = document.createElement("span");
+      name.className = "o-style-name";
+      name.textContent = entry.label;
+      card.appendChild(name);
+
+      card.onclick = function () {
+        applySurfaceStyle(entry.id, surfaceStyle().appearance);
+        refreshStylePanel();
+      };
+      grid.appendChild(card);
+    });
+
+    panel.appendChild(segmented);
+    panel.appendChild(grid);
+    return panel;
+  }
+
+  function refreshStylePanel() {
+    var current = surfaceStyle();
+
+    stylePanel.querySelectorAll(".o-segment").forEach(function (segment) {
+      segment.setAttribute("aria-pressed", String(segment.getAttribute("data-appearance") === current.appearance));
+    });
+
+    stylePanel.querySelectorAll(".o-style-card").forEach(function (card) {
+      var style = card.getAttribute("data-style");
+      card.setAttribute("aria-pressed", String(style === current.style));
+      var preview = card.querySelector("iframe");
+      // Rewriting the document restarts it; only do that when the picture
+      // would actually change.
+      var wanted = style + "/" + current.appearance;
+      if (preview.getAttribute("data-showing") !== wanted) {
+        preview.setAttribute("data-showing", wanted);
+        preview.srcdoc = stylePreviewDocument(style, current.appearance);
+      }
+    });
+  }
+
+  editor.Commands.add("open-styles", function () {
+    if (!stylePanel) stylePanel = buildStylePanel();
+    refreshStylePanel();
+    modal.open({ title: "Widget style", content: stylePanel, attributes: { class: "modal-login" } });
+  });
+
+  pn.addButton("options", {
+    id: "open-styles",
+    label: icon("palette"),
+    command: function () {
+      editor.runCommand("open-styles");
+    },
+    attributes: { title: "Widget style", "data-tooltip-pos": "bottom" },
+  });
+
+  // Reset to style: a widget someone recoloured by hand keeps that colour when
+  // the surface changes style, which reads as switching "not working". This
+  // takes its own appearance edits away so it follows the style again, and
+  // leaves where it is and how big it is alone.
+  editor.Commands.add("oscar-reset-style", function (ed) {
+    var component = ed.getSelected();
+    if (!component) return;
+    component.setStyle(widgetStyles.withoutAppearance(component.getStyle()));
+  });
+
+  // Offered on OSCAR's own widgets only, in the toolbar over a selection.
+  // GrapesJS never saves a component's toolbar into the project, so this
+  // editor-only button cannot leak into a saved file.
+  editor.on("component:selected", function (component) {
+    if (!/^oscar-/.test(component.get("type") || "")) return;
+    var toolbar = component.get("toolbar") || [];
+    var present = toolbar.some(function (item) {
+      return item.command === "oscar-reset-style";
+    });
+    if (present) return;
+    component.set(
+      "toolbar",
+      toolbar.concat([
+        {
+          label: icon("restore", 16),
+          command: "oscar-reset-style",
+          attributes: { title: "Reset to style" },
+        },
+      ])
+    );
+  });
+
   pn.addButton("options", {
     id: "open-save",
     label: icon("save"),
@@ -818,6 +1007,7 @@ function initGrape(ipServer, socketPort) {
     "gjs-open-import-webpage": "Import",
     "canvas-clear": "Clear canvas",
     "toggle-lock": null,
+    "open-styles": "Widget style",
     "open-save": "Save project",
     "open-load": "Load project",
     "open-info": "About",

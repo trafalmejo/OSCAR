@@ -1,23 +1,17 @@
 /*
  * OSCAR's widgets, as they look on the canvas and on every tablet.
  *
- * The starting look follows shadcn/ui's light neutral theme: white controls
- * with a hairline border and near-black text, a dark filled state for "on",
- * a thin light track, and small soft shadows. Values are shadcn's zinc
- * palette, radii and control heights, with two concessions to fingers on a
- * tablet: buttons use shadcn's large size (40px) and the thumb is 20px rather
- * than 16px.
+ * What the widgets look like is decided by a style: a set of token values in
+ * assets/css/styles/, chosen per surface (lib/widget-styles.js). This file
+ * only says how a widget draws with those tokens, following shadcn/ui's
+ * components -- the outline button, the filled button, the slider and the
+ * card -- so any style converted from tweakcn looks the way tweakcn shows it.
  *
- * Every rule lives inside a cascade layer, and that is what keeps the look
+ * Every rule lives inside a cascade layer, and that is what keeps widgets
  * overridable. GrapesJS writes whatever someone sets in the Style Manager as
  * ordinary, unlayered CSS, and unlayered CSS beats layered CSS whatever its
  * specificity. So a colour or corner changed in the editor always wins, and
- * anything left alone keeps this look. To change the starting look itself,
- * change the values in oscar.tokens below; the widgets all draw from them, so
- * a new widget that does the same matches without further work.
- *
- * The surface background is left alone: GrapesJS gives the canvas body its own
- * white, and what a surface sits on is the designer's call.
+ * anything left alone follows the style.
  *
  * The file keeps its old name, toggle.css, because the editor and the preview
  * both load it by that name.
@@ -26,28 +20,14 @@
 @layer oscar.tokens, oscar.widgets;
 
 @layer oscar.tokens {
+  /* Sizes are OSCAR's, not a style's: they are set for fingers on a tablet,
+     and changing style must not make a control harder to hit. Buttons use
+     shadcn's large height, and the thumb is a little bigger than its 16px. */
   :root {
-    --osc-font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --osc-font-size: 14px;
-
-    /* shadcn/ui neutral (zinc), light */
-    --osc-background: #ffffff;
-    --osc-foreground: #09090b;
-    --osc-muted: #f4f4f5;
-    --osc-subtle: #fafafa;
-    --osc-border: #e4e4e7;
-    --osc-primary: #18181b;
-    --osc-primary-foreground: #fafafa;
-    --osc-ring: rgba(161, 161, 170, 0.5);
-
-    /* One corner for every widget, so a button beside a pad reads as a set. */
-    --osc-radius: 12px;
     --osc-control-height: 40px;
     --osc-thumb: 20px;
     --osc-track-size: 6px;
-
-    --osc-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --osc-shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+    --osc-font-size: 14px;
   }
 }
 
@@ -62,7 +42,7 @@
     gap: 8px;
     min-height: var(--osc-control-height);
     padding: 0 24px;
-    border: 1px solid var(--osc-border);
+    border: 1px solid var(--osc-input);
     border-radius: var(--osc-radius);
     background-color: var(--osc-background);
     box-shadow: var(--osc-shadow-xs);
@@ -70,6 +50,7 @@
     font-family: var(--osc-font);
     font-size: var(--osc-font-size);
     font-weight: 500;
+    letter-spacing: var(--osc-letter-spacing);
     line-height: 1.25;
     white-space: nowrap;
     cursor: pointer;
@@ -81,28 +62,34 @@
   }
 
   button:hover {
-    background-color: var(--osc-muted);
+    background-color: var(--osc-accent);
+    color: var(--osc-accent-foreground);
   }
 
   button:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px var(--osc-ring);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--osc-ring) 50%, transparent);
   }
 
   /* On: a toggle that is on, or a momentary button while it is held. The
      widget sets this class. */
-  button.toggle,
-  button.toggle:hover {
+  button.toggle {
     border-color: var(--osc-primary);
     background-color: var(--osc-primary);
     color: var(--osc-primary-foreground);
   }
 
+  button.toggle:hover {
+    background-color: color-mix(in srgb, var(--osc-primary) 90%, transparent);
+    color: var(--osc-primary-foreground);
+  }
+
   /* ---- slider ------------------------------------------------------------ */
-  /* shadcn's slider: a thin muted track, the covered part in primary, a white
-     thumb with a primary edge. The covered part follows --oscar-fill, which
-     the slider widget keeps up to date: a native range input has no way to
-     style "the part before the thumb" in Chromium or WebKit. */
+  /* shadcn's slider: a thin muted track, the covered part in primary, a thumb
+     in the background colour with a primary edge. The covered part follows
+     --oscar-fill, which the slider widget keeps up to date: a native range
+     input has no way to style "the part before the thumb" in Chromium or
+     WebKit. */
 
   input[type="range"] {
     --oscar-fill: 0%;
@@ -144,7 +131,7 @@
 
   input[type="range"]:hover::-webkit-slider-thumb,
   input[type="range"]:focus-visible::-webkit-slider-thumb {
-    box-shadow: var(--osc-shadow-sm), 0 0 0 4px var(--osc-ring);
+    box-shadow: var(--osc-shadow-sm), 0 0 0 4px color-mix(in srgb, var(--osc-ring) 50%, transparent);
   }
 
   /* Firefox has a real progress element, so it needs no --oscar-fill. */
@@ -200,10 +187,10 @@
   }
 
   /* ---- XY pad ------------------------------------------------------------ */
-  /* A light card in shadcn's manner, with a handle drawn exactly like the
-     slider thumb so a layout mixing the two reads as one instrument. The
-     handle is a pseudo-element, not a child: a child would swallow the drag
-     the way a button's label once did. */
+  /* shadcn's card, with the same corner as the button so the two read as a
+     set, and a handle drawn exactly like the slider thumb. The handle is a
+     pseudo-element, not a child: a child would swallow the drag the way a
+     button's label once did. */
 
   .oscar-xypad {
     --oscar-x: 0%;
@@ -213,7 +200,7 @@
     height: 220px;
     border: 1px solid var(--osc-border);
     border-radius: var(--osc-radius);
-    background-color: var(--osc-subtle);
+    background-color: var(--osc-card);
     box-shadow: var(--osc-shadow-xs);
     cursor: crosshair;
     /* Without this a finger drag scrolls the page instead of moving the handle. */

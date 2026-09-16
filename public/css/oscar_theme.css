@@ -682,3 +682,108 @@ a {
 .jconfirm.jconfirm-oscar .jconfirm-box .jconfirm-buttons button:first-child:hover {
   filter: brightness(1.08);
 }
+
+/* ---- widget style gallery ------------------------------------------------ */
+/* Styles are chosen by eye, so each card is a live picture of the real widgets
+   in that style rather than a name in a list. */
+
+.o-style-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.o-segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  background: var(--o-bg);
+}
+
+.o-segment {
+  height: 1.75rem;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--o-radius-sm);
+  background: transparent;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.o-segment:hover {
+  color: var(--o-text);
+}
+
+.o-segment[aria-pressed="true"] {
+  background: var(--o-surface-hover);
+  color: var(--o-text);
+}
+
+.o-segment:focus-visible {
+  outline: none;
+  box-shadow: var(--o-ring);
+}
+
+.o-style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.o-style-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius);
+  background: var(--o-surface);
+  color: var(--o-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.o-style-card:hover {
+  border-color: var(--o-border-strong);
+}
+
+.o-style-card:focus-visible {
+  outline: none;
+  box-shadow: var(--o-ring);
+}
+
+.o-style-card[aria-pressed="true"] {
+  border-color: var(--o-accent);
+  box-shadow: 0 0 0 1px var(--o-accent);
+}
+
+.o-style-preview {
+  display: block;
+  width: 100%;
+  height: 128px;
+  border: 0;
+  pointer-events: none;
+}
+
+.o-style-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid var(--o-border);
+  font-size: var(--o-text-sm);
+  font-weight: 500;
+}
+
+.o-style-card[aria-pressed="true"] .o-style-name::after {
+  content: "\2713";
+  color: var(--o-accent);
+  font-weight: 600;
+}
