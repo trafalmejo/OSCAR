@@ -66,3 +66,18 @@ test("everything the pickers offer survives the encoder", () => {
     assert.ok(buildMessage("/x", args), id + " survives buildMessage");
   }
 });
+
+test("a stray space or a wrapped value is refused, never read as zero", () => {
+  // Number("  "), Number("\t") and Number([]) are all 0. A panel field left
+  // holding a space would otherwise go out as 0 -- "off" on a lighting rig.
+  for (const bad of ["  ", "\t", "\n", " \t\n ", [], [5], {}]) {
+    assert.strictEqual(toArgs("f", bad), null, "f: " + JSON.stringify(bad));
+    assert.strictEqual(toArgs("i", bad), null, "i: " + JSON.stringify(bad));
+  }
+});
+
+test("a real number typed with a space around it is still that number", () => {
+  // Refusing blanks must not refuse "5 " -- that is a typo, not a missing value.
+  assert.deepStrictEqual(toArgs("f", " 5 "), [{ type: "f", value: 5 }]);
+  assert.deepStrictEqual(toArgs("i", "\t12\n"), [{ type: "i", value: 12 }]);
+});

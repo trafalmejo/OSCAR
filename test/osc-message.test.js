@@ -104,3 +104,15 @@ test("oversized argument lists are refused", () => {
   assert.ok(buildMessage("/x", new Array(MAX_ARGS).fill(0)));
   assert.strictEqual(buildMessage("/x", new Array(MAX_ARGS + 1).fill(0)), null);
 });
+
+test("the server gate refuses whitespace where a number belongs", () => {
+  // The browser-side check is not the only line of defence: a hand-edited
+  // project or an old page can still post a blank-looking value.
+  for (const type of ["f", "i"]) {
+    for (const value of ["  ", "\t", " \n "]) {
+      assert.strictEqual(buildMessage("/x", [{ type, value }]), null, type + " " + JSON.stringify(value));
+    }
+  }
+  // Text is still text: a string argument that happens to be spaces is sent.
+  assert.deepStrictEqual(buildMessage("/x", ["  "]).args, [{ type: "s", value: "  " }]);
+});

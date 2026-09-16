@@ -85,12 +85,16 @@ function toArgs(argType, raw) {
 }
 
 /**
- * Parse a number without the traps JavaScript lays for you: Number("") and
- * Number(null) are both 0, and either would quietly become a real value.
+ * Parse a number without the traps JavaScript lays for you, or return null.
+ *
+ * Number("") and Number(null) are both 0, and so are Number("  ") and
+ * Number([]): a cleared field, a stray space, a missing value or a wrapped
+ * one would each quietly become a real value. Only a number, or text that
+ * spells one, counts.
  */
 function toNumber(raw) {
-  if (raw === null || raw === undefined || raw === "") return null;
-  if (typeof raw === "boolean") return null;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== "string" || raw.trim() === "") return null;
   const number = Number(raw);
   return Number.isFinite(number) ? number : null;
 }
@@ -100,7 +104,7 @@ function isSendable(argType, raw) {
   return toArgs(argType, raw) !== null;
 }
 
-module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy };
+module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy, toNumber };
 
 },{}],2:[function(require,module,exports){
 "use strict";
@@ -422,6 +426,8 @@ module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 },{"../osc-args":1,"./fields":4,"./outgoing":5}],4:[function(require,module,exports){
 "use strict";
 
+const { toNumber } = require("../osc-args");
+
 /**
  * The vocabulary a widget uses to describe its settings panel.
  *
@@ -496,9 +502,11 @@ function checkMessage(value) {
   return "An OSC message is a path, like /master/level";
 }
 
+// The same parser the wire uses, so a value the panel accepts is one the
+// send path will not drop -- and a stray space is refused in both places.
 function checkNumber(label) {
   return function (value) {
-    if (value !== "" && value !== null && Number.isFinite(Number(value))) return null;
+    if (toNumber(value) !== null) return null;
     return label + " has to be a number";
   };
 }
@@ -520,7 +528,7 @@ module.exports = {
   IPV4: IPV4,
 };
 
-},{}],5:[function(require,module,exports){
+},{"../osc-args":1}],5:[function(require,module,exports){
 "use strict";
 
 const { toArgs } = require("../osc-args");
@@ -562,7 +570,7 @@ module.exports = { outgoing };
 
 const { field, enabled, connection, connectionChecks, checkNumber } = require("./fields");
 const { outgoing } = require("./outgoing");
-const { NUMERIC_ARG_TYPES } = require("../osc-args");
+const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
 
 const ORIENTATIONS = [
   { id: "horizontal", name: "Horizontal" },
@@ -674,8 +682,8 @@ function resolve(ctx, value) {
 }
 
 function checkValue(value, config) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "The value has to be a number";
+  const number = toNumber(value);
+  if (number === null) return "The value has to be a number";
   const min = Number(config.min);
   const max = Number(config.max);
   const low = Math.min(min, max);
