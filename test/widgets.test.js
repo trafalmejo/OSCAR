@@ -307,7 +307,8 @@ test("a receiver with Enabled off is deaf: Listen moves nothing on it", () => {
 test("a widget with Listen off is deaf: the network changes nothing on it", () => {
   const { mount } = require("./helpers/widgets");
   for (const widget of receivers) {
-    const { el, ctx, state } = mount(widget);
+    // Set explicitly: a display-only widget may listen by default.
+    const { el, ctx, state } = mount(widget, { listen: false });
     const before = state() + JSON.stringify(ctx.config);
     ctx.receive(widget.defaults.message, [1, 1]);
     ctx.receive("/*", [1]);

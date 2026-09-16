@@ -338,3 +338,23 @@ with what is coming next.
 ## License
 
 BSD 3-clause
+
+## Meter (level display)
+
+A **Meter** shows a level instead of sending one: an audio level, a fixture's
+intensity, a playhead, whatever the rig reports at the address in its Message
+setting. It sends nothing, so it has no IP or port, and Listen is on from the
+start. Min and Max are the scale, the bar is horizontal or vertical from its
+Orientation setting, and Value is where it sits until the first reading
+arrives, so you can see the layout before anything is feeding it.
+
+**Peak hold** keeps a marker at the highest recent reading for that many
+seconds (`0` turns it off). The marker is decided reading by reading rather
+than on a clock: a reading at or above it moves it up at once, and it falls to
+the next reading that arrives after the hold has passed. A meter fed nothing
+keeps showing its last reading and its last peak.
+
+A meter never drops to zero on its own. A value that cannot be read as a
+number holds the last reading, because an empty bar reports silence on a
+channel that may be at full, and a meter with **Enabled** off freezes where
+it is rather than emptying.
