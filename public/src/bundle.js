@@ -717,8 +717,29 @@ const slider = {
       el.setAttribute("orient", ctx.get("orientation") || "horizontal");
 
       const value = Number(ctx.get("value"));
-      if (!Number.isFinite(value)) return;
-      el.value = String(ctx.get("invert") ? max - value + min : value);
+      if (Number.isFinite(value)) {
+        el.value = String(ctx.get("invert") ? max - value + min : value);
+      }
+      paintFill();
+    }
+
+    /**
+     * Tell the stylesheet how far along the track the thumb is.
+     *
+     * A native range input cannot style "the part before the thumb" in
+     * Chromium or WebKit, so toggle.css draws the filled track from this. It
+     * follows the thumb, not the value sent: with Invert on the two differ,
+     * and the fill belongs under the finger.
+     */
+    function paintFill() {
+      const lo = toNumber(el.min);
+      const hi = toNumber(el.max);
+      const at = toNumber(el.value);
+      let share = 0;
+      if (lo !== null && hi !== null && at !== null && hi !== lo) {
+        share = Math.min(1, Math.max(0, (at - lo) / (hi - lo)));
+      }
+      el.style.setProperty("--oscar-fill", (share * 100).toFixed(2) + "%");
     }
 
     function onInput() {
@@ -727,6 +748,7 @@ const slider = {
       const max = Number(ctx.get("max"));
       const value = ctx.get("invert") ? max - raw + min : raw;
 
+      paintFill();
       ctx.set("value", value);
       ctx.send(resolve(ctx, value));
     }
@@ -12184,7 +12206,11 @@ function initGrape(ipServer, socketPort) {
     container: "#gjs",
     fromElement: true,
     allowScripts: 1,
-    canvas: { styles: ["assets/css/toggle.css"] },
+    // The canvas is its own document and loads nothing from the editor page,
+    // so the widgets' font comes in here too.
+    canvas: {
+      styles: ["node_modules/@fontsource-variable/inter/index.css", "assets/css/toggle.css"],
+    },
     assetManager: {
       assets: [
         "images/fruits/emoji-apple.png",
@@ -12287,6 +12313,29 @@ function initGrape(ipServer, socketPort) {
       },
     },
   });
+
+  // ---- widget theme ------------------------------------------------------
+  // The widgets draw with tokens (--osc-*, in assets/css/toggle.css). This
+  // section edits them for whatever is selected: one widget restyles that
+  // widget, and the Body restyles the whole surface, because the tokens
+  // cascade. The values land in the component's own CSS rule, which is why
+  // they beat the layered defaults.
+  editor.StyleManager.addSector(
+    "oscar-theme",
+    {
+      name: "Theme",
+      open: false,
+      properties: [
+        { name: "Accent", property: "--osc-accent", type: "color", default: "" },
+        { name: "Control", property: "--osc-control", type: "color", default: "" },
+        { name: "Text", property: "--osc-fg", type: "color", default: "" },
+        { name: "Border", property: "--osc-border", type: "color", default: "" },
+        { name: "Track", property: "--osc-track", type: "color", default: "" },
+        { name: "Corner radius", property: "--osc-radius", type: "number", units: ["px"], min: 0, default: "" },
+      ],
+    },
+    { at: 0 }
+  );
 
   var pn = editor.Panels;
   var modal = editor.Modal;
@@ -12804,7 +12853,9 @@ function initGrape(ipServer, socketPort) {
     container: "#gjs-oscar-preview",
     allowScripts: 1,
     panels: { defaults: [] },
-    canvas: { styles: ["assets/css/toggle.css"] },
+    canvas: {
+      styles: ["node_modules/@fontsource-variable/inter/index.css", "assets/css/toggle.css"],
+    },
     // The preview only displays whatever the editor handed over; it must never
     // write into the editor's autosave.
     storageManager: false,

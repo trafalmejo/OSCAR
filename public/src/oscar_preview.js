@@ -39,7 +39,9 @@ function initGrape(ipServer, socketPort) {
     container: "#gjs-oscar-preview",
     allowScripts: 1,
     panels: { defaults: [] },
-    canvas: { styles: ["assets/css/toggle.css"] },
+    canvas: {
+      styles: ["node_modules/@fontsource-variable/inter/index.css", "assets/css/toggle.css"],
+    },
     // The preview only displays whatever the editor handed over; it must never
     // write into the editor's autosave.
     storageManager: false,
