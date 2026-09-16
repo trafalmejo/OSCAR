@@ -338,3 +338,44 @@ with what is coming next.
 ## License
 
 BSD 3-clause
+
+## Typing a value (text, number and dropdown widgets)
+
+Three widgets take a value directly instead of from a gesture, for the cues
+you already know: a clip name, cue 12, exactly 127.
+
+| Widget | Sends |
+| --- | --- |
+| **Text Input** | whatever you type, as a string by default, or as any other argument type |
+| **Number Input** | the number you type, as a float or an int, with optional **Min**, **Max** and **Step** |
+| **Dropdown** | the value of the option you pick |
+
+The text and number boxes send when you press **Enter** or leave the box,
+never while you type: `12.5` would otherwise go out as `1`, then `12`, then
+`12.5`, and the first two are real cues a rig will act on. Enter sends even
+when the value has not changed, because re-sending a cue on purpose is a
+normal thing to do. A click on the number box's stepper arrows is one
+finished value and goes out at once. An empty or half-typed box sends
+nothing, and neither does a number outside Min-Max or off the Step: the box
+keeps what you typed and shows a red edge, rather than the rig going to a
+value nobody typed.
+
+A dropdown's options are typed on one line in its **Options** setting, as
+`Label=value` pairs separated by commas or semicolons -- `Red=1, Green=2,
+Blue=3` -- or bare values, `1, 2, 3`, which are their own labels. The list is
+built from that setting every time the widget is drawn and is never stored
+in the markup, so it cannot drift from what the panel says.
+
+The panel refuses a value the chosen **Argument type** cannot carry -- `abc`
+as a float -- and checks the other way round too: switching a box that holds
+`GO` to float, or a dropdown whose options say `Red, Green` to int, is
+refused rather than leaving a widget that looks live and sends nothing.
+
+The number box and the dropdown can drive DMX like the slider (**Output**).
+The number is the level: `0`-`255` as typed, or, when Min and Max are both
+set, scaled within them, so a box that takes `0`-`100` puts `50` at half. A
+dropdown of `Off=0, Half=128, Full=255` is a three-step dimmer. All three
+follow the rig with **Listen** on: a value arriving at Message fills the box
+or selects the option that sends it, and goes no further. A box you are in
+the middle of typing into is left alone until you commit or leave it, and a
+value no option sends leaves the dropdown where it was.
