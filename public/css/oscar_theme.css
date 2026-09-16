@@ -478,6 +478,13 @@ a {
   color: var(--o-accent-text);
 }
 
+/* Resize handles on a selected component: round rather than square, echoing
+   the slider thumb and pad handle they sit beside. Scoped to the canvas, since
+   GrapesJS uses the same class for the bars that resize its side panels. */
+.gjs-cv-canvas .gjs-resizer-h {
+  border-radius: 50%;
+}
+
 /* The floating toolbar and name badge on a selected component. */
 .gjs-toolbar {
   border-radius: var(--o-radius-sm);
