@@ -245,6 +245,15 @@ function initGrape(ipServer, socketPort) {
     // a word at a venue with no internet. The few icons it still draws that
     // way are supplied by css/oscar_theme.css instead.
     cssIcons: "",
+    // The outline on a selected component is drawn inside the canvas, which
+    // cannot see the editor's theme variables, so GrapesJS's own light blue
+    // stayed while the handles and toolbar turned pink. canvasCss is added
+    // after GrapesJS's rule and is editor-only: it never reaches a saved or
+    // exported project. The colour is read from the theme, not repeated here.
+    canvasCss:
+      ".gjs-selected { outline: 2px solid " +
+      (getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#ff3663") +
+      " !important; }",
     dragMode: "absolute",
     height: "100%",
     container: "#gjs",
