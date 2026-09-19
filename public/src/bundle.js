@@ -21288,11 +21288,10 @@ function initGrape(ipServer, socketPort) {
       card.setAttribute("data-style", entry.id);
 
       if (entry === widgetStyles.OWN_STYLE) {
-        // Nothing to picture: how it looks is whatever the page says.
-        var note = document.createElement("span");
-        note.className = "o-style-preview o-style-own";
-        note.textContent = entry.hint;
-        card.appendChild(note);
+        // Nothing to picture: how it looks is whatever the page says. The
+        // name stands alone in the middle, and the hint says what it means.
+        card.className += " o-style-card-own";
+        card.title = entry.hint;
       } else {
         // The preview is only a picture: the card is what gets clicked.
         var preview = document.createElement("iframe");
