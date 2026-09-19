@@ -216,7 +216,7 @@ var projectFormat = require("../../lib/project-format");
 var { widgetPlugins } = require("./adapters/grapesjs");
 
 // Tabs and the page-by-page lock, shared with the /preview page.
-var oscarPages = require("./oscar_pages");
+var oscarPages = require("./pages");
 
 var isProjectData = projectFormat.isGrapesProject;
 

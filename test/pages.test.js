@@ -2,7 +2,7 @@
 
 /**
  * Multiple pages: what the editor and the tablet share
- * (public/src/oscar_pages.js), driven with stand-ins for editor.Pages, a
+ * (public/src/pages.js), driven with stand-ins for editor.Pages, a
  * component tree and a document. The file touches neither `window` nor
  * GrapesJS when it loads, which is what makes this possible.
  */
@@ -10,7 +10,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const pages = require("../public/src/oscar_pages");
+const pages = require("../public/src/pages");
 
 /** Enough of editor.Pages: an ordered list, a selection, and its events. */
 function fakePages(names) {

@@ -496,3 +496,33 @@ up when you lift your finger with whatever another device did while you were
 resting on it; a momentary button held on a tablet that drops off the
 network is let go on the others; and if the server restarts, the tablets
 tell it again what they show when they reconnect.
+
+## Multiple pages
+
+A surface can hold more than one page: a page per fixture group, per scene,
+or per operator. In the editor, the **Pages** button in the top bar lists
+them. Click a name to open that page, **Rename** or **Delete** it from its
+row, and add one with the box underneath (leave the name empty and it is
+called "Page N"). The last page cannot be deleted. Deleting a page releases
+the DMX channels of every widget on it.
+
+On the tablet (`/preview`) the pages appear as a row of finger-sized tabs
+along the bottom edge. The surface is made shorter by the height of the bar
+rather than covered by it, so nothing on the bottom row of a page sits under
+a tab. A surface with a single page has no bar and keeps the whole screen.
+The editor's own preview shows the same tabs, so a surface can be tried out
+before it is pushed.
+
+Pushing a new layout while a show is running leaves each tablet on the page
+it was showing, as long as that page still exists. Every page is locked the
+same way: nothing can be dragged, selected or edited from a tablet, whichever
+page it is on.
+
+With several devices, a widget on a page a tablet is not showing still keeps
+up: what the other tablets do to it is remembered, and the tablet asks the
+server for the rest as it turns to the page, so a fader opens where the
+others (and the rig) left it rather than at its saved value.
+
+Projects saved with pages carry project format 3. An older OSCAR has no way
+to switch pages and would show only the first, so it refuses such a file and
+asks to be updated instead of opening part of a show.

@@ -5,7 +5,7 @@ var { widgetPlugins } = require("./adapters/grapesjs");
 
 // Tabs, and the rule for staying on a page across a push; shared with the
 // editor so its preview draws the same thing the tablet does.
-var oscarPages = require("./oscar_pages");
+var oscarPages = require("./pages");
 
 var editor;
 var tabs = null;
