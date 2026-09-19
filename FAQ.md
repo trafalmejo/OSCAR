@@ -8,6 +8,7 @@ OSCAR keeps:
 
 - everything inside `<body>`
 - every `<style>` block, wherever it is
+- `<script>` tags inside `<body>`, including `type="module"` ones that import a library from the web. They run in the editor, in the preview and on a published page. The OSCAR Showcase template uses one for its three.js background
 - `data-osc-style` and `data-osc-appearance` on `<body>`, which choose the widget style
 
 OSCAR ignores:

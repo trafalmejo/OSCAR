@@ -56,7 +56,8 @@ test("OSCAR ships the Live Visuals Controller, at an address the editor can fetc
 
 /** Opening tags from <body> on, with their attributes. Enough for these files. */
 function bodyTags(html) {
-  const markup = html.replace(/<!--[\s\S]*?-->/g, "");
+  // A script's text is code, not markup: "i<n" is not a tag.
+  const markup = html.replace(/<!--[\s\S]*?-->/g, "").replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2");
   const body = markup.slice(markup.search(/<body\b/i));
   return [...body.matchAll(/<([a-z][a-z0-9]*)\b([^>]*)>/gi)].map((m) => ({
     tag: m[1].toLowerCase(),
@@ -146,6 +147,12 @@ for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith(".html"))) {
     // such as asking for less motion, has nothing to do with the editor's views.
     const widths = queries.filter((query) => /width/.test(query));
     assert.deepStrictEqual(widths.sort(), ["(max-width: 480px)", "(max-width: 992px)"]);
+  });
+
+  test(file + ": a script is in the body, where OSCAR keeps it", () => {
+    // The head of an imported document is thrown away, and a script with it.
+    const head = html.slice(0, html.search(/<body\b/i)).replace(/<!--[\s\S]*?-->/g, "");
+    assert.ok(!/<script\b/i.test(head), "a script in the head never runs");
   });
 
   test(file + ": anything that moves stands still for someone who has asked for less motion", () => {
