@@ -496,3 +496,47 @@ up when you lift your finger with whatever another device did while you were
 resting on it; a momentary button held on a tablet that drops off the
 network is let go on the others; and if the server restarts, the tablets
 tell it again what they show when they reconnect.
+
+## Media browser (pick a clip by its picture)
+
+A grid of thumbnails for choosing what plays: one tap on a tile sends that
+tile's value to **Message**, which is how Resolume, Millumin, QLab and most
+clip launchers select a clip -- by index or by name.
+
+The tiles are typed on one line in the **Items** setting, separated by
+semicolons, each as `label`, `label|value` or `label|value|image`:
+
+```
+Forest; Waves; Stars                         sends 1, 2, 3 -- the tile's position
+Forest|7; Waves|12                           sends 7, 12
+Forest|forest_loop|thumbs/forest.jpg         sends "forest_loop" (Argument type: string)
+```
+
+A tile with no value sends its position, counted from 1. **Argument type**
+is int, float or string. The image is a path next to OSCAR's pages (anything
+under `public/`, for example `assets/thumbs/forest.jpg`), an `http(s)://`
+address, or a `data:image/...` URL; anything else -- `javascript:`,
+`data:text/html` -- is refused by the panel and never reaches the page. A
+picture that fails to load is replaced by the tile's label. **Columns** sets
+how many tiles go in a row, and **Show labels** can be switched off for a wall
+of pictures (a tile with no picture always keeps its label). Give the widget
+a height and the grid scrolls inside it.
+
+A tile is picked when the tap ends on it, not when the finger lands, so
+scrolling the grid never launches the clip you happened to touch. Tapping the
+tile that is already selected sends again, because relaunching a clip is a
+real instruction. With **Listen** on, a value arriving at Message moves the
+highlight to the tile that sends it and nothing goes back out; a value no
+tile sends, or one OSCAR cannot read, changes nothing. Several tablets on one
+surface agree on the highlight without Listen. The highlight is never saved
+in the project: what is playing is the software's to say.
+
+The labels and URLs you type are put on the page as text, never as markup,
+and the tiles are rebuilt from Items every time the widget is drawn; they are
+not stored in the project and cannot be dragged out of the widget in the
+editor.
+
+This is a chooser, not a media library. It does not upload files, there is
+no asset picker (you type the path or URL), and it shows still images only --
+no video or animated previews, and it does not fetch thumbnails from
+Resolume or any other software.

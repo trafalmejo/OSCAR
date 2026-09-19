@@ -294,6 +294,21 @@ function pinId(model) {
   model.setId(model.getId());
 }
 
+/**
+ * Empty a component whose widget builds its own children.
+ *
+ * What the widget draws lives on the view's element only and GrapesJS never
+ * hears of it, which is the whole arrangement: no component, so nothing to
+ * save, select, move or delete. This is for children that got into the model
+ * some other way -- a project file edited by hand, or written by something
+ * that stored them.
+ */
+function disown(model) {
+  if (typeof model.components !== "function") return;
+  var children = model.components();
+  if (children && children.length) model.components("");
+}
+
 /** Let the widget put back what GrapesJS just wiped off its element. */
 function rewritten(view) {
   (view.oscarRewrites || []).forEach(function (fn) {
@@ -324,7 +339,16 @@ function register(definition) {
 
     editor.DomComponents.addType(definition.name, {
       isComponent: function (el) {
-        if (matches(definition, el)) return { type: definition.name };
+        if (!matches(definition, el)) return;
+        // A widget that builds its own children (ownsChildren, lib/widgets/
+        // index.js) has none as far as the project goes. Markup pasted in or
+        // imported -- a page saved from a browser, with the tiles the widget
+        // drew still inside it -- would otherwise have them parsed into
+        // components: stored, selectable, draggable out, and drawn a second
+        // time next to the ones the widget builds. The parser only descends
+        // into an element whose components are not already given.
+        if (definition.ownsChildren) return { type: definition.name, components: [] };
+        return { type: definition.name };
       },
 
       model: {
@@ -348,6 +372,8 @@ function register(definition) {
           // The id is what the other devices know this widget by; it has to
           // reach the project file, or it never reaches them.
           pinId(model);
+
+          if (definition.ownsChildren) disown(model);
 
           // The type's trait list was built from its defaults. A component
           // read back from a saved project may be set to DMX already, and

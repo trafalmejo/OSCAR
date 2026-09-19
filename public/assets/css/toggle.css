@@ -244,3 +244,98 @@ input[type=color]::-moz-color-swatch {
 .oscar-number-input:out-of-range {
   border-color: #c62828;
 }
+
+/* --- media browser --- */
+
+/* A grid of tiles the widget builds from its Items setting. The column count
+   comes from the widget as a custom property, because the editor rewrites
+   the element's own style attribute and a property is what gets put back. */
+.oscar-media-browser {
+  display: grid;
+  grid-template-columns: repeat(var(--oscar-media-columns, 3), minmax(44px, 1fr));
+  gap: 6px;
+  box-sizing: border-box;
+  width: 320px;
+  max-width: 100%;
+  padding: 4px;
+  /* A grid given a height scrolls inside it, which is what "browse" means
+     once there are more clips than fit. */
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  /* No double-tap zoom, so a tap is a click at once; scrolling still works. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.oscar-media-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  box-sizing: border-box;
+  /* 44px is the smallest target a thumb hits reliably. */
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  color: #222;
+  background: #d3d3d3;
+  border: 0;
+  border-radius: 4px;
+  outline: 3px solid transparent;
+  outline-offset: -3px;
+  opacity: 0.8;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+}
+
+.oscar-media-tile:hover,
+.oscar-media-tile:focus-visible,
+.oscar-media-tile.oscar-media-selected {
+  opacity: 1;
+}
+
+.oscar-media-tile:focus-visible {
+  outline-color: #222;
+}
+
+/* Drawn inside the tile, over the picture, so it shows on any thumbnail and
+   costs the grid no space. */
+.oscar-media-tile.oscar-media-selected {
+  outline-color: #1a73e8;
+  outline-color: AccentColor;
+}
+
+.oscar-media-tile.oscar-media-selected .oscar-media-label {
+  color: #fff;
+  background: #1a73e8;
+  background: AccentColor;
+  color: AccentColorText;
+}
+
+.oscar-media-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  /* The tile is the target; a picture that took the touch would also offer
+     the browser's own save-image menu on a long press. */
+  pointer-events: none;
+  -webkit-touch-callout: none;
+}
+
+.oscar-media-label {
+  display: block;
+  padding: 0.35em 0.4em;
+  overflow: hidden;
+  font-size: 0.85em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
