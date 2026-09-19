@@ -349,10 +349,11 @@ Orientation setting, and Value is where it sits until the first reading
 arrives, so you can see the layout before anything is feeding it.
 
 **Peak hold** keeps a marker at the highest recent reading for that many
-seconds (`0` turns it off). The marker is decided reading by reading rather
-than on a clock: a reading at or above it moves it up at once, and it falls to
-the next reading that arrives after the hold has passed. A meter fed nothing
-keeps showing its last reading and its last peak.
+seconds (`0` turns it off). A reading at or above the marker moves it up at
+once; when the hold has passed the marker falls back onto the bar on its own,
+whether or not anything new has arrived, so it works with software that only
+sends a value when it changes. It falls to the last reading, never to zero: a
+meter fed nothing keeps showing its last reading.
 
 A meter never drops to zero on its own. A value that cannot be read as a
 number holds the last reading, because an empty bar reports silence on a

@@ -6,15 +6,50 @@ const assert = require("node:assert");
 const { meter, PEAK_CLASS } = require("../../lib/widgets/meter");
 const { mount } = require("../helpers/widgets");
 
-/** Run fn with Date.now() under the test's control; `clock.at` sets the time. */
+/**
+ * Run fn with time under the test's control.
+ *
+ * `clock.at += n` moves Date.now() alone, which is a machine that was busy:
+ * time passed and no timer has run yet. `clock.advance(n)` moves it and runs
+ * the timers that came due on the way, in order. Timers are faked by hand
+ * rather than with node:test's mock.timers so the suite runs on Node 18,
+ * and so no real timer is ever left behind to outlive a test.
+ */
 function withClock(fn) {
-  const real = Date.now;
-  const clock = { at: 1000000 };
+  const real = { now: Date.now, set: global.setTimeout, clear: global.clearTimeout };
+  let timers = [];
+  let ids = 0;
+  const clock = {
+    at: 1000000,
+    /** How many timers are waiting: what a detach has to bring to zero. */
+    pending: () => timers.length,
+    advance(ms) {
+      const end = clock.at + ms;
+      for (;;) {
+        const due = timers.filter((t) => t.due <= end).sort((a, b) => a.due - b.due)[0];
+        if (!due) break;
+        timers = timers.filter((t) => t !== due);
+        clock.at = Math.max(clock.at, due.due);
+        due.fn();
+      }
+      clock.at = end;
+    },
+  };
   Date.now = () => clock.at;
+  global.setTimeout = (fn, ms) => {
+    const timer = { id: ++ids, fn, due: clock.at + (ms || 0), unref() {} };
+    timers.push(timer);
+    return timer;
+  };
+  global.clearTimeout = (timer) => {
+    timers = timers.filter((t) => t !== timer);
+  };
   try {
     return fn(clock);
   } finally {
-    Date.now = real;
+    Date.now = real.now;
+    global.setTimeout = real.set;
+    global.clearTimeout = real.clear;
   }
 }
 
@@ -200,15 +235,12 @@ test("the peak marker rises at once and holds while the level falls", () => {
   });
 });
 
-test("the marker falls to the next reading after the hold has passed, with no timer", () => {
+test("a reading that arrives after the hold has passed takes the marker with it", () => {
   withClock((clock) => {
     const { el, ctx } = mount(meter, { min: 0, max: 100, value: 0, peakHold: 1 });
     ctx.receive("/meter1", [80]);
+    // Time passed but no timer has had its turn: the reading decides alone.
     clock.at += 1500;
-    // Nothing has arrived, so nothing has moved: a meter fed nothing shows
-    // what it was last told.
-    assert.strictEqual(peakAt(el), "80.00%");
-
     ctx.receive("/meter1", [30]);
     assert.strictEqual(peakAt(el), "30.00%", "the first reading after the hold takes the marker with it");
 
@@ -216,6 +248,101 @@ test("the marker falls to the next reading after the hold has passed, with no ti
     ctx.receive("/meter1", [10]);
     assert.strictEqual(peakAt(el), "30.00%", "and a fresh hold starts from there");
   });
+});
+
+// Resolume and TouchDesigner send a value when it changes and then go quiet.
+// A marker that waited for the next reading would sit on a peak from minutes
+// ago, and "Peak hold (s)" would not mean what its number says.
+test("the marker falls on its own when the hold runs out, with no new reading", () => {
+  withClock((clock) => {
+    const { el, ctx } = mount(meter, { min: 0, max: 100, value: 0, peakHold: 2 });
+    ctx.receive("/meter1", [90]);
+    clock.advance(500);
+    ctx.receive("/meter1", [20]);
+    assert.strictEqual(peakAt(el), "90.00%");
+
+    clock.advance(1400);
+    assert.strictEqual(peakAt(el), "90.00%", "still inside the hold, which runs from the peak and not from the fall");
+
+    clock.advance(200);
+    assert.strictEqual(peakAt(el), "20.00%", "the source went quiet and the marker came down anyway");
+    assert.strictEqual(level(el), "20.00%", "onto the bar, which has not moved");
+    assert.strictEqual(ctx.get("value"), 20, "and the stored reading is untouched: the fall is not a reading");
+    assert.strictEqual(clock.pending(), 0, "a marker sitting on the bar has nothing left to wait for");
+
+    clock.advance(100);
+    ctx.receive("/meter1", [10]);
+    assert.strictEqual(peakAt(el), "20.00%", "a fresh hold starts where it landed");
+    clock.advance(2000);
+    assert.strictEqual(peakAt(el), "10.00%", "and runs out in its turn");
+  });
+});
+
+test("the falling marker never sends, and never falls below the last reading", () => {
+  withClock((clock) => {
+    const { el, ctx } = mount(meter, { min: 0, max: 100, value: 0, peakHold: 1 });
+    ctx.receive("/meter1", [80]);
+    ctx.receive("/meter1", [35]);
+    clock.advance(60000);
+    assert.strictEqual(peakAt(el), "35.00%");
+    assert.strictEqual(level(el), "35.00%", "a quiet minute is not silence: the bar holds");
+    assert.deepStrictEqual(ctx.sent, []);
+  });
+});
+
+test("a rising reading calls the pending fall off, and a shorter Peak hold re-times it", () => {
+  withClock((clock) => {
+    const { el, ctx } = mount(meter, { min: 0, max: 100, value: 0, peakHold: 10 });
+    ctx.receive("/meter1", [80]);
+    ctx.receive("/meter1", [20]);
+    assert.strictEqual(clock.pending(), 1);
+    ctx.receive("/meter1", [95]);
+    assert.strictEqual(clock.pending(), 0, "the marker is on the bar again");
+
+    ctx.receive("/meter1", [20]);
+    clock.advance(1000);
+    ctx.edit("peakHold", 2);
+    assert.strictEqual(clock.pending(), 1, "one fall, not one per edit");
+    clock.advance(900);
+    assert.strictEqual(peakAt(el), "95.00%");
+    clock.advance(200);
+    assert.strictEqual(peakAt(el), "20.00%", "the new hold counts from the peak, not from the edit");
+  });
+});
+
+test("detaching calls the pending fall off, so nothing repaints a dead element", () => {
+  withClock((clock) => {
+    const { el, ctx, detach } = mount(meter, { min: 0, max: 100, value: 0, peakHold: 1 });
+    ctx.receive("/meter1", [80]);
+    ctx.receive("/meter1", [20]);
+    assert.strictEqual(clock.pending(), 1);
+    detach();
+    assert.strictEqual(clock.pending(), 0);
+    clock.advance(5000);
+    assert.strictEqual(peakAt(el), "80.00%");
+  });
+});
+
+test("a meter left mounted does not keep Node alive for its hold time", () => {
+  // Real timers on purpose: what is checked is the handle the widget leaves.
+  const real = global.setTimeout;
+  const made = [];
+  global.setTimeout = function () {
+    const timer = real.apply(this, arguments);
+    made.push(timer);
+    return timer;
+  };
+  let mounted;
+  try {
+    mounted = mount(meter, { min: 0, max: 100, value: 0, peakHold: 3600 });
+    mounted.ctx.receive("/meter1", [80]);
+    mounted.ctx.receive("/meter1", [20]);
+  } finally {
+    global.setTimeout = real;
+  }
+  assert.strictEqual(made.length > 0, true, "a fall was armed");
+  for (const timer of made) assert.strictEqual(timer.hasRef(), false);
+  mounted.detach();
 });
 
 test("an unreadable value does not touch the peak either", () => {
@@ -274,6 +401,21 @@ test("the panel refuses a blank range or value, which the wire would otherwise r
     assert.ok(meter.checks.max(blank), "max " + JSON.stringify(blank));
     assert.ok(meter.checks.value(blank), "value " + JSON.stringify(blank));
   }
+});
+
+// --- shared vocabulary -------------------------------------------------------
+
+test("the meter takes Orientation from the shared fields, not from another widget", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const source = fs.readFileSync(path.join(__dirname, "../../lib/widgets/meter.js"), "utf8");
+  const required = source.match(/require\("\.\/[^"]+"\)/g) || [];
+  assert.deepStrictEqual(required.sort(), ['require("./fields")', 'require("./incoming")']);
+
+  const fields = require("../../lib/widgets/fields");
+  const orientation = meter.fields.find((f) => f.key === "orientation");
+  assert.strictEqual(orientation.options, fields.ORIENTATIONS);
+  assert.strictEqual(require("../../lib/widgets/slider").ORIENTATIONS, fields.ORIENTATIONS, "the old export still works");
 });
 
 // --- the host ---------------------------------------------------------------
