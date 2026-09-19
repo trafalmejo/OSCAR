@@ -23,8 +23,8 @@ function page(options) {
   const socket = {
     emitted: [],
     emit(event, payload) {
-      // As the wire would carry it.
-      this.emitted.push({ event, payload: JSON.parse(JSON.stringify(payload)) });
+      // As the wire would carry it; an event may carry nothing at all.
+      this.emitted.push({ event, payload: payload === undefined ? undefined : JSON.parse(JSON.stringify(payload)) });
     },
     on(event, fn) {
       (handlers[event] = handlers[event] || []).push(fn);
@@ -177,4 +177,63 @@ test("a new layout is not a reconnect: the page forgets, and tells the server no
   fresh.socket.hears("connect");
   fresh.socket.hears("state:all", {});
   assert.deepStrictEqual(fresh.socket.states(), []);
+});
+
+// ---- several pages -----------------------------------------------------------
+
+test("what another device does to a widget on a page that is not showing is kept for when its page opens", () => {
+  // GrapesJS builds views only for the page on the canvas, so a widget on
+  // another page has no listener here. The change must not be dropped for
+  // want of one: the state is keyed by component id, not by who is attached.
+  const { editor, socket } = page({ surface: true });
+  socket.hears("connect");
+  socket.hears("state:all", { onPageTwo: { value: 10 } });
+  socket.hears("state:changed", { id: "onPageTwo", state: { value: 55 } });
+  socket.hears("state:changed", { id: "alsoPageTwo", state: { on: true } });
+
+  // The operator turns to page two and its widgets attach.
+  const seen = [];
+  editor.onSharedState("onPageTwo", (state) => seen.push(state));
+  editor.onSharedState("alsoPageTwo", (state) => seen.push(state));
+  assert.deepStrictEqual(seen, [{ value: 55 }, { on: true }]);
+});
+
+test("a widget detached by a page turn is not called again, and picks up where things are when it comes back", () => {
+  const { editor, socket } = page({ surface: true });
+  socket.hears("connect");
+  socket.hears("state:all", {});
+
+  const seen = [];
+  const leave = editor.onSharedState("fader", (state) => seen.push(state));
+  socket.hears("state:changed", { id: "fader", state: { value: 1 } });
+  leave();
+  socket.hears("state:changed", { id: "fader", state: { value: 2 } });
+  assert.deepStrictEqual(seen, [{ value: 1 }], "off the canvas, not running");
+
+  editor.onSharedState("fader", (state) => seen.push(state));
+  assert.deepStrictEqual(seen, [{ value: 1 }, { value: 2 }]);
+});
+
+test("turning a page asks the server for everything again, and the answer reaches the widgets now attached", () => {
+  // What the rig said to a widget on a page this device was not showing was
+  // recorded by the server and told to nobody; only asking brings it here.
+  const { editor, socket } = page({ surface: true });
+  socket.hears("connect");
+  socket.hears("state:all", { fader: { value: 10 } });
+  socket.emitted.length = 0;
+
+  const seen = [];
+  editor.onSharedState("fader", (state) => seen.push(state));
+  seen.length = 0;
+
+  editor.syncSharedState();
+  assert.strictEqual(socket.emitted.length, 1);
+  assert.strictEqual(socket.emitted[0].event, "state:sync");
+
+  socket.hears("state:all", { fader: { value: 64 } });
+  assert.deepStrictEqual(seen, [{ value: 64 }]);
+  assert.deepStrictEqual(socket.states(), [], "an answer to a question is not a reconnect: nothing is told back");
+
+  // The editor is not a device on the surface and has nothing to ask.
+  assert.strictEqual(page({}).editor.syncSharedState, undefined);
 });

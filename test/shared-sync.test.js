@@ -363,6 +363,57 @@ test("a device joining late starts where the others are", () => {
   assert.deepStrictEqual(late.ctx.shared, [], "adopted, not re-shared");
 });
 
+// --- a widget on a page that is not showing ------------------------------------
+
+test("state:sync hands the asking device everything again, writes nothing and tells nobody else", () => {
+  const store = new SharedState();
+  store.apply("w1", { value: 12 });
+  const room = fakeRoom();
+  const a = room.connect();
+  const b = room.connect();
+  join(store, a);
+  join(store, b);
+
+  a.say("state:sync");
+  assert.deepStrictEqual(a.told(), [{ event: "state:all", payload: { w1: { value: 12 } } }]);
+  assert.deepStrictEqual(b.told(), [], "one device turning a page is nobody else's business");
+  assert.deepStrictEqual(store.snapshot(), { w1: { value: 12 } });
+
+  // Whatever a page sends along with it is ignored, not applied.
+  assert.doesNotThrow(() => a.say("state:sync", { w1: { value: 0 } }));
+  assert.deepStrictEqual(store.get("w1"), { value: 12 });
+});
+
+test("a fader on a page that was not showing opens where the rig left it", () => {
+  // The gap multiple pages opened. Tablet A shows the page with the fader and
+  // hears the rig move it; that is recorded as `heard` and told to nobody.
+  // Tablet B is on another page: GrapesJS has built no view for the fader, so
+  // nothing on B is listening to the rig or to the server, and the snapshot B
+  // was handed on connect predates the move. Turning to the page, B asks
+  // again; without that its thumb sat at the project's default beside A's.
+  const store = new SharedState();
+  const room = fakeRoom();
+  const a = device(room, store, slider);
+
+  // B: connected, but the fader's page is not on its canvas.
+  const bSocket = room.connect();
+  join(store, bSocket);
+
+  a.ctx.receive("/slider1", [64]);
+  assert.deepStrictEqual(bSocket.told(), [], "B was told nothing, by design");
+
+  // B turns the page: the widget attaches, and the page asks for everything.
+  bSocket.say("state:sync");
+  const answer = bSocket.told().pop();
+  assert.strictEqual(answer.event, "state:all");
+
+  const b = mount(slider, { listen: true });
+  b.ctx.receiveShared(answer.payload.w1);
+  assert.strictEqual(b.el.value, "64");
+  assert.deepStrictEqual(b.ctx.sent, [], "opening a page sends nothing to the rig");
+  assert.deepStrictEqual(b.ctx.shared, [], "and what was adopted is not shared back");
+});
+
 // --- the real thing -----------------------------------------------------------
 
 // socket.io-client is a browser library, installed with the rest of them
