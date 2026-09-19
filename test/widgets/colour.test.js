@@ -394,3 +394,41 @@ test("detaching stops the picker following the rig", () => {
   assert.strictEqual(ctx.listening(), 0);
   assert.strictEqual(el.listenerCount("input") + el.listenerCount("change") + el.listenerCount("blur"), 0);
 });
+
+// --- review fixes -----------------------------------------------------------
+
+test("channels spelled as text are channels, even when the first one would pass for a hex code", () => {
+  // "255" and "000" are valid three-digit hex codes. Read hex-first, this
+  // list painted #225555, and "000" first painted black.
+  const byte = mount(colour, { listen: true, scale: "byte", value: "#123456" });
+  byte.ctx.receive("/colour", ["255", "128", "0"]);
+  assert.strictEqual(byte.el.value, "#ff8000");
+  assert.strictEqual(byte.ctx.get("value"), "#ff8000");
+  byte.ctx.receive("/colour", ["000", "255", "0"]);
+  assert.strictEqual(byte.el.value, "#00ff00", "not black");
+  byte.ctx.receive("/colour", ["123456", "255", "0", "1"]);
+  assert.strictEqual(byte.el.value, "#ffff00", "six digits pin to the top of the range like any number");
+  assert.deepStrictEqual(byte.ctx.sent, [], "and nothing goes back out");
+
+  assert.strictEqual(fromWire(["100", "0.5", "0"], "unit"), "#ff8000");
+});
+
+test("a hex string is still a hex string: alone, or when what follows it is not channels", () => {
+  assert.strictEqual(fromWire(["255"], "byte"), "#225555", "one bare string can only be a hex code");
+  assert.strictEqual(fromWire(["#0f0", 1], "byte"), "#00ff00");
+  assert.strictEqual(fromWire(["ff8800", "x", "y"], "byte"), "#ff8800");
+  assert.strictEqual(fromWire(["#ff8800", 1, 1], "byte"), "#ff8800", "a hash is never a number");
+});
+
+test("the panel refuses whole numbers on a 0 to 1 range, whichever setting is edited last", () => {
+  // #808080 would go out as 1, 1, 1 and an alpha of 0.25 as 0.
+  const bad = { format: "rgb", scale: "unit", argType: "i" };
+  assert.match(colour.checks.argType("i", bad), /0 to 255/);
+  assert.match(colour.checks.scale("unit", bad), /0 to 255/);
+  assert.match(colour.checks.format("rgba", Object.assign({}, bad, { format: "rgba" })), /0 to 255/);
+
+  assert.strictEqual(colour.checks.argType("i", { format: "rgb", scale: "byte", argType: "i" }), null);
+  assert.strictEqual(colour.checks.argType("f", { format: "rgb", scale: "unit", argType: "f" }), null);
+  assert.strictEqual(colour.checks.format("hex", { format: "hex", scale: "unit", argType: "i" }), null, "a hex string has no argument type");
+  assert.strictEqual(colour.checks.argType("f", colour.defaults), null, "the defaults pass");
+});

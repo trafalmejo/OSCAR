@@ -368,7 +368,20 @@ wide by default and drives an RGB fixture as it stands; over a wider block
 the blue repeats, and a narrower one is refused. Alpha never reaches the
 fixture. With **Listen** on, a colour arriving at Message fills the swatch
 in either shape OSCAR sends -- the hex string, or three channels on the
-configured Range, with a fourth ignored -- unless the picker is open. A
+configured Range, with a fourth ignored. Channels may arrive as numbers or
+as numbers spelled as text; three readable numbers are always channels, even
+when the first (`"255"`, `"000"`) would also pass for a short hex code. A
 colour that cannot be read leaves the swatch as it was: the native control
 turns anything it does not understand into black, and a rig sending nonsense
 must not black a colour out.
+
+While a colour is being dragged inside the picker the rig is not heard, so
+the swatch is not snatched from under the hand. That holds on pickers that
+report the colour as it moves (macOS, iOS). A picker that reports only when
+it is closed (the Windows dialog, Android) gives the page no sign that it is
+open, so a colour arriving meanwhile repaints the swatch behind it; pressing
+OK still sends the colour that was picked.
+
+**Argument type** int needs **Range** `0 to 255`. Whole numbers on `0 to 1`
+would round every channel to 0 or 1 -- eight colours in all, and a middling
+Alpha going out as 0 -- so the panel refuses the combination.
