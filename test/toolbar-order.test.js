@@ -16,9 +16,10 @@ test("the lock sits beside Push to preview, and Pages beside the widget style", 
   const order = arrange(ADDED);
   assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
   assert.strictEqual(order[order.indexOf("open-styles") + 1], "open-pages");
+  assert.strictEqual(order[order.indexOf("oscar-export") + 1], "gjs-open-import-webpage", "Import sits to the right of Publish");
   assert.deepStrictEqual(order.slice().sort(), ADDED.slice().sort(), "nothing added, nothing lost");
-  assert.deepStrictEqual(order.filter((id) => id !== "toggle-lock" && id !== "open-pages"),
-    ADDED.filter((id) => id !== "toggle-lock" && id !== "open-pages"), "and the rest keep their order");
+  const moved = PLACEMENTS.map((p) => p.id);
+  assert.deepStrictEqual(order.filter((id) => !moved.includes(id)), ADDED.filter((id) => !moved.includes(id)), "and the rest keep their order");
 });
 
 test("a move works in either direction and never changes what it was given", () => {
@@ -48,4 +49,16 @@ test("every placement names a button the editor really adds", () => {
       assert.ok(name === "preview" || src.includes('"' + name + '"'), name + " is a button id in the editor");
     }
   }
+});
+
+test("Publish and Import are told apart by their arrows: out is up, in is down", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
+  // Both used to draw the same down arrow, side by side or not.
+  const upload = /upload:\s*"([^"]+)"/.exec(src);
+  assert.ok(upload, "there is an upload icon");
+  assert.match(src, /id:\s*"oscar-export",\s*label:\s*icon\("upload"\)/, "and Publish uses it");
+  // The preset's Import icon, which stays as GrapesJS draws it.
+  assert.notStrictEqual(upload[1], "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z");
 });
