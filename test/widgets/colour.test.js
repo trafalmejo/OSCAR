@@ -445,3 +445,32 @@ test("text channels with one unreadable are refused, not read as a short hex cod
   assert.strictEqual(fromWire(["00ff00"], "byte"), "#00ff00");
   assert.strictEqual(fromWire(["#fff", 1, 2], "byte"), "#ffffff");
 });
+
+// --- several devices -----------------------------------------------------------
+
+test("a picked colour is shared once with the other devices", () => {
+  const { el, ctx } = mount(colour, {});
+  pick(el, "#00ff00");
+  assert.deepStrictEqual(ctx.shared, [{ value: "#00ff00" }], "one pick is one colour, shared once");
+});
+
+test("another device's colour fills the swatch here, and nothing is sent or shared again", () => {
+  const { el, ctx } = mount(colour, {});
+  ctx.receiveShared({ value: "#0000ff" });
+  assert.strictEqual(el.value, "#0000ff");
+  assert.strictEqual(ctx.get("value"), "#0000ff");
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.deepStrictEqual(ctx.shared, []);
+
+  // Nonsense must not black the swatch out.
+  for (const junk of [{ value: "#zzzzzz" }, { value: null }, { value: 0 }, {}, null]) ctx.receiveShared(junk);
+  assert.strictEqual(el.value, "#0000ff");
+});
+
+test("a hand in the picker outranks another device", () => {
+  const { el, ctx } = mount(colour, {});
+  el.value = "#ff00ff";
+  el.fire("input");
+  ctx.receiveShared({ value: "#0000ff" });
+  assert.strictEqual(el.value, "#ff00ff");
+});

@@ -221,11 +221,22 @@ test("only a real src or poster attribute is inlined", () => {
   assert.strictEqual(inlineHtmlAssets(title, read), title, "a title's value and text are left alone");
 
   assert.strictEqual(inlineHtmlAssets("<img data-src=\"a.png\">", read), "<img data-src=\"a.png\">");
-  assert.strictEqual(inlineHtmlAssets("<img alt=\"x>y\" src='a.png'/>", read), '<img alt="x>y" src="' + uri + '"/>');
+  assert.strictEqual(inlineHtmlAssets("<img alt=\"x>y\" src='a.png'/>", read), "<img alt=\"x>y\" src='" + uri + "'/>");
   assert.strictEqual(inlineHtmlAssets("<video controls POSTER=\"a.png\" src=\"b.mp4\">", read), '<video controls POSTER="' + uri + '" src="b.mp4">');
 });
 
 test("an unquoted src is inlined too, not left as a relative link", () => {
   const read = (reference) => (reference === "images/x.png" ? "data:image/png;base64,AAAA" : null);
   assert.strictEqual(inlineHtmlAssets("<img src=images/x.png>", read), '<img src="data:image/png;base64,AAAA">');
+});
+
+test("a rewritten attribute keeps the quotes it came with, so a script string holding markup stays valid", () => {
+  // The pass also sees tag-like text inside an inline script. Turning the
+  // single quotes double here closed the JavaScript string early: a syntax
+  // error in the exported page, and none of its script ran.
+  const read = () => "data:image/png;base64,AAAA";
+  const script = "<script>var s=\"<img src='images/a.png'>\";</script>";
+  const out = inlineHtmlAssets(script, read);
+  assert.strictEqual(out, "<script>var s=\"<img src='data:image/png;base64,AAAA'>\";</script>");
+  assert.doesNotThrow(() => new Function(out.replace(/<\/?script>/g, "")));
 });

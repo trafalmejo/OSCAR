@@ -270,3 +270,21 @@ test("text the argument type cannot carry is not stored either", () => {
   assert.deepStrictEqual(ctx.sent, []);
   assert.strictEqual(ctx.config.value, "1.5");
 });
+
+// --- several devices -----------------------------------------------------------
+
+test("committed text is shared; another device's text is shown and goes no further", () => {
+  const a = mount(textInput, {});
+  type(a.el, "GO");
+  a.el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(a.ctx.shared, [{ value: "GO" }]);
+
+  const b = mount(textInput, {});
+  b.ctx.receiveShared({ value: "cue 7" });
+  assert.strictEqual(b.el.value, "cue 7");
+  assert.deepStrictEqual(b.ctx.sent, []);
+  assert.deepStrictEqual(b.ctx.shared, []);
+
+  for (const junk of [{ value: null }, { value: {} }, {}, null]) b.ctx.receiveShared(junk);
+  assert.strictEqual(b.el.value, "cue 7");
+});

@@ -256,3 +256,36 @@ test("a row passed by keyboard is dropped once the rig has spoken", () => {
   assert.deepStrictEqual(ctx.sent, []);
   assert.strictEqual(ctx.config.value, "3");
 });
+
+// --- several devices -----------------------------------------------------------
+
+test("a pick is shared with the other devices; a pick that went nowhere is not", () => {
+  const { el, ctx } = mount(dropdown, {});
+  pick(el, "2");
+  assert.deepStrictEqual(ctx.shared, [{ value: "2" }]);
+  assert.deepStrictEqual(ctx.sharedHow, [null]);
+
+  const off = mount(dropdown, { enabled: false });
+  pick(off.el, "2");
+  assert.deepStrictEqual(off.ctx.shared, [], "a disabled list reached nothing, so there is no news");
+});
+
+test("another device's pick is shown here, and nothing is sent or shared again", () => {
+  const { el, ctx } = mount(dropdown, {});
+  ctx.receiveShared({ value: "3" });
+  assert.strictEqual(el.value, "3");
+  assert.strictEqual(ctx.get("value"), "3");
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.deepStrictEqual(ctx.shared, []);
+
+  // Read as carefully as a value from the rig.
+  for (const junk of [{ value: "nope" }, { value: null }, { value: {} }, {}, null]) ctx.receiveShared(junk);
+  assert.strictEqual(el.value, "3");
+});
+
+test("a value the rig sent is recorded for late joiners and passed to nobody", () => {
+  const { ctx } = mount(dropdown, { listen: true });
+  ctx.receive("/dropdown1", [2]);
+  assert.deepStrictEqual(ctx.shared, [{ value: "2" }]);
+  assert.deepStrictEqual(ctx.sharedHow, [{ heard: true }]);
+});

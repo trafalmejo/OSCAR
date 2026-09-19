@@ -430,3 +430,30 @@ test("a limit or a step that would strand the current Value is refused", () => {
   assert.strictEqual(checks.min(0, { min: 0, max: 100, step: 5, value: 10, argType: "f" }), null);
   assert.strictEqual(checks.step("", { min: "", max: "", step: "", value: 7, argType: "f" }), null);
 });
+
+// --- several devices -----------------------------------------------------------
+
+test("a committed number is shared; another device's number is shown and goes no further", () => {
+  const a = mount(numberInput, {});
+  type(a.el, "12.5");
+  a.el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(a.ctx.shared, [{ value: 12.5 }]);
+
+  const b = mount(numberInput, { min: 0, max: 10 });
+  b.ctx.receiveShared({ value: 7 });
+  assert.strictEqual(b.el.value, "7");
+  assert.deepStrictEqual(b.ctx.sent, []);
+  assert.deepStrictEqual(b.ctx.shared, []);
+
+  // Unreadable is never zero.
+  for (const junk of [{ value: "" }, { value: "  " }, { value: null }, { value: {} }, {}, null]) b.ctx.receiveShared(junk);
+  assert.strictEqual(b.el.value, "7");
+  assert.strictEqual(b.ctx.get("value"), 7);
+});
+
+test("a half-typed number is not overwritten by another device", () => {
+  const { el, ctx } = mount(numberInput, {});
+  type(el, "4");
+  ctx.receiveShared({ value: 99 });
+  assert.strictEqual(el.value, "4");
+});
