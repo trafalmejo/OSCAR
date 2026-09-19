@@ -360,3 +360,14 @@ OSC in: while you are dragging a slider or a pad, or holding a button, what
 the other devices report is ignored until you let go. Pushing a new layout
 to the preview forgets every state, because the widgets in the old one may
 not exist in the new.
+
+The devices are the pages showing the surface (`/preview`). The editor is
+not one of them: it neither follows the tablets nor moves them, so a show
+running on the tablets never rewrites the values saved in the project you
+have open, and a different project open in the editor cannot reach them.
+What the rig sends is recorded for whoever joins later but not passed
+between the tablets, since each of them heard it already. A slider catches
+up when you lift your finger with whatever another device did while you were
+resting on it; a momentary button held on a tablet that drops off the
+network is let go on the others; and if the server restarts, the tablets
+tell it again what they show when they reconnect.

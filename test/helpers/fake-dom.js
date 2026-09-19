@@ -124,6 +124,8 @@ function fakeContext(config) {
     sent: [],
     /** What the widget told the other devices, in order. */
     shared: [],
+    /** How each of those was shared: the second argument, or null. */
+    sharedHow: [],
     get(key) {
       return this.config[key];
     },
@@ -155,11 +157,17 @@ function fakeContext(config) {
         delivering--;
       }
     },
-    share(state) {
+    share(state, how) {
       if (adopting) {
         throw new Error("a widget re-shared the state it was handed: " + JSON.stringify(state));
       }
+      // Every device was sent the rig's message. One that shares it as its
+      // own news has each tablet telling every other what they all heard.
+      if (delivering && !(how && how.heard === true)) {
+        throw new Error("a widget shared what the rig sent without marking it heard: " + JSON.stringify(state));
+      }
       this.shared.push(state);
+      this.sharedHow.push(how || null);
     },
     onShared(fn) {
       sharedListeners.push(fn);

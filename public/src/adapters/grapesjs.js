@@ -150,9 +150,13 @@ function deletionsOf(editor) {
  * being delivered both `send` and `share` are shut: the device that acted
  * already put the message on the wire, and a device that re-shared what it
  * was handed would hand it straight back. `share` stays open while OSC is
- * being delivered, on purpose -- a value the rig sent is shared once, so a
- * device joining later starts where the rig left things; it then dies on
- * the server's unchanged-value guard on its way back (lib/shared-sync.js).
+ * being delivered, on purpose -- a value the rig sent is recorded, so a
+ * device joining later starts where the rig left things -- but it goes out
+ * marked as heard, and the server tells nobody: the other devices were sent
+ * the same OSC message (lib/shared-sync.js).
+ *
+ * Only the pages that show the surface take part. The editor is handed no
+ * shareState (see oscar_socket.js), so neither method exists there.
  *
  * A message may carry an OSC half, a DMX half, or both (lib/widgets/outgoing.js);
  * each goes out on its own bridge. The DMX half is stamped with the
@@ -244,12 +248,16 @@ function contextFor(view, editor) {
   // is written into the project (see pinId), so the same widget carries the
   // same id on every device the layout was pushed to.
   if (editor.shareState) {
-    ctx.share = function (state) {
+    ctx.share = function (state, how) {
       if (adopting) {
         console.warn("OSCAR: a widget tried to re-share the state it was handed; dropped", state);
         return;
       }
-      editor.shareState(model.getId(), state);
+      // Whatever is shared while the rig's message is being delivered is
+      // something every device heard, whether or not the widget said so:
+      // it is recorded and nobody is told (lib/shared-sync.js).
+      var heard = delivering > 0 || !!(how && how.heard === true);
+      editor.shareState(model.getId(), state, { heard: heard, release: how && how.release });
     };
   }
 

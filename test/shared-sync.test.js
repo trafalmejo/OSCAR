@@ -205,9 +205,9 @@ function device(room, store, widget, overrides) {
   const mounted = mount(widget, Object.assign({ listen: true }, overrides));
   const id = "w1";
   const share = mounted.ctx.share.bind(mounted.ctx);
-  mounted.ctx.share = (state) => {
-    share(state);
-    socket.say("state:set", { id, state });
+  mounted.ctx.share = (state, how) => {
+    share(state, how);
+    socket.say("state:set", Object.assign({ id, state }, how));
   };
   // What the server pushes at this device is delivered the way the socket
   // plugin would deliver it: the snapshot on connect included.
@@ -236,11 +236,11 @@ test("a hand on A moves B, and B does not send or share anything in answer", () 
   assert.deepStrictEqual(a.socket.told(), [], "and nothing came back to A");
 });
 
-test("a value adopted from incoming OSC is shared once, and dies on the unchanged-value guard on the way back", () => {
+test("a value adopted from incoming OSC is recorded for late joiners, and no device is told what it heard itself", () => {
   // Both devices hear the rig (the server relays every OSC message to every
-  // browser), so both adopt and both share. The first share is news and
-  // reaches the other device, which adopts it and shares nothing; the
-  // second share says what the record already holds, and stops there.
+  // browser), so both adopt and both share it as heard. It used to be
+  // broadcast like a hand's change: one redundant state:changed per device
+  // per message of a fader stream.
   const store = new SharedState();
   const room = fakeRoom();
   const a = device(room, store, slider);
@@ -249,14 +249,88 @@ test("a value adopted from incoming OSC is shared once, and dies on the unchange
   a.ctx.receive("/slider1", [35]);
   b.ctx.receive("/slider1", [35]);
 
-  assert.deepStrictEqual(a.ctx.shared, [{ value: 35 }], "A shared what the rig said, once");
-  assert.deepStrictEqual(b.ctx.shared, [{ value: 35 }], "B too");
-  assert.deepStrictEqual(store.get("w1"), { value: 35 });
-  assert.strictEqual(b.socket.told().length, 1, "B was told A's share");
-  assert.deepStrictEqual(a.socket.told(), [], "B's identical share was no news");
+  assert.deepStrictEqual(a.ctx.shared, [{ value: 35 }]);
+  assert.deepStrictEqual(a.ctx.sharedHow, [{ heard: true }]);
+  assert.deepStrictEqual(store.get("w1"), { value: 35 }, "recorded");
+  assert.deepStrictEqual(a.socket.told().concat(b.socket.told()), [], "and nobody was told");
   assert.deepStrictEqual(a.ctx.sent.concat(b.ctx.sent), [], "and nothing went to the rig");
-  assert.strictEqual(a.el.value, "35");
-  assert.strictEqual(b.el.value, "35");
+
+  const c = device(room, store, slider);
+  assert.strictEqual(c.el.value, "35", "a device joining later starts where the rig left the thumb");
+});
+
+test("a fader stream from the rig never pulls a thumb back to a value the rig has moved on from", () => {
+  // A's share of 10 reaches the server after B has already taken 20 from
+  // the rig. Broadcast, it stepped B's thumb back to 10 until A's 20 came.
+  const store = new SharedState();
+  const room = fakeRoom();
+  const a = device(room, store, slider);
+  const b = device(room, store, slider);
+  const late = [];
+  const share = a.ctx.share;
+  a.ctx.share = (state, how) => late.push(() => share(state, how));
+
+  a.ctx.receive("/slider1", [10]);
+  b.ctx.receive("/slider1", [10]);
+  b.ctx.receive("/slider1", [20]);
+  late.shift()();
+
+  assert.strictEqual(b.el.value, "20", "B stays where the rig put it");
+  assert.deepStrictEqual(b.socket.told(), []);
+});
+
+test("a device that goes away mid-press lets go of its momentary button on every other device", () => {
+  const store = new SharedState();
+  const room = fakeRoom();
+  const a = device(room, store, button, { mode: "momentary" });
+  const b = device(room, store, button, { mode: "momentary" });
+
+  a.el.fire("pointerdown");
+  assert.strictEqual(b.ctx.classes.toggle, true, "lit on B while A's finger is down");
+
+  a.socket.say("disconnect", "transport close");
+  assert.deepStrictEqual(store.get("w1"), { on: false });
+  assert.strictEqual(b.ctx.classes.toggle, false, "and dark once A is gone");
+  assert.deepStrictEqual(b.ctx.sent, [], "B sent nothing either time");
+});
+
+test("a finger that came up before the device went away leaves nothing to undo, and neither does a toggle", () => {
+  const store = new SharedState();
+  const room = fakeRoom();
+  const a = device(room, store, button, { mode: "momentary" });
+  const b = device(room, store, button, { mode: "momentary" });
+  a.el.fire("pointerdown");
+  a.el.fire("pointerup");
+  b.el.fire("pointerdown");
+  a.socket.say("disconnect", "transport close");
+  assert.deepStrictEqual(store.get("w1"), { on: true }, "B's press is not undone by A leaving");
+
+  const store2 = new SharedState();
+  const room2 = fakeRoom();
+  const t = device(room2, store2, button, { mode: "toggle" });
+  t.el.fire("click");
+  t.socket.say("disconnect", "transport close");
+  assert.deepStrictEqual(store2.get("w1"), { on: true }, "a toggle outlives the device that set it");
+});
+
+test("a release is not a way to park a payload on the server, nor to bring back a forgotten record", () => {
+  const store = new SharedState();
+  const room = fakeRoom();
+  const a = room.connect();
+  const b = room.connect();
+  join(store, a);
+  join(store, b);
+
+  a.say("state:set", { id: "w1", state: { on: true }, release: { on: { deep: "x".repeat(1000) } } });
+  a.say("state:set", { id: "w2", state: { on: true }, release: { on: false } });
+  reset(store, room);
+  a.say("disconnect");
+  assert.strictEqual(store.size, 0, "w2 was forgotten with its layout and stays forgotten");
+  assert.deepStrictEqual(
+    b.told().filter((m) => m.event === "state:changed").map((m) => m.payload.id),
+    ["w1", "w2"],
+    "B heard the two presses and nothing after"
+  );
 });
 
 test("a toggle pressed on A is on at B, so B's next press sends the OFF edge", () => {
@@ -358,7 +432,23 @@ test("over a real socket.io server: A sets, only B hears; B echoes, nobody hears
   const c = await connect();
   assert.deepStrictEqual(c.all, { w1: { value: 40 } }, "the late joiner is caught up");
 
-  const everyone = [a, b, c].map((d) => within(d.client, "state:all", 2000));
+  // What the rig told everyone is recorded and passed to nobody.
+  const heardQuiet = within(b.client, "state:changed", 300);
+  a.client.emit("state:set", { id: "w1", state: { value: 55 }, heard: true });
+  assert.strictEqual(await heardQuiet, null, "a heard value is not broadcast");
+  assert.deepStrictEqual(sync.store.get("w1"), { value: 55 }, "but it is recorded");
+
+  // A device that goes away mid-press lets go for everyone. The broadcast is
+  // made from inside socket.io's own disconnect event, which is the one place
+  // a stand-in cannot vouch for.
+  const pressed = within(b.client, "state:changed", 2000);
+  c.client.emit("state:set", { id: "btn", state: { on: true }, release: { on: false } });
+  assert.deepStrictEqual(await pressed, { id: "btn", state: { on: true } });
+  const letGo = within(b.client, "state:changed", 2000);
+  c.client.close();
+  assert.deepStrictEqual(await letGo, { id: "btn", state: { on: false } });
+
+  const everyone = [a, b].map((d) => within(d.client, "state:all", 2000));
   sync.reset();
-  assert.deepStrictEqual(await Promise.all(everyone), [{}, {}, {}], "a new layout clears every device");
+  assert.deepStrictEqual(await Promise.all(everyone), [{}, {}], "a new layout clears every device");
 });

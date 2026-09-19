@@ -462,7 +462,9 @@ function sharingEditor() {
   const shared = [];
   let listeners = {};
   editor.sendOSC = (ip, port, address, args) => (editor.osc = (editor.osc || []).concat([{ address, args }]));
-  editor.shareState = (id, state) => shared.push({ id, state });
+  const how = [];
+  editor.how = how;
+  editor.shareState = (id, state, options) => (shared.push({ id, state }), how.push(options));
   editor.onSharedState = (id, fn) => {
     (listeners[id] = listeners[id] || []).push(fn);
     return () => {
@@ -550,6 +552,37 @@ test("a share made while incoming OSC is being delivered goes out: the rig's val
   assert.strictEqual(el.value, "33");
   assert.deepStrictEqual(editor.shared, [{ id: "irig", state: { value: 33 } }]);
   assert.strictEqual(editor.osc, undefined, "nothing went back to the rig");
+  assert.strictEqual(editor.how[0].heard, true, "marked as heard, so the server tells nobody");
+
+  el.value = "50";
+  el.fire("input");
+  assert.strictEqual(editor.how[1].heard, false, "a hand's value is news");
+});
+
+test("whatever a widget shares while the rig's message is being delivered goes out as heard, whether it said so or not", () => {
+  // The host's half of the rule, like the send gate: every device was sent
+  // the same OSC message, and a widget that forgot to say so would have each
+  // tablet telling every other what they all heard.
+  const editor = sharingEditor();
+  let oscListeners = [];
+  editor.onOscIn = (fn) => (oscListeners.push(fn), () => {});
+  const forgetful = { attach: (element, ctx) => ctx.onOsc(() => ctx.share({ value: 1 })) };
+  register(Object.assign({}, slider, { name: "oscar-heard-probe", attach: forgetful.attach }))(editor, {});
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults), "iheard") };
+  editor.types["oscar-heard-probe"].view.onRender.call(view);
+  for (const fn of oscListeners) fn({ address: "/anything", args: [1] });
+  assert.deepStrictEqual(editor.how, [{ heard: true, release: undefined }]);
+});
+
+test("a release asked for by the widget reaches the socket plugin", () => {
+  const editor = sharingEditor();
+  let ctx = null;
+  const probe = { attach: (element, context) => ((ctx = context), () => {}) };
+  register(Object.assign({}, slider, { name: "oscar-release-probe", attach: probe.attach }))(editor, {});
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults), "irel") };
+  editor.types["oscar-release-probe"].view.onRender.call(view);
+  ctx.share({ on: true }, { release: { on: false } });
+  assert.deepStrictEqual(editor.how, [{ heard: false, release: { on: false } }]);
 });
 
 test("a host with no other devices offers neither share nor onShared, and the widgets cope", () => {

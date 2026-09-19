@@ -116,9 +116,43 @@ test("a page cannot fill memory by inventing widgets", () => {
   const state = new SharedState();
   for (let i = 0; i < MAX_WIDGETS + 50; i++) state.apply("w" + i, { value: i });
   assert.strictEqual(state.size, MAX_WIDGETS);
-  assert.strictEqual(state.apply("one-more", { value: 1 }), null, "refused, and no news");
-  // A widget already in the record still works.
-  assert.deepStrictEqual(state.apply("w0", { value: 999 }), { value: 999 });
+  state.apply("one-more", { value: 1 });
+  assert.strictEqual(state.size, MAX_WIDGETS, "and it stays full, not fuller");
+});
+
+test("a full store makes room for a real widget rather than refusing it", () => {
+  // The flood used to win for good: every id not yet recorded was refused
+  // until the next layout push, so a real widget touched for the first time
+  // after it was neither broadcast nor in a late joiner's snapshot.
+  const state = new SharedState();
+  for (let i = 0; i < MAX_WIDGETS; i++) state.apply("junk" + i, { value: i });
+  assert.deepStrictEqual(state.apply("fader", { value: 64 }), { value: 64 }, "news, so it is broadcast");
+  assert.deepStrictEqual(state.snapshot().fader, { value: 64 }, "and a late joiner is handed it");
+  assert.strictEqual(state.get("junk0"), null, "the record written longest ago made the room");
+  assert.deepStrictEqual(state.get("junk1"), { value: 1 });
+});
+
+test("the record that makes room is the one written longest ago, not the one created first", () => {
+  const state = new SharedState();
+  state.apply("fader", { value: 1 });
+  for (let i = 0; i < MAX_WIDGETS - 1; i++) state.apply("junk" + i, { value: i });
+  // The fader is in use; the flood goes on.
+  state.apply("fader", { value: 2 });
+  for (let i = 0; i < 10; i++) state.apply("more" + i, { value: i });
+  assert.deepStrictEqual(state.get("fader"), { value: 2 }, "a widget somebody is moving outlives the junk");
+  assert.strictEqual(state.size, MAX_WIDGETS);
+});
+
+test("an id that is a plain object's prototype is refused, so live and late views cannot disagree", () => {
+  const state = new SharedState();
+  assert.strictEqual(state.apply("__proto__", { value: 1 }), null, "never broadcast");
+  assert.strictEqual(state.size, 0, "and takes no room");
+  // Ids that merely look alarming are own keys of the snapshot, and survive
+  // the trip through JSON that socket.io gives them.
+  state.apply("constructor", { value: 2 });
+  const wire = JSON.parse(JSON.stringify(state.snapshot()));
+  assert.deepStrictEqual(Object.keys(wire), ["constructor"]);
+  assert.deepStrictEqual(wire.constructor, { value: 2 });
 });
 
 test("nor by inventing keys on one widget", () => {

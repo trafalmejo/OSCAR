@@ -339,6 +339,13 @@ test("a host with no other devices to speak of is fine: the pad neither shares n
   assert.strictEqual(ctx.listening(), 0);
 });
 
+test("a position from the rig is shared as heard", () => {
+  const { ctx } = mount(xypad, { listen: true });
+  ctx.receive("/pad", [20, 30]);
+  assert.deepStrictEqual(ctx.shared, [{ x: 20, y: 30 }]);
+  assert.deepStrictEqual(ctx.sharedHow, [{ heard: true }]);
+});
+
 test("detaching stops the pad following the other devices", () => {
   const { ctx, detach } = mount(xypad, { x: 10, y: 10 });
   detach();
