@@ -238,6 +238,7 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
+var features = require("../../lib/features");
 
 var oscarExport = require("./export_dialog");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -903,6 +904,7 @@ function initGrape(ipServer, socketPort) {
   }
 
   editor.Commands.add("open-pages", function () {
+    if (!features.PAGES) return;
     renderPages();
     setModal("Pages", "pages-panel");
   });
@@ -1246,14 +1248,17 @@ function initGrape(ipServer, socketPort) {
     attributes: { title: "Save project", "data-tooltip-pos": "bottom" },
   });
 
-  pn.addButton("options", {
-    id: "open-pages",
-    label: icon("pages"),
-    command: function () {
-      editor.runCommand("open-pages");
-    },
-    attributes: { title: "Pages", "data-tooltip-pos": "bottom" },
-  });
+  // Not offered while the feature is off; see lib/features.js.
+  if (features.PAGES) {
+    pn.addButton("options", {
+      id: "open-pages",
+      label: icon("pages"),
+      command: function () {
+        editor.runCommand("open-pages");
+      },
+      attributes: { title: "Pages", "data-tooltip-pos": "bottom" },
+    });
+  }
 
   pn.addButton("options", {
     id: "open-load",

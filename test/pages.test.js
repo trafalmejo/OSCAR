@@ -259,6 +259,7 @@ test("the bar is drawn only while shown, shortens the canvas through a body clas
   const body = fakeBody();
   const switched = [];
   const tabs = pages.pageTabs(editor, {
+    enabled: true,
     bar,
     body,
     document: fakeDocument(),
@@ -319,7 +320,7 @@ test("a tab lets go of a momentary button being held, while it can still send, b
     };
 
     const bar = fakeBar();
-    const tabs = pages.pageTabs(editor, { bar, body: fakeBody(), document: fakeDocument(), windows: () => [win] });
+    const tabs = pages.pageTabs(editor, { enabled: true, bar, body: fakeBody(), document: fakeDocument(), windows: () => [win] });
     tabs.show();
     bar.children[1].onclick();
 
@@ -376,4 +377,21 @@ test("a name is taken when another page is shown under it, and a page may keep i
   assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "Spots", 1), false, "renaming a page to its own name");
   assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "Spots", 0), true);
   assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "spots"), false, "a different tab to the eye");
+});
+
+test("with pages switched off, the bar never shows, however many pages the project has", () => {
+  const editor = fakeEditor(["A", "B"]);
+  const bar = fakeBar();
+  const body = fakeBody();
+  const tabs = pages.pageTabs(editor, { enabled: false, bar, body, document: fakeDocument() });
+  tabs.show();
+  editor.trigger("page:add");
+  assert.strictEqual(bar.hidden, true);
+  assert.strictEqual(body.classList.contains("oscar-has-pages"), false);
+  // Left to itself, the bar takes the switch from lib/features.js.
+  const features = require("../lib/features");
+  assert.strictEqual(typeof features.PAGES, "boolean");
+  const byDefault = pages.pageTabs(editor, { bar, body, document: fakeDocument() });
+  byDefault.show();
+  assert.strictEqual(bar.hidden, !features.PAGES);
 });

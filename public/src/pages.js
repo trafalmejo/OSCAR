@@ -13,6 +13,7 @@
  */
 
 var projectFormat = require("../../lib/project-format");
+var features = require("../../lib/features");
 
 /**
  * The pages as a list of { id, label, current }.
@@ -218,6 +219,9 @@ function renderTabs(doc, bar, entries, onPick) {
  * a tab lets go of whatever is being held before the page goes (releaseHeld).
  */
 function pageTabs(editor, options) {
+  // Off with the feature (lib/features.js): the bar then never shows, and a
+  // surface stays on the page it opened on. `enabled` is for the tests.
+  var enabled = options.enabled === undefined ? features.PAGES : !!options.enabled;
   var bar = options.bar;
   var body = options.body;
   var doc = options.document || bar.ownerDocument;
@@ -251,7 +255,7 @@ function pageTabs(editor, options) {
   return {
     render: render,
     show: function () {
-      showing = true;
+      showing = enabled;
       render();
     },
     hide: function () {
