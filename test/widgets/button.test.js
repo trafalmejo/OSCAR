@@ -341,3 +341,122 @@ test("Listen sits right after Message, and is off by default", () => {
   assert.strictEqual(keys[keys.indexOf("message") + 1], "listen");
   assert.strictEqual(button.defaults.listen, false);
 });
+
+// --- the other devices ------------------------------------------------------
+
+test("a press is shared with the other devices, alongside the message", () => {
+  const { el, ctx } = mount(button, { mode: "toggle" });
+  el.fire("click");
+  el.fire("click");
+  assert.deepStrictEqual(ctx.shared, [{ on: true }, { on: false }]);
+
+  const momentary = mount(button);
+  momentary.el.fire("pointerdown");
+  momentary.el.fire("pointerup");
+  assert.deepStrictEqual(momentary.ctx.shared, [{ on: true }, { on: false }]);
+  momentary.el.fire("pointerup");
+  assert.strictEqual(momentary.ctx.shared.length, 2, "a release with no press is nothing to share");
+});
+
+test("sharing is not gated on Listen, or on Enabled: two tablets agreeing needs no switch", () => {
+  const { el, ctx } = mount(button, { mode: "toggle", enabled: false });
+  el.fire("click");
+  assert.deepStrictEqual(ctx.sent, [], "disabled, so silent");
+  assert.deepStrictEqual(ctx.shared, [{ on: true }], "but what it shows is still shared");
+
+  const quiet = mount(button, { mode: "toggle", listen: false });
+  quiet.ctx.receiveShared({ on: true });
+  assert.strictEqual(quiet.ctx.classes.toggle, true, "and what the others show is still followed");
+});
+
+test("a toggle adopts what another device shows, sends nothing, shares nothing, and next sends the opposite edge", () => {
+  const { el, ctx } = mount(button, { mode: "toggle", valueOn: "1", valueOff: "0", argType: "i" });
+  ctx.receiveShared({ on: true });
+  assert.strictEqual(ctx.classes.toggle, true);
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.deepStrictEqual(ctx.shared, []);
+
+  el.fire("click");
+  assert.deepStrictEqual(ctx.sent.map((m) => m.args[0].value), [0], "OFF, not ON again");
+  assert.deepStrictEqual(ctx.shared, [{ on: false }]);
+});
+
+test("a momentary button lights up with the finger on another device, and the finger here outranks it", () => {
+  const { el, ctx } = mount(button);
+  ctx.receiveShared({ on: true });
+  assert.strictEqual(ctx.classes.toggle, true, "lit: someone is holding it");
+  ctx.receiveShared({ on: false });
+  assert.strictEqual(ctx.classes.toggle, false);
+
+  el.fire("pointerdown");
+  ctx.receiveShared({ on: false });
+  assert.strictEqual(ctx.classes.toggle, true, "the finger here is down, so it stays lit");
+  el.fire("pointerup");
+  assert.strictEqual(ctx.sent.length, 2, "and the release still sends");
+  assert.strictEqual(ctx.classes.toggle, false);
+});
+
+test("an edge adopted from the rig is shared once, so a device joining later starts where the rig left it", () => {
+  const { ctx } = mount(button, { listen: true, mode: "toggle" });
+  ctx.receive("/push1", [1]);
+  assert.deepStrictEqual(ctx.shared, [{ on: true }]);
+  assert.deepStrictEqual(ctx.sent, []);
+
+  // A momentary button under a finger takes nothing from the rig, and so
+  // has nothing to pass on.
+  const held = mount(button, { listen: true });
+  held.el.fire("pointerdown");
+  held.ctx.receive("/push1", [0]);
+  assert.deepStrictEqual(held.ctx.shared, [{ on: true }], "only the press itself");
+});
+
+test("a shared state the button cannot read is ignored, never taken as off", () => {
+  const { ctx } = mount(button, { mode: "toggle" });
+  ctx.receiveShared({ on: true });
+  for (const state of [{}, { on: null }, { on: "false" }, { on: 0 }, { value: 1 }, { on: undefined }]) {
+    ctx.receiveShared(state);
+    assert.strictEqual(ctx.classes.toggle, true, JSON.stringify(state));
+  }
+});
+
+test("a host with no other devices to speak of is fine: the button neither shares nor subscribes", () => {
+  const { fakeElement, fakeContext } = require("../helpers/fake-dom");
+  const ctx = fakeContext(Object.assign({}, button.defaults, { mode: "toggle" }));
+  delete ctx.share;
+  delete ctx.onShared;
+  const el = fakeElement();
+  const detach = button.attach(el, ctx);
+  el.fire("click");
+  assert.strictEqual(ctx.sent.length, 1);
+  detach();
+  assert.strictEqual(ctx.listening(), 0);
+});
+
+test("a momentary press says what to show if this device goes away; the release and a toggle say nothing of the kind", () => {
+  // A tablet that drops off the network mid-press never reports the finger
+  // coming up, and every other device stayed lit.
+  const held = mount(button, { mode: "momentary" });
+  held.el.fire("pointerdown");
+  held.el.fire("pointerup");
+  assert.deepStrictEqual(held.ctx.shared, [{ on: true }, { on: false }]);
+  assert.deepStrictEqual(held.ctx.sharedHow, [{ release: { on: false } }, null]);
+
+  const toggled = mount(button, { mode: "toggle" });
+  toggled.el.fire("click");
+  assert.deepStrictEqual(toggled.ctx.sharedHow, [null], "a toggle outlives the device that set it");
+});
+
+test("an edge from the rig is shared as heard", () => {
+  const { ctx } = mount(button, { mode: "toggle", listen: true, valueOn: "1", valueOff: "0", argType: "i" });
+  ctx.receive(ctx.config.message, [1]);
+  assert.deepStrictEqual(ctx.shared, [{ on: true }]);
+  assert.deepStrictEqual(ctx.sharedHow, [{ heard: true }]);
+});
+
+test("detaching stops the button following the other devices", () => {
+  const { ctx, detach } = mount(button, { mode: "toggle" });
+  detach();
+  ctx.receiveShared({ on: true });
+  assert.ok(!ctx.classes || !ctx.classes.toggle);
+  assert.strictEqual(ctx.listening(), 0);
+});

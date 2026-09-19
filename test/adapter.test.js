@@ -61,7 +61,11 @@ function fakeModel(config, id) {
       this.config[key] = value;
     },
     getId() {
-      return id || "i1";
+      return (this.config.attributes && this.config.attributes.id) || id || "i1";
+    },
+    /** GrapesJS's own way of writing an id: as the id attribute. */
+    setId(value) {
+      this.config.attributes = Object.assign({}, this.config.attributes, { id: value });
     },
     previous() {
       return undefined;
@@ -454,6 +458,177 @@ test("a widget with nothing conditional is left alone: its trait list is never r
   type.model.init.call(model);
   assert.strictEqual(model.get("traits"), undefined);
   assert.strictEqual(model.handlerCount(), 0);
+});
+
+// --- the other devices ------------------------------------------------------
+
+/** An editor whose socket plugin has put the other devices within reach. */
+function sharingEditor() {
+  const editor = fakeEditor();
+  const shared = [];
+  let listeners = {};
+  editor.sendOSC = (ip, port, address, args) => (editor.osc = (editor.osc || []).concat([{ address, args }]));
+  const how = [];
+  editor.how = how;
+  editor.shareState = (id, state, options) => (shared.push({ id, state }), how.push(options));
+  editor.onSharedState = (id, fn) => {
+    (listeners[id] = listeners[id] || []).push(fn);
+    return () => {
+      listeners[id] = listeners[id].filter((f) => f !== fn);
+    };
+  };
+  /** What another device shares for one widget, as the socket plugin would deliver it. */
+  editor.arrives = (id, state) => (listeners[id] || []).slice().forEach((fn) => fn(state));
+  editor.subscribed = (id) => (listeners[id] || []).length;
+  return Object.assign(editor, { shared });
+}
+
+test("a widget's share goes out under the component's id, and what arrives under that id reaches it", () => {
+  const editor = sharingEditor();
+  register(slider)(editor, {});
+  const type = editor.types[slider.name];
+  const el = fakeElement();
+  const view = { el, model: fakeModel(Object.assign({}, slider.defaults, { min: 0, max: 100, value: 0 }), "iabc") };
+  type.view.onRender.call(view);
+  assert.strictEqual(editor.subscribed("iabc"), 1, "subscribed under its own id");
+
+  el.value = "40";
+  el.fire("input");
+  assert.deepStrictEqual(editor.shared, [{ id: "iabc", state: { value: 40 } }]);
+
+  editor.arrives("iabc", { value: 70 });
+  assert.strictEqual(el.value, "70", "the thumb followed the other device");
+  assert.strictEqual(editor.shared.length, 1, "and did not share it again");
+  assert.deepStrictEqual(editor.osc, [{ address: "/slider1", args: [{ type: "f", value: 40 }] }], "nor send it");
+
+  editor.arrives("other", { value: 10 });
+  assert.strictEqual(el.value, "70", "another widget's state is not this widget's business");
+
+  type.view.removed.call(view);
+  assert.strictEqual(editor.subscribed("iabc"), 0, "removal unsubscribes");
+});
+
+test("while another device's state is being delivered, a send or a share made in answer is dropped", () => {
+  // The host's half of the guard between devices. Adoption never sends: the
+  // device that acted already put the message on the wire. And it never
+  // re-shares: the server would find nothing changed, but only because it
+  // was stopped here first -- two hosts without this gate would hand the
+  // value back and forth through a server that saw a change each time the
+  // value differed by rounding.
+  const editor = sharingEditor();
+  const answering = {
+    attach: (element, ctx) =>
+      ctx.onShared(() => {
+        ctx.send({ ip: "localhost", port: 7000, address: "/x", args: [] });
+        ctx.share({ value: 1 });
+      }),
+  };
+  register(Object.assign({}, slider, { name: "oscar-answer-probe", attach: answering.attach }))(editor, {});
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults), "iprobe") };
+  editor.types["oscar-answer-probe"].view.onRender.call(view);
+
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (...args) => warned.push(args.join(" "));
+  try {
+    editor.arrives("iprobe", { value: 5 });
+  } finally {
+    console.warn = warn;
+  }
+  assert.strictEqual(editor.osc, undefined, "the send was dropped");
+  assert.deepStrictEqual(editor.shared, [], "the share was dropped");
+  assert.strictEqual(warned.length, 2, "and both said so");
+});
+
+test("a share made while incoming OSC is being delivered goes out: the rig's value is shared once", () => {
+  const editor = sharingEditor();
+  let oscListeners = [];
+  editor.onOscIn = (fn) => {
+    oscListeners.push(fn);
+    return () => {
+      oscListeners = oscListeners.filter((f) => f !== fn);
+    };
+  };
+  register(slider)(editor, {});
+  const el = fakeElement();
+  const view = { el, model: fakeModel(Object.assign({}, slider.defaults, { listen: true, min: 0, max: 100, value: 0 }), "irig") };
+  editor.types[slider.name].view.onRender.call(view);
+
+  for (const fn of oscListeners) fn({ address: "/slider1", args: [33] });
+  assert.strictEqual(el.value, "33");
+  assert.deepStrictEqual(editor.shared, [{ id: "irig", state: { value: 33 } }]);
+  assert.strictEqual(editor.osc, undefined, "nothing went back to the rig");
+  assert.strictEqual(editor.how[0].heard, true, "marked as heard, so the server tells nobody");
+
+  el.value = "50";
+  el.fire("input");
+  assert.strictEqual(editor.how[1].heard, false, "a hand's value is news");
+});
+
+test("whatever a widget shares while the rig's message is being delivered goes out as heard, whether it said so or not", () => {
+  // The host's half of the rule, like the send gate: every device was sent
+  // the same OSC message, and a widget that forgot to say so would have each
+  // tablet telling every other what they all heard.
+  const editor = sharingEditor();
+  let oscListeners = [];
+  editor.onOscIn = (fn) => (oscListeners.push(fn), () => {});
+  const forgetful = { attach: (element, ctx) => ctx.onOsc(() => ctx.share({ value: 1 })) };
+  register(Object.assign({}, slider, { name: "oscar-heard-probe", attach: forgetful.attach }))(editor, {});
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults), "iheard") };
+  editor.types["oscar-heard-probe"].view.onRender.call(view);
+  for (const fn of oscListeners) fn({ address: "/anything", args: [1] });
+  assert.deepStrictEqual(editor.how, [{ heard: true, release: undefined }]);
+});
+
+test("a release asked for by the widget reaches the socket plugin", () => {
+  const editor = sharingEditor();
+  let ctx = null;
+  const probe = { attach: (element, context) => ((ctx = context), () => {}) };
+  register(Object.assign({}, slider, { name: "oscar-release-probe", attach: probe.attach }))(editor, {});
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults), "irel") };
+  editor.types["oscar-release-probe"].view.onRender.call(view);
+  ctx.share({ on: true }, { release: { on: false } });
+  assert.deepStrictEqual(editor.how, [{ heard: false, release: { on: false } }]);
+});
+
+test("a host with no other devices offers neither share nor onShared, and the widgets cope", () => {
+  const editor = fakeEditor();
+  let ctx = null;
+  const probe = { attach: (element, context) => ((ctx = context), () => {}) };
+  register(Object.assign({}, slider, { name: "oscar-lonely-probe", attach: probe.attach }))(editor, {});
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults)) };
+  editor.types["oscar-lonely-probe"].view.onRender.call(view);
+  assert.strictEqual(ctx.share, undefined);
+  assert.strictEqual(ctx.onShared, undefined);
+
+  register(slider)(editor, {});
+  const real = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults)) };
+  assert.doesNotThrow(() => editor.types[slider.name].view.onRender.call(real));
+  real.el.value = "10";
+  assert.doesNotThrow(() => real.el.fire("input"));
+  editor.types[slider.name].view.removed.call(real);
+});
+
+test("a widget's id is written into the project when it is created, so every device keys it the same way", () => {
+  // GrapesJS saves an id only when a style or a script refers to it; one it
+  // made up is made up again, differently, on every device. The state the
+  // devices share is keyed by that id, so the adapter pins it.
+  const type = registered(slider);
+  const fresh = fakeModel(Object.assign({}, slider.defaults), "igen");
+  type.model.init.call(fresh);
+  assert.deepStrictEqual(fresh.get("attributes"), { id: "igen" });
+  assert.strictEqual(fresh.getId(), "igen", "and the id did not change in the process");
+
+  // One loaded from a project already carries its id, which is kept.
+  const loaded = fakeModel(Object.assign({}, slider.defaults, { attributes: { id: "isaved", type: "range" } }));
+  type.model.init.call(loaded);
+  assert.deepStrictEqual(loaded.get("attributes"), { id: "isaved", type: "range" });
+
+  // A host with no way to set an id is left alone rather than crashed.
+  const bare = fakeModel(Object.assign({}, slider.defaults));
+  delete bare.setId;
+  assert.doesNotThrow(() => type.model.init.call(bare));
+  assert.strictEqual(bare.get("attributes"), undefined);
 });
 
 test("a widget sharing a tag is told apart by its attributes when a project is parsed", () => {

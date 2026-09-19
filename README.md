@@ -463,3 +463,36 @@ the same value -- the value is all that is stored, so the second could never
 be shown again -- and a label may contain `=`: the value is what follows the
 last one. Walking a dropdown with the arrow keys sends only the row you stop
 on, when you press Enter or leave the list; a click or a tap sends at once.
+
+## Several devices on one surface
+
+Every device showing the same layout shows the same state. Toggle a button
+on one tablet and it lights up on the others, so the next press anywhere
+sends the opposite edge rather than the one that has already gone out; move a
+slider or an XY pad and the thumb or handle moves on every other device. A
+tablet that connects mid-show is caught up the moment it loads the surface,
+and a widget following the rig with **Listen** on passes what it hears along
+too, so a device joining later starts where the rig left things. Nothing
+needs switching on: two tablets agreeing is not a setting.
+
+Only what a widget shows travels -- on or off, a value, a position -- keyed
+by the widget's id in the project, over the same socket the OSC bridge uses.
+The device that acted is the only one that sends OSC or DMX: the others
+redraw and stay silent, and a device is never told what it just said itself,
+nor anything that did not actually change, so two tablets cannot trade the
+same value back and forth. A hand outranks the network here as it does with
+OSC in: while you are dragging a slider or a pad, or holding a button, what
+the other devices report is ignored until you let go. Pushing a new layout
+to the preview forgets every state, because the widgets in the old one may
+not exist in the new.
+
+The devices are the pages showing the surface (`/preview`). The editor is
+not one of them: it neither follows the tablets nor moves them, so a show
+running on the tablets never rewrites the values saved in the project you
+have open, and a different project open in the editor cannot reach them.
+What the rig sends is recorded for whoever joins later but not passed
+between the tablets, since each of them heard it already. A slider catches
+up when you lift your finger with whatever another device did while you were
+resting on it; a momentary button held on a tablet that drops off the
+network is let go on the others; and if the server restarts, the tablets
+tell it again what they show when they reconnect.

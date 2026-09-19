@@ -247,3 +247,122 @@ test("detaching stops the slider following the rig", () => {
   assert.strictEqual(ctx.listening(), 0);
   assert.strictEqual(el.listenerCount("pointerdown"), 0);
 });
+
+// --- the other devices ------------------------------------------------------
+
+test("a move is shared with the other devices, alongside the message", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, invert: true });
+  el.value = "30";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.shared, [{ value: 70 }], "the value sent, which Invert mirrored");
+  assert.strictEqual(ctx.sent.length, 1);
+});
+
+test("a value another device shows moves the thumb, and is neither sent nor shared again", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, value: 10 });
+  ctx.receiveShared({ value: 55 });
+  assert.strictEqual(el.value, "55");
+  assert.strictEqual(ctx.config.value, 55);
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.deepStrictEqual(ctx.shared, []);
+});
+
+test("sharing is not gated on Listen or Enabled", () => {
+  const { el, ctx } = mount(slider, { enabled: false, listen: false, min: 0, max: 100, value: 10 });
+  ctx.receiveShared({ value: 55 });
+  assert.strictEqual(el.value, "55", "followed with Listen off and Enabled off");
+  el.value = "20";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.sent, [], "silent while disabled");
+  assert.deepStrictEqual(ctx.shared, [{ value: 20 }], "but still shared");
+});
+
+test("a value adopted from the rig is shared once, so a device joining later starts where the rig left it", () => {
+  const { ctx } = mount(slider, { listen: true, min: 0, max: 100, value: 10 });
+  ctx.receive("/slider1", [150]);
+  assert.deepStrictEqual(ctx.shared, [{ value: 100 }], "the value kept, inside the range");
+  assert.deepStrictEqual(ctx.sent, []);
+  ctx.receive("/slider1", ["abc"]);
+  assert.strictEqual(ctx.shared.length, 1, "nothing to share for a value that was not taken");
+});
+
+test("a hand on the thumb outranks the other devices until it lets go", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, value: 10 });
+  el.fire("pointerdown");
+  ctx.receiveShared({ value: 90 });
+  assert.strictEqual(el.value, "10");
+  assert.strictEqual(ctx.config.value, 10);
+  el.fire("pointerup");
+  ctx.receiveShared({ value: 90 });
+  assert.strictEqual(el.value, "90");
+});
+
+test("a shared value is kept inside the range, and one the slider cannot read is ignored, never taken as zero", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, value: 10 });
+  ctx.receiveShared({ value: 500 });
+  assert.strictEqual(el.value, "100");
+  for (const state of [{}, { value: null }, { value: "" }, { value: "  " }, { value: "abc" }, { on: true }, { value: [5] }]) {
+    ctx.receiveShared(state);
+    assert.strictEqual(el.value, "100", JSON.stringify(state));
+    assert.strictEqual(ctx.config.value, 100);
+  }
+  ctx.receiveShared({ value: "42" });
+  assert.strictEqual(el.value, "42", "text that spells a number is a number");
+});
+
+test("a host with no other devices to speak of is fine: the slider neither shares nor subscribes", () => {
+  const { fakeElement, fakeContext } = require("../helpers/fake-dom");
+  const ctx = fakeContext(Object.assign({}, slider.defaults));
+  delete ctx.share;
+  delete ctx.onShared;
+  const el = fakeElement();
+  const detach = slider.attach(el, ctx);
+  el.value = "40";
+  el.fire("input");
+  assert.strictEqual(ctx.sent.length, 1);
+  detach();
+  assert.strictEqual(ctx.listening(), 0);
+});
+
+test("what another device said under a resting finger is caught up with when it lifts, without a send or a share", () => {
+  // The other devices are told of a change once. Dropped for good, it left
+  // this thumb out of step with theirs until somebody moved it again.
+  const { el, ctx } = mount(slider, { min: 0, max: 100, value: 10 });
+  el.fire("pointerdown");
+  ctx.receiveShared({ value: 90 });
+  ctx.receiveShared({ value: "" });
+  assert.strictEqual(el.value, "10", "the finger still outranks it");
+  el.fire("pointerup");
+  assert.strictEqual(el.value, "90");
+  assert.strictEqual(ctx.config.value, 90);
+  assert.deepStrictEqual(ctx.sent, [], "a value from outside never goes back out");
+  assert.deepStrictEqual(ctx.shared, []);
+});
+
+test("a hand that moved after the other device spoke has the last word", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, value: 10 });
+  el.fire("pointerdown");
+  ctx.receiveShared({ value: 90 });
+  el.value = "30";
+  el.fire("input");
+  el.fire("pointerup");
+  assert.strictEqual(el.value, "30");
+  assert.strictEqual(ctx.config.value, 30);
+});
+
+test("a value from the rig is shared as heard, a value from a hand is not", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, listen: true });
+  ctx.receive("/slider1", [35]);
+  el.value = "40";
+  el.fire("input");
+  assert.deepStrictEqual(ctx.shared, [{ value: 35 }, { value: 40 }]);
+  assert.deepStrictEqual(ctx.sharedHow, [{ heard: true }, null]);
+});
+
+test("detaching stops the slider following the other devices", () => {
+  const { el, ctx, detach } = mount(slider, { min: 0, max: 100, value: 10 });
+  detach();
+  ctx.receiveShared({ value: 90 });
+  assert.strictEqual(el.value, "10");
+  assert.strictEqual(ctx.listening(), 0);
+});

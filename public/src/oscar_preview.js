@@ -39,7 +39,9 @@ function initGrape(ipServer, socketPort) {
       "grapesjs-touch",
     ],
     pluginsOpts: {
-      oscar_socket: { ipserver: ipServer, socketPort: socketPort },
+      // `surface`: this page is a device showing the layout, so it agrees with
+      // the others on what each widget shows. The editor never sets it.
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true },
     },
   });
 

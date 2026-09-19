@@ -146,6 +146,18 @@ function deletionsOf(editor) {
  * outside cannot be bounced straight back out by any widget, however it is
  * written. (The widgets' half is in lib/widgets/incoming.js.)
  *
+ * `onShared` is the other devices on the surface, and while their state is
+ * being delivered both `send` and `share` are shut: the device that acted
+ * already put the message on the wire, and a device that re-shared what it
+ * was handed would hand it straight back. `share` stays open while OSC is
+ * being delivered, on purpose -- a value the rig sent is recorded, so a
+ * device joining later starts where the rig left things -- but it goes out
+ * marked as heard, and the server tells nobody: the other devices were sent
+ * the same OSC message (lib/shared-sync.js).
+ *
+ * Only the pages that show the surface take part. The editor is handed no
+ * shareState (see oscar_socket.js), so neither method exists there.
+ *
  * A message may carry an OSC half, a DMX half, or both (lib/widgets/outgoing.js);
  * each goes out on its own bridge. The DMX half is stamped with the
  * component's id on the way, which is what names this widget's claim on its
@@ -156,7 +168,10 @@ function deletionsOf(editor) {
  */
 function contextFor(view, editor) {
   var model = view.model;
+  // How deep this widget is in taking an incoming OSC message, and in
+  // taking another device's state. Each shuts a different door.
   var delivering = 0;
+  var adopting = 0;
 
   var ctx = {
     onRewrite: function (fn) {
@@ -179,6 +194,12 @@ function contextFor(view, editor) {
     send: function (message) {
       if (delivering) {
         console.warn("OSCAR: a widget tried to answer incoming OSC with outgoing OSC; dropped", message);
+        return;
+      }
+      if (adopting) {
+        // The device that acted already sent this; a second copy from every
+        // tablet watching would be a retrigger downstream.
+        console.warn("OSCAR: a widget tried to answer another device's state by sending; dropped", message);
         return;
       }
       if (!message) return;
@@ -222,7 +243,55 @@ function contextFor(view, editor) {
     };
   }
 
+  // Likewise share and onShared: only where the socket plugin put the other
+  // devices within reach. The state is keyed by the component's id, which
+  // is written into the project (see pinId), so the same widget carries the
+  // same id on every device the layout was pushed to.
+  if (editor.shareState) {
+    ctx.share = function (state, how) {
+      if (adopting) {
+        console.warn("OSCAR: a widget tried to re-share the state it was handed; dropped", state);
+        return;
+      }
+      // Whatever is shared while the rig's message is being delivered is
+      // something every device heard, whether or not the widget said so:
+      // it is recorded and nobody is told (lib/shared-sync.js).
+      var heard = delivering > 0 || !!(how && how.heard === true);
+      editor.shareState(model.getId(), state, { heard: heard, release: how && how.release });
+    };
+  }
+
+  if (editor.onSharedState) {
+    ctx.onShared = function (fn) {
+      return editor.onSharedState(model.getId(), function (state) {
+        adopting++;
+        try {
+          fn(state);
+        } finally {
+          adopting--;
+        }
+      });
+    };
+  }
+
   return ctx;
+}
+
+/**
+ * Write the component's id into the project.
+ *
+ * GrapesJS only saves a component's id when something refers to it -- a
+ * style rule, a script; otherwise the id is made up afresh on every load,
+ * and made up differently on every device. Widgets placed on the canvas
+ * pick up a style rule and keep their id that way, but one pasted in from
+ * an imported template does not, and the state the tablets share for it
+ * would be keyed by an id no other tablet has. Pinning it as an attribute
+ * makes the id part of the project on every path.
+ */
+function pinId(model) {
+  var attributes = model.get("attributes") || {};
+  if (attributes.id || typeof model.setId !== "function") return;
+  model.setId(model.getId());
 }
 
 /** Let the widget put back what GrapesJS just wiped off its element. */
@@ -275,6 +344,10 @@ function register(definition) {
 
         init: function () {
           var model = this;
+
+          // The id is what the other devices know this widget by; it has to
+          // reach the project file, or it never reaches them.
+          pinId(model);
 
           // The type's trait list was built from its defaults. A component
           // read back from a saved project may be set to DMX already, and
