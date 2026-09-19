@@ -158,8 +158,7 @@
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 50%;
-  box-shadow: 0 24px 80px -12px rgba(255, 54, 99, 0.55);
+  filter: drop-shadow(0 22px 44px rgba(255, 54, 99, 0.45));
 }
 .osh-halo {
   position: absolute;
@@ -396,7 +395,7 @@
   opacity: 0.7;
 }
 .osh-band {
-  padding: 8px 0 72px;
+  padding: 8px 0 88px;
 }
 .osh-marquee {
   display: flex;
@@ -471,27 +470,44 @@
 }
 
 .osh-footer {
+  border-top: 1px solid #2c2c35;
+  background: rgba(14, 14, 17, 0.82);
+  backdrop-filter: blur(8px);
+  font-size: 14px;
+}
+.osh-footer-inner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 24px 56px;
-  border-top: 1px solid #2c2c35;
-  font-size: 14px;
+  padding: 36px 24px 44px;
 }
 .osh-footer-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-weight: 650;
+  gap: 14px;
 }
 .osh-footer-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  display: block;
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+.osh-footer-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.osh-footer-name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.osh-footer-line {
+  opacity: 0.6;
 }
 .osh-link {
   color: #ff623a;
@@ -614,8 +630,8 @@
   .osh-hero {
     padding: 48px 16px;
   }
-  .osh-footer {
-    padding: 24px 16px 40px;
+  .osh-footer-inner {
+    padding: 28px 16px 36px;
   }
 }
 
@@ -639,6 +655,11 @@
   .osh-marquee {
     flex-wrap: wrap;
     width: auto;
+    max-width: 1120px;
+    margin: 0 auto 10px;
+  }
+  .osh-chip-again {
+    display: none;
   }
 }
 </style>
@@ -798,6 +819,30 @@
         <span id="osh-chip-10" class="osh-chip" data-gjs-dmode="flow">Unreal Engine</span>
         <span id="osh-chip-11" class="osh-chip" data-gjs-dmode="flow">Modul8</span>
         <span id="osh-chip-12" class="osh-chip" data-gjs-dmode="flow">Arduino</span>
+        <span id="osh-chip-13" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Resolume</span>
+        <span id="osh-chip-14" class="osh-chip osh-chip-again" data-gjs-dmode="flow">TouchDesigner</span>
+        <span id="osh-chip-15" class="osh-chip osh-chip-again" data-gjs-dmode="flow">MadMapper</span>
+        <span id="osh-chip-16" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Ableton Live</span>
+        <span id="osh-chip-17" class="osh-chip osh-chip-again" data-gjs-dmode="flow">QLab</span>
+        <span id="osh-chip-18" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Max/MSP</span>
+        <span id="osh-chip-19" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Processing</span>
+        <span id="osh-chip-20" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Pure Data</span>
+        <span id="osh-chip-21" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Unity</span>
+        <span id="osh-chip-22" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Unreal Engine</span>
+        <span id="osh-chip-23" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Modul8</span>
+        <span id="osh-chip-24" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Arduino</span>
+        <span id="osh-chip-25" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Resolume</span>
+        <span id="osh-chip-26" class="osh-chip osh-chip-again" data-gjs-dmode="flow">TouchDesigner</span>
+        <span id="osh-chip-27" class="osh-chip osh-chip-again" data-gjs-dmode="flow">MadMapper</span>
+        <span id="osh-chip-28" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Ableton Live</span>
+        <span id="osh-chip-29" class="osh-chip osh-chip-again" data-gjs-dmode="flow">QLab</span>
+        <span id="osh-chip-30" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Max/MSP</span>
+        <span id="osh-chip-31" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Processing</span>
+        <span id="osh-chip-32" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Pure Data</span>
+        <span id="osh-chip-33" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Unity</span>
+        <span id="osh-chip-34" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Unreal Engine</span>
+        <span id="osh-chip-35" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Modul8</span>
+        <span id="osh-chip-36" class="osh-chip osh-chip-again" data-gjs-dmode="flow">Arduino</span>
     </div>
     <div id="osh-lights" class="osh-marquee osh-marquee-back" data-gjs-dmode="flow">
         <span id="osh-light-1" class="osh-chip osh-chip-light" data-gjs-dmode="flow">Art-Net</span>
@@ -811,15 +856,42 @@
         <span id="osh-light-9" class="osh-chip osh-chip-light" data-gjs-dmode="flow">Media servers</span>
         <span id="osh-light-10" class="osh-chip osh-chip-light" data-gjs-dmode="flow">Visualisers</span>
         <span id="osh-light-11" class="osh-chip osh-chip-light" data-gjs-dmode="flow">512 channels a universe</span>
+        <span id="osh-light-12" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Art-Net</span>
+        <span id="osh-light-13" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">sACN / E1.31</span>
+        <span id="osh-light-14" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Art-Net nodes</span>
+        <span id="osh-light-15" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">sACN gateways</span>
+        <span id="osh-light-16" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">RGB pars</span>
+        <span id="osh-light-17" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Moving heads</span>
+        <span id="osh-light-18" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Dimmers</span>
+        <span id="osh-light-19" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">LED pixels</span>
+        <span id="osh-light-20" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Media servers</span>
+        <span id="osh-light-21" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Visualisers</span>
+        <span id="osh-light-22" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">512 channels a universe</span>
+        <span id="osh-light-23" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Art-Net</span>
+        <span id="osh-light-24" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">sACN / E1.31</span>
+        <span id="osh-light-25" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Art-Net nodes</span>
+        <span id="osh-light-26" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">sACN gateways</span>
+        <span id="osh-light-27" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">RGB pars</span>
+        <span id="osh-light-28" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Moving heads</span>
+        <span id="osh-light-29" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Dimmers</span>
+        <span id="osh-light-30" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">LED pixels</span>
+        <span id="osh-light-31" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Media servers</span>
+        <span id="osh-light-32" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">Visualisers</span>
+        <span id="osh-light-33" class="osh-chip osh-chip-light osh-chip-again" data-gjs-dmode="flow">512 channels a universe</span>
     </div>
   </div>
 
   <footer id="osh-footer" class="osh-footer" data-gjs-dmode="flow">
-    <div id="osh-footer-brand" class="osh-footer-brand" data-gjs-dmode="flow">
-      <img id="osh-footer-logo" class="osh-footer-logo" data-gjs-dmode="flow" src="images/oscar-circle.png" alt="">
-      <span id="osh-footer-name" data-gjs-dmode="flow">OSCAR</span>
+    <div id="osh-footer-inner" class="osh-footer-inner" data-gjs-dmode="flow">
+      <div id="osh-footer-brand" class="osh-footer-brand" data-gjs-dmode="flow">
+        <img id="osh-footer-logo" class="osh-footer-logo" data-gjs-dmode="flow" src="images/oscar-circle.png" alt="">
+        <div id="osh-footer-words" class="osh-footer-words" data-gjs-dmode="flow">
+          <span id="osh-footer-name" class="osh-footer-name" data-gjs-dmode="flow">OSCAR</span>
+          <span id="osh-footer-line" class="osh-footer-line" data-gjs-dmode="flow">Free and open source. Made for people who run shows.</span>
+        </div>
+      </div>
+      <a id="osh-footer-link" class="osh-link" data-gjs-dmode="flow" href="https://www.createwithoscar.com/">createwithoscar.com</a>
     </div>
-    <a id="osh-footer-link" class="osh-link" data-gjs-dmode="flow" href="https://www.createwithoscar.com/">createwithoscar.com</a>
   </footer>
 </div>
 <script id="osh-script" type="module" data-gjs-dmode="flow">
@@ -845,7 +917,7 @@ if (stage) {
   const group = new THREE.Group();
   scene.add(group);
 
-  const count = window.innerWidth > 700 ? 2600 : 1300;
+  const count = window.innerWidth > 700 ? 1500 : 800;
   const positions = new Float32Array(count * 3);
   const mixes = new Float32Array(count);
   for (let i = 0; i !== count; i++) {
@@ -872,14 +944,14 @@ if (stage) {
   pen.fillRect(0, 0, 64, 64);
   const sprite = new THREE.CanvasTexture(dot);
   const material = new THREE.PointsMaterial({
-    map: sprite, size: 0.06, vertexColors: true, transparent: true, opacity: 0.85,
+    map: sprite, size: 0.06, vertexColors: true, transparent: true, opacity: 0.3,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   group.add(new THREE.Points(geometry, material));
 
   const shape = new THREE.LineSegments(
-    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(1.9, 1)),
-    new THREE.LineBasicMaterial({ color: 0xff3663, transparent: true, opacity: 0.28 })
+    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(3.6, 1)),
+    new THREE.LineBasicMaterial({ color: 0xff3663, transparent: true, opacity: 0.1 })
   );
   scene.add(shape);
 
@@ -888,12 +960,14 @@ if (stage) {
     const to = new THREE.Color(0xff623a);
     const colour = geometry.attributes.color;
     const c = new THREE.Color();
+    const soft = new THREE.Color(0x8a7f86);
     for (let i = 0; i !== count; i++) {
-      c.copy(from).lerp(to, mixes[i]);
+      // Pulled most of the way to a warm grey: there to be noticed, not watched.
+      c.copy(from).lerp(to, mixes[i]).lerp(soft, 0.55);
       colour.setXYZ(i, c.r, c.g, c.b);
     }
     colour.needsUpdate = true;
-    shape.material.color.copy(from);
+    shape.material.color.copy(from).lerp(soft, 0.4);
   }
   tint("#ff3663");
 
@@ -916,18 +990,18 @@ if (stage) {
     const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
     last = now;
     shown += (energy - shown) * Math.min(1, dt * 5);
-    time += dt * (0.2 + shown * 1.2);
+    time += dt * (0.06 + shown * 0.3);
 
     const room = document.documentElement.scrollHeight - window.innerHeight;
     const scrolled = room > 0 ? window.scrollY / room : 0;
-    camera.position.set(pointer.x * 0.6, -pointer.y * 0.4, 7 - scrolled * 16);
-    group.rotation.z = time * 0.08 + scrolled * 2.4;
-    material.size = 0.07 + shown * 0.12;
+    camera.position.set(pointer.x * 0.3, -pointer.y * 0.2, 7 - scrolled * 9);
+    group.rotation.z = time * 0.08 + scrolled * 1.2;
+    material.size = 0.06 + shown * 0.07;
 
     // The wireframe sits behind the logo, then falls away as the page moves on.
-    shape.position.set(0, 0.4 + scrolled * 9, camera.position.z - 6.5);
-    shape.rotation.set(time * 0.3 + pointer.y * 0.4, time * 0.2 + pointer.x * 0.4, 0);
-    shape.scale.setScalar(0.8 + shown * 0.5);
+    shape.position.set(0, 0.4 + scrolled * 9, camera.position.z - 8);
+    shape.rotation.set(time * 0.3 + pointer.y * 0.15, time * 0.2 + pointer.x * 0.15, 0);
+    shape.scale.setScalar(0.9 + shown * 0.2);
 
     renderer.render(scene, camera);
     frame = still ? 0 : requestAnimationFrame(draw);
