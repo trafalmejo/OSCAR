@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { buildDocument, composeBody, embedJson } = require("../../lib/export/document");
+const { buildDocument, composeBody, embedJson, inlineHtmlAssets } = require("../../lib/export/document");
 const { buildExport } = require("../../lib/export");
 
 const CONNECTION = { host: "192.168.0.5", port: 8081 };
@@ -181,4 +181,51 @@ test("a missing runtime refuses the export rather than shipping a dead page", ()
   assert.match(result.error, /runtime\.bundle\.js/);
   assert.match(result.error, /npm run build/);
   assert.strictEqual(result.page, undefined);
+});
+
+// ---- positions in the string that is cut --------------------------------------
+
+test("the scripts land before </body> whatever the canvas says, U+0130 included", () => {
+  // toLowerCase() turns each \u0130 into two units, so an index found in a
+  // lowercased copy is one further along per character than the original.
+  const markup = '<body id="x"><p>\u0130\u0130stanbul</p><p>\u0130leri \u0130ptal</p></body>';
+  const out = composeBody(markup, "<script>TAIL</script>");
+  assert.ok(out.endsWith("<script>TAIL</script>\n</body>"), out.slice(-40));
+  assert.ok(out.startsWith('<body id="x"><p>\u0130\u0130stanbul</p>'));
+});
+
+test("a closing tag is found in any case, and the last one wins", () => {
+  assert.ok(composeBody("<BODY><p>a</p></BODY >", "TAIL").endsWith("TAIL\n</BODY >"));
+  const twice = composeBody("<body><pre>&lt;/body&gt;</pre><i></body></i></body>", "TAIL");
+  assert.ok(twice.endsWith("<i></body></i>\nTAIL\n</body>"));
+});
+
+test("a whole export with Turkish labels still says where OSCAR is", () => {
+  const out = buildDocument({
+    html: "<body><p>\u0130\u0130\u0130\u0130\u0130\u0130\u0130\u0130</p></body>",
+    connection: { host: "10.0.0.2", port: 8081 },
+    runtime: "RUNTIME();",
+    socketio: "IO();",
+  });
+  assert.match(out, /<script>\nwindow\.OSCAR_EXPORT = \{"host":"10\.0\.0\.2"/);
+  assert.match(out, /RUNTIME\(\);\n<\/script>\n<\/body>\n<\/html>\n$/);
+});
+
+// ---- references are attributes, not text that looks like one ------------------
+
+test("only a real src or poster attribute is inlined", () => {
+  const read = (reference) => (reference === "a.png" ? "data:image/png;base64,AAAA" : null);
+  const uri = "data:image/png;base64,AAAA";
+
+  const title = "<p title=\"paste src='a.png' > here\">src=\"a.png\"</p>";
+  assert.strictEqual(inlineHtmlAssets(title, read), title, "a title's value and text are left alone");
+
+  assert.strictEqual(inlineHtmlAssets("<img data-src=\"a.png\">", read), "<img data-src=\"a.png\">");
+  assert.strictEqual(inlineHtmlAssets("<img alt=\"x>y\" src='a.png'/>", read), '<img alt="x>y" src="' + uri + '"/>');
+  assert.strictEqual(inlineHtmlAssets("<video controls POSTER=\"a.png\" src=\"b.mp4\">", read), '<video controls POSTER="' + uri + '" src="b.mp4">');
+});
+
+test("an unquoted src is inlined too, not left as a relative link", () => {
+  const read = (reference) => (reference === "images/x.png" ? "data:image/png;base64,AAAA" : null);
+  assert.strictEqual(inlineHtmlAssets("<img src=images/x.png>", read), '<img src="data:image/png;base64,AAAA">');
 });

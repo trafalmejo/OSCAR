@@ -465,3 +465,50 @@ test("the exported page's runtime knows no editor and asks no server where it is
     for (const widget of WIDGETS) assert.ok(!code.includes(widget.name), file + " names " + widget.name);
   }
 });
+
+// ---- what the page owes the operator after an outage ------------------------
+
+test("moves dropped while OSCAR was away are owned up to when it returns, once", () => {
+  const { el, bridge, banner } = startPage();
+  bridge.socket.fire("connect");
+  assert.doesNotMatch(banner.textContent, /not sent/, "nothing was dropped yet");
+
+  bridge.socket.fire("disconnect");
+  el.fire("pointerdown");
+  el.fire("pointerup");
+  assert.deepStrictEqual(bridge.osc, []);
+
+  bridge.socket.fire("connect");
+  assert.strictEqual(banner.attributes["data-oscar-status"], "online");
+  assert.match(banner.textContent, /2 move\(s\) made while it was unreachable were not sent/);
+  assert.match(banner.textContent, /may show a position the rig never got/);
+  assert.match(banner.attributes.style, /pointer-events:none/);
+  assert.deepStrictEqual(bridge.osc, [], "saying so is all it does: nothing is replayed");
+
+  // A second, clean reconnect has nothing to confess.
+  bridge.socket.fire("disconnect");
+  bridge.socket.fire("connect");
+  assert.doesNotMatch(banner.textContent, /not sent/);
+});
+
+test("a widget choosing silence is not a dropped move", () => {
+  const el = exported("oscar-button", { enabled: false });
+  let dropped = 0;
+  const bridge = fakeBridge();
+  bridge.socket.connected = false;
+  standalone.attachAll(fakeDocument([el]), bridge, () => dropped++);
+  el.fire("pointerdown");
+  el.fire("pointerup");
+  assert.strictEqual(dropped, 0);
+});
+
+test("a complete but damaged config is switched off on the page, and sends nothing", () => {
+  const el = exported("oscar-button", { enabled: "false", message: "/go" });
+  const bridge = fakeBridge();
+  const wired = quietly(() => standalone.attachAll(fakeDocument([el]), bridge));
+  assert.strictEqual(wired.attached, 0);
+  assert.strictEqual(wired.inert, 1);
+  assert.ok(el.getAttribute("data-oscar-inert"));
+  el.fire("pointerdown");
+  assert.deepStrictEqual(bridge.osc, []);
+});

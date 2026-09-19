@@ -83,12 +83,26 @@ function connected(bridge) {
  * offline while it is. Sharing is dropped with it: telling the other tablets
  * about a move the rig never got would have them agree on something untrue.
  *
+ * Two limits, stated because a guarantee that overstates itself is worse
+ * than none. The widget has still moved on screen: a dropped move leaves the
+ * page showing a position the rig never got, and nothing can reconcile them
+ * afterwards -- sending the page's position on reconnect is the stale replay
+ * again, and the rig's position is not something OSCAR knows. So each drop
+ * is reported through `onDropped`, and the page says so when the bridge
+ * returns. And "away" means socket.io has noticed. A Wi-Fi link that goes
+ * quiet without closing leaves `connected` true until the ping times out,
+ * tens of seconds later; a move made in that window is written to a TCP
+ * stream that delivers it late if the link comes back first. /preview has
+ * the same exposure, and no check made in a browser closes it.
+ *
  * @param {Element} el
  * @param {object} config this widget's settings, read off the element
  * @param {object} bridge what oscar_socket() built
  * @param {string|null} id the element's id: the widget's name on the wire
+ * @param {Function} [onDropped] called for each message dropped because the
+ *        bridge was away
  */
-function contextFor(el, config, bridge, id) {
+function contextFor(el, config, bridge, id, onDropped) {
   var delivering = 0;
   var adopting = 0;
 
@@ -114,7 +128,11 @@ function contextFor(el, config, bridge, id) {
         console.warn("OSCAR: a widget tried to answer another device's state by sending; dropped", message);
         return;
       }
-      if (!message || !connected(bridge)) return;
+      if (!message) return;
+      if (!connected(bridge)) {
+        if (typeof onDropped === "function") onDropped();
+        return;
+      }
 
       if (message.address && bridge.sendOSC) {
         bridge.sendOSC(message.ip, message.port, message.address, message.args);
@@ -207,9 +225,10 @@ function markInert(el, problem) {
 /**
  * Wire every widget under `root`.
  *
+ * @param {Function} [onDropped] see contextFor
  * @returns {{ attached: number, inert: number, detach: Function }}
  */
-function attachAll(root, bridge) {
+function attachAll(root, bridge, onDropped) {
   var elements = root.querySelectorAll(WIDGET_SELECTOR);
   var detachers = [];
   var inert = 0;
@@ -227,7 +246,7 @@ function attachAll(root, bridge) {
 
     var id = (typeof el.getAttribute === "function" && el.getAttribute("id")) || null;
     try {
-      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id)));
+      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id, onDropped)));
     } catch (err) {
       // One control that cannot start must not take the surface with it.
       inert++;
@@ -274,7 +293,10 @@ var BANNER_COLOURS = { waiting: "#5f6368", offline: "#b3261e", online: "#1a7f37"
  * nothing may sit on top of a control. Styled inline so that no stylesheet,
  * the project's own included, can give it back its pointer events.
  *
- * @returns {(state: "waiting"|"offline"|"online", text: string) => void}
+ * `linger` is how long an "online" notice stays, for one that has more to
+ * say than "connected"; it still never takes a press.
+ *
+ * @returns {(state: "waiting"|"offline"|"online", text: string, linger?: number) => void}
  */
 function statusBanner(doc) {
   var el = doc.createElement("div");
@@ -284,7 +306,7 @@ function statusBanner(doc) {
 
   var hideTimer = null;
 
-  return function show(state, text) {
+  return function show(state, text, linger) {
     if (hideTimer) {
       clearTimeout(hideTimer);
       hideTimer = null;
@@ -296,7 +318,10 @@ function statusBanner(doc) {
     if (state === "online") {
       hideTimer = setTimeout(function () {
         el.setAttribute("style", BANNER_STYLE + ";opacity:0;background:" + BANNER_COLOURS.online);
-      }, 2000);
+      }, linger || 2000);
+      // Only Node has unref, and only a test runs this there: a notice
+      // waiting to fade is no reason to keep a process alive.
+      if (hideTimer && typeof hideTimer.unref === "function") hideTimer.unref();
     }
   };
 }
@@ -329,7 +354,11 @@ function start(env) {
 
   var label = where.host + ":" + where.port;
   var bridge = env.connect(where.host, where.port);
-  var wired = attachAll(doc, bridge);
+  // Moves made since the bridge was last there, which it never got.
+  var dropped = 0;
+  var wired = attachAll(doc, bridge, function () {
+    dropped++;
+  });
   var off = wired.inert
     ? " " + wired.inert + " control(s) on this page are switched off: their settings could not be read."
     : "";
@@ -341,7 +370,21 @@ function start(env) {
   show("waiting", "Connecting to OSCAR at " + label + "..." + off);
 
   bridge.socket.on("connect", function () {
-    show("online", "Connected to OSCAR at " + label + "." + off);
+    if (!dropped) {
+      show("online", "Connected to OSCAR at " + label + "." + off);
+      return;
+    }
+    // Said once, as the bridge returns, and for longer than "connected": the
+    // fader on screen and the light it drives disagree, and the operator is
+    // the only one who can know which is right.
+    var count = dropped;
+    dropped = 0;
+    show(
+      "online",
+      "Connected to OSCAR at " + label + ". " + count + " move(s) made while it was unreachable were " +
+        "not sent, so a control may show a position the rig never got. Move it again to send it." + off,
+      10000
+    );
   });
   bridge.socket.on("disconnect", function () {
     show("offline", offline);

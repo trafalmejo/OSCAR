@@ -94,7 +94,59 @@ test("a widget this runtime does not know is a problem, not a guess", () => {
 
 test("a setting the editor holds as undefined still travels, as null", () => {
   const button = WIDGETS.find((w) => w.name === "oscar-button");
-  const back = readWidget(elementWith(exportAttributes(button.name, () => undefined)));
+  const read = (key) => (key === "label" ? undefined : button.defaults[key]);
+  const back = readWidget(elementWith(exportAttributes(button.name, read)));
   assert.ok(back.config, "every key present, so it is not damage");
-  for (const key of Object.keys(button.defaults)) assert.strictEqual(back.config[key], null);
+  assert.strictEqual(back.config.label, null);
+});
+
+/** A complete, editor-made config with some keys overwritten by hand. */
+function damaged(name, changes) {
+  const widget = WIDGETS.find((w) => w.name === name);
+  const settings = Object.assign({}, widget.defaults, changes);
+  return readWidget(elementWith({ [NAME_ATTR]: name, [CONFIG_ATTR]: JSON.stringify(settings) }));
+}
+
+test("a complete config whose values are unusable is a problem, not a live control", () => {
+  // Each of these has every key, which is all readWidget used to look at.
+  const cases = [
+    // A string is truthy: the control somebody tried to silence stayed live.
+    ["oscar-button", { enabled: "false" }],
+    ["oscar-slider", { enabled: 0 }],
+    ["oscar-slider", { invert: "false" }],
+    // Number(null) and Number("") are 0: a range nobody chose.
+    ["oscar-slider", { min: null }],
+    ["oscar-slider", { max: "" }],
+    ["oscar-slider", { min: "  " }],
+    ["oscar-xypad", { maxX: null }],
+    // Routing that only the server's gate would have stopped.
+    ["oscar-button", { ip: null, port: null }],
+    ["oscar-button", { port: 70000 }],
+    ["oscar-button", { message: "no-slash" }],
+    ["oscar-slider", { transport: "dmx", dmxChannel: 0 }],
+    // Not a value any validator was written for.
+    ["oscar-dropdown", { options: { a: 1 } }],
+  ];
+  for (const [name, changes] of cases) {
+    const back = damaged(name, changes);
+    assert.ok(back.problem, name + " " + JSON.stringify(changes) + " has to be refused");
+    assert.strictEqual(back.definition, undefined);
+    assert.strictEqual(back.config, undefined);
+  }
+  // Every widget, not the ones listed: whichever setting is its switch.
+  for (const widget of WIDGETS) {
+    assert.ok(damaged(widget.name, { enabled: "true" }).problem, widget.name);
+  }
+});
+
+test("an ordinary hand-edit still runs", () => {
+  const back = damaged("oscar-slider", { ip: "192.168.1.20", port: 9000, message: "/moved", min: -1, max: 1 });
+  assert.strictEqual(back.problem, undefined);
+  assert.strictEqual(back.config.port, 9000);
+});
+
+test("a Value outside a range that was edited after it is not damage", () => {
+  // The editor does not re-judge Value when Min moves, so projects hold this.
+  const back = damaged("oscar-slider", { min: 50, max: 100, value: 10 });
+  assert.strictEqual(back.problem, undefined);
 });

@@ -537,10 +537,24 @@ Things worth knowing:
 - **Moves made while disconnected are dropped**, not queued. A tablet that
   walked out of Wi-Fi range would otherwise replay every fader position it
   passed through, in one burst, the moment it came back.
+  - The control still moves on screen, so after an outage **the page can show
+    a position the rig never got** -- a fader at 30 over a light still at 42,
+    a toggle showing on over a rig that is off. Nothing can reconcile the two
+    afterwards without being that late burst, so when the connection returns
+    the page says how many moves were not sent. Move the control again to
+    send where it now stands.
+  - "Disconnected" means the page has noticed. A Wi-Fi link that goes quiet
+    without closing -- a tablet roaming between access points -- looks
+    connected for some tens of seconds, and a move made in that window can
+    still arrive late if the link comes back first. `/preview` behaves the
+    same way; a browser cannot tell sooner.
 - **A control whose settings cannot be read stays switched off.** If the file
-  was edited by hand and a widget's `data-oscar-config` no longer parses, that
-  widget is dimmed and does nothing. It never falls back to default settings,
-  because the defaults are a live control aimed at somebody's port 7000.
+  was edited by hand and a widget's `data-oscar-config` no longer parses, is
+  missing a setting, or holds a value the editor's settings panel would have
+  refused -- `"enabled": "false"` in quotes, a Min of `null`, a port of
+  70000 -- that widget is dimmed and does nothing, and its tooltip says which
+  setting. It never falls back to default settings, because the defaults are
+  a live control aimed at somebody's port 7000.
 - Widgets with **Listen** on follow the rig on an exported page, DMX output
   works, and several copies of the page -- and `/preview` -- agree on what each
   control shows, all through the same bridge.
