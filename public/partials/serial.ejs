@@ -1,0 +1,38 @@
+<div id="serial-panel" style="display: none;">
+  <div class="oscar-serial">
+    <p class="oscar-serial-hint">
+      For an Arduino, or any board, on a USB cable plugged into the computer
+      running OSCAR. Connect its port here, then set a widget's <b>Ip</b> to
+      <code>serial</code>. The widget's Port is not used. Messages go out as
+      OSC framed with SLIP.
+    </p>
+    <p class="oscar-serial-hint">
+      A board on Wi-Fi or Ethernet needs none of this: give the widget the
+      board's IP address and port, as for any other software. Sketches for
+      both are in <code>tools/arduino</code>.
+    </p>
+
+    <div id="serial-status" class="oscar-serial-status" role="status">Checking...</div>
+
+    <div class="oscar-serial-controls">
+      <select id="serial-port" class="form-control" aria-label="Serial port"></select>
+      <select
+        id="serial-bitrate"
+        class="form-control oscar-serial-bitrate"
+        aria-label="Baud rate"
+        title="Baud rate: the number in Serial.begin() in your sketch"
+      ></select>
+    </div>
+
+    <div class="oscar-serial-actions">
+      <button id="serial-refresh" class="btn btn-secondary" type="button">Refresh list</button>
+      <button id="serial-connect" class="btn btn-secondary btn-gradient" type="button">Connect</button>
+      <button id="serial-disconnect" class="btn btn-secondary" type="button">Disconnect</button>
+    </div>
+
+    <p class="oscar-serial-note">
+      Only one program can hold a serial port. Close the Arduino IDE's Serial
+      Monitor before connecting, and disconnect here before uploading a sketch.
+    </p>
+  </div>
+</div>

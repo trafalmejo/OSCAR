@@ -86,6 +86,9 @@ function environmentReport() {
     "Node:       " + (info.node || "?"),
     "GrapesJS:   " + (typeof grapesjs !== "undefined" ? grapesjs.version : "?"),
     "Project:    format " + (info.projectFormat || "?"),
+    // Whether this build can open a serial port at all is the first question
+    // a "my Arduino does nothing" report raises. The port name stays out.
+    "Serial:     " + (info.serial ? (info.serial.supported ? info.serial.state : "not in this build") : "?"),
     "Browser:    " + navigator.userAgent,
   ];
   return lines.join("\n");
@@ -667,6 +670,21 @@ function initGrape(ipServer, socketPort) {
       paintLockButton(state && state.locked);
     })
     .catch(function () {});
+
+  // ---- serial -------------------------------------------------------------
+  // The panel is its own script (oscar_serial.js); it adds its own button
+  // here, between the lock and About.
+  if (typeof oscar_serial === "function") {
+    oscar_serial({
+      panels: pn,
+      openModal: function () {
+        setModal("Serial (Arduino)", "serial-panel");
+      },
+      alert: function (text) {
+        $.alert(text);
+      },
+    });
+  }
 
   pn.addButton("options", {
     id: "open-info",

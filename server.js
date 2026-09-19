@@ -12,10 +12,11 @@ const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
-const { receiver: oscReceiver, listenOn, atMostOncePer } = require("./lib/osc-in");
+const { receiver: oscReceiver, listenOn, atMostOncePer, parse: parseOsc } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket } = require("./lib/dmx");
 const { sharedSync } = require("./lib/shared-sync");
+const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -89,6 +90,9 @@ function diagnostics() {
     arch: process.arch,
     node: process.versions.node,
     electron: process.versions.electron || null,
+    // "My Arduino does nothing" is unanswerable without knowing whether this
+    // build can open a port at all, and whether it thinks it has one.
+    serial: serial.status(),
   };
 }
 
@@ -108,6 +112,7 @@ app.use(
       io.emit("preview:updated");
     },
     lock,
+    serial,
   })
 );
 
@@ -156,6 +161,51 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
   listenOn(port, (message) => io.emit("osc:in", message));
 }
 
+// ---- The serial cable ------------------------------------------------------
+
+// A board on a USB cable: a widget whose Ip is the word "serial" sends here
+// (lib/serial-target.js). On a build with no serial driver this still exists
+// and says so; nothing below has to ask whether it may be used.
+let serialLine = null;
+
+const serialLink = new SerialLink({
+  onChange: (status) => {
+    const before = serialLine;
+    const where = status.path + " at " + status.bitrate + " baud";
+    if (status.state === "open") serialLine = "  Serial: sending to " + where;
+    else if (status.state === "waiting") serialLine = "  Serial: waiting for " + where + " (" + status.error + ")";
+    else if (status.state === "idle") serialLine = "  Serial: disconnected";
+    else return; // "opening" is over in a moment, one way or the other
+    // A board that is not plugged in fails the same way every two seconds;
+    // that is one piece of news, not one per attempt.
+    if (bannerShown && serialLine !== before) console.log(serialLine);
+  },
+  // A board that talks back is a sensor, and reaches the widgets the same
+  // way the network does: a meter with Listen on can show a potentiometer.
+  onMessage: (packet) => {
+    const message = parseOsc(packet);
+    if (message) io.emit("osc:in", message);
+  },
+  // A sketch that also Serial.println()s down the same line produces one of
+  // these per line it prints.
+  onError: atMostOncePer(5000, (err, missed) => {
+    console.error("Serial: " + reason(err) + (missed ? " (and " + missed + " more since the last note)" : ""));
+  }),
+});
+
+const serial = serialControl({ link: serialLink, settings });
+
+// Said once per outage rather than once per fader movement.
+const reportSerialDrop = atMostOncePer(5000, (address, missed) => {
+  const status = serial.status();
+  const why = !status.supported
+    ? status.reason
+    : status.path
+      ? "the port is not open" + (status.error ? " (" + status.error + ")" : "")
+      : "no serial port is connected; pick one in the editor's Serial panel";
+  console.error("Not sent to serial: " + address + (missed ? " and " + missed + " more" : "") + " -- " + why);
+});
+
 /**
  * @param {string} ip
  * @param {number|string} port
@@ -164,6 +214,19 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
  */
 function sendOSC(ip, port, address, args) {
   const message = buildMessage(address, args);
+
+  // The cable has no ports, so the port is not looked at; the message is held
+  // to exactly the same standard as one bound for the network.
+  if (isSerialTarget(ip)) {
+    if (!message) {
+      console.error("Ignoring a malformed OSC message for", address);
+      return;
+    }
+    if (serial.send(message)) console.log("Sending", address, JSON.stringify(message.args), "to serial");
+    else reportSerialDrop(address);
+    return;
+  }
+
   if (!message || !isPort(port)) {
     console.error("Ignoring a malformed OSC message for", address);
     return;
@@ -274,6 +337,15 @@ const oscIn = oscReceiver({
   onBadPacket: reportBadPacket("OSC-in"),
 });
 
+// Back to the board chosen last time, so an installation that reboots
+// overnight drives it again with nobody there. Down here rather than beside
+// the link because a port that fails at once reports before this returns, and
+// that report reads the banner state declared above.
+{
+  const complaint = serial.restore();
+  if (complaint) serialLine = "  Serial: NOT sending to the remembered port. " + complaint;
+}
+
 io.on("connection", (socket) => {
   console.log("Editor connected (" + socket.id + ")");
 
@@ -329,6 +401,7 @@ const httpServer = app.listen(HTTP_PORT, () => {
   bannerShown = true;
   if (oscInLine) console.log(oscInLine);
   if (dmxLine) console.log(dmxLine);
+  if (serialLine) console.log(serialLine);
   if (lock.isLocked()) {
     console.log("");
     console.log("  LOCKED: other devices can use the controls but not edit.");
@@ -364,6 +437,8 @@ function shutdown() {
   udpLan.close();
   udpLocal.close();
   oscIn.close();
+  // Let go of the port without forgetting it: the next start reopens it.
+  serial.close();
   io.close();
   // The channels are handed back before the socket goes, so the zero frames
   // and sACN's terminated packets actually leave; the fallback exit below

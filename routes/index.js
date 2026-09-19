@@ -14,6 +14,7 @@ const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
  * @param {import('../lib/projects').ProjectStore} deps.store
  * @param {() => string} deps.serverIP
  * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
+ * @param {object} [deps.serial] - serialControl() from lib/serial.js
  */
 module.exports = function createRouter({
   store,
@@ -23,6 +24,7 @@ module.exports = function createRouter({
   diagnostics,
   onPreviewPush,
   lock,
+  serial,
 }) {
   const router = express.Router();
 
@@ -95,6 +97,57 @@ module.exports = function createRouter({
     } catch (err) {
       console.error("Update check failed:", err.message);
       res.json({ available: false });
+    }
+  });
+
+  // ---- The serial cable -------------------------------------------------
+  // Behind editorOnly, unlike the OSC bridge: choosing which port the board
+  // is on is editing the installation, not driving it. A tablet on a locked
+  // OSCAR can still send to the board -- that goes over the socket -- but it
+  // cannot point the cable somewhere else or let go of it mid-show.
+  const NO_SERIAL = {
+    supported: false,
+    reason: "No serial support in this build of OSCAR.",
+    state: "idle",
+    path: null,
+    error: null,
+  };
+
+  async function serialReport() {
+    if (!serial) return Object.assign({ ports: [] }, NO_SERIAL);
+    // Listed before the status is read, so a failure to list shows up in it.
+    const ports = await serial.list();
+    return Object.assign({}, serial.status(), { ports: ports });
+  }
+
+  router.get("/serial", editorOnly, async (req, res) => {
+    try {
+      res.json(await serialReport());
+    } catch (err) {
+      console.error("Could not read the serial ports:", err.message);
+      res.status(500).json({ error: "Could not read the serial ports" });
+    }
+  });
+
+  // { action: "connect", path, bitrate? } or { action: "disconnect" }.
+  router.post("/serial", editorOnly, async (req, res) => {
+    const body = req.body || {};
+    try {
+      if (body.action !== "connect" && body.action !== "disconnect") {
+        return res.status(400).json({ error: "Say whether to connect or disconnect." });
+      }
+      if (!serial) return res.status(400).json(Object.assign({ ports: [] }, NO_SERIAL, { error: NO_SERIAL.reason }));
+
+      let complaint = null;
+      if (body.action === "connect") complaint = serial.connect(body.path, body.bitrate);
+      else serial.disconnect();
+
+      const report = await serialReport();
+      if (complaint) return res.status(400).json(Object.assign(report, { error: complaint }));
+      res.json(report);
+    } catch (err) {
+      console.error("Could not change the serial port:", err.message);
+      res.status(500).json({ error: "Could not change the serial port" });
     }
   });
 

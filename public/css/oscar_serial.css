@@ -1,0 +1,86 @@
+/* The Serial panel: which USB port the board is on. */
+
+.oscar-serial {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.oscar-serial-hint {
+  margin: 0 0 10px;
+}
+
+.oscar-serial code {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+}
+
+/* The state is the point of the panel, so it is the loudest thing in it. The
+   colour is never the only signal: the text says the same thing. */
+.oscar-serial-status {
+  margin: 14px 0;
+  padding: 8px 12px;
+  border-left: 4px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.2);
+  overflow-wrap: anywhere;
+}
+
+.oscar-serial-status[data-state="open"] {
+  border-left-color: #5fd38d;
+}
+
+.oscar-serial-status[data-state="waiting"],
+.oscar-serial-status[data-state="opening"] {
+  border-left-color: #f0b541;
+}
+
+.oscar-serial-status[data-state="unsupported"],
+.oscar-serial-status[data-state="error"] {
+  border-left-color: #ec5858;
+}
+
+.oscar-serial-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.oscar-serial-controls select {
+  flex: 1;
+  min-width: 0;
+}
+
+.oscar-serial-controls .oscar-serial-bitrate {
+  flex: 0 0 120px;
+}
+
+.oscar-serial-actions {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.oscar-serial-actions .btn {
+  flex: 1;
+  padding: 8px 12px;
+}
+
+.oscar-serial-actions .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.oscar-serial-note {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* The toolbar button says whether the cable is live without being opened. */
+.gjs-pn-btn.oscar-serial-btn.oscar-serial-open {
+  color: #5fd38d;
+}
+
+.gjs-pn-btn.oscar-serial-btn.oscar-serial-waiting {
+  color: #f0b541;
+}
