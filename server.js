@@ -96,6 +96,55 @@ function diagnostics() {
   };
 }
 
+// ---- The serial cable ------------------------------------------------------
+
+// Up here, ahead of the router that is handed it: a const cannot be read
+// before its line has run. `io` and `bannerShown` are further down, and are
+// only touched from callbacks that cannot fire before serial.restore().
+//
+// A board on a USB cable: a widget whose Ip is the word "serial" sends here
+// (lib/serial-target.js). On a build with no serial driver this still exists
+// and says so; nothing below has to ask whether it may be used.
+let serialLine = null;
+
+const serialLink = new SerialLink({
+  onChange: (status) => {
+    const before = serialLine;
+    const where = status.path + " at " + status.bitrate + " baud";
+    if (status.state === "open") serialLine = "  Serial: sending to " + where;
+    else if (status.state === "waiting") serialLine = "  Serial: waiting for " + where + " (" + status.error + ")";
+    else if (status.state === "idle") serialLine = "  Serial: disconnected";
+    else return; // "opening" is over in a moment, one way or the other
+    // A board that is not plugged in fails the same way every two seconds;
+    // that is one piece of news, not one per attempt.
+    if (bannerShown && serialLine !== before) console.log(serialLine);
+  },
+  // A board that talks back is a sensor, and reaches the widgets the same
+  // way the network does: a meter with Listen on can show a potentiometer.
+  onMessage: (packet) => {
+    const message = parseOsc(packet);
+    if (message) io.emit("osc:in", message);
+  },
+  // A sketch that also Serial.println()s down the same line produces one of
+  // these per line it prints.
+  onError: atMostOncePer(5000, (err, missed) => {
+    console.error("Serial: " + reason(err) + (missed ? " (and " + missed + " more since the last note)" : ""));
+  }),
+});
+
+const serial = serialControl({ link: serialLink, settings });
+
+// Said once per outage rather than once per fader movement.
+const reportSerialDrop = atMostOncePer(5000, (address, missed) => {
+  const status = serial.status();
+  const why = !status.supported
+    ? status.reason
+    : status.path
+      ? "the port is not open" + (status.error ? " (" + status.error + ")" : "")
+      : "no serial port is connected; pick one in the editor's Serial panel";
+  console.error("Not sent to serial: " + address + (missed ? " and " + missed + " more" : "") + " -- " + why);
+});
+
 app.use(
   "/",
   createRouter({
@@ -160,51 +209,6 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
   // here, not to the OSC-in port; a widget following the rig hears both.
   listenOn(port, (message) => io.emit("osc:in", message));
 }
-
-// ---- The serial cable ------------------------------------------------------
-
-// A board on a USB cable: a widget whose Ip is the word "serial" sends here
-// (lib/serial-target.js). On a build with no serial driver this still exists
-// and says so; nothing below has to ask whether it may be used.
-let serialLine = null;
-
-const serialLink = new SerialLink({
-  onChange: (status) => {
-    const before = serialLine;
-    const where = status.path + " at " + status.bitrate + " baud";
-    if (status.state === "open") serialLine = "  Serial: sending to " + where;
-    else if (status.state === "waiting") serialLine = "  Serial: waiting for " + where + " (" + status.error + ")";
-    else if (status.state === "idle") serialLine = "  Serial: disconnected";
-    else return; // "opening" is over in a moment, one way or the other
-    // A board that is not plugged in fails the same way every two seconds;
-    // that is one piece of news, not one per attempt.
-    if (bannerShown && serialLine !== before) console.log(serialLine);
-  },
-  // A board that talks back is a sensor, and reaches the widgets the same
-  // way the network does: a meter with Listen on can show a potentiometer.
-  onMessage: (packet) => {
-    const message = parseOsc(packet);
-    if (message) io.emit("osc:in", message);
-  },
-  // A sketch that also Serial.println()s down the same line produces one of
-  // these per line it prints.
-  onError: atMostOncePer(5000, (err, missed) => {
-    console.error("Serial: " + reason(err) + (missed ? " (and " + missed + " more since the last note)" : ""));
-  }),
-});
-
-const serial = serialControl({ link: serialLink, settings });
-
-// Said once per outage rather than once per fader movement.
-const reportSerialDrop = atMostOncePer(5000, (address, missed) => {
-  const status = serial.status();
-  const why = !status.supported
-    ? status.reason
-    : status.path
-      ? "the port is not open" + (status.error ? " (" + status.error + ")" : "")
-      : "no serial port is connected; pick one in the editor's Serial panel";
-  console.error("Not sent to serial: " + address + (missed ? " and " + missed + " more" : "") + " -- " + why);
-});
 
 /**
  * @param {string} ip
