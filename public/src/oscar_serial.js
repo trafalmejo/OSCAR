@@ -50,6 +50,21 @@ function oscar_serial(deps) {
     select.value = String(chosen);
   }
 
+  // The server's note about a message it could not send goes to a console the
+  // packaged app does not have, so this is the only place a person finds out
+  // that their fader has been talking to a cable that is not there.
+  function unsent(report) {
+    var n = report.dropped;
+    if (typeof n !== "number" || n < 1) return "";
+    return " " + n + (n === 1 ? " message" : " messages") + " aimed at serial could not be sent.";
+  }
+
+  // An error from the system rarely ends in a full stop, and something follows it.
+  function sentence(text) {
+    if (!text) return "";
+    return /[.!?]$/.test(text) ? text : text + ".";
+  }
+
   function describe(report) {
     if (!report.supported) return { state: "unsupported", text: report.reason || "No serial support in this build of OSCAR." };
     var where = report.path + " at " + report.bitrate + " baud";
@@ -60,11 +75,11 @@ function oscar_serial(deps) {
     if (report.state === "waiting") {
       return {
         state: "waiting",
-        text: "Waiting for " + where + ", and trying again every few seconds. " + (report.error || ""),
+        text: "Waiting for " + where + ", and trying again every few seconds. " + sentence(report.error) + unsent(report),
       };
     }
     if (report.error) return { state: "error", text: report.error };
-    return { state: "idle", text: "Not connected." };
+    return { state: "idle", text: "Not connected." + unsent(report) };
   }
 
   // Whether someone is part-way through choosing; a poll must not snatch the

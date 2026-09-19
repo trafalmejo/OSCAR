@@ -140,6 +140,31 @@ test("a locked OSCAR lets only its own computer move the cable", async () => {
   }, { serial, lock });
 });
 
+test("a locked OSCAR does not tell the network which port the board is on", async () => {
+  const serial = fakeSerial();
+  Object.assign(serial.state, { state: "waiting", path: "COM99", error: "Opening COM99: File not found", dropped: 3 });
+  const diagnostics = () => ({ oscar: "1.2.3", serial: serial.status() });
+  let locked = true;
+  const lock = { isLocked: () => locked, setLocked: () => {} };
+  await withServer(async (base) => {
+    const remote = { "x-test-remote": "1" };
+    const tablet = await (await fetch(base + "/diagnostics", { headers: remote })).json();
+    assert.strictEqual(tablet.oscar, "1.2.3");
+    assert.strictEqual(tablet.serial.path, null);
+    assert.strictEqual(tablet.serial.error, null);
+    assert.ok(JSON.stringify(tablet).indexOf("COM99") === -1, "the port name is nowhere in the answer");
+    // What a bug report needs is still there.
+    assert.strictEqual(tablet.serial.supported, true);
+    assert.strictEqual(tablet.serial.state, "waiting");
+    assert.strictEqual(tablet.serial.dropped, 3);
+
+    // The computer running OSCAR, and anyone while unlocked, may edit and so may see.
+    assert.strictEqual((await (await fetch(base + "/diagnostics")).json()).serial.path, "COM99");
+    locked = false;
+    assert.strictEqual((await (await fetch(base + "/diagnostics", { headers: remote })).json()).serial.path, "COM99");
+  }, { serial, lock, diagnostics });
+});
+
 test("an unlocked OSCAR lets any editor on the network move the cable", async () => {
   const serial = fakeSerial();
   await withServer(async (base) => {

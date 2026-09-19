@@ -85,7 +85,18 @@ module.exports = function createRouter({
 
   // Version details for the "Report a problem" button. Nothing identifying:
   // just what a bug report always has to ask for anyway.
-  router.get("/diagnostics", (req, res) => res.json(diagnostics ? diagnostics() : {}));
+  //
+  // Open to every device, locked or not, because /preview may want to report
+  // a problem too. That is why the serial port's name and its last error --
+  // which quotes the name -- are held back from anyone editorOnly would turn
+  // away: they are told whether there is a board, not where it is.
+  router.get("/diagnostics", (req, res) => {
+    const report = diagnostics ? diagnostics() : {};
+    if (report.serial && typeof report.serial === "object" && isLocked() && !isLocal(req)) {
+      report.serial = Object.assign({}, report.serial, { path: null, error: null });
+    }
+    res.json(report);
+  });
 
   // Is a newer OSCAR out? Answers { available: false } when the check is
   // switched off, offline, or already up to date -- the editor treats every

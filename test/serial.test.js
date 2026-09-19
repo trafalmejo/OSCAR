@@ -253,6 +253,36 @@ test("messages go down an open port and are counted", () => {
   assert.strictEqual(link.status().dropped, 0);
 });
 
+test("a value that is not a number never reaches the cable as 0", () => {
+  // osc.js writes null and "" as 00 00 00 00, which a rig reads as off. The
+  // server checks before calling send(); the link must not depend on that.
+  const { link, last } = rig();
+  link.connect("COM3");
+  last().fire("ready");
+  const bad = [
+    { address: "/x", args: [{ type: "f", value: null }] },
+    { address: "/x", args: [{ type: "i", value: "" }] },
+    { address: "/x", args: [{ type: "f", value: "  " }] },
+    { address: "/x", args: [{ type: "f", value: NaN }] },
+    { address: "/x", args: [{ type: "f", value: 1 }, { type: "f", value: undefined }] },
+    { address: "x", args: [{ type: "f", value: 1 }] },
+    { address: "/x", args: [{ type: "b", value: 1 }] },
+    { address: "/x" },
+    "/x",
+  ];
+  for (const message of bad) assert.strictEqual(link.send(message), false, JSON.stringify(message));
+  assert.deepStrictEqual(last().sent, []);
+  assert.strictEqual(link.status().dropped, bad.length);
+
+  // What is sendable still goes, a real zero and a bare address included.
+  assert.strictEqual(link.send({ address: "/x", args: [{ type: "f", value: 0 }] }), true);
+  assert.strictEqual(link.send({ address: "/play", args: [] }), true);
+  assert.deepStrictEqual(last().sent, [
+    { address: "/x", args: [{ type: "f", value: 0 }] },
+    { address: "/play", args: [] },
+  ]);
+});
+
 test("nothing is sent, or queued for later, while the port is not open", () => {
   const { link, last } = rig();
   assert.strictEqual(link.send(message), false, "idle");

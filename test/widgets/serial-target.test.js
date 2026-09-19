@@ -22,10 +22,21 @@ test("the Ip check takes the cable, and still refuses what is not an address", (
 
 test("a widget on the cable is not nagged about a port nothing reads", () => {
   assert.strictEqual(checkPort("", { ip: "serial" }), null);
-  assert.strictEqual(checkPort(0, { ip: " Serial" }), null);
+  assert.strictEqual(checkPort("  ", { ip: " Serial" }), null);
+  assert.strictEqual(checkPort(null, { ip: "SERIAL" }), null);
+  assert.strictEqual(checkPort(undefined, { ip: "serial" }), null);
+  assert.strictEqual(checkPort(7000, { ip: "serial" }), null);
   assert.match(checkPort("", { ip: "localhost" }), /between 1 and 65535/);
   assert.match(checkPort(0), /between 1 and 65535/);
   assert.strictEqual(checkPort(7000, { ip: "localhost" }), null);
+});
+
+test("a port nothing reads is still not stored as nonsense", () => {
+  // It is kept in the project, and is the port the widget sends to the day
+  // its Ip is changed to a network address -- by hand in the file, unchecked.
+  for (const value of ["abc", 99999, -1, 0, "0", 1.5, "70 00", true, {}, []]) {
+    assert.match(checkPort(value, { ip: "serial" }), /empty/, JSON.stringify(value));
+  }
 });
 
 test("leaving the cable for the network needs a port first", () => {

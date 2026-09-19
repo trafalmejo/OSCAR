@@ -132,6 +132,21 @@ test("the panel adds its toolbar button and lists the ports it is told about", a
   assert.deepStrictEqual(panel.alerts, []);
 });
 
+test("messages that went nowhere are counted where a person can see them", async () => {
+  // The server's own note goes to a console the packaged app does not have.
+  const report = { supported: true, state: "idle", path: null, bitrate: 115200, sent: 0, dropped: 3, error: null, ports: [] };
+  const idle = mountPanel([{ status: 200, body: report }]);
+  await settle();
+  assert.strictEqual(idle.els["serial-status"].textContent, "Not connected. 3 messages aimed at serial could not be sent.");
+
+  const waiting = mountPanel([
+    { status: 200, body: Object.assign({}, report, { state: "waiting", path: "COM3", dropped: 1, error: "File not found" }) },
+  ]);
+  await settle();
+  assert.match(waiting.els["serial-status"].textContent, /^Waiting for COM3 at 115200 baud/);
+  assert.match(waiting.els["serial-status"].textContent, /File not found. 1 message aimed at serial could not be sent\.$/);
+});
+
 test("a build with no serial driver says so and switches the panel off", async () => {
   const reason = "No serial support in this build of OSCAR.";
   const panel = mountPanel([
