@@ -9,6 +9,7 @@
 
 var { WIDGETS } = require("../../../lib/widgets");
 var { sendsDmx } = require("../../../lib/widgets/fields");
+var { exportAttributes } = require("../../../lib/export/config");
 
 /** Neutral field descriptor -> GrapesJS trait. */
 function toTrait(field) {
@@ -649,7 +650,57 @@ function matches(definition, el) {
   return true;
 }
 
+/**
+ * The markup and stylesheet an export is built from, with every widget's
+ * settings written into the markup.
+ *
+ * The settings are handed to getHtml() as it serialises each component (its
+ * `attributes` option is called per component, children included) and exist
+ * only in the string it returns. They are never set on a model, not even for
+ * the length of the call, so there is nothing to strip afterwards and no
+ * moment at which an autosave, an undo step or a crash could catch a project
+ * holding a second copy of its settings -- the thing toTrait's comment rules
+ * out. Writing them on and taking them off again would also have GrapesJS
+ * rewrite every widget's element twice per export, mid-show.
+ *
+ * Which components are widgets, and which keys travel, comes from WIDGETS by
+ * way of lib/export/config.js; nothing here lists a widget.
+ *
+ * Only the first page: an exported file is one surface, and the dialog says
+ * so when the project has more.
+ */
+function exportSnapshot(editor) {
+  var pages = editor.Pages.getAll();
+  var component = pages[0].getMainComponent();
+  var widgets = 0;
+
+  var html = editor.getHtml({
+    component: component,
+    attributes: function (model, attributes) {
+      var settings = exportAttributes(model.get("type"), function (key) {
+        return model.get(key);
+      });
+      if (!settings) return attributes;
+      widgets++;
+      // The id is the widget's name on the wire: its claim on DMX channels
+      // and the key the devices share its state under. pinId writes it into
+      // every widget that has been through init; this covers one that has
+      // not, in the output only.
+      var id = attributes && attributes.id ? null : typeof model.getId === "function" && model.getId();
+      return Object.assign({}, attributes, id ? { id: id } : null, settings);
+    },
+  });
+
+  return {
+    html: html,
+    css: editor.getCss({ component: component }) || "",
+    pages: pages.length,
+    widgets: widgets,
+  };
+}
+
 module.exports = {
+  exportSnapshot: exportSnapshot,
   register: register,
   widgetPlugins: widgetPlugins,
   runOffstage: runOffstage,

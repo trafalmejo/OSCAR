@@ -241,3 +241,9 @@ function shareSurface(editor) {
     };
   };
 }
+
+// Loaded as a plain script by the editor and the preview, where GrapesJS finds
+// the plugin by its global name; required as a module by the exported page's
+// runtime (public/src/oscar_runtime.js), which is bundled and has no globals
+// to share. One copy of the bridge either way.
+if (typeof module !== "undefined" && module.exports) module.exports = oscar_socket;

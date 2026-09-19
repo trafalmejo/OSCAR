@@ -13,6 +13,7 @@ require("jquery-confirm")(window, $);
 var ICONS = {
   save: "M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z",
   open: "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
+  download: "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
   pages:
     "M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M19,21H8V7H19V21Z",
@@ -220,6 +221,8 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
+
+var oscarExport = require("./export_dialog");
 
 var isProjectData = projectFormat.isGrapesProject;
 
@@ -839,6 +842,26 @@ function initGrape(ipServer, socketPort) {
     attributes: { title: "Load project", "data-tooltip-pos": "bottom" },
   });
 
+  // ---- export ------------------------------------------------------------
+  // Distinct from "See code" beside it, which is GrapesJS's own view of the
+  // markup and cannot send anything. This one produces a file that does.
+  oscarExport.install(editor, {
+    host: ipServer,
+    port: socketPort,
+    projectName: function () {
+      return projectName ? projectName.value : "";
+    },
+  });
+
+  pn.addButton("options", {
+    id: "oscar-export",
+    label: icon("download"),
+    command: function () {
+      editor.runCommand("oscar-export");
+    },
+    attributes: { title: "Export a working interface", "data-tooltip-pos": "bottom" },
+  });
+
   // ---- locked mode -------------------------------------------------------
   // Locking leaves the control surface open to the network while the editor
   // answers only this computer. A locked OSCAR that looked unlocked would be
@@ -959,6 +982,7 @@ function initGrape(ipServer, socketPort) {
     "open-save": "Save project",
     "open-load": "Load project",
     "open-pages": "Pages",
+    "oscar-export": "Export a working interface",
     "open-info": "About",
   });
 
