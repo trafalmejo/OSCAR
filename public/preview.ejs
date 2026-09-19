@@ -14,6 +14,7 @@
 
     <link href="css/oscar_colors.css" rel="stylesheet" />
     <link href="css/oscar_tooltip.css" rel="stylesheet" />
+    <link href="css/oscar_pages.css" rel="stylesheet" />
     <style>
       /* The preview runs GrapesJS's own preview mode; its "exit preview"
          button would drop a control surface back into an editor. */
@@ -39,6 +40,11 @@
       id="gjs-oscar-preview"
       style="height: 0px; overflow: hidden;"
     ></div>
+
+    <!-- The page switcher. Outside the GrapesJS container on purpose: nothing
+         inside the canvas keeps its events under the preview lock, and a tab
+         that was a component could be dragged off or deleted in the editor. -->
+    <nav id="oscar-page-bar" class="oscar-page-bar" aria-label="Pages" hidden></nav>
 
     <!-- OSCAR component types, registered as grapesjs plugins by name. -->
     <script src="src/oscar_socket.js"></script>

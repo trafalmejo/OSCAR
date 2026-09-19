@@ -105,6 +105,12 @@ function changeEvent(keys) {
  * either. The set is per editor and filled once, however many widgets
  * register against it.
  */
+// The widget types that can hold DMX channels, by component type name.
+var DMX_TYPES = {};
+WIDGETS.forEach(function (definition) {
+  if (definition.dmx) DMX_TYPES[definition.name] = true;
+});
+
 var deletionsByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
 
 function deletionsOf(editor) {
@@ -117,6 +123,22 @@ function deletionsOf(editor) {
   // A host without events cannot tell a deletion from a reload, and holding
   // the rig is the safe answer to not knowing.
   if (typeof editor.on !== "function") return marked;
+
+  // Deleting a whole page is a deletion of everything on it, and GrapesJS
+  // announces it differently: the only component:remove:before is for the
+  // page's wrapper, which is rightly ignored below, and a page that is not
+  // showing has no views whose removal could hand anything back. So the
+  // channels are given up here, by id, before the page's components are gone
+  // (by page:remove they already are). A widget that holds no channels costs
+  // a message the server answers with "not known".
+  editor.on("page:remove:before", function (page) {
+    if (!page || typeof page.getMainComponent !== "function" || !editor.stopDMX) return;
+    var main = page.getMainComponent();
+    if (!main || typeof main.onAll !== "function") return;
+    main.onAll(function (model) {
+      if (DMX_TYPES[model.get("type")]) editor.stopDMX(model.getId());
+    });
+  });
 
   editor.on("component:remove:before", function (component, remove, opts) {
     if (!component || (opts && opts.temporary)) return;

@@ -357,6 +357,28 @@ test("the page's own wrapper going, which is how a load tears the surface down, 
   assert.deepStrictEqual(stopped, []);
 });
 
+test("deleting a page hands back the channels of every DMX widget on it, showing or not", () => {
+  // GrapesJS announces a page going with page:remove:before and, for its
+  // components, only the wrapper's removal -- which a load also produces and
+  // is ignored. A page that is not on the canvas has no views either, so
+  // nothing else would ever release these channels.
+  const editor = fakeEditor();
+  const stopped = [];
+  editor.stopDMX = (source) => stopped.push(source);
+  register(slider)(editor, { ipserver: "localhost" });
+
+  const wrapper = fakeModel({ type: "wrapper" }, "wrap");
+  const fader = fakeModel({ type: "oscar-slider" }, "fader1");
+  const label = fakeModel({ type: "text" }, "label1");
+  wrapper.children = [fader, label];
+
+  editor.trigger("page:remove:before", { getMainComponent: () => wrapper });
+  assert.deepStrictEqual(stopped, ["fader1"], "the DMX widget, and nothing that could not hold channels");
+
+  // A page with nothing built yet must not throw the deletion off course.
+  assert.doesNotThrow(() => editor.trigger("page:remove:before", { getMainComponent: () => undefined }));
+});
+
 test("deleting a container takes the widgets inside it with it", () => {
   const editor = fakeEditor();
   const stopped = [];

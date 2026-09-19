@@ -128,6 +128,7 @@ test("a GrapesJS 0.21+ project round-trips through save and load unchanged", asy
       styles: [{ selectors: ["#i1"], style: { color: "red" } }],
       pages: [
         {
+          name: "Main",
           frames: [
             {
               component: {
@@ -155,9 +156,23 @@ test("a GrapesJS 0.21+ project round-trips through save and load unchanged", asy
   });
 });
 
+test("GET /load names a page GrapesJS saved without a name", async () => {
+  await withServer(async (base) => {
+    // What the editor really sends for page one: GrapesJS drops an empty name.
+    const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }, { name: "Movers" }] };
+    await postJSON(base, "/save", Object.assign({ name: "Unnamed page" }, project));
+
+    const found = await (await fetch(base + "/load/unnamed-page")).json();
+    assert.deepStrictEqual(
+      found.pages.map((page) => page.name),
+      ["Page 1", "Movers"]
+    );
+  });
+});
+
 test("GET /load returns the project, and {} when missing", async () => {
   await withServer(async (base) => {
-    const project = { pages: [{ frames: [{ component: { type: "wrapper" } }] }], styles: [] };
+    const project = { pages: [{ name: "Main", frames: [{ component: { type: "wrapper" } }] }], styles: [] };
     await postJSON(base, "/save", Object.assign({ name: "Loadable" }, project));
 
     const found = await (await fetch(base + "/load/loadable")).json();

@@ -212,6 +212,21 @@ function shareSurface(editor) {
   };
 
   /**
+   * Ask the server for everything again.
+   *
+   * For a page being turned. A widget on a page that is not showing is not
+   * running, so it hears nothing; what other devices do to it still arrives
+   * (state:changed is cached above whether or not anyone is listening), but
+   * what the rig says to it does not -- the server records that and tells
+   * nobody, on the grounds that every device heard the rig itself. The
+   * snapshot that comes back is delivered like any other, to the widgets
+   * that have just attached.
+   */
+  editor.syncSharedState = function () {
+    if (editor.socket) editor.socket.emit("state:sync");
+  };
+
+  /**
    * Follow one widget's state as the other devices report it. Handed the
    * state already known, if any, so a widget attaching after the snapshot
    * arrived starts where the others are. Returns an unsubscribe function.

@@ -14,6 +14,8 @@ var ICONS = {
   save: "M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z",
   open: "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
+  pages:
+    "M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M19,21H8V7H19V21Z",
   remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
   locked:
     "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z",
@@ -213,6 +215,9 @@ var projectFormat = require("../../lib/project-format");
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins } = require("./adapters/grapesjs");
 
+// Tabs and the page-by-page lock, shared with the /preview page.
+var oscarPages = require("./oscar_pages");
+
 var isProjectData = projectFormat.isGrapesProject;
 
 function postJSON(url, body) {
@@ -259,7 +264,7 @@ function initGrape(ipServer, socketPort) {
       onStore: function (data) {
         return Object.assign(
           { oscarFormat: projectFormat.CURRENT_FORMAT },
-          projectFormat.stripEditorState(data)
+          projectFormat.namePages(projectFormat.stripEditorState(data))
         );
       },
       onLoad: function (data) {
@@ -289,6 +294,11 @@ function initGrape(ipServer, socketPort) {
         // every launch; that data carries the current stamp, so a version
         // check would not catch it.
         data = projectFormat.stripEditorState(data);
+
+        // And name its pages, on every load for the same reason: GrapesJS
+        // drops an empty page name when it stores, so page one of an autosave
+        // carrying the current stamp is routinely unnamed.
+        data = projectFormat.namePages(data);
 
         // An autosave with no pages (from a crash mid-load, say) would leave
         // the editor blank and unusable on every launch, with no way out short
@@ -544,6 +554,165 @@ function initGrape(ipServer, socketPort) {
     });
   };
 
+  // ---- pages -------------------------------------------------------------
+  // A surface can hold several pages -- a page per fixture group, or per
+  // scene. GrapesJS has had the model for this all along (editor.Pages, and a
+  // pages array in every project); what it lacks is any way to reach it.
+  var pages = editor.Pages;
+
+  function labelOf(page) {
+    return projectFormat.pageLabel(page.getName(), pages.getAll().indexOf(page));
+  }
+
+  /**
+   * Ask for a page name in a jquery-confirm form. Not window.prompt: Electron
+   * does not implement it, so in the desktop app it would silently return
+   * nothing and the page could never be renamed.
+   */
+  function askPageName(title, current, onName) {
+    $.confirm({
+      title: title,
+      content:
+        '<form action="" class="oscar-page-name-form">' +
+        '<input class="oscar-page-name-input" type="text" maxlength="40" />' +
+        "</form>",
+      onContentReady: function () {
+        var dialog = this;
+        var input = dialog.$content.find(".oscar-page-name-input");
+        // Set as a value, not written into the markup: a page name is
+        // whatever someone typed.
+        input.val(current).trigger("focus").trigger("select");
+        dialog.$content.find("form").on("submit", function (e) {
+          // Enter submits the form; without this the page would reload.
+          e.preventDefault();
+          dialog.$$confirm.trigger("click");
+        });
+      },
+      buttons: {
+        confirm: function () {
+          var name = (this.$content.find(".oscar-page-name-input").val() || "").trim();
+          if (!name) {
+            $.alert("Give the page a name");
+            return false;
+          }
+          onName(name);
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function deletePage(page) {
+    // Never the last one: GrapesJS would be left with no page to draw, and a
+    // project with no pages is one OSCAR refuses to open.
+    if (pages.getAll().length < 2) return;
+
+    $.confirm({
+      title: "Delete Page",
+      // Built as text for the same reason as above.
+      content: $("<div>").text(
+        'Delete "' + labelOf(page) + '" and every widget on it? You won\'t be able to recover it afterwards.'
+      ),
+      buttons: {
+        confirm: function () {
+          if (pages.getAll().length < 2) return;
+          // Move off the page first, so the canvas is never showing a page
+          // that no longer exists.
+          if (pages.getSelected() === page) {
+            var all = pages.getAll();
+            var index = all.indexOf(page);
+            pages.select(all[index === 0 ? 1 : index - 1]);
+          }
+          pages.remove(page);
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function pageAction(label, title, onClick) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "oscar-page-action";
+    button.textContent = label;
+    button.setAttribute("aria-label", title);
+    button.onclick = onClick;
+    return button;
+  }
+
+  function renderPages() {
+    var list = document.getElementById("pages-list");
+    if (!list) return;
+
+    var all = pages.getAll();
+    list.innerHTML = "";
+
+    oscarPages.pageEntries(pages).forEach(function (entry, index) {
+      var page = all[index];
+      var row = document.createElement("li");
+      row.className = "oscar-page" + (entry.current ? " oscar-page-current" : "");
+
+      var open = document.createElement("button");
+      open.type = "button";
+      open.className = "oscar-page-open";
+      open.textContent = entry.label;
+      open.onclick = function () {
+        pages.select(page);
+      };
+      row.appendChild(open);
+
+      row.appendChild(
+        pageAction("Rename", "Rename " + entry.label, function () {
+          askPageName("Rename page", entry.label, function (name) {
+            page.setName(name);
+          });
+        })
+      );
+
+      if (all.length > 1) {
+        row.appendChild(
+          pageAction("Delete", "Delete " + entry.label, function () {
+            deletePage(page);
+          })
+        );
+      }
+
+      list.appendChild(row);
+    });
+  }
+
+  function addPage() {
+    var input = document.getElementById("new-page-name");
+    var name = ((input && input.value) || "").trim();
+
+    // Naming it is optional; a page left unnamed is given the name it would
+    // be shown under anyway, because GrapesJS would drop an empty one.
+    var page = pages.add(
+      { name: name || projectFormat.defaultPageName(pages.getAll().length) },
+      { select: true }
+    );
+    if (!page) {
+      $.alert("That page could not be added");
+      return;
+    }
+    if (input) input.value = "";
+  }
+
+  editor.Commands.add("open-pages", function () {
+    renderPages();
+    setModal("Pages", "pages-panel");
+  });
+
+  document.getElementById("add-page-button").onclick = addPage;
+  document.getElementById("new-page-name").onkeydown = function (e) {
+    if (e.key === "Enter") addPage();
+  };
+
+  // The list may be open while pages change under it (a rename, a load).
+  // page:update is what a rename fires, and it is also what tells the
+  // storage manager the project changed.
+  editor.on("page:add page:remove page:select page:update", renderPages);
+
   // ---- preview mode ------------------------------------------------------
   // GrapesJS's preview hides the panels but leaves components draggable in
   // absolute mode, so dragging a button in preview pulls it apart.
@@ -564,25 +733,40 @@ function initGrape(ipServer, socketPort) {
     editable: false,
     highlightable: false,
   };
-  var beforePreview = null;
+  // Only the page on the canvas has components to lock. A page switched to
+  // mid-preview arrives unlocked, so it is locked as it comes in; the lock
+  // remembers what it has touched, so coming back to a page does not record
+  // its locked state as the one to restore (see createLock).
+  var previewLock = oscarPages.createLock(PREVIEW_LOCK, { avoidStore: true });
+  var previewing = false;
+
+  // The designer's preview shows the same tabs the tablet does: a surface
+  // with several pages cannot be tried out from page one alone.
+  var previewTabs = oscarPages.pageTabs(editor, {
+    bar: document.getElementById("oscar-page-bar"),
+    body: document.body,
+  });
+
+  editor.on("page:select", function () {
+    if (!previewing) return;
+    editor.select();
+    previewLock.lock(editor.getWrapper());
+  });
 
   editor.on("command:run:preview", function () {
     // Hand the canvas to the preview page before locking, so the lock doesn't
-    // travel with it.
-    postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
+    // travel with it. Every page goes across, not only the one showing, and
+    // named, so a tab never has to guess.
+    postJSON("/save/preview", {
+      project: projectFormat.namePages(editor.getProjectData()),
+    }).catch(function (err) {
       console.log("Could not hand off preview", err);
     });
 
     editor.select();
-    beforePreview = [];
-    editor.getWrapper().onAll(function (component) {
-      var previous = {};
-      Object.keys(PREVIEW_LOCK).forEach(function (key) {
-        previous[key] = component.get(key);
-      });
-      beforePreview.push([component, previous]);
-      component.set(PREVIEW_LOCK, { avoidStore: true });
-    });
+    previewing = true;
+    previewLock.lock(editor.getWrapper());
+    previewTabs.show();
 
     // The selection toolbar, badges and resize handles live outside the canvas
     // and would otherwise float over the control surface, delete button and
@@ -591,12 +775,9 @@ function initGrape(ipServer, socketPort) {
   });
 
   editor.on("command:stop:preview", function () {
-    if (beforePreview) {
-      beforePreview.forEach(function (entry) {
-        entry[0].set(entry[1], { avoidStore: true });
-      });
-      beforePreview = null;
-    }
+    previewing = false;
+    previewLock.release();
+    previewTabs.hide();
     editor.getEl().classList.remove("oscar-previewing");
   });
 
@@ -608,6 +789,15 @@ function initGrape(ipServer, socketPort) {
       editor.runCommand("open-projects", { type: "Save" });
     },
     attributes: { title: "Save project", "data-tooltip-pos": "bottom" },
+  });
+
+  pn.addButton("options", {
+    id: "open-pages",
+    label: icon("pages"),
+    command: function () {
+      editor.runCommand("open-pages");
+    },
+    attributes: { title: "Pages", "data-tooltip-pos": "bottom" },
   });
 
   pn.addButton("options", {
@@ -723,6 +913,7 @@ function initGrape(ipServer, socketPort) {
     "toggle-lock": null,
     "open-save": "Save project",
     "open-load": "Load project",
+    "open-pages": "Pages",
     "open-info": "About",
   });
 
