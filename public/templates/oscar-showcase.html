@@ -1,0 +1,643 @@
+<!doctype html>
+<html>
+<head>
+<title>OSCAR Showcase</title>
+<!--
+  OSCAR Showcase: a scrolling page that shows what OSCAR can do, where every
+  example is a live control. It is here to be pulled apart: take a section,
+  restyle it, point the widgets at your own rig.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style and data-osc-appearance on <body> pick the widget style.
+
+  The colours are OSCAR's own: the logo's gradient from #ff623a to #ff3663 on
+  a near-black ground. The widgets take them too, because the first rule sets
+  the style's colour tokens for this page.
+
+  One thing to keep if you restyle it: the page wrapper hides sideways
+  overflow with overflow-x: clip, not hidden. "hidden" would make the wrapper
+  a scroll container of its own, and every part would then measure "am I in
+  view" against a box that never scrolls, and sit at its finished state.
+
+  The motion is CSS only, with no script to break. Parts rise into place as
+  they scroll into view, the hero draws back as it leaves, and a bar across
+  the top fills with the page. Where a browser has no scroll-driven
+  animations the parts are simply there, and anyone who has asked their
+  system for less motion gets none.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries.
+
+  OSC addresses, all under /oscar:
+    out  /oscar/hello   /oscar/flash   /oscar/toggle   /oscar/level
+         /oscar/position   /oscar/colour   /oscar/scene   /oscar/bpm
+         /oscar/caption   /oscar/clip
+    in   /oscar/meter   (a number from 0 to 1)
+-->
+<style>
+[data-osc-style] {
+  --osc-background: #0e0e11;
+  --osc-foreground: #f4f4f6;
+  --osc-card: #17171c;
+  --osc-muted: #26262e;
+  --osc-accent: #26262e;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #2c2c35;
+  --osc-input: #34343f;
+  --osc-primary: #ff3663;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #ff623a;
+  --osc-radius: 12px;
+  --osc-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.osh {
+  overflow-x: clip;
+  background:
+    radial-gradient(900px 620px at 50% -60px, rgba(255, 54, 99, 0.26), rgba(255, 54, 99, 0) 70%),
+    radial-gradient(700px 520px at 100% 1500px, rgba(255, 98, 58, 0.12), rgba(255, 98, 58, 0) 70%),
+    #0e0e11;
+}
+.osh-progress {
+  position: fixed;
+  z-index: 10;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, #ff623a, #ff3663);
+  transform-origin: 0 50%;
+  animation: osh-grow linear both;
+  animation-timeline: scroll(root);
+}
+.osh-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  min-height: 100vh;
+  padding: 64px 24px;
+  text-align: center;
+  animation: osh-leave linear both;
+  animation-timeline: view();
+  animation-range: exit 0% exit 80%;
+}
+.osh-logo-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: clamp(150px, 26vw, 230px);
+  aspect-ratio: 1 / 1;
+  animation: osh-float 6s ease-in-out infinite;
+}
+.osh-logo {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 50%;
+  box-shadow: 0 24px 80px -12px rgba(255, 54, 99, 0.55);
+}
+.osh-halo {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #ff3663;
+  border-radius: 50%;
+  opacity: 0;
+  animation: osh-halo 3.6s ease-out infinite;
+}
+.osh-halo-late {
+  animation-delay: 1.8s;
+}
+.osh-title {
+  margin: 8px 0 0;
+  font-size: clamp(56px, 12vw, 132px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  color: transparent;
+  background: linear-gradient(90deg, #ff623a, #ff3663, #ff8a5c, #ff3663, #ff623a);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: osh-shift 9s linear infinite;
+}
+.osh-tagline {
+  max-width: 22em;
+  margin: 0;
+  font-size: clamp(18px, 2.6vw, 28px);
+  font-weight: 500;
+  line-height: 1.3;
+}
+.osh-sub {
+  max-width: 34em;
+  margin: 0;
+  font-size: clamp(14px, 1.6vw, 17px);
+  line-height: 1.6;
+  opacity: 0.7;
+}
+.osh-hero-try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+#osh-hello {
+  min-height: 52px;
+  padding: 0 32px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff623a, #ff3663);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 12px 32px -10px rgba(255, 54, 99, 0.7);
+}
+#osh-hello.toggle {
+  background: #ffffff;
+  color: #ff3663;
+}
+.osh-hero-note {
+  font-size: 12px;
+  opacity: 0.55;
+}
+.osh-scroll {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  width: 22px;
+  height: 36px;
+  margin-left: -11px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+}
+.osh-scroll-dot {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 4px;
+  height: 8px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: #ff3663;
+  animation: osh-wheel 1.8s ease-in-out infinite;
+}
+.osh-section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 72px 24px;
+}
+.osh-eyebrow {
+  margin: 0 0 8px;
+  color: #ff623a;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.osh-heading {
+  max-width: 18em;
+  margin: 0 0 12px;
+  font-size: clamp(28px, 4.4vw, 48px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.osh-lead {
+  max-width: 40em;
+  margin: 0 0 36px;
+  font-size: 16px;
+  line-height: 1.6;
+  opacity: 0.7;
+}
+.osh-reveal {
+  animation: osh-rise linear both;
+  animation-timeline: view();
+  animation-range: entry 0% cover 26%;
+}
+.osh-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.osh-step {
+  padding: 24px;
+  border: 1px solid #2c2c35;
+  border-radius: 16px;
+  background: rgba(23, 23, 28, 0.7);
+}
+.osh-step-number {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff623a, #ff3663);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+}
+.osh-step-title {
+  margin: 16px 0 6px;
+  font-size: 20px;
+  font-weight: 650;
+}
+.osh-step-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  opacity: 0.7;
+}
+.osh-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.osh-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid #2c2c35;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 54, 99, 0.07), rgba(255, 54, 99, 0) 45%), #17171c;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.osh-card:hover {
+  border-color: #ff3663;
+  transform: translateY(-3px);
+}
+.osh-card-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+.osh-card-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  opacity: 0.7;
+}
+.osh-demo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 12px;
+}
+.osh-demo-row {
+  flex-direction: row;
+  align-items: flex-end;
+}
+.osh-demo-row > button {
+  flex: 1;
+  min-height: 48px;
+}
+.osh-demo > input[type="range"],
+.osh-demo > input[type="color"],
+.osh-demo > select,
+.osh-demo > input[type="number"],
+.osh-demo > input[type="text"],
+.osh-demo > .oscar-meter,
+.osh-demo > .oscar-media-browser {
+  width: 100%;
+}
+.osh-demo > input[type="color"] {
+  height: 64px;
+}
+.osh-demo > .oscar-xypad {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+.osh-demo > .oscar-media-browser {
+  padding: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+#osh-card-media {
+  grid-column: 1 / -1;
+}
+.osh-note {
+  font-size: 12px;
+  opacity: 0.55;
+}
+.osh-features {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 28px 20px;
+}
+.osh-dot {
+  display: block;
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #ff623a, #ff3663);
+}
+.osh-feature-title {
+  margin: 14px 0 6px;
+  font-size: 16px;
+  font-weight: 650;
+}
+.osh-feature-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  opacity: 0.7;
+}
+.osh-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.osh-chip {
+  padding: 8px 16px;
+  border: 1px solid #2c2c35;
+  border-radius: 999px;
+  background: #17171c;
+  font-size: 14px;
+}
+.osh-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 24px 56px;
+  border-top: 1px solid #2c2c35;
+  font-size: 14px;
+}
+.osh-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+}
+.osh-footer-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+.osh-link {
+  color: #ff623a;
+  text-decoration: none;
+}
+
+@keyframes osh-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes osh-leave {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-60px) scale(0.94); }
+}
+@keyframes osh-rise {
+  from { opacity: 0; transform: translateY(48px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes osh-float {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+  100% { transform: translateY(0); }
+}
+@keyframes osh-halo {
+  0% { opacity: 0.55; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@keyframes osh-shift {
+  from { background-position: 0% 50%; }
+  to { background-position: 300% 50%; }
+}
+@keyframes osh-wheel {
+  0% { opacity: 0; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(6px); }
+  100% { opacity: 0; transform: translateY(14px); }
+}
+
+@media (max-width: 992px) {
+  .osh-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .osh-features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .osh-section {
+    padding: 56px 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .osh-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .osh-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .osh-demo > .oscar-media-browser {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .osh-features {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .osh-section {
+    padding: 44px 16px;
+  }
+  .osh-hero {
+    padding: 48px 16px;
+  }
+  .osh-footer {
+    padding: 24px 16px 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .osh-progress,
+  .osh-hero,
+  .osh-reveal,
+  .osh-logo-wrap,
+  .osh-halo,
+  .osh-title,
+  .osh-scroll-dot {
+    animation: none;
+  }
+}
+</style>
+</head>
+<body data-osc-style="default" data-osc-appearance="dark">
+<div id="osh" class="osh" data-gjs-dmode="flow">
+  <div id="osh-progress" class="osh-progress" data-gjs-dmode="flow"></div>
+
+  <header id="osh-hero" class="osh-hero" data-gjs-dmode="flow">
+    <div id="osh-logo-wrap" class="osh-logo-wrap" data-gjs-dmode="flow">
+      <span id="osh-halo-1" class="osh-halo" data-gjs-dmode="flow"></span>
+      <span id="osh-halo-2" class="osh-halo osh-halo-late" data-gjs-dmode="flow"></span>
+      <img id="osh-logo" class="osh-logo" data-gjs-dmode="flow" src="images/oscar-circle.png" alt="OSCAR">
+    </div>
+    <h1 id="osh-title" class="osh-title" data-gjs-dmode="flow">OSCAR</h1>
+    <p id="osh-tagline" class="osh-tagline" data-gjs-dmode="flow">Create beautiful interfaces to control interactive installations.</p>
+    <p id="osh-sub" class="osh-sub" data-gjs-dmode="flow">Video, lighting and sound, from any screen in the room. Design it in the browser, open it on a tablet, and drive the show over OSC and DMX.</p>
+    <div id="osh-hero-try" class="osh-hero-try" data-gjs-dmode="flow">
+      <button id="osh-hello" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/oscar/hello">This button is live</button>
+    </div>
+    <span id="osh-hero-note" class="osh-hero-note" data-gjs-dmode="flow">It sends /oscar/hello. Everything on this page sends.</span>
+    <div id="osh-scroll" class="osh-scroll" data-gjs-dmode="flow"><span id="osh-scroll-dot" class="osh-scroll-dot" data-gjs-dmode="flow"></span></div>
+  </header>
+
+  <section id="osh-how" class="osh-section" data-gjs-dmode="flow">
+    <p id="osh-how-eyebrow" class="osh-eyebrow osh-reveal" data-gjs-dmode="flow">How it works</p>
+    <h2 id="osh-how-heading" class="osh-heading osh-reveal" data-gjs-dmode="flow">Download. Design. Control.</h2>
+    <p id="osh-how-lead" class="osh-lead osh-reveal" data-gjs-dmode="flow">No code and no account. OSCAR runs on your own computer, and everything it needs comes with it, so it works in a venue with no internet.</p>
+    <div id="osh-steps" class="osh-steps" data-gjs-dmode="flow">
+      <div id="osh-step-1" class="osh-step osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-step-1-number" class="osh-step-number" data-gjs-dmode="flow">1</span>
+        <h3 id="osh-step-1-title" class="osh-step-title" data-gjs-dmode="flow">Download</h3>
+        <p id="osh-step-1-text" class="osh-step-text" data-gjs-dmode="flow">Windows, Mac and Linux. Free and open source.</p>
+      </div>
+      <div id="osh-step-2" class="osh-step osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-step-2-number" class="osh-step-number" data-gjs-dmode="flow">2</span>
+        <h3 id="osh-step-2-title" class="osh-step-title" data-gjs-dmode="flow">Design</h3>
+        <p id="osh-step-2-text" class="osh-step-text" data-gjs-dmode="flow">Drag controls onto a canvas. Point each at an address.</p>
+      </div>
+      <div id="osh-step-3" class="osh-step osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-step-3-number" class="osh-step-number" data-gjs-dmode="flow">3</span>
+        <h3 id="osh-step-3-title" class="osh-step-title" data-gjs-dmode="flow">Control</h3>
+        <p id="osh-step-3-text" class="osh-step-text" data-gjs-dmode="flow">Open it on any device on the network and run the show.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="osh-controls" class="osh-section" data-gjs-dmode="flow">
+    <p id="osh-controls-eyebrow" class="osh-eyebrow osh-reveal" data-gjs-dmode="flow">Try them</p>
+    <h2 id="osh-controls-heading" class="osh-heading osh-reveal" data-gjs-dmode="flow">Every control a show needs</h2>
+    <p id="osh-controls-lead" class="osh-lead osh-reveal" data-gjs-dmode="flow">These are not pictures. Each one is a working control you can drag somewhere else, resize, restyle and point at your own software.</p>
+    <div id="osh-cards" class="osh-cards" data-gjs-dmode="flow">
+      <article id="osh-card-buttons" class="osh-card osh-reveal" data-gjs-dmode="flow">
+        <h3 id="osh-card-buttons-title" class="osh-card-title" data-gjs-dmode="flow">Buttons</h3>
+        <p id="osh-card-buttons-text" class="osh-card-text" data-gjs-dmode="flow">Momentary or toggle, with the values you choose for on and off.</p>
+        <div id="osh-buttons-demo" class="osh-demo osh-demo-row" data-gjs-dmode="flow"><button id="osh-btn-flash" data-gjs-dmode="flow" data-gjs-message="/oscar/flash">Hold</button><button id="osh-btn-toggle" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/oscar/toggle">Toggle</button></div>
+      </article>
+      <article id="osh-card-faders" class="osh-card osh-reveal" data-gjs-dmode="flow">
+        <h3 id="osh-card-faders-title" class="osh-card-title" data-gjs-dmode="flow">Faders</h3>
+        <p id="osh-card-faders-text" class="osh-card-text" data-gjs-dmode="flow">Any range, either direction, horizontal or upright. OSC, DMX, or both at once.</p>
+        <div id="osh-faders-demo" class="osh-demo" data-gjs-dmode="flow"><input id="osh-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/oscar/level" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.7" data-gjs-orientation="horizontal"></div>
+      </article>
+      <article id="osh-card-pad" class="osh-card osh-reveal" data-gjs-dmode="flow">
+        <h3 id="osh-card-pad-title" class="osh-card-title" data-gjs-dmode="flow">XY pads</h3>
+        <p id="osh-card-pad-text" class="osh-card-text" data-gjs-dmode="flow">Two values from one finger: position, pan and tilt, anything with two axes.</p>
+        <div id="osh-pad-demo" class="osh-demo" data-gjs-dmode="flow"><div id="osh-pad" class="oscar-xypad" data-gjs-dmode="flow" data-gjs-message="/oscar/position" data-gjs-min-x="0" data-gjs-max-x="1" data-gjs-min-y="0" data-gjs-max-y="1" data-gjs-x="0.5" data-gjs-y="0.5"></div></div>
+      </article>
+      <article id="osh-card-colour" class="osh-card osh-reveal" data-gjs-dmode="flow">
+        <h3 id="osh-card-colour-title" class="osh-card-title" data-gjs-dmode="flow">Colour</h3>
+        <p id="osh-card-colour-text" class="osh-card-text" data-gjs-dmode="flow">Pick a colour and send it as r, g, b, as a hex code, or straight to an RGB fixture.</p>
+        <div id="osh-colour-demo" class="osh-demo" data-gjs-dmode="flow"><input id="osh-colour" type="color" data-gjs-dmode="flow" data-gjs-message="/oscar/colour" data-gjs-value="#ff3663" data-gjs-format="rgb" data-gjs-scale="unit"></div>
+      </article>
+      <article id="osh-card-meter" class="osh-card osh-reveal" data-gjs-dmode="flow">
+        <h3 id="osh-card-meter-title" class="osh-card-title" data-gjs-dmode="flow">Meters</h3>
+        <p id="osh-card-meter-text" class="osh-card-text" data-gjs-dmode="flow">OSC runs both ways. A meter follows what your software sends back.</p>
+        <div id="osh-meter-demo" class="osh-demo" data-gjs-dmode="flow"><div id="osh-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/oscar/meter" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.62" data-gjs-peak-hold="1.5"></div><span id="osh-meter-note" class="osh-note" data-gjs-dmode="flow">Send 0 to 1 to /oscar/meter</span></div>
+      </article>
+      <article id="osh-card-typed" class="osh-card osh-reveal" data-gjs-dmode="flow">
+        <h3 id="osh-card-typed-title" class="osh-card-title" data-gjs-dmode="flow">Exact values</h3>
+        <p id="osh-card-typed-text" class="osh-card-text" data-gjs-dmode="flow">A list to choose from, a number to type, a line of text to send.</p>
+        <div id="osh-typed-demo" class="osh-demo osh-demo-stack" data-gjs-dmode="flow"><select id="osh-dropdown" class="oscar-dropdown" data-gjs-dmode="flow" data-gjs-message="/oscar/scene" data-gjs-options="Sunrise=1, Storm=2, Neon=3, Blackout=4" data-gjs-value="1" data-gjs-arg-type="i"></select><input id="osh-number" type="number" class="oscar-number-input" data-gjs-dmode="flow" data-gjs-message="/oscar/bpm" data-gjs-value="120" data-gjs-min="20" data-gjs-max="300" data-gjs-step="1" data-gjs-arg-type="i"><input id="osh-text" type="text" class="oscar-text-input" data-gjs-dmode="flow" data-gjs-message="/oscar/caption" data-gjs-placeholder="Type a caption, press Enter" data-gjs-arg-type="s"></div>
+      </article>
+      <article id="osh-card-media" class="osh-card osh-reveal" data-gjs-dmode="flow">
+        <h3 id="osh-card-media-title" class="osh-card-title" data-gjs-dmode="flow">Media browser</h3>
+        <p id="osh-card-media-text" class="osh-card-text" data-gjs-dmode="flow">A wall of clips. One tap launches, and the highlight follows what is playing.</p>
+        <div id="osh-media-demo" class="osh-demo" data-gjs-dmode="flow"><div id="osh-media" class="oscar-media-browser" data-gjs-dmode="flow" data-gjs-message="/oscar/clip" data-gjs-columns="3" data-gjs-show-labels="true" data-gjs-arg-type="i" data-gjs-items="Aurora|1; Tunnel|2; Waves|3; Fire|4; City|5; Logo|6"></div></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="osh-more" class="osh-section" data-gjs-dmode="flow">
+    <p id="osh-more-eyebrow" class="osh-eyebrow osh-reveal" data-gjs-dmode="flow">Under the hood</p>
+    <h2 id="osh-more-heading" class="osh-heading osh-reveal" data-gjs-dmode="flow">Built for the room, not the demo</h2>
+    <div id="osh-features" class="osh-features" data-gjs-dmode="flow">
+      <div id="osh-feature-osc" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-osc-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-osc-title" class="osh-feature-title" data-gjs-dmode="flow">OSC, both ways</h3>
+        <p id="osh-feature-osc-text" class="osh-feature-text" data-gjs-dmode="flow">Send to anything that speaks OSC, and let it answer. Every widget can follow the rig.</p>
+      </div>
+      <div id="osh-feature-dmx" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-dmx-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-dmx-title" class="osh-feature-title" data-gjs-dmode="flow">Lights, directly</h3>
+        <p id="osh-feature-dmx-text" class="osh-feature-text" data-gjs-dmode="flow">Art-Net and sACN straight from a fader. No lighting desk in between.</p>
+      </div>
+      <div id="osh-feature-sync" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-sync-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-sync-title" class="osh-feature-title" data-gjs-dmode="flow">Every device agrees</h3>
+        <p id="osh-feature-sync-text" class="osh-feature-text" data-gjs-dmode="flow">Open the surface on five tablets. Move a fader on one and the rest follow.</p>
+      </div>
+      <div id="osh-feature-responsive" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-responsive-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-responsive-title" class="osh-feature-title" data-gjs-dmode="flow">Any screen</h3>
+        <p id="osh-feature-responsive-text" class="osh-feature-text" data-gjs-dmode="flow">One layout that rearranges itself for a desk, a tablet and a phone.</p>
+      </div>
+      <div id="osh-feature-styles" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-styles-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-styles-title" class="osh-feature-title" data-gjs-dmode="flow">Your look</h3>
+        <p id="osh-feature-styles-text" class="osh-feature-text" data-gjs-dmode="flow">Five widget styles, light and dark, and every colour yours to override.</p>
+      </div>
+      <div id="osh-feature-pages" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-pages-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-pages-title" class="osh-feature-title" data-gjs-dmode="flow">Pages</h3>
+        <p id="osh-feature-pages-text" class="osh-feature-text" data-gjs-dmode="flow">A page per room, per scene, per fixture group, with tabs to switch.</p>
+      </div>
+      <div id="osh-feature-publish" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-publish-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-publish-title" class="osh-feature-title" data-gjs-dmode="flow">Publish and scan</h3>
+        <p id="osh-feature-publish-text" class="osh-feature-text" data-gjs-dmode="flow">One click gives a page any phone can open. Scan the code and drive.</p>
+      </div>
+      <div id="osh-feature-arduino" class="osh-feature osh-reveal" data-gjs-dmode="flow">
+        <span id="osh-feature-arduino-dot" class="osh-dot" data-gjs-dmode="flow"></span>
+        <h3 id="osh-feature-arduino-title" class="osh-feature-title" data-gjs-dmode="flow">Arduino and serial</h3>
+        <p id="osh-feature-arduino-text" class="osh-feature-text" data-gjs-dmode="flow">The same messages down a USB cable, to a board you built yourself.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="osh-works" class="osh-section" data-gjs-dmode="flow">
+    <p id="osh-works-eyebrow" class="osh-eyebrow osh-reveal" data-gjs-dmode="flow">Works with</p>
+    <h2 id="osh-works-heading" class="osh-heading osh-reveal" data-gjs-dmode="flow">If it speaks OSC, OSCAR drives it</h2>
+    <div id="osh-chips" class="osh-chips osh-reveal" data-gjs-dmode="flow">
+      <span id="osh-chip-1" class="osh-chip" data-gjs-dmode="flow">Resolume</span>
+      <span id="osh-chip-2" class="osh-chip" data-gjs-dmode="flow">TouchDesigner</span>
+      <span id="osh-chip-3" class="osh-chip" data-gjs-dmode="flow">MadMapper</span>
+      <span id="osh-chip-4" class="osh-chip" data-gjs-dmode="flow">Ableton Live</span>
+      <span id="osh-chip-5" class="osh-chip" data-gjs-dmode="flow">QLab</span>
+      <span id="osh-chip-6" class="osh-chip" data-gjs-dmode="flow">Max/MSP</span>
+      <span id="osh-chip-7" class="osh-chip" data-gjs-dmode="flow">Processing</span>
+      <span id="osh-chip-8" class="osh-chip" data-gjs-dmode="flow">Pure Data</span>
+      <span id="osh-chip-9" class="osh-chip" data-gjs-dmode="flow">Unity</span>
+      <span id="osh-chip-10" class="osh-chip" data-gjs-dmode="flow">Unreal Engine</span>
+      <span id="osh-chip-11" class="osh-chip" data-gjs-dmode="flow">Modul8</span>
+      <span id="osh-chip-12" class="osh-chip" data-gjs-dmode="flow">Arduino</span>
+    </div>
+  </section>
+
+  <footer id="osh-footer" class="osh-footer" data-gjs-dmode="flow">
+    <div id="osh-footer-brand" class="osh-footer-brand" data-gjs-dmode="flow">
+      <img id="osh-footer-logo" class="osh-footer-logo" data-gjs-dmode="flow" src="images/oscar-circle.png" alt="">
+      <span id="osh-footer-name" data-gjs-dmode="flow">OSCAR</span>
+    </div>
+    <a id="osh-footer-link" class="osh-link" data-gjs-dmode="flow" href="https://www.createwithoscar.com/">createwithoscar.com</a>
+  </footer>
+</div>
+</body>
+</html>

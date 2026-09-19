@@ -142,7 +142,21 @@ for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith(".html"))) {
   test(file + ": rearranges at the widths of the editor's Tablet and Mobile views", () => {
     // An edit made in one of those views lands in a query of exactly that width.
     const queries = [...new Set([...html.matchAll(/@media\s*([^{]+)\{/g)].map((m) => m[1].trim()))];
-    assert.deepStrictEqual(queries.sort(), ["(max-width: 480px)", "(max-width: 992px)"]);
+    // Only the queries about width are about layout. One about the viewer,
+    // such as asking for less motion, has nothing to do with the editor's views.
+    const widths = queries.filter((query) => /width/.test(query));
+    assert.deepStrictEqual(widths.sort(), ["(max-width: 480px)", "(max-width: 992px)"]);
+  });
+
+  test(file + ": anything that moves stands still for someone who has asked for less motion", () => {
+    if (!/@keyframes/.test(html)) return;
+    const reduced = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(html);
+    assert.ok(reduced, "there is a reduced-motion query");
+    // Every class given an animation is named in it.
+    const animated = [...html.matchAll(/\n(\.[\w-]+)\s*\{[^}]*\banimation:/g)].map((m) => m[1]);
+    assert.ok(animated.length > 0);
+    for (const selector of animated) assert.ok(reduced[1].includes(selector), selector + " keeps moving");
+    assert.match(reduced[1], /animation:\s*none/);
   });
 }
 
