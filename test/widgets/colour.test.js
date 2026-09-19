@@ -432,3 +432,16 @@ test("the panel refuses whole numbers on a 0 to 1 range, whichever setting is ed
   assert.strictEqual(colour.checks.format("hex", { format: "hex", scale: "unit", argType: "i" }), null, "a hex string has no argument type");
   assert.strictEqual(colour.checks.argType("f", colour.defaults), null, "the defaults pass");
 });
+
+test("text channels with one unreadable are refused, not read as a short hex code", () => {
+  // "000" and "255" both pass for three-digit hex codes. Before this rule a
+  // list that failed as channels fell through to that reading, so a rig
+  // sending one blank channel painted black -- or an unrelated colour.
+  assert.strictEqual(fromWire(["000", "  ", "0"], "byte"), null);
+  assert.strictEqual(fromWire(["255", "", "0"], "byte"), null);
+  assert.strictEqual(fromWire(["255", null, "0"], "byte"), null);
+  assert.strictEqual(fromWire(["255", "128"], "byte"), null, "two values are not a colour");
+  // Still hex: the lone string OSCAR sends, and a list that says so with '#'.
+  assert.strictEqual(fromWire(["00ff00"], "byte"), "#00ff00");
+  assert.strictEqual(fromWire(["#fff", 1, 2], "byte"), "#ffffff");
+});

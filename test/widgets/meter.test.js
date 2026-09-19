@@ -440,3 +440,26 @@ test("detaching stops the meter following the rig", () => {
   assert.strictEqual(level(el), "10.00%");
   assert.strictEqual(ctx.listening(), 0);
 });
+
+test("a hold longer than a timer can wait still holds, instead of dropping at once", () => {
+  withClock((clock) => {
+    // A real setTimeout given more than 2^31-1 ms fires after one millisecond,
+    // so the marker of a month-long hold fell immediately. The fake clock has
+    // no such limit, so watch what the meter asks for.
+    const asked = [];
+    const fake = global.setTimeout;
+    global.setTimeout = (fn, ms) => {
+      asked.push(ms);
+      return fake(fn, ms);
+    };
+
+    const { el, ctx } = mount(meter, { min: 0, max: 100, value: 0, peakHold: 1e9 });
+    ctx.receive("/meter1", [95]);
+    ctx.receive("/meter1", [10]);
+    assert.ok(asked.length > 0 && asked.every((ms) => ms <= 2147483647), "never asks for a delay that overflows");
+
+    clock.advance(2147483647);
+    assert.strictEqual(peakAt(el), "95.00%", "woken by the cap, it goes back to waiting");
+    assert.strictEqual(clock.pending(), 1);
+  });
+});
