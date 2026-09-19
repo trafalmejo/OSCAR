@@ -1,6 +1,561 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict";
 
+const { toNumber } = require("../osc-args");
+const { MAX_LEVEL } = require("./spec");
+
+/**
+ * Turning what a control is worth into what a DMX slot can hold.
+ *
+ * Every function here returns null rather than a number it would have had to
+ * invent. The reasoning is lib/osc-message.js's, and it bites harder here: a
+ * slot is unsigned, 0 is a real command meaning "off", and Number(null),
+ * Number("") and Number(false) are all 0. A value that arrived broken must
+ * never reach a dimmer as a blackout.
+ */
+
+/** A whole number inside a range, or null. Universes and channels. */
+function toWhole(raw, min, max) {
+  const number = toNumber(raw);
+  if (number === null || !Number.isInteger(number)) return null;
+  if (number < min || number > max) return null;
+  return number;
+}
+
+function clamp(value, low, high) {
+  return Math.min(high, Math.max(low, value));
+}
+
+/**
+ * Where a value sits within a control's own range, as 0..1, or null.
+ *
+ * The one place a widget's units -- 0-100, -1..1, 20-2000 Hz -- become
+ * something a protocol can scale, so the widget keeps owning its range and
+ * DMX never learns what a slider was labelled. Clamped: a value past either
+ * end pins there, which is what the fixture can do anyway.
+ *
+ * A range of zero width cannot place anything. Returning 0 there would look
+ * like a level; it is the absence of one.
+ */
+function unitOf(value, min, max) {
+  const v = toNumber(value);
+  const lo = toNumber(min);
+  const hi = toNumber(max);
+  if (v === null || lo === null || hi === null || hi === lo) return null;
+  return clamp((v - lo) / (hi - lo), 0, 1);
+}
+
+/** 0..1 -> 0..255, clamped before rounding. Null stays null. */
+function toLevel(unit) {
+  const number = toNumber(unit);
+  if (number === null) return null;
+  return Math.round(clamp(number, 0, 1) * MAX_LEVEL);
+}
+
+/**
+ * A list of 0..1 values -> levels, or null if any one of them fails.
+ *
+ * One bad coordinate spoils the set, the same way a half-built OSC message is
+ * refused: pan without tilt puts a light somewhere nobody asked for.
+ */
+function toLevels(units) {
+  const list = Array.isArray(units) ? units : [units];
+  if (!list.length) return null;
+  const levels = [];
+  for (const unit of list) {
+    const level = toLevel(unit);
+    if (level === null) return null;
+    levels.push(level);
+  }
+  return levels;
+}
+
+/**
+ * Lay a widget's levels across the block of channels it was given, or null
+ * when the block is too narrow to hold them.
+ *
+ * Values fill in order and the last one repeats to the end of the block, so
+ * one slider over three channels dims an RGB fixture as a whole while a pad
+ * over two lands on pan and tilt. A block narrower than the values would drop
+ * a coordinate, and half a position is no position.
+ */
+function spread(levels, count) {
+  if (!Array.isArray(levels) || !levels.length || count < levels.length) return null;
+  const out = [];
+  for (let i = 0; i < count; i++) out.push(levels[Math.min(i, levels.length - 1)]);
+  return out;
+}
+
+module.exports = { toWhole, unitOf, toLevel, toLevels, spread, clamp };
+
+},{"../osc-args":5,"./spec":2}],2:[function(require,module,exports){
+"use strict";
+
+/**
+ * The fixed numbers the two DMX-over-Ethernet protocols are built on.
+ *
+ * Kept apart from the encoders so the widgets -- which run in a browser --
+ * can validate a universe or a channel without pulling in Buffer or a socket.
+ */
+
+/** A DMX universe is 512 slots of one byte each. */
+const SLOTS = 512;
+const MAX_LEVEL = 255;
+
+const ARTNET_PORT = 6454;
+const SACN_PORT = 5568;
+
+/**
+ * Art-Net addresses a universe with a 15-bit Port-Address (Net, Sub-Net and
+ * Universe packed together), so 0 is an ordinary first universe. E1.31
+ * reserves 0 and 64000 upward, leaving 1-63999 for data.
+ */
+const PROTOCOLS = [
+  { id: "artnet", name: "Art-Net", port: ARTNET_PORT, minUniverse: 0, maxUniverse: 32767 },
+  { id: "sacn", name: "sACN (E1.31)", port: SACN_PORT, minUniverse: 1, maxUniverse: 63999 },
+];
+
+/** The same list as a settings panel wants it. */
+const PROTOCOL_OPTIONS = PROTOCOLS.map((spec) => ({ id: spec.id, name: spec.name }));
+
+function protocol(id) {
+  return PROTOCOLS.find((spec) => spec.id === id) || null;
+}
+
+/** E1.31 gives every universe its own multicast group: 239.255.<hi>.<lo>. */
+function sacnMulticast(universe) {
+  return "239.255." + ((universe >> 8) & 0xff) + "." + (universe & 0xff);
+}
+
+/**
+ * Where a frame goes when no node was named.
+ *
+ * Each protocol was designed around an "I do not know the node's address"
+ * answer: Art-Net broadcasts, sACN multicasts. Naming the node is still
+ * better on a busy network, which is why the field exists.
+ */
+function defaultHost(id, universe) {
+  return id === "sacn" ? sacnMulticast(universe) : "255.255.255.255";
+}
+
+/**
+ * Hostnames and IPv4 literals only: this is where a UDP packet goes, and
+ * anything stranger than these characters was not built by OSCAR. Shared by
+ * the settings panel and the server's gate so the two cannot drift.
+ */
+const HOST = /^[A-Za-z0-9.-]{1,255}$/;
+
+/** A host, "" for the protocol's default, or null for something refused. */
+function readHost(raw) {
+  if (raw === null || raw === undefined) return "";
+  if (typeof raw !== "string") return null;
+  const host = raw.trim();
+  if (!host) return "";
+  return HOST.test(host) ? host : null;
+}
+
+module.exports = {
+  SLOTS,
+  MAX_LEVEL,
+  ARTNET_PORT,
+  SACN_PORT,
+  PROTOCOLS,
+  PROTOCOL_OPTIONS,
+  protocol,
+  sacnMulticast,
+  defaultHost,
+  HOST,
+  readHost,
+};
+
+},{}],3:[function(require,module,exports){
+"use strict";
+
+/**
+ * A widget's settings, written onto exported markup and read back off it.
+ *
+ * Inside the editor every setting is a component property and deliberately
+ * not an HTML attribute (public/src/adapters/grapesjs.js says why: an
+ * attribute is a second copy of the truth, saved into every project file and
+ * stale from the next edit on). That leaves exported markup saying
+ * `<input type="range">` and nothing about where it sends, which is one of
+ * the reasons an exported page never worked. So the settings are written onto
+ * the elements here, at export time and only then, and read back by the
+ * standalone runtime (public/src/adapters/standalone.js).
+ *
+ * Which keys travel is decided by each definition's own `defaults`, and which
+ * widgets exist by WIDGETS, so a widget added to the registry is carried
+ * without anyone remembering to list it here.
+ *
+ * Nothing here touches a DOM: readWidget asks its argument for getAttribute,
+ * which a real element and a test double both answer.
+ */
+
+const { byName } = require("../widgets");
+
+/** Marks an element as an OSCAR widget, and says which one. */
+const NAME_ATTR = "data-oscar";
+
+/**
+ * Carries the settings, as one JSON value rather than an attribute per key.
+ *
+ * Attributes are strings and these values are not: `invert` is a boolean,
+ * `port` a number. Spread over data-oscar-invert="false" the runtime would be
+ * handed the string "false", which is truthy, and a fader would quietly run
+ * backwards. JSON keeps the types.
+ */
+const CONFIG_ATTR = "data-oscar-config";
+
+const WIDGET_SELECTOR = "[" + NAME_ATTR + "]";
+
+function has(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+/** The widget registered under this name, or null. Never a prototype member. */
+function definitionFor(name) {
+  return typeof name === "string" && has(byName, name) ? byName[name] : null;
+}
+
+/**
+ * The attributes that carry one widget's configuration, or null when `name`
+ * is not a widget.
+ *
+ * Only the keys the widget declares are written; everything else on a
+ * component is editor bookkeeping and has no business on a control surface.
+ * A setting the editor holds as undefined travels as null, so the key is
+ * still there: readWidget treats a missing key as damage.
+ *
+ * @param {string} name a widget name, e.g. "oscar-slider"
+ * @param {(key: string) => any} read reads one setting off the host
+ */
+function exportAttributes(name, read) {
+  const definition = definitionFor(name);
+  if (!definition) return null;
+
+  const settings = {};
+  for (const key of Object.keys(definition.defaults)) {
+    const value = read(key);
+    settings[key] = value === undefined ? null : value;
+  }
+
+  const attributes = {};
+  attributes[NAME_ATTR] = name;
+  attributes[CONFIG_ATTR] = JSON.stringify(settings);
+  return attributes;
+}
+
+/** The settings object an attribute holds, or null if it holds nothing usable. */
+function parseConfig(raw) {
+  if (typeof raw !== "string") return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+  // An array or a bare number parses fine and is still not a settings object.
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return parsed;
+}
+
+/**
+ * The one setting a widget keeps writing itself: where its thumb is, what is
+ * selected. The editor judges it when someone types it and not again when
+ * the range around it is edited, so a project can honestly hold a Value its
+ * present Min and Max would refuse, and the widgets clamp it as they start.
+ * Refusing it here would switch off controls that work. It is also not a
+ * setting that decides where anything goes: it is sent only after a gesture
+ * has replaced it.
+ */
+const STATE_KEYS = ["value"];
+
+/**
+ * Why these settings cannot be run, or null when they can.
+ *
+ * All the keys being there says the blob was not truncated; it does not say
+ * somebody's hand-edit left them usable, and the header of every exported
+ * file invites hand-edits. "enabled": "false" is a string, which is truthy,
+ * so the control the editor of the file meant to silence stays live; a Min
+ * of null reaches Number() inside a widget and becomes a range starting at
+ * 0. The definition already knows what a usable value is -- `checks` is what
+ * the settings panel refuses edits with -- so the same judgement is asked
+ * for here, and nothing about any one widget is written down in this file.
+ * An export made by the editor always passes: the panel let none of it in
+ * otherwise.
+ */
+function complaintAbout(definition, config) {
+  for (const spec of definition.fields || []) {
+    if (spec.type === "checkbox" && typeof config[spec.key] !== "boolean") {
+      return JSON.stringify(spec.key) + " has to be true or false, not " + JSON.stringify(config[spec.key]);
+    }
+  }
+  const checks = definition.checks || {};
+  for (const key of Object.keys(checks)) {
+    if (STATE_KEYS.indexOf(key) !== -1 || !has(config, key)) continue;
+    let complaint;
+    try {
+      complaint = checks[key](config[key], config);
+    } catch (err) {
+      // A validator written for what a settings panel can produce, handed an
+      // object or an array. That it cannot even be judged is the answer.
+      complaint = "it cannot be read";
+    }
+    if (complaint) return JSON.stringify(key) + " is not usable: " + complaint;
+  }
+  return null;
+}
+
+/**
+ * Read a widget back off an element.
+ *
+ * Returns { definition, config }, or { problem } saying why this element
+ * cannot be run, or null when the element does not claim to be a widget.
+ *
+ * There is no path from here to a widget running on its defaults. The
+ * defaults are a live control aimed at localhost:7000 /slider1 with a range
+ * of 0-100: a widget revived on them after its settings were damaged fires
+ * at whatever happens to be listening there, at levels nobody chose. A
+ * control that does nothing gets noticed and fixed; one that drives the
+ * wrong rig gets noticed by the audience. So every key the definition
+ * declares has to be present -- an export always writes all of them, and the
+ * file carries its own runtime, so a missing key is never a version skew,
+ * only damage. Present is not enough either: see complaintAbout.
+ */
+function readWidget(el) {
+  if (!el || typeof el.getAttribute !== "function") return null;
+  const name = el.getAttribute(NAME_ATTR);
+  if (name === null || name === undefined) return null;
+
+  const definition = definitionFor(name);
+  if (!definition) return { problem: "unknown widget " + JSON.stringify(name) };
+
+  const settings = parseConfig(el.getAttribute(CONFIG_ATTR));
+  if (!settings) return { problem: CONFIG_ATTR + " is missing or is not a JSON object" };
+
+  const config = {};
+  for (const key of Object.keys(definition.defaults)) {
+    if (!has(settings, key)) return { problem: CONFIG_ATTR + " has no " + JSON.stringify(key) };
+    config[key] = settings[key];
+  }
+  const complaint = complaintAbout(definition, config);
+  if (complaint) return { problem: CONFIG_ATTR + ": " + complaint };
+  return { definition: definition, config: config };
+}
+
+module.exports = {
+  NAME_ATTR,
+  CONFIG_ATTR,
+  WIDGET_SELECTOR,
+  definitionFor,
+  exportAttributes,
+  parseConfig,
+  readWidget,
+};
+
+},{"../widgets":14}],4:[function(require,module,exports){
+"use strict";
+
+/**
+ * OSC 1.0 address pattern matching.
+ *
+ * In OSC the sender names a set of destinations and each receiver decides
+ * whether it is in the set, so the incoming address is the pattern and a
+ * widget's own Message setting is always a literal: someone who types /pad[1]
+ * in the panel means that address, not a character class.
+ *
+ * The four OSC 1.0 forms, none of which cross a "/", because each matches
+ * within one part of the path -- /eos/* addresses the children of /eos, not
+ * everything beneath it:
+ *   ?         one character
+ *   *         any run of characters, including none
+ *   [a-c]     one character from the set; [!a-c] one not in it
+ *   {a,b}     either of the alternatives
+ *
+ * A malformed pattern -- an unclosed bracket, a stray "}", a "/" inside a
+ * class -- matches nothing. Never throwing matters more than being helpful
+ * here: this runs on every packet a rig sends, and a typo in someone else's
+ * software must not take OSCAR's listener down.
+ */
+
+const SPECIAL = /[*?[\]{}]/;
+
+/** Does `pattern` contain anything that makes it more than a literal? */
+function isPattern(pattern) {
+  return typeof pattern === "string" && SPECIAL.test(pattern);
+}
+
+/**
+ * Turn a pattern into a token list, or null if it is malformed.
+ *
+ * Tokens: { lit: "x" } | { any: true } | { one: true } |
+ *         { set: Array<[lo, hi]>, negate } | { alts: [string] }
+ */
+function compile(pattern) {
+  const tokens = [];
+  let i = 0;
+
+  while (i < pattern.length) {
+    const char = pattern.charAt(i);
+
+    if (char === "*") {
+      // Two stars in a row mean the same as one; folding them keeps the
+      // backtracking below linear in the length of the address.
+      if (!tokens.length || !tokens[tokens.length - 1].any) tokens.push({ any: true });
+      i++;
+    } else if (char === "?") {
+      tokens.push({ one: true });
+      i++;
+    } else if (char === "[") {
+      const end = pattern.indexOf("]", i + 1);
+      if (end === -1) return null;
+      const set = parseSet(pattern.slice(i + 1, end));
+      if (!set) return null;
+      tokens.push(set);
+      i = end + 1;
+    } else if (char === "{") {
+      const end = pattern.indexOf("}", i + 1);
+      if (end === -1) return null;
+      const body = pattern.slice(i + 1, end);
+      // Nothing nests in OSC 1.0, and an alternative cannot span a "/".
+      if (/[{[\]/*?]/.test(body)) return null;
+      tokens.push({ alts: body.split(",") });
+      i = end + 1;
+    } else if (char === "]" || char === "}") {
+      return null;
+    } else {
+      tokens.push({ lit: char });
+      i++;
+    }
+  }
+
+  return tokens;
+}
+
+/** The inside of [...], as ranges; a single character is a range of one. */
+function parseSet(body) {
+  let negate = false;
+  if (body.charAt(0) === "!") {
+    negate = true;
+    body = body.slice(1);
+  }
+  if (!body || /[/[{}*?]/.test(body)) return null;
+
+  const set = [];
+  for (let i = 0; i < body.length; i++) {
+    const lo = body.charAt(i);
+    // "a-c" is a range; a "-" first, last, or right after a range is itself.
+    if (body.charAt(i + 1) === "-" && i + 2 < body.length) {
+      const hi = body.charAt(i + 2);
+      if (hi < lo) return null;
+      set.push([lo, hi]);
+      i += 2;
+    } else {
+      set.push([lo, lo]);
+    }
+  }
+  return { set: set, negate: negate };
+}
+
+function inSet(token, char) {
+  let found = false;
+  for (const range of token.set) {
+    if (char >= range[0] && char <= range[1]) {
+      found = true;
+      break;
+    }
+  }
+  return token.negate ? !found : found;
+}
+
+/**
+ * Match tokens[ti..] against address[ai..], backtracking over * and {}.
+ *
+ * `failed` remembers every (token, position) pair that has already come to
+ * nothing. Without it a run of stars backtracks exponentially, and a pattern
+ * like /*a*a*a*a... arriving sixty times a second would stall the page.
+ */
+function matchFrom(tokens, ti, address, ai, failed) {
+  const key = ti * (address.length + 1) + ai;
+  if (failed.has(key)) return false;
+
+  while (ti < tokens.length) {
+    const token = tokens[ti];
+
+    if (token.any) {
+      // Try the shortest run first; the star stops at the next "/" or the end.
+      let limit = address.indexOf("/", ai);
+      if (limit === -1) limit = address.length;
+      for (let end = ai; end <= limit; end++) {
+        if (matchFrom(tokens, ti + 1, address, end, failed)) return true;
+      }
+      failed.add(key);
+      return false;
+    }
+
+    if (token.alts) {
+      for (const alt of token.alts) {
+        if (address.startsWith(alt, ai) && matchFrom(tokens, ti + 1, address, ai + alt.length, failed)) {
+          return true;
+        }
+      }
+      failed.add(key);
+      return false;
+    }
+
+    if (ai >= address.length) return false;
+    const char = address.charAt(ai);
+
+    if (token.one) {
+      if (char === "/") break;
+    } else if (token.set) {
+      if (char === "/" || !inSet(token, char)) break;
+    } else if (char !== token.lit) {
+      break;
+    }
+    ti++;
+    ai++;
+  }
+  if (ti === tokens.length && ai === address.length) return true;
+  failed.add(key);
+  return false;
+}
+
+// A rig driving a fader sends the same address sixty times a second; compiling
+// it once is plenty. The cap keeps a target that invents a new pattern per
+// packet from growing this without limit.
+const MAX_CACHED = 256;
+const cache = new Map();
+
+function tokensFor(pattern) {
+  if (cache.has(pattern)) return cache.get(pattern);
+  const tokens = compile(pattern);
+  if (cache.size >= MAX_CACHED) cache.clear();
+  cache.set(pattern, tokens);
+  return tokens;
+}
+
+/**
+ * Does an incoming `pattern` reach a widget whose address is `address`?
+ *
+ * Both must be OSC addresses (a string starting with "/"); anything else, and
+ * any malformed pattern, is false.
+ */
+function matchesAddress(pattern, address) {
+  if (typeof pattern !== "string" || typeof address !== "string") return false;
+  if (pattern.charAt(0) !== "/" || address.charAt(0) !== "/") return false;
+  if (!SPECIAL.test(pattern)) return pattern === address;
+
+  const tokens = tokensFor(pattern);
+  if (!tokens) return false;
+  return matchFrom(tokens, 0, address, 0, new Set());
+}
+
+module.exports = { matchesAddress, isPattern, compile };
+
+},{}],5:[function(require,module,exports){
+"use strict";
+
 /**
  * Turning a widget's configured value into OSC arguments.
  *
@@ -72,7 +627,9 @@ function toArgs(argType, raw) {
       if (number === null) return null;
       // Rounded, not truncated: a slider two thirds of the way up should read
       // as 67, not 66, and someone typing 1.9 meant 2.
-      return [{ type: "i", value: Math.round(number) }];
+      const rounded = Math.round(number);
+      if (!isInt32(rounded)) return null;
+      return [{ type: "i", value: rounded }];
     }
 
     case "f":
@@ -85,14 +642,26 @@ function toArgs(argType, raw) {
 }
 
 /**
- * Parse a number without the traps JavaScript lays for you: Number("") and
- * Number(null) are both 0, and either would quietly become a real value.
+ * Parse a number without the traps JavaScript lays for you, or return null.
+ *
+ * Number("") and Number(null) are both 0, and so are Number("  ") and
+ * Number([]): a cleared field, a stray space, a missing value or a wrapped
+ * one would each quietly become a real value. Only a number, or text that
+ * spells one, counts.
  */
 function toNumber(raw) {
-  if (raw === null || raw === undefined || raw === "") return null;
-  if (typeof raw === "boolean") return null;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== "string" || raw.trim() === "") return null;
   const number = Number(raw);
   return Number.isFinite(number) ? number : null;
+}
+
+/**
+ * An OSC int is 32 bits. osc.js wraps anything wider rather than refusing it,
+ * so a value past this range would go out as some unrelated negative number.
+ */
+function isInt32(number) {
+  return Number.isInteger(number) && number >= -2147483648 && number <= 2147483647;
 }
 
 /** Is this a value the given argument type can actually send? */
@@ -100,9 +669,163 @@ function isSendable(argType, raw) {
   return toArgs(argType, raw) !== null;
 }
 
-module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy };
+module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy, toNumber, isInt32 };
 
-},{}],2:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
+(function (process){(function (){
+"use strict";
+
+/**
+ * The ports OSCAR listens on and sends from, read from the environment.
+ *
+ * One place, so that every port can be moved -- two copies on one machine,
+ * or a development server that must not collide with a running show -- and
+ * so that a port a later feature needs is added here rather than as one more
+ * ad-hoc Number(process.env.X) in server.js.
+ */
+
+const DEFAULTS = {
+  /** Web interface. */
+  http: 8080,
+  /** Browser-to-server OSC bridge (socket.io). */
+  socket: 8081,
+  /** Source port for OSC sent to the network. */
+  lan: 5001,
+  /** Source port for OSC sent to this machine. */
+  local: 5002,
+  /** Where OSC coming back from the rig is received. */
+  oscIn: 9000,
+  /**
+   * Source port Art-Net and sACN are sent from. 0 means any free port: the
+   * nodes listen on 6454 and 5568 whatever OSCAR sends from, and binding 6454
+   * here would collide with node software on this same machine -- Resolume,
+   * QLC+, MadMapper all receive Art-Net on it. Set OSCAR_DMX_PORT=6454 for a
+   * node that only answers to that source port.
+   */
+  dmx: 0,
+};
+
+const VARIABLES = {
+  http: "OSCAR_HTTP_PORT",
+  socket: "OSCAR_SOCKET_PORT",
+  lan: "OSCAR_LAN_PORT",
+  local: "OSCAR_LOCAL_PORT",
+  oscIn: "OSCAR_OSC_IN_PORT",
+  dmx: "OSCAR_DMX_PORT",
+};
+
+/**
+ * The one definition of a port, for a number or the text of one. Used by the
+ * send path (lib/osc-message.js), the settings panel (lib/widgets/fields.js)
+ * and the listeners here, so none of them can drift on what is refused.
+ */
+function isPort(value) {
+  if (typeof value !== "number" && typeof value !== "string") return false;
+  if (typeof value === "string" && value.trim() === "") return false;
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 && number <= 65535;
+}
+
+/**
+ * Read one port. Unset means the default; set but not a port is refused.
+ *
+ * Silently falling back on a typo ("OSCAR_HTTP_PORT=808O") would start OSCAR
+ * on 8080 and collide with whatever the operator was trying to avoid.
+ */
+function readPort(name, env) {
+  const raw = env[VARIABLES[name]];
+  if (raw === undefined || raw === "") return DEFAULTS[name];
+  const port = Number(raw);
+  if (isPort(port)) return port;
+  // A port whose default is "any" may be asked for explicitly, so a profile
+  // that pins it can be overridden from a command line the same way.
+  if (DEFAULTS[name] === 0 && String(raw).trim() === "0") return 0;
+  throw new Error(VARIABLES[name] + " must be a port number between 1 and 65535, not " + JSON.stringify(raw));
+}
+
+/** @returns {{http:number, socket:number, lan:number, local:number, oscIn:number, dmx:number}} */
+function portsFromEnv(env) {
+  const source = env || process.env;
+  const ports = {};
+  for (const name of Object.keys(DEFAULTS)) ports[name] = readPort(name, source);
+  return ports;
+}
+
+/** The ports `serve:at` takes on its command line, in order. */
+const ARGUMENTS = ["http", "socket", "oscIn"];
+
+/** How far from the HTTP port each derived port sits. */
+const OFFSETS = { socket: 1, oscIn: 2, lan: 3, local: 4 };
+
+/**
+ * Plan the ports for a copy started as `serve:at <http> [socket] [osc-in]`.
+ *
+ * A port typed on the command line always wins: it is the one thing the
+ * operator asked for, and an OSCAR_HTTP_PORT left in a shell profile must not
+ * quietly put a development copy on the show's port. Every port not typed is
+ * derived from the HTTP port unless the environment already sets it, so one
+ * number keeps a copy clear of everything else, including the two source
+ * ports OSC is sent from.
+ *
+ * Returns { variables, notes, ports }: the environment to start with, what to
+ * tell the operator (a variable an argument overrode), and the full result.
+ * Throws, naming the port, on anything that cannot be resolved -- a malformed
+ * argument, a malformed variable, or two ports landing on the same number.
+ */
+function planPorts(args, env) {
+  const given = {};
+  ARGUMENTS.forEach((name, i) => {
+    const raw = args[i];
+    if (raw === undefined) return;
+    if (!isPort(raw)) {
+      throw new Error("the " + VARIABLES[name] + " argument must be a port number between 1 and 65535, not " + JSON.stringify(raw));
+    }
+    given[name] = Number(raw);
+  });
+  if (given.http === undefined) throw new Error("an HTTP port is required");
+
+  const variables = {};
+  const notes = [];
+  for (const name of ["http"].concat(Object.keys(OFFSETS))) {
+    const variable = VARIABLES[name];
+    const fromEnv = env[variable];
+    const inEnv = fromEnv !== undefined && fromEnv !== "";
+
+    if (given[name] !== undefined) {
+      if (inEnv && Number(fromEnv) !== given[name]) {
+        notes.push(variable + "=" + fromEnv + " is set in the environment; using " + given[name] + " from the command line");
+      }
+      variables[variable] = String(given[name]);
+      continue;
+    }
+    if (inEnv) continue;
+
+    const derived = given.http + OFFSETS[name];
+    if (!isPort(derived)) throw new Error(variable + " would be " + derived + ", which is not a port");
+    variables[variable] = String(derived);
+  }
+
+  // Resolving through portsFromEnv refuses a malformed variable the same way
+  // a plain start would, and yields every port so collisions can be caught
+  // before something binds -- an OSC-in port typed as http + 3 is also the
+  // LAN source port, and UDP does not share.
+  const ports = portsFromEnv(Object.assign({}, env, variables));
+  const taken = {};
+  for (const name of Object.keys(ports)) {
+    // "Any free port" collides with nothing by definition.
+    if (ports[name] === 0) continue;
+    const other = taken[ports[name]];
+    if (other) throw new Error(VARIABLES[other] + " and " + VARIABLES[name] + " would both be " + ports[name]);
+    taken[ports[name]] = name;
+  }
+
+  return { variables, notes, ports };
+}
+
+module.exports = { portsFromEnv, planPorts, DEFAULTS, VARIABLES, isPort };
+
+}).call(this)}).call(this,require('_process'))
+},{"_process":25}],7:[function(require,module,exports){
 "use strict";
 
 /**
@@ -112,7 +835,7 @@ module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy };
  * not once per OSCAR release. Add the matching entry to MIGRATIONS when you
  * do, and a test for it.
  */
-const CURRENT_FORMAT = 2;
+const CURRENT_FORMAT = 3;
 
 /**
  * MIGRATIONS[n] converts project data from format n to format n + 1.
@@ -124,6 +847,12 @@ const CURRENT_FORMAT = 2;
 const MIGRATIONS = {
   0: (data) => data,
   1: (data) => stripEditorState(data),
+  // Format 3 is the first that may hold more than one page. The conversion
+  // itself is small -- every page gets a name -- and the bump is the larger
+  // half of the point: an OSCAR from before the page switcher would open a
+  // multi-page show, draw page one, and offer no way to reach the rest, which
+  // reads as a damaged project. Refused as "too new", it says to update.
+  2: (data) => namePages(data),
 };
 
 // Editor state that must never live in a project. A 2.1 development build
@@ -151,6 +880,45 @@ function stripEditorState(data) {
     // Some projects carry the component directly on the page.
     stripFromComponent(page.component);
   }
+  return data;
+}
+
+/**
+ * What a page with no name of its own is called, by its position.
+ *
+ * The one place the label is made: the migration writes it into files, and
+ * the editor's page list and the tablet's tabs both print it (they require
+ * this module through the bundle), so a page is never called one thing on
+ * disk and another on screen.
+ */
+function defaultPageName(index) {
+  return "Page " + (index + 1);
+}
+
+function hasName(name) {
+  return typeof name === "string" && name.trim() !== "";
+}
+
+/** The label for a page named `name` (or not named at all) at `index`. */
+function pageLabel(name, index) {
+  return hasName(name) ? name.trim() : defaultPageName(index);
+}
+
+/**
+ * Give every page a name.
+ *
+ * GrapesJS creates the first page of a project with an empty name and drops
+ * an empty name when it saves, so page one of every project comes back
+ * unnamed -- not only in files from before multi-page. A tab has to print
+ * something. Idempotent: a page that has a name keeps it.
+ */
+function namePages(data) {
+  if (!data || !Array.isArray(data.pages)) return data;
+
+  data.pages.forEach((page, index) => {
+    if (!page || typeof page !== "object") return;
+    if (!hasName(page.name)) page.name = defaultPageName(index);
+  });
   return data;
 }
 
@@ -207,7 +975,31 @@ function openProject(record) {
   // version gate would wave that straight through. Idempotent and cheap.
   data = stripEditorState(data);
 
-  return { status: "ok", data, from, migrated: from < CURRENT_FORMAT };
+  // Likewise the page names. GrapesJS drops an empty name on every save, so a
+  // file stamped with the current format routinely holds an unnamed first
+  // page; a migration alone would never see it.
+  data = namePages(data);
+
+  // Against the format this project would be saved as, not the newest there
+  // is: a single-page file is stamped 2 for good (formatFor) and is current.
+  return { status: "ok", data, from, migrated: from < formatFor(data) };
+}
+
+/**
+ * The format a project is stamped with: the oldest one that describes it.
+ *
+ * Format 3 exists so that an OSCAR without a page switcher refuses a show it
+ * could only draw the first page of. A project with a single page holds
+ * nothing such a build cannot show -- a page name is the only difference, and
+ * GrapesJS has always carried one -- so stamping it 3 would lock every file
+ * saved from now on out of a colleague's older OSCAR for no reason. It keeps
+ * the last single-page format, and gains 3 the day it gains a second page.
+ */
+const SINGLE_PAGE_FORMAT = 2;
+
+function formatFor(data) {
+  const pages = data && Array.isArray(data.pages) ? data.pages.length : 0;
+  return pages > 1 ? CURRENT_FORMAT : Math.min(SINGLE_PAGE_FORMAT, CURRENT_FORMAT);
 }
 
 /**
@@ -219,7 +1011,7 @@ function openProject(record) {
  */
 function stampProject({ name, data, oscar, grapesjs, now = () => new Date() }) {
   return {
-    format: CURRENT_FORMAT,
+    format: formatFor(data),
     oscar: oscar || null,
     grapesjs: grapesjs || null,
     name,
@@ -230,7 +1022,11 @@ function stampProject({ name, data, oscar, grapesjs, now = () => new Date() }) {
 
 module.exports = {
   CURRENT_FORMAT,
+  formatFor,
   stripEditorState,
+  namePages,
+  defaultPageName,
+  pageLabel,
   MIGRATIONS,
   isGrapesProject,
   detectFormat,
@@ -238,12 +1034,64 @@ module.exports = {
   stampProject,
 };
 
-},{}],3:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 "use strict";
 
-const { field, enabled, connection, connectionChecks } = require("./fields");
-const { outgoing } = require("./outgoing");
-const { ARG_TYPES, isSendable } = require("../osc-args");
+/**
+ * Naming the serial cable as somewhere a widget can send.
+ *
+ * A widget says where it sends with an Ip and a Port. A board on a USB cable
+ * has neither, so the word `serial` stands in the Ip field and the server
+ * routes the message down the cable instead of onto the network.
+ *
+ * Why the Ip field and not one more entry under Output: Output (the
+ * transport select) only exists on widgets that can drive DMX, and a
+ * definition with dmx: false is not allowed to carry it -- so a text input
+ * could never have reached a board. Ip is on every widget that sends at all.
+ * It is also the honest place for it: Output chooses WHAT goes on the wire
+ * (OSC, DMX levels), and serial changes none of that. It is the same OSC
+ * message with a different destination, which is what Ip has always meant.
+ * "OSC to the board and DMX to the dimmer" falls out for free, where a
+ * transport entry would have needed a serial+dmx combination as well.
+ *
+ * Kept in its own file, away from lib/serial.js: the validators in
+ * lib/widgets/ run inside the browser bundle, and lib/serial.js reaches for a
+ * native serial module that has no business being browserified.
+ */
+
+const SERIAL_HOST = "serial";
+
+/**
+ * Is this destination the board on the cable rather than the network?
+ *
+ * Forgiving about case and stray spaces on purpose: there is one reading of
+ * the word and every gate uses it, so "Serial " can never be accepted by the
+ * settings panel and then sent to the network by the server.
+ */
+function isSerialTarget(ip) {
+  return typeof ip === "string" && ip.trim().toLowerCase() === SERIAL_HOST;
+}
+
+module.exports = { SERIAL_HOST, isSerialTarget };
+
+},{}],9:[function(require,module,exports){
+"use strict";
+
+const {
+  field,
+  enabled,
+  listen,
+  connection,
+  connectionChecks,
+  transport,
+  dmxFields,
+  dmxDefaults,
+  dmxChecks,
+} = require("./fields");
+const { outgoing, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { ARG_TYPES, isSendable, toNumber } = require("../osc-args");
 
 const DEFAULT_LABEL = "Insert here your text";
 
@@ -259,7 +1107,14 @@ const MODES = [
  * OSC button.
  *
  * Momentary sends Value ON while held and Value OFF on release. Toggle
- * alternates between them on each press.
+ * alternates between them on each press. On DMX the two edges are full and
+ * out, whatever Value ON and Value OFF say: a button is a switch, not a level.
+ *
+ * With Listen on, a value arriving at Message sets what the button shows: a
+ * toggle adopts it as its state, so the next press sends the opposite edge;
+ * a momentary button only lights up, because its state is the finger's.
+ * The same button on another device is followed the same way, Listen or
+ * not: every tablet on the surface shows one state, { on }.
  */
 const button = {
   name: "oscar-button",
@@ -269,6 +1124,10 @@ const button = {
   // label out, and clicking selected the text rather than the button.
   text: "label",
 
+  sends: true,
+  receives: true,
+  dmx: true,
+
   block: {
     label: "Button",
     category: "OSC",
@@ -277,28 +1136,34 @@ const button = {
       'd="M5,3H19A2,2 0 0,1 21,5V19A2,2 0 0,1 19,21H5A2,2 0 0,1 3,19V5A2,2 0 0,1 5,3Z"/></svg>',
   },
 
-  defaults: {
-    label: DEFAULT_LABEL,
-    enabled: true,
-    ip: "localhost",
-    port: 7000,
-    message: "/push1",
-    mode: "momentary",
-    valueOn: "1",
-    valueOff: "0",
-    argType: "i",
-  },
+  defaults: Object.assign(
+    {
+      label: DEFAULT_LABEL,
+      enabled: true,
+      ip: "localhost",
+      port: 7000,
+      message: "/push1",
+      listen: false,
+      mode: "momentary",
+      valueOn: "1",
+      valueOff: "0",
+      argType: "i",
+    },
+    dmxDefaults(1)
+  ),
 
-  fields: [enabled(), field("label", "Label", "text")]
+  fields: [enabled(), field("label", "Label", "text"), transport()]
     .concat(connection())
     .concat([
+      listen(),
       field("mode", "Mode", "select", { options: MODES }),
       field("valueOn", "Value ON", "text"),
       field("valueOff", "Value OFF", "text"),
       field("argType", "Argument type", "select", { options: ARG_TYPES }),
-    ]),
+    ])
+    .concat(dmxFields()),
 
-  checks: Object.assign({}, connectionChecks(), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
     valueOn: checkValue,
     valueOff: checkValue,
   }),
@@ -306,15 +1171,21 @@ const button = {
   /**
    * Bind a live button to an element.
    *
-   * `ctx` is the whole of what a widget may assume about its host:
-   *   get(key)             read a setting
-   *   send(message)        put a message on the wire, or ignore null
-   *   setClass(name, on)   reflect state visually
-   * Everything here is plain DOM, so porting to another editor means providing
-   * those three, not rewriting the button.
+   * `ctx` is the whole of what a widget may assume about its host; the
+   * contract is at the top of index.js. Everything here is plain DOM, so
+   * porting to another editor means providing that, not rewriting the button.
    */
   attach: function (el, ctx) {
     let on = false;
+    // What the rig says a momentary button is doing while no finger is on it.
+    // Kept apart from `on`, because `on` is the finger's: folding the two
+    // together would make a press on a button the rig already reports as on
+    // send no ON edge at all.
+    let echo = false;
+
+    function paint() {
+      ctx.setClass(ON_CLASS, on || echo);
+    }
 
     /**
      * The one place an edge is decided.
@@ -326,8 +1197,54 @@ const button = {
     function setOn(next) {
       if (next === on) return;
       on = next;
-      ctx.setClass(ON_CLASS, on);
+      // The release is the latest word on the matter; a stale echo must not
+      // keep the button lit after it.
+      if (!on) echo = false;
+      paint();
       ctx.send(resolve(ctx, on));
+      // A momentary button is on for as long as this finger is down, and a
+      // tablet that falls off the network mid-press never reports the
+      // release: the press goes out with what to show if that happens, or
+      // every other device stays lit. A toggle's state outlives the device
+      // that set it, so it carries nothing of the kind.
+      share(ctx, { on: on }, on && isMomentary() ? { release: { on: false } } : undefined);
+    }
+
+    /**
+     * Show an edge decided elsewhere -- by the rig, or by a hand on another
+     * device. Paints, and for a toggle adopts it as the state, so the next
+     * press here sends the opposite edge. Through paint(), never setOn(),
+     * which is the path that sends. Returns whether it was taken: a
+     * momentary button under a finger takes nothing, because its state is
+     * the finger's for as long as it is down.
+     */
+    function take(next) {
+      if (isMomentary()) {
+        if (on) return false;
+        echo = next;
+      } else {
+        on = next;
+        echo = false;
+      }
+      paint();
+      return true;
+    }
+
+    /**
+     * Take an edge the rig sent, and have it recorded as heard: the other
+     * devices were sent the same message, so nobody needs telling, but a
+     * device joining later starts where the rig left the button.
+     */
+    function adopt(values) {
+      const next = asEdge(ctx, values[0]);
+      if (next === null) return;
+      if (take(next)) share(ctx, { on: next }, { heard: true });
+    }
+
+    /** Take the edge another device shows. Never shared again: it came from there. */
+    function adoptShared(state) {
+      if (typeof state.on !== "boolean") return;
+      take(state.on);
     }
 
     function isMomentary() {
@@ -381,6 +1298,13 @@ const button = {
     const root = typeof window === "undefined" ? null : window;
     if (root) root.addEventListener("blur", release);
 
+    // The on state lives here, not in the host's model, so it is never saved;
+    // the cost is that the host wipes the class when it rewrites the element,
+    // and a toggle that is on would paint as off while the rig stays on.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(paint) : null;
+    const stopOsc = follow(ctx, adopt);
+    const stopShared = onShared(ctx, adoptShared);
+
     return function detach() {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointerup", release);
@@ -389,22 +1313,48 @@ const button = {
       el.removeEventListener("keydown", onKeyDown);
       el.removeEventListener("keyup", onKeyUp);
       if (root) root.removeEventListener("blur", release);
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
     };
   },
 };
 
+/**
+ * Read a received value as an edge: true for ON, false for OFF, null for
+ * nothing the button can act on.
+ *
+ * The button's own Value ON and Value OFF are checked first, so a button that
+ * sends "go"/"stop" follows the same words coming back. Failing that, a bool
+ * is itself and a number is on unless it is zero. Anything else -- a word the
+ * button never uses, a blob -- is ignored rather than guessed at.
+ *
+ * A blank value matches nothing: a button whose Value ON was cleared would
+ * otherwise light up on an empty string. And a message with no argument at
+ * all is ignored, which means a button that itself sends no argument has
+ * nothing to follow -- a bare address is the same on both edges, so it says
+ * nothing about state.
+ */
+function asEdge(ctx, value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  const valueOn = trimmed(ctx.get("valueOn"));
+  const valueOff = trimmed(ctx.get("valueOff"));
+  if (valueOn && text === valueOn) return true;
+  if (valueOff && text === valueOff) return false;
+  if (typeof value === "boolean") return value;
+  const number = toNumber(value);
+  if (number !== null) return number !== 0;
+  return null;
+}
+
+function trimmed(value) {
+  return value === null || value === undefined ? "" : String(value).trim();
+}
+
 /** The message for one edge, or null if it cannot or should not be sent. */
 function resolve(ctx, on) {
-  return outgoing(
-    {
-      enabled: ctx.get("enabled"),
-      ip: ctx.get("ip"),
-      port: ctx.get("port"),
-      message: ctx.get("message"),
-      argType: ctx.get("argType"),
-    },
-    on ? ctx.get("valueOn") : ctx.get("valueOff")
-  );
+  return outgoing(routing(ctx), on ? ctx.get("valueOn") : ctx.get("valueOff"), on ? 1 : 0);
 }
 
 /**
@@ -419,7 +1369,778 @@ function checkValue(value, config) {
 
 module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 
-},{"../osc-args":1,"./fields":4,"./outgoing":5}],4:[function(require,module,exports){
+},{"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20}],10:[function(require,module,exports){
+"use strict";
+
+const {
+  field,
+  enabled,
+  listen,
+  connection,
+  connectionChecks,
+  transport,
+  dmxFields,
+  dmxDefaults,
+  dmxChecks,
+} = require("./fields");
+const { outgoing, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
+const { clamp } = require("../dmx/levels");
+
+/**
+ * How the colour is written on the wire.
+ *
+ * There is no one convention, which is why this is a setting and not a
+ * decision baked into the widget: some software wants three channels, some
+ * four, and some is happiest with the hex code a designer pastes out of a
+ * palette.
+ */
+const FORMATS = [
+  { id: "rgb", name: "3 values (r, g, b)" },
+  { id: "rgba", name: "4 values (r, g, b, a)" },
+  { id: "hex", name: "hex string (#rrggbb)" },
+];
+
+/**
+ * The scale the channels are on. Resolume reads a colour parameter as 0-1;
+ * TouchDesigner and pixel-minded software read 0-255. Guessing wrong sends
+ * 255 where 1 was meant, which reads as white either way and hides the
+ * mistake until something clips, so it is asked rather than assumed.
+ */
+const SCALES = [
+  { id: "unit", name: "0 to 1" },
+  { id: "byte", name: "0 to 255" },
+];
+
+const MAX = 255;
+
+/** Bare or #-prefixed, three or six digits, or four or eight with an alpha. */
+const HEX = /^#?([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/**
+ * Read a hex colour as [r, g, b] bytes, or null.
+ *
+ * Null rather than black: #000000 is a colour someone may have chosen on
+ * purpose, so it cannot double as "this could not be read". The short forms
+ * are accepted because they are what a hand types into the Colour field
+ * (#f80, or f80 without the hash), and the four- and eight-digit forms
+ * because some software writes its colours with an alpha on the end; the
+ * swatch has nowhere to show one, so it is dropped.
+ */
+function parseHex(raw) {
+  if (typeof raw !== "string") return null;
+  const match = HEX.exec(raw.trim());
+  if (!match) return null;
+
+  let digits = match[1];
+  if (digits.length <= 4) {
+    // #f0a is shorthand for #ff00aa: each digit doubles.
+    digits = digits
+      .split("")
+      .map((d) => d + d)
+      .join("");
+  }
+  return [0, 2, 4].map((at) => parseInt(digits.slice(at, at + 2), 16));
+}
+
+/** The one form <input type="color"> holds: lowercase #rrggbb. */
+function toHex(rgb) {
+  return "#" + rgb.map((byte) => ("0" + byte.toString(16)).slice(-2)).join("");
+}
+
+/** The same colour in the form the swatch holds, or null. */
+function normaliseHex(raw) {
+  const rgb = parseHex(raw);
+  return rgb ? toHex(rgb) : null;
+}
+
+/** 128 -> 0.502, not 0.5019607843137255: nothing downstream needs the tail. */
+function round(value) {
+  return Math.round(value * 10000) / 10000;
+}
+
+/**
+ * OSC colour picker.
+ *
+ * A native <input type="color"> rather than a hand-drawn wheel: it is the one
+ * colour control every tablet already knows how to open, it works with a
+ * keyboard, and a CSS edit cannot break it. Dragging inside the OS picker
+ * fires input continuously; one send per frame keeps a fixture following
+ * the hand without flooding the network, and the change event -- the picker
+ * being dismissed -- sends the exact colour chosen.
+ *
+ * On the wire the colour is three channels, four with an Alpha, or the hex
+ * string, on the scale Range says. On DMX it is red, green and blue on three
+ * consecutive channels, whatever the OSC format: an RGB fixture is exactly
+ * that block, and alpha is not a thing a fixture has (an RGBA fixture's
+ * fourth channel is amber).
+ *
+ * With Listen on, a colour arriving at Message fills the swatch, in either
+ * shape OSCAR itself sends: the hex string, or three channels on the same
+ * Range (a fourth, alpha, is ignored). Anything unreadable leaves the swatch
+ * alone: the native control falls back to black when handed a value it does
+ * not understand, and a rig sending nonsense must not black a colour out.
+ */
+const colour = {
+  name: "oscar-colour",
+  tag: "input",
+  // The slider is an input too; the type is what tells them apart when a
+  // project is parsed.
+  attributes: { type: "color" },
+
+  sends: true,
+  receives: true,
+  dmx: true,
+
+  block: {
+    label: "Colour",
+    category: "OSC",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 ' +
+      '17.5,12M14.5,8A1.5,1.5 0 0,1 13,6.5A1.5,1.5 0 0,1 14.5,5A1.5,1.5 0 0,1 16,6.5A1.5,1.5 0 0,1 ' +
+      '14.5,8M9.5,8A1.5,1.5 0 0,1 8,6.5A1.5,1.5 0 0,1 9.5,5A1.5,1.5 0 0,1 11,6.5A1.5,1.5 0 0,1 ' +
+      '9.5,8M6.5,12A1.5,1.5 0 0,1 5,10.5A1.5,1.5 0 0,1 6.5,9A1.5,1.5 0 0,1 8,10.5A1.5,1.5 0 0,1 ' +
+      '6.5,12M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A1.5,1.5 0 0,0 13.5,19.5C13.5,19.11 13.35,18.76 ' +
+      '13.11,18.5C12.88,18.23 12.73,17.88 12.73,17.5A1.5,1.5 0 0,1 14.23,16H16A5,5 0 0,0 ' +
+      '21,11C21,6.58 16.97,3 12,3Z"/></svg>',
+  },
+
+  defaults: Object.assign(
+    {
+      enabled: true,
+      ip: "localhost",
+      port: 7000,
+      message: "/colour",
+      listen: false,
+      value: "#ff0000",
+      format: "rgb",
+      scale: "unit",
+      alpha: 1,
+      argType: "f",
+    },
+    dmxDefaults(3)
+  ),
+
+  fields: [enabled(), transport()]
+    .concat(connection())
+    .concat([
+      listen(),
+      field("value", "Colour", "text", { placeholder: "#rrggbb" }),
+      field("format", "Send as", "select", { options: FORMATS }),
+      field("scale", "Range", "select", { options: SCALES }),
+      // Alpha is configured, not picked: the native control has no alpha
+      // channel. Always typed as 0-1 whatever Range says, so switching Range
+      // does not silently reinterpret it.
+      field("alpha", "Alpha", "number", { min: 0, max: 1, step: "any", showIf: { key: "format", in: ["rgba"] } }),
+      // A hex string is a string by definition; the argument type only has
+      // something to say about the numeric formats.
+      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES, showIf: { key: "format", in: ["rgb", "rgba"] } }),
+    ])
+    .concat(dmxFields()),
+
+  checks: Object.assign({}, connectionChecks(), dmxChecks(3), {
+    value: checkColour,
+    alpha: checkAlpha,
+    // One rule, asked from each of the three settings that can bring the
+    // combination about, so it is refused whichever is edited last.
+    argType: checkWholeNumbers,
+    scale: checkWholeNumbers,
+    format: checkWholeNumbers,
+  }),
+
+  attach: function (el, ctx) {
+    // True from the first move inside the picker until it is dismissed. The
+    // network is ignored for as long as it is: a colour arriving mid-pick
+    // would snatch the swatch out from under the hand.
+    //
+    // Deliberately NOT set on click or focus. A picker that reports only on
+    // OK (the Windows dialog, Android) would be covered that way, but a
+    // cancelled dialog fires nothing a page can rely on, and the flag would
+    // stay up: a picker deaf to the rig for good is worse than a swatch
+    // repainted behind an open dialog, which the next OK puts right.
+    let picking = false;
+    let frame = null;
+    let pending = null;
+    // The colour last sent during this pick. The change event repeats the
+    // colour the last input already put on a frame, and one pick is one
+    // colour, not two copies of it.
+    let last = null;
+
+    apply();
+
+    /**
+     * Put the stored colour on the swatch after a load. Only a colour that
+     * could be read: the native control turns anything else into black.
+     */
+    function apply() {
+      const hex = normaliseHex(ctx.get("value"));
+      if (hex) el.value = hex;
+    }
+
+    /** Take the swatch's colour as the current one; null if it is unreadable. */
+    function read() {
+      const hex = normaliseHex(el.value);
+      if (hex === null) return null;
+      ctx.set("value", hex);
+      pending = hex;
+      return hex;
+    }
+
+    function onInput() {
+      picking = true;
+      if (read() !== null) schedule();
+    }
+
+    /** The picker was dismissed: what it holds is the exact colour chosen. */
+    function onChange() {
+      read();
+      release();
+    }
+
+    /**
+     * The end of a pick: the change event, or focus leaving the control or
+     * the window before one arrived -- the picker closed by an alt-tab, say.
+     * What the swatch last held is what goes out, exactly and at once, and
+     * the rig is heard again. The next pick starts afresh, so choosing the
+     * same colour again later is sent again.
+     */
+    function release() {
+      picking = false;
+      flush();
+      last = null;
+    }
+
+    // A drag across the picker fires far more often than anything needs;
+    // one send per frame is plenty. Where there are no frames -- outside a
+    // browser -- every move sends, which is what a test wants anyway.
+    const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : null;
+    const cancelRaf = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : null;
+
+    function schedule() {
+      if (!raf) return flush();
+      if (frame) return;
+      frame = raf(function () {
+        frame = null;
+        flush();
+      });
+    }
+
+    function flush() {
+      if (frame && cancelRaf) {
+        cancelRaf(frame);
+        frame = null;
+      }
+      if (pending === null) return;
+      const hex = pending;
+      pending = null;
+      if (hex === last) return;
+      last = hex;
+      const message = resolve(ctx, hex);
+      ctx.send(message);
+      // Only a colour that went out is news for the other devices.
+      if (message) share(ctx, { value: hex });
+    }
+
+    /**
+     * Take a colour the rig sent. Stores it and fills the swatch through
+     * apply(), the view-only path -- a colour that came in must never go
+     * back out.
+     */
+    function adopt(values) {
+      const hex = fromWire(values, ctx.get("scale"));
+      // Every device heard the rig: recorded for whoever joins later, passed
+      // to nobody.
+      if (take(hex)) share(ctx, { value: hex }, { heard: true });
+    }
+
+    /** Another device picked. Shown, and never shared again: it came from there. */
+    function adoptShared(state) {
+      if (state) take(normaliseHex(state.value));
+    }
+
+    /** Fill the swatch with a colour that arrived, unless a hand is picking. */
+    function take(hex) {
+      if (picking || hex === null) return false;
+      ctx.set("value", hex);
+      apply();
+      return true;
+    }
+
+    el.addEventListener("input", onInput);
+    el.addEventListener("change", onChange);
+    el.addEventListener("blur", release);
+    // Guarded so the widget can be exercised outside a browser.
+    const root = typeof window === "undefined" ? null : window;
+    if (root) root.addEventListener("blur", release);
+
+    // A hand-edited Colour field has to reach the swatch; a format or scale
+    // edit changes what the same colour means on the wire, and nothing is
+    // sent until the next pick.
+    const stop = ctx.onChange(["value"], apply);
+    // The value is a property, not an attribute, and survives the host
+    // rewriting the element; put back anyway, because that is one assumption
+    // about the host fewer.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(apply) : null;
+    const stopOsc = follow(ctx, adopt);
+    const stopShared = onShared(ctx, adoptShared);
+
+    return function detach() {
+      if (frame && cancelRaf) cancelRaf(frame);
+      el.removeEventListener("input", onInput);
+      el.removeEventListener("change", onChange);
+      el.removeEventListener("blur", release);
+      if (root) root.removeEventListener("blur", release);
+      if (stop) stop();
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
+    };
+  },
+};
+
+/**
+ * The OSC values one colour becomes, in order, or null if it cannot be sent.
+ *
+ * A blank or mistyped Alpha refuses the message rather than filling in a
+ * number: Number("") is 0, and 0 alpha is fully transparent, which on a media
+ * server is the layer going dark. toNumber() returns null for it instead. A
+ * readable alpha past either end pins there, as a unit does on DMX.
+ */
+function oscValues(ctx, rgb) {
+  const byte = ctx.get("scale") === "byte";
+  const values = rgb.map((channel) => (byte ? channel : round(channel / MAX)));
+  if (ctx.get("format") !== "rgba") return values;
+
+  const alpha = toNumber(ctx.get("alpha"));
+  if (alpha === null) return null;
+  const unit = clamp(alpha, 0, 1);
+  values.push(byte ? Math.round(unit * MAX) : round(unit));
+  return values;
+}
+
+/**
+ * What one colour puts on the wire, or null.
+ *
+ * The DMX half is always red, green and blue as 0..1, whatever the OSC
+ * format: a fixture takes channels, not strings, and never an alpha. The two
+ * halves are independent, so an alpha that cannot be read silences OSC and
+ * leaves DMX driving the fixture.
+ */
+function resolve(ctx, hex) {
+  const rgb = parseHex(hex);
+  if (rgb === null) return null;
+  const units = rgb.map((channel) => channel / MAX);
+  const config = routing(ctx);
+
+  if (ctx.get("format") === "hex") {
+    return outgoing(Object.assign(config, { argType: "s" }), toHex(rgb), units);
+  }
+  return outgoing(config, oscValues(ctx, rgb), units);
+}
+
+/**
+ * Read a colour off the wire, in whichever shape it arrives, or null.
+ *
+ * The hex string OSCAR sends in hex mode comes back as one string; the
+ * channels it sends otherwise come back as three or four values on the
+ * configured Range, and only the first three are read: the swatch has
+ * nowhere to show an alpha. Numbers spelled as text are numbers. A channel
+ * past either end of the range pins there, as a received slider value does;
+ * a channel that cannot be read at all leaves the swatch as it was, the
+ * same as the send path, where an unreadable value is dropped rather than
+ * read as 0 -- and 0, 0, 0 is black.
+ *
+ * Channels are tried BEFORE the hex code. "255" and "000" are both valid
+ * three-digit hex codes, so software that sends its channels as text
+ * ("255", "128", "0") would otherwise paint #225555, and "000" first would
+ * paint black: an unrelated colour, adopted silently. Three readable numbers
+ * are never a hex code; a string is only taken as one when it is the only
+ * value, which is what OSCAR itself sends, starts with '#', or has six digits. The rule lives here and not in parseHex because a bare "100" typed
+ * into the Colour field is still a hex code.
+ */
+function fromWire(values, scale) {
+  if (!Array.isArray(values) || !values.length) return null;
+
+  const rgb = channelsOf(values, scale);
+  if (rgb) return toHex(rgb);
+
+  // A list that failed to read as channels is NOT then tried as a hex code,
+  // unless it says so with a '#' or is too long to be a channel. Without this, channels sent as text with
+  // one of them unreadable -- "000", "  ", "0" -- fell through to reading
+  // "000" as a short hex code and painted black: the blackout-by-nonsense
+  // this widget exists to refuse. A lone string is the hex form OSCAR sends.
+  const first = values[0];
+  if (typeof first !== "string") return null;
+  // Six digits or more cannot be a channel on either Range, so they stay a
+  // hex code; it is the bare short forms that a number can pass for.
+  const bare = first.trim();
+  if (values.length > 1 && bare.charAt(0) !== "#" && bare.length < 6) return null;
+  return normaliseHex(first);
+}
+
+/** The first three values as bytes, or null unless all three are numbers. */
+function channelsOf(values, scale) {
+  if (values.length < 3) return null;
+
+  const full = scale === "byte" ? 1 : MAX;
+  const rgb = [];
+  for (let i = 0; i < 3; i++) {
+    const number = toNumber(values[i]);
+    if (number === null) return null;
+    rgb.push(Math.round(clamp(number * full, 0, MAX)));
+  }
+  return rgb;
+}
+
+function checkColour(value) {
+  if (normaliseHex(value)) return null;
+  return "A colour is a hex code, like #ff8800";
+}
+
+function checkAlpha(value) {
+  const alpha = toNumber(value);
+  if (alpha !== null && alpha >= 0 && alpha <= 1) return null;
+  return "Alpha has to be a number between 0 and 1";
+}
+
+/**
+ * Whole numbers on a 0 to 1 range leave two values per channel: #808080
+ * rounds to 1, 1, 1 and #7f7f7f to 0, 0, 0, so every colour reaches the rig
+ * as one of eight primaries, and an Alpha of 0.25 goes out as 0 -- fully
+ * transparent. Nobody means that; someone who picks int wants 0 to 255.
+ * Refused in the panel rather than rewritten on the wire, so what is
+ * configured stays what is sent. The hex format ignores the argument type,
+ * so it is left alone.
+ */
+function checkWholeNumbers(value, config) {
+  if (!config) return null;
+  if (config.format === "hex" || config.argType !== "i" || config.scale !== "unit") return null;
+  return "Whole numbers need Range set to 0 to 255: on 0 to 1 every channel would round to 0 or 1";
+}
+
+module.exports = { colour, FORMATS, SCALES, parseHex, normaliseHex, fromWire };
+
+},{"../dmx/levels":1,"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20}],11:[function(require,module,exports){
+"use strict";
+
+const {
+  field,
+  enabled,
+  listen,
+  connection,
+  connectionChecks,
+  transport,
+  dmxFields,
+  dmxDefaults,
+  dmxChecks,
+  sendsDmx,
+} = require("./fields");
+const { outgoing, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { refusal, checkArgType, levelOf } = require("./typed");
+const { ARG_TYPES } = require("../osc-args");
+
+/**
+ * Turn the designer's option list into options.
+ *
+ * One option per line would read better, but every setting in the panel is a
+ * single-line control, so a newline can never be typed into one. Commas and
+ * semicolons are the separators that survive the panel:
+ *
+ *   Red=1, Green=2, Blue=3
+ *   Off=0; Half=128; Full=255
+ *
+ * An item with no "=" is its own label and value, so a bare "1, 2, 3" works
+ * and is the quickest thing to type. A label or value holding a comma or a
+ * semicolon is the price of that choice; OSC values rarely do. The split is
+ * at the LAST "=": labels are written for people and do hold one ("EQ=flat"),
+ * values are written for a rig and almost never do.
+ */
+function parseOptions(raw) {
+  const options = [];
+  for (const part of String(raw === null || raw === undefined ? "" : raw).split(/[,;]/)) {
+    const item = part.trim();
+    if (!item) continue;
+    const split = item.lastIndexOf("=");
+    if (split === -1) {
+      options.push({ label: item, value: item });
+      continue;
+    }
+    const label = item.slice(0, split).trim();
+    const value = item.slice(split + 1).trim();
+    options.push({ label: label || value, value: value });
+  }
+  return options;
+}
+
+/** The designer's text is content, never markup. */
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"]/g, function (character) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character];
+  });
+}
+
+/**
+ * OSC dropdown: a fixed list of cues, each sending its own value.
+ *
+ * A native select, because a tablet renders it as the platform's own picker
+ * -- a wheel on iOS, a sheet on Android -- which beats anything hand-drawn
+ * for hitting the right row with a thumb. One pick is one message: a
+ * dropdown has no half-typed states to flood the wire with, so it sends the
+ * moment a choice is made -- by pointer or touch. A keyboard walking a closed
+ * list raises a pick for every row it passes, and those are no more choices
+ * than the 1 in 12.5 is a number: they wait for Enter, or for the list to be
+ * left. On DMX the option's value is the level, 0-255, so "Off=0, Half=128,
+ * Full=255" is a three-step dimmer; the panel refuses an option that is not
+ * one while Output includes DMX.
+ *
+ * With Listen on, a value arriving at Message selects the option that sends
+ * it; a value no option sends changes nothing.
+ */
+const dropdown = {
+  name: "oscar-dropdown",
+  tag: "select",
+  attributes: { class: "oscar-dropdown" },
+
+  sends: true,
+  receives: true,
+  dmx: true,
+
+  block: {
+    label: "Dropdown",
+    category: "OSC",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M2,5H22A1,1 0 0,1 23,6V18A1,1 0 0,1 22,19H2A1,1 0 0,1 1,18V6A1,1 0 0,1 ' +
+      '2,5M3,7V17H21V7H3M15,10H19L17,13L15,10Z"/></svg>',
+  },
+
+  defaults: Object.assign(
+    {
+      enabled: true,
+      ip: "localhost",
+      port: 7000,
+      message: "/dropdown1",
+      listen: false,
+      options: "Red=1, Green=2, Blue=3",
+      value: "1",
+      argType: "i",
+    },
+    dmxDefaults(1)
+  ),
+
+  fields: [enabled(), transport()]
+    .concat(connection())
+    .concat([
+      listen(),
+      field("options", "Options", "text", { placeholder: "Red=1, Green=2, Blue=3" }),
+      field("value", "Selected", "text"),
+      field("argType", "Argument type", "select", { options: ARG_TYPES }),
+    ])
+    .concat(dmxFields()),
+
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
+    options: checkOptions,
+    value: checkValue,
+    // Output decides whether the options have to be levels, so switching it
+    // is judged like editing them: from either side, as argType is.
+    transport: function (value, config) {
+      const next = Object.assign({}, config, { transport: value });
+      return checkOptions(next.options, next);
+    },
+    argType: checkArgType(function (config) {
+      return values(config.options).concat([config.value]);
+    }),
+  }),
+
+  attach: function (el, ctx) {
+    // Whether the last thing to touch the list was a key, and whether a pick
+    // made that way is still waiting to be sent.
+    let byKey = false;
+    let pending = false;
+
+    render();
+
+    /**
+     * Build the list from the Options setting.
+     *
+     * The option elements are never part of the saved widget: the setting is
+     * the one source of truth, and rendering from it on every attach means an
+     * edited list cannot drift from the markup. A stored selection the list
+     * no longer offers falls back to the first option, and is stored as such,
+     * so the box and the project agree on what is showing.
+     */
+    function render() {
+      pending = false;
+      const options = parseOptions(ctx.get("options"));
+      el.innerHTML = options
+        .map(function (option) {
+          return '<option value="' + escapeHtml(option.value) + '">' + escapeHtml(option.label) + "</option>";
+        })
+        .join("");
+
+      const selected = text(ctx.get("value"));
+      if (offers(options, selected)) {
+        el.value = selected;
+      } else if (options.length) {
+        el.value = options[0].value;
+        ctx.set("value", options[0].value);
+      }
+    }
+
+    // A select raises `input` and `change` together for one pick, so one of
+    // them is enough; `input` is the one every host can raise, as a
+    // browser does for anything a control's value changes through.
+    function onPick() {
+      if (byKey) pending = true;
+      else commit();
+    }
+
+    function commit() {
+      pending = false;
+      const raw = el.value;
+      ctx.set("value", raw);
+      const message = outgoing(routing(ctx), raw, levelOf(raw));
+      ctx.send(message);
+      // Only a pick that went out is news: a row chosen on a disabled list
+      // reached nothing, and must not be shown as chosen on the other devices.
+      if (message) share(ctx, { value: raw });
+    }
+
+    // An open list keeps its arrow keys to itself and raises one pick when a
+    // row is chosen, often with the Enter that chose it already seen here;
+    // so Enter also ends keyboard mode and that pick goes straight out.
+    function onKeyDown(e) {
+      if (e.key !== "Enter") {
+        byKey = true;
+        return;
+      }
+      byKey = false;
+      if (pending) commit();
+    }
+
+    function onPointerDown() {
+      byKey = false;
+    }
+
+    // Tabbing away from a row is choosing it, as leaving a text box is.
+    function onBlur() {
+      byKey = false;
+      if (pending) commit();
+    }
+
+    /**
+     * Take a value the rig sent: select the option that sends it, and stop
+     * there. Compared as text, so the 1 an int option comes back as finds
+     * "Red=1". A value no option sends, or nothing OSCAR could read, is
+     * ignored rather than shown as a blank box.
+     */
+    function adopt(values) {
+      // Every device heard the rig, so it is recorded for whoever joins later
+      // and passed to nobody.
+      if (take(values[0])) share(ctx, { value: el.value }, { heard: true });
+    }
+
+    /** Another device picked. Shown, and never shared again: it came from there. */
+    function adoptShared(state) {
+      if (state) take(state.value);
+    }
+
+    /** Show a value that arrived, from the rig or from another device. */
+    function take(value) {
+      if (value === null || value === undefined || typeof value === "object") return false;
+      const wanted = String(value);
+      if (!offers(parseOptions(ctx.get("options")), wanted)) return false;
+      ctx.set("value", wanted);
+      el.value = wanted;
+      // Something has spoken since the keyboard passed by; sending the passed
+      // row now would answer it.
+      pending = false;
+      return true;
+    }
+
+    el.addEventListener("input", onPick);
+    el.addEventListener("keydown", onKeyDown);
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("blur", onBlur);
+    const stop = ctx.onChange(["options", "value"], render);
+    const stopOsc = follow(ctx, adopt);
+    const stopShared = onShared(ctx, adoptShared);
+
+    return function detach() {
+      el.removeEventListener("input", onPick);
+      el.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("blur", onBlur);
+      if (stop) stop();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
+    };
+  },
+};
+
+function text(value) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function offers(options, value) {
+  return options.some(function (option) {
+    return option.value === value;
+  });
+}
+
+function values(raw) {
+  return parseOptions(raw).map(function (option) {
+    return option.value;
+  });
+}
+
+/**
+ * Every option has to be sendable, and there has to be one.
+ *
+ * Sendable on every wire Output names: as the chosen type on OSC, and as a
+ * level, 0-255, on DMX. "A=abc" is a fine string and no level at all, and
+ * "A=300" is no level either -- pinned to 255, or -5 to a blackout, it would
+ * be a cue the designer never wrote. Without this the dropdown looks live
+ * and that option sends nothing.
+ *
+ * Two options may not send the same value: the value is all that is stored
+ * and all that comes back from the rig, so the second could be picked but
+ * never shown again.
+ */
+function checkOptions(raw, config) {
+  const options = parseOptions(raw);
+  if (!options.length) return "List the options like: Red=1, Green=2, Blue=3";
+  const argType = (config && config.argType) || "i";
+  const seen = {};
+  for (const option of options) {
+    const complaint = refusal(argType, option.value);
+    if (complaint) return complaint;
+    if (sendsDmx(config) && levelOf(option.value) === null) {
+      return 'The value "' + option.value + '" is not a DMX level; on DMX every option has to be a number from 0 to 255';
+    }
+    if (seen["=" + option.value]) return 'Two options send "' + option.value + '"; each option needs its own value';
+    seen["=" + option.value] = true;
+  }
+  return null;
+}
+
+/** The selection has to be one of the options; the list is what can be picked. */
+function checkValue(value, config) {
+  const options = parseOptions(config && config.options);
+  if (options.length && !offers(options, text(value))) {
+    return 'The selection "' + value + '" is not one of the options';
+  }
+  return refusal((config && config.argType) || "i", value);
+}
+
+module.exports = { dropdown, parseOptions };
+
+},{"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20,"./typed":23}],12:[function(require,module,exports){
 "use strict";
 
 /**
@@ -430,9 +2151,19 @@ module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
  * widget definition outlives the choice of one.
  *
  * Field shape:
- *   { key, label, type, options?, min?, max?, step?, placeholder? }
+ *   { key, label, type, options?, min?, max?, step?, placeholder?, showIf? }
  *   type: "text" | "number" | "select" | "checkbox"
+ *   showIf: { key, in: [...] } -- the field is only shown while the setting
+ *           named by `key` holds one of the listed values. Data rather than a
+ *           function, so an adapter can see which setting to watch instead of
+ *           being handed a closure it cannot look inside.
  */
+
+const { toNumber } = require("../osc-args");
+const { isPort } = require("../ports");
+const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
+const { SLOTS, PROTOCOL_OPTIONS, protocol, readHost } = require("../dmx/spec");
+const { toWhole } = require("../dmx/levels");
 
 const TYPES = ["text", "number", "select", "checkbox"];
 
@@ -441,6 +2172,10 @@ function field(key, label, type, extra) {
   if (TYPES.indexOf(spec.type) === -1) {
     throw new Error("unknown field type: " + spec.type);
   }
+  const rule = spec.showIf;
+  if (rule !== undefined && (!rule || typeof rule.key !== "string" || !Array.isArray(rule.in))) {
+    throw new Error(key + ": showIf must be { key, in: [...] }");
+  }
   return spec;
 }
 
@@ -448,9 +2183,10 @@ function field(key, label, type, extra) {
  * The master switch, and the first field on every widget.
  *
  * It reads as what it is: a widget can be laid out, positioned and styled
- * while silent, which is how you build a surface without firing cues at a rig
- * that is mid-show. It sits above even the label, because whether a control is
- * live matters more than what it is called.
+ * while silent -- and deaf, so Listen does not move it either -- which is how
+ * you build a surface without firing cues at a rig that is mid-show. It sits
+ * above even the label, because whether a control is live matters more than
+ * what it is called.
  */
 function enabled() {
   return field("enabled", "Enabled", "checkbox");
@@ -459,17 +2195,186 @@ function enabled() {
 /**
  * Where a widget sends. Every widget carries these, in this order, so a button
  * and a pad feel like the same instrument when you click between them.
+ *
+ * Ip also takes the word `serial`: the board on the USB cable, which has no
+ * address (lib/serial-target.js says why it lives here). Port is then unused.
  */
 function connection() {
   return [
-    field("ip", "Ip", "text", { placeholder: "localhost" }),
+    field("ip", "Ip", "text", { placeholder: "localhost, an IP, or " + SERIAL_HOST }),
     field("port", "Port", "number", { min: 1, max: 65535 }),
     field("message", "Message", "text", { placeholder: "/address" }),
   ];
 }
 
+/**
+ * Which way a bar-shaped widget runs. Shared vocabulary rather than one
+ * widget's property: the slider and the meter both offer it, a project file
+ * stores the id, and neither definition should have to load the other to
+ * spell it the same way.
+ */
+const ORIENTATIONS = [
+  { id: "horizontal", name: "Horizontal" },
+  { id: "vertical", name: "Vertical" },
+];
+
+/**
+ * Follow the rig: reflect OSC arriving at the widget's own Message address.
+ *
+ * Off by default. A surface must not start moving on its own the moment it
+ * is opened, and a control built before this existed must behave exactly as
+ * it always did. Sits right after Message, which is the address it follows.
+ */
+function listen() {
+  return field("listen", "Listen", "checkbox");
+}
+
+/**
+ * Where a widget's value goes.
+ *
+ * OSC reaches software; DMX reaches fixtures. Putting the choice on every
+ * widget that can drive DMX, rather than inventing a second family of
+ * DMX-only controls, is what lets one fader ride a media server's opacity and
+ * a house dimmer together. OSC is the default so every project made before
+ * this existed behaves exactly as it did.
+ */
+const TRANSPORTS = [
+  { id: "osc", name: "OSC" },
+  { id: "dmx", name: "DMX (Art-Net / sACN)" },
+  { id: "both", name: "OSC and DMX" },
+];
+
+const DMX_TRANSPORTS = ["dmx", "both"];
+const OSC_TRANSPORTS = ["osc", "both"];
+
+function transport() {
+  return field("transport", "Output", "select", { options: TRANSPORTS });
+}
+
+/** Whether these settings put DMX on the wire. No transport at all means OSC only. */
+function sendsDmx(config) {
+  return DMX_TRANSPORTS.indexOf(config && config.transport) !== -1;
+}
+
+/** Whether these settings put OSC on the wire. */
+function sendsOsc(config) {
+  const transport = config && config.transport;
+  return transport === undefined || transport === null || OSC_TRANSPORTS.indexOf(transport) !== -1;
+}
+
+/**
+ * The DMX half of a widget's settings, for a widget with dmx: true.
+ *
+ * Hidden until Output asks for DMX, so the panel on a plain OSC button is the
+ * panel OSCAR has always had. Where OSC needs an address and a port, DMX
+ * needs a protocol, a node, a universe and a block of channels: the first
+ * channel, and how many from there. A widget's values fill the block in
+ * order and the last repeats, so a slider over three channels dims an RGB
+ * fixture as a whole and a pad over two lands on pan and tilt.
+ */
+function dmxFields() {
+  const only = { showIf: { key: "transport", in: DMX_TRANSPORTS } };
+  return [
+    field("dmxProtocol", "DMX protocol", "select", Object.assign({ options: PROTOCOL_OPTIONS }, only)),
+    field("dmxHost", "DMX node", "text", Object.assign({ placeholder: "broadcast" }, only)),
+    field("dmxUniverse", "DMX universe", "number", Object.assign({ min: 0, max: 63999 }, only)),
+    field("dmxChannel", "DMX channel", "number", Object.assign({ min: 1, max: SLOTS }, only)),
+    field("dmxCount", "DMX channels", "number", Object.assign({ min: 1, max: SLOTS }, only)),
+  ];
+}
+
+/**
+ * The defaults that go with transport() and dmxFields().
+ *
+ * Universe 1 rather than 0: it is the one first universe both protocols
+ * accept, so switching protocol never silently stops the output. `values` is
+ * how many channels the widget naturally drives -- one for a fader, two for
+ * a pad, three for a colour -- and is the smallest block it can be given.
+ */
+function dmxDefaults(values) {
+  return {
+    transport: "osc",
+    dmxProtocol: "artnet",
+    dmxHost: "",
+    dmxUniverse: 1,
+    dmxChannel: 1,
+    dmxCount: values || 1,
+  };
+}
+
+function universeRange(config) {
+  return protocol(config && config.dmxProtocol) || protocol("artnet");
+}
+
+function checkDmxUniverse(value, config) {
+  const spec = universeRange(config);
+  if (toWhole(value, spec.minUniverse, spec.maxUniverse) !== null) return null;
+  return "A " + spec.name + " universe is a whole number between " + spec.minUniverse + " and " + spec.maxUniverse;
+}
+
+// Switching protocol under a universe the new one cannot address would leave
+// the widget silently unsendable; the universe check does not re-run on its own.
+function checkDmxProtocol(value, config) {
+  const spec = protocol(value);
+  if (!spec) return "Unknown DMX protocol: " + value;
+  const universe = toWhole(config && config.dmxUniverse, spec.minUniverse, spec.maxUniverse);
+  if (universe !== null) return null;
+  return spec.name + " cannot address universe " + (config && config.dmxUniverse) + "; change the universe first";
+}
+
+function checkDmxChannel(value, config) {
+  const channel = toWhole(value, 1, SLOTS);
+  if (channel === null) return "A DMX channel is a whole number between 1 and " + SLOTS;
+  const count = toWhole(config && config.dmxCount, 1, SLOTS);
+  if (count !== null && channel + count - 1 > SLOTS) {
+    return "Channel " + channel + " plus " + count + " channels runs past the end of the universe";
+  }
+  return null;
+}
+
+/**
+ * @param {number} values the widget's own value count; a narrower block would
+ *                        drop a coordinate, and half a position is no position
+ */
+function checkDmxCount(values) {
+  const least = values || 1;
+  return function (value, config) {
+    const count = toWhole(value, least, SLOTS);
+    if (count === null) return "This widget needs between " + least + " and " + SLOTS + " DMX channels";
+    const channel = toWhole(config && config.dmxChannel, 1, SLOTS);
+    // Sending the part that fits would leave half a fixture answering, which
+    // reads as a broken light rather than a wrong setting.
+    if (channel !== null && channel + count - 1 > SLOTS) {
+      return "Channel " + channel + " plus " + count + " channels runs past the end of the universe";
+    }
+    return null;
+  };
+}
+
 const IPV4 =
   /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/;
+
+// The wire refuses a node the server could not send to, but its only word of
+// that is a line in a console the packaged app never shows; the widget looks
+// alive and drives nothing. So the panel refuses it first. A value made of
+// digits and dots is an IPv4 literal that has to be one: "192.168.1.300" is
+// not a hostname either.
+function checkDmxHost(value) {
+  const host = readHost(value == null ? "" : String(value));
+  if (host !== null && (!/^[0-9.]+$/.test(host) || IPV4.test(host))) return null;
+  return "A DMX node is an IP address or a host name, or blank to reach every node: " + value;
+}
+
+/** The validators that go with dmxFields(); `values` as for dmxDefaults(). */
+function dmxChecks(values) {
+  return {
+    dmxProtocol: checkDmxProtocol,
+    dmxHost: checkDmxHost,
+    dmxUniverse: checkDmxUniverse,
+    dmxChannel: checkDmxChannel,
+    dmxCount: checkDmxCount(values),
+  };
+}
 
 /**
  * Validators return a complaint, or null when the value is fine.
@@ -479,14 +2384,29 @@ const IPV4 =
  * values too -- these two guards cover different moments, not the same one
  * twice: a project file can be edited by hand, and a field can be left mid-edit.
  */
-function checkIp(value) {
-  if (value === "localhost" || IPV4.test(String(value))) return null;
-  return "That IP address isn't valid: " + value;
+function checkIp(value, config) {
+  if (isSerialTarget(value)) return null;
+  if (value !== "localhost" && !IPV4.test(String(value))) {
+    return "That isn't an IP address, localhost, or " + SERIAL_HOST + ": " + value;
+  }
+  // A widget on the cable may have had its Port cleared, which is fine there
+  // and unsendable here. The port check does not re-run on its own, and the
+  // server's refusal is a console line the packaged app never shows.
+  if (config && "port" in config && !isPort(config.port)) {
+    return "Give this widget a Port before pointing it at the network";
+  }
+  return null;
 }
 
-function checkPort(value) {
-  const port = Number(value);
-  if (Number.isInteger(port) && port > 0 && port <= 65535) return null;
+// The cable has no ports, so a widget aimed at it may leave Port empty.
+// Empty only: anything else typed there is stored in the project, and comes
+// back as a port the server refuses the day Ip is pointed at the network.
+function checkPort(value, config) {
+  if (isPort(value)) return null;
+  if (config && isSerialTarget(config.ip)) {
+    const blank = value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+    return blank ? null : "Leave the Port empty for serial, or give a whole number between 1 and 65535";
+  }
   return "The port has to be a whole number between 1 and 65535";
 }
 
@@ -496,9 +2416,11 @@ function checkMessage(value) {
   return "An OSC message is a path, like /master/level";
 }
 
+// The same parser the wire uses, so a value the panel accepts is one the
+// send path will not drop -- and a stray space is refused in both places.
 function checkNumber(label) {
   return function (value) {
-    if (value !== "" && value !== null && Number.isFinite(Number(value))) return null;
+    if (toNumber(value) !== null) return null;
     return label + " has to be a number";
   };
 }
@@ -511,8 +2433,17 @@ function connectionChecks() {
 module.exports = {
   field: field,
   enabled: enabled,
+  listen: listen,
   connection: connection,
   connectionChecks: connectionChecks,
+  transport: transport,
+  TRANSPORTS: TRANSPORTS,
+  ORIENTATIONS: ORIENTATIONS,
+  sendsDmx: sendsDmx,
+  sendsOsc: sendsOsc,
+  dmxFields: dmxFields,
+  dmxDefaults: dmxDefaults,
+  dmxChecks: dmxChecks,
   checkIp: checkIp,
   checkPort: checkPort,
   checkMessage: checkMessage,
@@ -520,23 +2451,1422 @@ module.exports = {
   IPV4: IPV4,
 };
 
-},{}],5:[function(require,module,exports){
+},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":5,"../ports":6,"../serial-target":8}],13:[function(require,module,exports){
+"use strict";
+
+const { matchesAddress } = require("../osc-address");
+
+/**
+ * Deciding whether an incoming OSC message is this widget's business.
+ *
+ * The mirror of outgoing(): every widget that follows the rig funnels through
+ * here, so the Listen switch cannot be implemented three slightly different
+ * ways, and a widget that was never asked to listen can never be moved from
+ * the network.
+ *
+ * What this module does *not* do matters as much as what it does. It hands a
+ * widget values and nothing else -- never a message to send, and never the
+ * context to send one with. A value that arrived from outside and went straight
+ * back out is a loop between OSCAR and any software that echoes its own state,
+ * and the only way to be sure no widget closes that loop is to give the
+ * receive path nothing to close it with. The host enforces the same thing from
+ * its side: ctx.send() is refused while an incoming message is being
+ * delivered (see the ctx contract in index.js).
+ */
+
+/**
+ * The values an incoming message carries for a widget, or null.
+ *
+ * Enabled is the master switch, and a widget that is off is deaf as well as
+ * silent: a surface is switched off to be laid out while the rig is live, and
+ * a thumb that keeps jumping under the pointer is not laid out.
+ *
+ * `config.message` is the widget's own address, or a list of them for a widget
+ * that answers to several (an XY pad in two-message mode). It is always taken
+ * literally; the incoming address is the pattern (lib/osc-address.js). An
+ * address also always reaches itself: some software exposes addresses like
+ * /layer[1]/opacity and echoes them verbatim, and read as a pattern that
+ * string would never match its own widget.
+ *
+ * @returns {{address: string, values: Array}|null}  `address` is the widget's
+ *   own address that matched, so a widget with several knows which one.
+ */
+function incoming(config, message) {
+  if (!config || !config.enabled || !config.listen) return null;
+  if (!message || typeof message.address !== "string" || !Array.isArray(message.args)) return null;
+
+  const addresses = Array.isArray(config.message) ? config.message : [config.message];
+  for (const address of addresses) {
+    if (message.address === address || matchesAddress(message.address, address)) {
+      return { address: address, values: message.args.slice() };
+    }
+  }
+  return null;
+}
+
+/**
+ * Follow the messages a widget's own address attracts.
+ *
+ * This is the whole of what a widget writes to receive: it applies the
+ * values to its element and stores them with ctx.set, and that is all.
+ *
+ *   const stopOsc = follow(ctx, function (values, address) { ... });
+ *   ... in detach:  if (stopOsc) stopOsc();
+ *
+ * Enabled, Listen and Message are read afresh for every message, because all
+ * three can be edited while the widget is live. `addresses`, if given, is a
+ * function returning the address or addresses to follow instead of Message.
+ *
+ * @returns an unsubscribe function, or null where the host cannot receive.
+ */
+function follow(ctx, fn, addresses) {
+  if (typeof ctx.onOsc !== "function") return null;
+  return ctx.onOsc(function (message) {
+    const wanted = addresses ? addresses() : ctx.get("message");
+    const config = { enabled: ctx.get("enabled"), listen: ctx.get("listen"), message: wanted };
+    const match = incoming(config, message);
+    if (match) fn(match.values, match.address);
+  });
+}
+
+module.exports = { incoming, follow };
+
+},{"../osc-address":4}],14:[function(require,module,exports){
+"use strict";
+
+/**
+ * OSCAR's widgets, described independently of any editor.
+ *
+ * A widget says what it is (tag, attributes, block icon), what can be
+ * configured on it (fields and their validators), and how it behaves when a
+ * finger lands on it (attach, in plain DOM). Nothing here imports GrapesJS or
+ * touches the editor, so replacing the editor means writing one adapter --
+ * public/src/adapters/grapesjs.js is the current one -- and not rewriting a
+ * single widget.
+ *
+ * Adding a widget: one file in this folder exporting the definition, and one
+ * line in registry.js. The editor and the preview register everything in
+ * WIDGETS; there is nothing to wire by hand.
+ *
+ * A definition:
+ *   name          "oscar-<something>", unique; also the component type
+ *   tag           the element it renders as
+ *   attributes    attributes on that element (optional); with a shared tag,
+ *                 `type` or `class` here is what tells the widget from a
+ *                 plain element when a project is parsed
+ *   text          the setting rendered as the element's text content (optional)
+ *   ownsChildren  true for a widget that builds the elements inside itself
+ *                 from its settings on every attach -- the tiles of a grid,
+ *                 the rows of a list (optional). Those elements are the
+ *                 widget's business and nobody else's: a host must not store
+ *                 them in the project, read them back out of parsed markup,
+ *                 or offer them to the designer as things to select, move or
+ *                 delete. The settings stay the one source of truth. Cannot
+ *                 be combined with `text`, which is the host filling the
+ *                 element instead.
+ *   block         { label, category, icon } for the palette
+ *   defaults      every setting and its starting value
+ *   fields        the settings panel, in order; see fields.js
+ *   checks        { key: (value, config) => complaint | null } validators
+ *   attach(el, ctx) -> detach()   the behaviour, in plain DOM
+ *
+ * Capability flags, so tests and later features can tell the widgets apart
+ * without guessing from their fields. All three are explicit booleans:
+ *   sends     it puts OSC on the wire when used, so it has ip, port, message
+ *             and argType settings. A display-only widget sets false.
+ *   receives  it reacts to OSC arriving from the network (a meter, or a fader
+ *             that follows the rig). It then has a `listen` field (listen()
+ *             from fields.js, placed right after Message) and a `message`
+ *             field naming the address it follows, and subscribes through
+ *             follow() from incoming.js. On a widget that also sends, listen
+ *             defaults to false: a surface must not start moving on its own.
+ *   dmx       its values are numbers that a DMX channel could carry, so it
+ *             offers DMX as an output: an Output setting (transport() from
+ *             fields.js, one of osc | dmx | both, "osc" by default so every
+ *             older project behaves as it did) and the DMX fields (dmxFields(),
+ *             with defaults from dmxDefaults(n) and checks from dmxChecks(n),
+ *             n being how many channels the widget naturally drives). Those
+ *             fields carry showIf, so a panel shows them only while Output
+ *             asks for DMX. The widget scales its gesture to 0..1 with unitOf()
+ *             from lib/dmx/levels.js and passes that as outgoing()'s third
+ *             argument; outgoing() builds the DMX half. A widget that sends
+ *             text, or sends nothing, sets false. Implies sends.
+ *
+ * The contract an adapter must provide as `ctx`:
+ *   get(key)                 read a setting
+ *   set(key, value)          store a value the widget computed; must not
+ *                            re-validate or re-render, or a drag fights itself
+ *   send(message | null)     put a message on the wire; null means stay silent.
+ *                            The message is what outgoing() returned: an OSC
+ *                            half { ip, port, address, args }, a DMX half
+ *                            { dmx: { protocol, host, universe, channel,
+ *                            levels } }, or both on one object; the host
+ *                            sends whichever halves are present and stamps
+ *                            the DMX half with the widget's identity. A widget
+ *                            never releases DMX channels itself: the host
+ *                            does that when the widget is deleted or its
+ *                            Output leaves DMX, and the server when OSCAR quits.
+ *                            Refused while an incoming message is being
+ *                            delivered to this widget (see onOsc).
+ *   setClass(name, on)       reflect state visually
+ *   onChange(keys, fn)       run fn when any of those settings is edited;
+ *                            returns an unsubscribe function
+ *   onRewrite(fn)            run fn after the host has rewritten the element's
+ *                            attributes and classes. An editor re-applies its
+ *                            own copy of them on every class or style edit,
+ *                            wiping whatever attach wrote straight onto the
+ *                            element -- an attribute, a class, an inline
+ *                            property, a value -- so fn puts it back. Returns
+ *                            an unsubscribe function. Optional in a host;
+ *                            widgets check for it before calling it.
+ *   onOsc(fn)                run fn({ address, args }) for every OSC message
+ *                            the host receives, args as plain values (number,
+ *                            string, boolean, or null for one OSCAR cannot
+ *                            read). Returns an unsubscribe function. Optional
+ *                            in a host: absent where nothing can be received,
+ *                            so widgets go through follow() in incoming.js,
+ *                            which checks for it and also applies Listen and
+ *                            the address match. Parse every value with
+ *                            toNumber() from osc-args.js -- an unreadable
+ *                            value is ignored, never read as 0.
+ *   share(state, how?)       tell every other device showing this surface
+ *                            what this widget now shows: a small object of
+ *                            numbers, booleans or short strings ({ on },
+ *                            { value }, { x, y }). Called from the paths a
+ *                            hand takes, next to send(), and once from the
+ *                            OSC receive path with how = { heard: true }:
+ *                            the record on the server then has what the rig
+ *                            said, for a device joining later, and nobody
+ *                            is told, because every device was sent the
+ *                            same message. how = { release: state } says
+ *                            what to show if this device goes away, for
+ *                            state that lasts only while a finger is down.
+ *                            Refused while a shared state is being
+ *                            delivered (see onShared).
+ *                            Optional in a host: absent where there is one
+ *                            device and nothing to agree with, and in the
+ *                            editor, which is not a device on the surface;
+ *                            so widgets go through share() in shared.js,
+ *                            which checks.
+ *   onShared(fn)             run fn(state) when another device changes what
+ *                            this widget shows, and, on a host that keeps
+ *                            one, with the state already known when the
+ *                            widget subscribes, so a device joining late
+ *                            starts where the others are. `state` is the
+ *                            widget's whole record, merged from everything
+ *                            shared for it, so a key may be missing; read
+ *                            each value as carefully as one from the rig.
+ *                            Returns an unsubscribe function. Optional in a
+ *                            host, so widgets go through onShared() in
+ *                            shared.js. While fn runs the host refuses both
+ *                            send() and share(): the device that acted
+ *                            already sent, and a device that re-shared what
+ *                            it was handed would hand it straight back.
+ *
+ * Sharing is not gated on Listen or on anything else: two tablets agreeing
+ * on what a control shows is not something anyone should have to switch on.
+ * The state is keyed by the widget's id in the project, so the same widget
+ * finds itself on every device the layout was pushed to; a widget with no
+ * hand on it takes what arrives the way it takes what the rig sends, and a
+ * hand on it outranks the other devices as it outranks the rig -- but what
+ * arrived under the hand is caught up with once it lifts, if the hand itself
+ * said nothing later, because the other devices are only told once.
+ *
+ * Receiving never sends. A value that arrived from the network and went
+ * straight back out is an endless loop with any software that echoes its own
+ * state, so the receive path is built with no way to close one: follow()
+ * hands a widget bare values, and the host refuses send() for as long as it
+ * is delivering an incoming message. That refusal covers the delivery itself,
+ * so a widget must not schedule a send from its receive path either -- not
+ * on a frame, not on a timer; the shared test runs the frames a widget
+ * scheduled while receiving and fails if anything went out. A widget applies
+ * what it hears to its element and stores it with set(), and that is the
+ * whole of its job. A hand on a control outranks the network: while a widget
+ * is being dragged or held it ignores what arrives, and a drag that loses
+ * the window (blur) counts as released. Enabled off makes a widget deaf as
+ * well as silent; follow() checks it. A display-only widget (a meter) sets
+ * sends: false, receives: true, and does nothing but follow().
+ *
+ * A widget must call the unsubscribe functions it was given from detach, or
+ * every re-render stacks one more handler on the host.
+ */
+
+const registry = require("./registry");
+const { outgoing } = require("./outgoing");
+
+const FLAGS = ["sends", "receives", "dmx"];
+
+/**
+ * Refuse a definition that would fail later in some quieter way -- a missing
+ * flag read as false, a duplicate name silently replacing another widget's
+ * component type in the editor.
+ */
+function validate(definition) {
+  const name = definition && definition.name;
+  if (typeof name !== "string" || !/^oscar-[a-z0-9-]+$/.test(name)) {
+    throw new Error("a widget's name must look like oscar-<something>, got " + JSON.stringify(name));
+  }
+  const problems = [];
+  if (typeof definition.tag !== "string") problems.push("tag");
+  const block = definition.block || {};
+  for (const key of ["label", "category", "icon"]) {
+    if (typeof block[key] !== "string" || !block[key]) problems.push("block." + key);
+  }
+  const defaults = definition.defaults;
+  if (!defaults || typeof defaults !== "object") problems.push("defaults");
+  // A text key with no default behind it renders an empty label and nothing
+  // says why; catch the typo here, where the widget is named.
+  if (definition.text !== undefined) {
+    const known = defaults && Object.prototype.hasOwnProperty.call(defaults, definition.text);
+    if (typeof definition.text !== "string" || !known) {
+      problems.push("text (" + JSON.stringify(definition.text) + " is not a key of defaults)");
+    }
+  }
+  // Read as a plain truthy value it would let "yes" through in one host and
+  // not in another; and a widget cannot both fill its element itself and
+  // have the host fill it with a label.
+  if (definition.ownsChildren !== undefined) {
+    if (typeof definition.ownsChildren !== "boolean") problems.push("ownsChildren (must be true or false)");
+    else if (definition.ownsChildren && definition.text !== undefined) problems.push("ownsChildren together with text");
+  }
+  if (!Array.isArray(definition.fields)) problems.push("fields");
+  if (typeof definition.attach !== "function") problems.push("attach");
+  for (const flag of FLAGS) {
+    if (typeof definition[flag] !== "boolean") problems.push(flag + " (must be true or false)");
+  }
+  if (definition.dmx && !definition.sends) problems.push("dmx without sends");
+
+  // A receiver with no Listen switch would follow the rig from the moment it
+  // is dropped; one with no Message has nothing to follow. And a Listen field
+  // on a widget that says it does not receive is a switch wired to nothing.
+  const keys = Array.isArray(definition.fields) ? definition.fields.map((f) => f && f.key) : [];
+  if (definition.receives) {
+    if (!keys.includes("listen")) problems.push("receives without a listen field (listen() in fields.js)");
+    if (!keys.includes("message")) problems.push("receives without a message field");
+    if (definition.sends && defaults && defaults.listen !== false) {
+      problems.push("listen must default to false on a widget that sends");
+    }
+  } else if (keys.includes("listen")) {
+    problems.push("a listen field on a widget with receives: false");
+  }
+
+  if (problems.length) {
+    throw new Error(name + " is not a complete widget definition: " + problems.join(", "));
+  }
+  return definition;
+}
+
+const WIDGETS = registry.map(validate);
+
+const byName = {};
+for (const widget of WIDGETS) {
+  if (byName[widget.name]) throw new Error("two widgets are called " + widget.name);
+  byName[widget.name] = widget;
+}
+
+module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
+
+},{"./outgoing":18,"./registry":19}],15:[function(require,module,exports){
+"use strict";
+
+const { field, enabled, listen, connection, connectionChecks } = require("./fields");
+const { outgoing, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { refusal, checkArgType } = require("./typed");
+const { ARG_TYPES, toArgs, toNumber } = require("../osc-args");
+
+const TILE_CLASS = "oscar-media-tile";
+const THUMB_CLASS = "oscar-media-thumb";
+const LABEL_CLASS = "oscar-media-label";
+
+/** On the tile that is picked. Styled in public/assets/css/toggle.css. */
+const SELECTED_CLASS = "oscar-media-selected";
+
+/** The custom property the grid reads its column count from. */
+const COLUMNS_PROPERTY = "--oscar-media-columns";
+
+const MAX_COLUMNS = 12;
+
+/**
+ * What a tile can send: a clip index or a clip name, which is how Resolume,
+ * Millumin and QLab address a cue. Bool and "no argument" carry no identity
+ * -- every tile would send the same message, and the grid would be a row of
+ * identical buttons wearing different pictures.
+ */
+const ITEM_ARG_TYPES = ARG_TYPES.filter(function (type) {
+  return type.id === "i" || type.id === "f" || type.id === "s";
+});
+
+/**
+ * Turn the designer's one line into tiles.
+ *
+ *   Forest; Waves; Stars                     each sends its position: 1, 2, 3
+ *   Forest|7; Waves|12                       label|value
+ *   Forest|7|thumbs/forest.jpg; Waves|12     label|value|imageUrl
+ *
+ * Semicolons, because every setting in the panel is a single-line control and
+ * a newline can never be typed into one; newlines are accepted as well, so a
+ * project file written by hand or by a script can read the way a list should.
+ * The price is that a label cannot hold ";" or "|".
+ *
+ * An omitted value is the tile's 1-based position among the tiles, which is
+ * how a clip grid is addressed; the common case is the one with least typing.
+ *
+ * A data: URL holds semicolons of its own ("data:image/png;base64,..."), so
+ * an image that starts with data: is not finished until its comma, and the
+ * pieces the split made of it are put back together. Only pieces that can be
+ * part of one, though: a piece with a "|" in it is the next item, and a data:
+ * URL whose comma never comes is a typing mistake. It keeps what it had and
+ * the items after it stay tiles -- safeImageUrl refuses it, so the panel says
+ * what is wrong instead of the rest of the grid quietly vanishing.
+ *
+ * An entry with neither label nor image is dropped: it would draw an empty
+ * square that launches something when touched.
+ */
+function parseItems(raw) {
+  const pieces = String(raw === null || raw === undefined ? "" : raw).split(/[;\r\n]/);
+  const items = [];
+  for (let i = 0; i < pieces.length; i++) {
+    let piece = pieces[i];
+    if (unfinishedDataUrl(piece)) {
+      let joined = piece;
+      let end = i;
+      while (unfinishedDataUrl(joined) && end + 1 < pieces.length && pieces[end + 1].indexOf("|") === -1) {
+        joined += ";" + pieces[++end];
+      }
+      if (!unfinishedDataUrl(joined)) {
+        piece = joined;
+        i = end;
+      }
+    }
+
+    const parts = piece.split("|").map(function (part) {
+      return part.trim();
+    });
+    const label = parts[0] || "";
+    const image = parts.length > 2 ? parts.slice(2).join("|").trim() : "";
+    if (!label && !image) continue;
+    const value = parts.length > 1 && parts[1] !== "" ? parts[1] : String(items.length + 1);
+    items.push({ label: label, value: value, image: image });
+  }
+  return items;
+}
+
+function unfinishedDataUrl(piece) {
+  const image = piece.split("|").slice(2).join("|").trim();
+  return /^data:/i.test(image) && image.indexOf(",") === -1;
+}
+
+/**
+ * The URL as it may be given to an <img>, or "" for one that may not.
+ *
+ * The URL is typed by a person, or arrives in a project someone else made,
+ * and the surface runs on the machine that drives the rig. So this is an
+ * allowlist and not a list of known-bad schemes: no scheme at all (a path
+ * next to the page), http, https, or an image held in a data: URL. That
+ * refuses javascript:, vbscript:, data:text/html and whatever scheme comes
+ * next. Browsers skip tabs, newlines and other control characters when they
+ * read a scheme, so "java\tscript:" is judged with them taken out.
+ *
+ * A data: URL with no comma has no image in it. It is refused so that the
+ * panel names it; see parseItems for how one comes about.
+ */
+function safeImageUrl(raw) {
+  const url = String(raw === null || raw === undefined ? "" : raw).trim();
+  if (!url) return "";
+  const bare = url.replace(/[\u0000-\u0020\u007f-\u009f]/g, "");
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(bare);
+  if (!scheme) return url;
+  const name = scheme[1].toLowerCase();
+  if (name === "http" || name === "https") return url;
+  if (name === "data" && /^data:image\//i.test(bare) && bare.indexOf(",") !== -1) return url;
+  return "";
+}
+
+/**
+ * What a tile's value is once it is on the wire, as a key, or null for a
+ * value the type cannot carry.
+ *
+ * Not the text the designer typed: "07" and "7" are one int, "1.4" and "1"
+ * are one int because ints are rounded, and "1.0" and "1" are one float. The
+ * rig only ever sees, and only ever echoes, the wire value.
+ */
+function wireKey(argType, value) {
+  const args = toArgs(argType, value);
+  if (!args || !args.length) return null;
+  return args[0].type + ":" + String(args[0].value);
+}
+
+/** The number a tile puts on the wire, or null for a string or an unsendable one. */
+function wireNumber(argType, value) {
+  const args = toArgs(argType, value);
+  if (!args || !args.length || typeof args[0].value !== "number") return null;
+  return args[0].value;
+}
+
+/**
+ * OSC media browser: a grid of thumbnails, and one tap picks one.
+ *
+ * The need it answers is an operator with a tablet choosing what plays in a
+ * room -- browsing pictures, not remembering that the forest loop is clip 7.
+ * A pick sends the tile's value to Message, which is the message a clip
+ * launcher already listens for.
+ *
+ * It is a chooser and not a media library: it shows images the designer
+ * points it at. It does not upload, store or play anything.
+ *
+ * A tile is picked on click and not on pointerdown, because the grid scrolls:
+ * a finger that lands on a tile to push the list along must not launch
+ * whatever it landed on, and a browser only raises click for a touch that
+ * did not turn into a scroll. Picking the tile that is already picked sends
+ * again -- relaunching a clip is a real instruction, not a repeat to swallow.
+ *
+ * With Listen on, a value arriving at Message moves the highlight to the tile
+ * that sends it, and nothing goes out. A value no tile sends changes
+ * nothing: the address may carry more than this grid knows about. The same
+ * browser on another device is followed the same way, Listen or not:
+ * { value }, the picked tile's value as text.
+ *
+ * The highlight is not a setting and is never saved: what is playing is the
+ * rig's to say, and a project that reopened claiming clip 3 would be
+ * guessing. A device that joins late is told by the others.
+ */
+const mediaBrowser = {
+  name: "oscar-media-browser",
+  tag: "div",
+  attributes: { class: "oscar-media-browser" },
+  // The tiles are built here from Items, never stored: see ownsChildren in
+  // the adapter.
+  ownsChildren: true,
+
+  sends: true,
+  receives: true,
+  dmx: false,
+
+  block: {
+    label: "Media Browser",
+    category: "OSC",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M3,3H11V11H3V3M13,3H21V11H13V3M3,13H11V21H3V13M13,13H21V21H13V13M15,15V19H19V15H15Z"/></svg>',
+  },
+
+  defaults: {
+    enabled: true,
+    ip: "localhost",
+    port: 7000,
+    message: "/clip",
+    listen: false,
+    items: "Clip 1; Clip 2; Clip 3; Clip 4; Clip 5; Clip 6",
+    columns: 3,
+    showLabels: true,
+    argType: "i",
+  },
+
+  fields: [enabled()].concat(connection()).concat([
+    listen(),
+    field("items", "Items", "text", { placeholder: "Forest|7|thumbs/forest.jpg; Waves|12" }),
+    field("columns", "Columns", "number", { min: 1, max: MAX_COLUMNS, step: 1 }),
+    field("showLabels", "Show labels", "checkbox"),
+    field("argType", "Argument type", "select", { options: ITEM_ARG_TYPES }),
+  ]),
+
+  checks: Object.assign({}, connectionChecks(), {
+    items: checkItems,
+    columns: checkColumns,
+    argType: checkArgType(function (config) {
+      return parseItems(config.items).map(function (item) {
+        return item.value;
+      });
+    }),
+  }),
+
+  attach: function (el, ctx) {
+    // The element's own document: the canvas is an iframe, and a node made
+    // by the outer page belongs to the wrong tree. A host with no document
+    // gets no tiles and a widget that still attaches and detaches.
+    const doc = el.ownerDocument || null;
+
+    /** Every tile on the element, as { node, item }; nothing else is ever touched. */
+    let tiles = [];
+    /** The picked tile's value, or null while nothing is picked. */
+    let selected = null;
+
+    function paint() {
+      el.style.setProperty(COLUMNS_PROPERTY, String(columnsOf(ctx.get("columns"))));
+      for (const tile of tiles) {
+        const on = tile.item.value === selected;
+        if (on) tile.node.classList.add(SELECTED_CLASS);
+        else tile.node.classList.remove(SELECTED_CLASS);
+        tile.node.setAttribute("aria-pressed", on ? "true" : "false");
+      }
+    }
+
+    function clear() {
+      for (const tile of tiles) {
+        tile.node.removeEventListener("click", tile.onClick);
+        if (tile.node.parentNode === el) el.removeChild(tile.node);
+      }
+      tiles = [];
+    }
+
+    /**
+     * Build the tiles from Items.
+     *
+     * With createElement, textContent and setAttribute, and never as a
+     * string of markup: a label or a URL is typed by a person, or comes in a
+     * project somebody else made, and markup assembled from it is a way to
+     * run script on the machine that drives the rig.
+     */
+    function build() {
+      clear();
+      if (doc && typeof doc.createElement === "function") {
+        const showLabels = ctx.get("showLabels") !== false;
+        tiles = parseItems(ctx.get("items")).map(function (item) {
+          return makeTile(item, showLabels);
+        });
+        for (const tile of tiles) el.appendChild(tile.node);
+      }
+      // A highlight on a value the new list does not offer is on nothing.
+      if (selected !== null && !find(selected)) selected = null;
+      paint();
+    }
+
+    function makeTile(item, showLabels) {
+      const node = doc.createElement("button");
+      // Inside a form, a bare button submits and reloads the surface mid-show.
+      node.setAttribute("type", "button");
+      node.setAttribute("class", TILE_CLASS);
+      node.setAttribute("title", item.label || item.value);
+
+      const url = safeImageUrl(item.image);
+      let label = null;
+      function addLabel() {
+        if (label) return;
+        label = doc.createElement("span");
+        label.setAttribute("class", LABEL_CLASS);
+        label.textContent = item.label || item.value;
+        node.appendChild(label);
+      }
+
+      if (url) {
+        const img = doc.createElement("img");
+        img.setAttribute("class", THUMB_CLASS);
+        img.setAttribute("alt", item.label);
+        // A browser drags an image by default. In the editor that drag can be
+        // dropped on the canvas as a new component, which is the tile leaving
+        // the widget; on a tablet it is a ghost image under a scrolling finger.
+        img.setAttribute("draggable", "false");
+        // A thumbnail that did not load must not leave a blank tile nobody
+        // can tell from its neighbour: the name takes its place.
+        img.addEventListener("error", function () {
+          if (img.parentNode === node) node.removeChild(img);
+          addLabel();
+        });
+        img.setAttribute("src", url);
+        node.appendChild(img);
+      }
+      // Labels can be switched off for a wall of pictures, but a tile with no
+      // picture keeps its name, or it is a blank square.
+      if (showLabels || !url) addLabel();
+
+      const tile = {
+        node: node,
+        item: item,
+        onClick: function () {
+          pick(item);
+        },
+      };
+      node.addEventListener("click", tile.onClick);
+      return tile;
+    }
+
+    function find(value) {
+      for (const tile of tiles) if (tile.item.value === value) return tile;
+      return null;
+    }
+
+    /**
+     * The tile a value from outside means. As text first, so the 3 an int
+     * tile comes back as finds "Forest|3"; then as numbers, so a float rig
+     * answering 3.0 to a tile written "3.00" still finds it. toNumber gives
+     * null for anything unreadable, and null matches nothing -- a blank or a
+     * word is never read as tile 0.
+     */
+    function match(value) {
+      if (value === null || value === undefined || typeof value === "object" || typeof value === "boolean") return null;
+      const text = String(value).trim();
+      const exact = find(text);
+      if (exact) return exact;
+      const number = toNumber(value);
+      if (number === null) return null;
+      for (const tile of tiles) if (toNumber(tile.item.value) === number) return tile;
+      // Last, against what the tile really sends: an int tile written "1.4"
+      // sends 1, and the rig answering 1 means that tile.
+      const argType = ctx.get("argType");
+      for (const tile of tiles) if (wireNumber(argType, tile.item.value) === number) return tile;
+      return null;
+    }
+
+    /** A hand picked this tile: the one path that sends. */
+    function pick(item) {
+      // A disabled browser is being laid out, and a highlight that moved
+      // while nothing went out would show a clip that is not playing.
+      if (!ctx.get("enabled")) return;
+      // The same goes for a value the argument type cannot carry (the panel
+      // refuses one; a project edited by hand can hold one). Nothing goes
+      // out, so nothing is highlighted, here or on any other device.
+      const message = outgoing(routing(ctx), item.value);
+      if (!message) return;
+      selected = item.value;
+      paint();
+      ctx.send(message);
+      share(ctx, { value: item.value });
+    }
+
+    /** Show a pick made elsewhere. Through paint(), never pick(). */
+    function take(value) {
+      const tile = match(value);
+      if (!tile) return false;
+      selected = tile.item.value;
+      paint();
+      return true;
+    }
+
+    /** The rig said what is playing; every device heard it, so it is only recorded. */
+    function adopt(values) {
+      if (take(values[0])) share(ctx, { value: selected }, { heard: true });
+    }
+
+    /** Another device picked. Never shared again: it came from there. */
+    function adoptShared(state) {
+      if (state) take(state.value);
+    }
+
+    build();
+
+    const stop = ctx.onChange(["items", "showLabels"], build);
+    const stopColumns = ctx.onChange(["columns"], paint);
+    // The column count sits on the element as an inline property, which the
+    // host wipes whenever it rewrites the element.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(paint) : null;
+    const stopOsc = follow(ctx, adopt);
+    const stopShared = onShared(ctx, adoptShared);
+
+    return function detach() {
+      clear();
+      if (stop) stop();
+      if (stopColumns) stopColumns();
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
+    };
+  },
+};
+
+/**
+ * How many columns to draw. Anything unreadable falls back to the default
+ * and is never read as 0: a grid of no columns is a widget that vanished.
+ */
+function columnsOf(value) {
+  const number = toNumber(value);
+  if (number === null) return mediaBrowser.defaults.columns;
+  return Math.min(MAX_COLUMNS, Math.max(1, Math.round(number)));
+}
+
+/**
+ * Every tile has to be sendable, and there has to be one.
+ *
+ * Two tiles may not send the same value: the value is all that comes back
+ * from the rig or from another tablet, so the highlight could not tell them
+ * apart. "The same" is judged on the wire, not as typed -- see wireKey. And an image URL that will be refused is said here, where the
+ * designer typed it, not left as a tile that mysteriously has no picture.
+ */
+function checkItems(raw, config) {
+  const items = parseItems(raw);
+  if (!items.length) return "List the items like: Forest|7|thumbs/forest.jpg; Waves|12";
+  const argType = (config && config.argType) || "i";
+  const seen = {};
+  for (const item of items) {
+    const complaint = refusal(argType, item.value);
+    if (complaint) return complaint;
+    const key = wireKey(argType, item.value);
+    if (seen[key]) return 'Two items send "' + seen[key].sent + '"; each item needs its own value';
+    seen[key] = { sent: String(toArgs(argType, item.value)[0].value) };
+    if (item.image && !safeImageUrl(item.image)) {
+      return 'The image for "' + (item.label || item.value) + '" has to be a path, an http(s) address or a data:image URL';
+    }
+  }
+  return null;
+}
+
+function checkColumns(value) {
+  const number = toNumber(value);
+  if (number === null || number !== Math.round(number) || number < 1 || number > MAX_COLUMNS) {
+    return "Columns has to be a whole number from 1 to " + MAX_COLUMNS;
+  }
+  return null;
+}
+
+module.exports = {
+  mediaBrowser,
+  parseItems,
+  safeImageUrl,
+  ITEM_ARG_TYPES,
+  TILE_CLASS,
+  SELECTED_CLASS,
+  COLUMNS_PROPERTY,
+};
+
+},{"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20,"./typed":23}],16:[function(require,module,exports){
+"use strict";
+
+const { field, enabled, listen, checkMessage, checkNumber, ORIENTATIONS } = require("./fields");
+const { follow } = require("./incoming");
+const { toNumber } = require("../osc-args");
+const { unitOf } = require("../dmx/levels");
+
+/** The longest delay setTimeout can hold. */
+const MAX_DELAY = 2147483647;
+
+/** On the element while a peak marker is showing. Styled in public/assets/css/toggle.css. */
+const PEAK_CLASS = "oscar-peak";
+
+function pct(unit) {
+  return (unit * 100).toFixed(2) + "%";
+}
+
+/**
+ * OSC meter: a level display, not a control.
+ *
+ * Every other widget points outward -- a finger lands on it and a message
+ * leaves. This one points inward: it shows a number that arrived from the
+ * rig, so an operator can watch an audio level, a fixture's intensity or a
+ * playhead without reading it off another screen. It sends nothing, ever, so
+ * it has no Ip or Port: Message is the address it follows, and Listen is on
+ * from the start because following is the whole of what it does.
+ *
+ * The bar and the peak marker are pseudo-elements driven by two custom
+ * properties. Real children would be selectable and draggable out of the
+ * component in the editor, and would have to be rebuilt on every repaint.
+ * There are no event listeners at all: pointer events are left on so the
+ * designer can still select and move it, and nothing else is listened for.
+ *
+ * Peak hold runs on a clock, because the sources worth metering (Resolume,
+ * TouchDesigner) send only when a value changes: a marker that waited for
+ * the next reading before falling would sit on a peak from minutes ago, and
+ * "Peak hold (s)" would not mean what its number says. So a reading at or
+ * above the marker moves it up at once, and once the hold has passed the
+ * marker falls back onto the bar by itself. It falls to the last reading that
+ * arrived, never to zero: the bar is still the truth about what the meter was
+ * told, and the timer only stops the marker claiming a peak is recent when it
+ * is not. The timer repaints and does nothing else -- it cannot send, because
+ * a meter has nothing to send with.
+ */
+const meter = {
+  name: "oscar-meter",
+  tag: "div",
+  // Only the class, which is what tells a meter from any other div when a
+  // project is parsed. orient follows the setting, and a copy here would be
+  // re-applied by the host over the real one on every class or style edit.
+  attributes: { class: "oscar-meter" },
+
+  sends: false,
+  receives: true,
+  dmx: false,
+
+  block: {
+    label: "Meter",
+    category: "OSC",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M3,7H21A2,2 0 0,1 23,9V15A2,2 0 0,1 21,17H3A2,2 0 0,1 1,15V9A2,2 0 0,1 3,7' +
+      'M3,9V15H21V9H3M5,11H13V13H5V11M16,11H18V13H16V11Z"/></svg>',
+  },
+
+  defaults: {
+    enabled: true,
+    message: "/meter1",
+    // A meter exists to follow something; unlike a control, there is nothing
+    // it could start doing on its own that a hand would have to fight.
+    listen: true,
+    min: 0,
+    max: 100,
+    value: 0,
+    orientation: "horizontal",
+    // Seconds a peak stays marked. 0 turns the marker off.
+    peakHold: 0,
+  },
+
+  fields: [
+    enabled(),
+    field("message", "Message", "text", { placeholder: "/address" }),
+    listen(),
+    field("min", "Min", "number", { step: "any" }),
+    field("max", "Max", "number", { step: "any" }),
+    field("value", "Value", "number", { step: "any" }),
+    field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
+    field("peakHold", "Peak hold (s)", "number", { min: 0, step: "any" }),
+  ],
+
+  checks: {
+    message: checkMessage,
+    min: checkNumber("Min"),
+    max: checkNumber("Max"),
+    value: checkNumber("Value"),
+    peakHold: checkPeakHold,
+  },
+
+  attach: function (el, ctx) {
+    // The reading the marker sits at, in the meter's own units, and when it
+    // was taken. Kept as a reading rather than a fraction so that editing the
+    // range under a held peak re-places the marker instead of leaving it at
+    // a stale pixel. Null until the first reading: a marker is a record of
+    // what arrived, and nothing has.
+    let peak = null;
+    let peakAt = 0;
+    // The pending fall of the marker, while it is above the bar.
+    let fall = null;
+
+    paint();
+
+    /** Seconds of hold as milliseconds, or 0 for no marker at all. */
+    function holdMs() {
+      const seconds = toNumber(ctx.get("peakHold"));
+      return seconds !== null && seconds > 0 ? seconds * 1000 : 0;
+    }
+
+    /** Where a reading sits in the configured range, 0..1, or null. */
+    function unit(value) {
+      return unitOf(value, ctx.get("min"), ctx.get("max"));
+    }
+
+    /**
+     * Draw what is stored: the bar from Value, the marker from the held peak.
+     *
+     * The view-only path, so it can be run again after the host rewrites the
+     * element. A stored value that cannot be placed -- unreadable, or a range
+     * of zero width -- leaves the bar where it is rather than emptying it: an
+     * empty bar reports silence on a channel that may be at full.
+     */
+    function paint() {
+      el.setAttribute("orient", ctx.get("orientation") || "horizontal");
+
+      const level = unit(ctx.get("value"));
+      if (level !== null) el.style.setProperty("--oscar-level", pct(level));
+
+      if (!holdMs()) peak = null;
+      const held = peak === null ? null : unit(peak);
+      if (held !== null) el.style.setProperty("--oscar-peak", pct(held));
+      ctx.setClass(PEAK_CLASS, held !== null);
+
+      // Every path that can lift the marker off the bar, or change how long
+      // it may stay there, ends in a paint -- so this is the one place the
+      // fall is armed, and an edit to Peak hold re-times a marker already up.
+      const bar = unit(ctx.get("value"));
+      arm(held !== null && bar !== null && held > bar);
+    }
+
+    /** Have the marker fall when its hold runs out, or call that off. */
+    function arm(wanted) {
+      if (fall !== null) clearTimeout(fall);
+      fall = null;
+      if (!wanted) return;
+      // setTimeout takes a 32-bit delay: anything longer (a hold of 25 days
+      // or more) overflows and fires after a millisecond, dropping the marker
+      // at once. Wait the longest it can, and drop() goes round again.
+      fall = setTimeout(drop, Math.min(MAX_DELAY, Math.max(0, peakAt + holdMs() - Date.now())));
+      // Under Node a pending timer keeps the process alive, and a meter left
+      // mounted must not hold a test run or a shutdown open for its hold
+      // time. A browser's timer is a plain number and has nothing to unref.
+      if (fall && typeof fall.unref === "function") fall.unref();
+    }
+
+    /**
+     * The hold has run out with no reading to move the marker: bring it down
+     * onto the bar. View only -- nothing is stored and nothing is sent. The
+     * marker lands on the last reading, and its hold starts again from now,
+     * so a lower reading a moment later leaves it there for the full time.
+     */
+    function drop() {
+      fall = null;
+      // Woken early by the delay cap above: the hold has not run out yet.
+      if (Date.now() < peakAt + holdMs()) {
+        arm(true);
+        return;
+      }
+      const current = toNumber(ctx.get("value"));
+      // A value that cannot be placed leaves the marker alone, as it leaves
+      // the bar alone: there is nowhere true to move it to.
+      if (current === null || unit(current) === null) return;
+      peak = current;
+      peakAt = Date.now();
+      paint();
+    }
+
+    /**
+     * Take a reading from the rig. Stores it, decides the peak, repaints, and
+     * nothing else: a value that came in never goes back out.
+     */
+    function adopt(values) {
+      const value = toNumber(values[0]);
+      // An unreadable value holds the last reading. Dropping to zero would
+      // report silence on a channel that may be at full, which is the
+      // dangerous direction for a display to fail in.
+      if (value === null) return;
+
+      // Stored silently, so a re-render repaints where the level actually
+      // was rather than back at the configured default.
+      ctx.set("value", value);
+
+      const hold = holdMs();
+      if (hold) {
+        const now = Date.now();
+        const rising = unit(value);
+        const held = peak === null ? null : unit(peak);
+        // Compared as fractions rather than as readings so that a range
+        // running downward (min above max) still marks its loudest point.
+        if (held === null || rising === null || rising >= held || now - peakAt >= hold) {
+          peak = value;
+          peakAt = now;
+        }
+      }
+      paint();
+    }
+
+    // Editing the range, the orientation or the value in the panel has to
+    // move the bar, or the designer is laying out a widget they cannot see
+    // working. Enabled is not watched: a meter switched off freezes where it
+    // is, and switching it back on shows the same until the next reading.
+    const stop = ctx.onChange(["min", "max", "value", "orientation", "peakHold"], paint);
+    // The host rewriting the element strips orient, the custom properties
+    // and the peak class, and losing them shows an empty, flat meter.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(paint) : null;
+    // follow() reads Enabled and Listen for every message, so a disabled
+    // meter is deaf and holds its last reading rather than dropping to zero.
+    const stopOsc = follow(ctx, adopt);
+
+    return function detach() {
+      // A marker left to fall after its element is gone would paint onto
+      // nothing, and in the editor onto a view that has been replaced.
+      arm(false);
+      if (stop) stop();
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+    };
+  },
+};
+
+function checkPeakHold(value) {
+  const seconds = toNumber(value);
+  if (seconds !== null && seconds >= 0) return null;
+  return "Peak hold has to be a number of seconds, 0 for none";
+}
+
+module.exports = { meter, PEAK_CLASS };
+
+},{"../dmx/levels":1,"../osc-args":5,"./fields":12,"./incoming":13}],17:[function(require,module,exports){
+"use strict";
+
+const {
+  field,
+  enabled,
+  listen,
+  connection,
+  connectionChecks,
+  transport,
+  dmxFields,
+  dmxDefaults,
+  dmxChecks,
+  sendsDmx,
+} = require("./fields");
+const { outgoing, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { commitOn, refusal, checkArgType, levelOf, dmxRange } = require("./typed");
+const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
+
+/**
+ * OSC number box: type an exact value instead of hunting for it with a fader.
+ *
+ * Some values are known -- 127, 0.5, cue 12 -- and dragging a slider until
+ * it happens to land on one is guesswork. Sends on Enter, on leaving the box
+ * and on a click of the stepper arrows, never per keystroke; typed.js says
+ * why. Min, Max and Step are optional: blank means no limit, and a value
+ * outside the limits, or off the step, is refused and not sent -- the box
+ * keeps the text and the browser marks it, so the operator sees what was not
+ * accepted rather than a rig at a clamped value nobody typed.
+ *
+ * On DMX the number is a level: 0-255 as typed, or, with Min and Max both
+ * set, scaled within them as a slider's would be. Without both, 0-255 are
+ * the box's limits whatever else is set, and a number outside them is refused
+ * like any other: a mistyped -1 pinned to 0 would be a blackout. With Listen
+ * on, a value arriving at Message fills the box, brought inside the limits
+ * and onto the step so the box and its settings agree -- unless the box is
+ * being typed into.
+ *
+ * The settings are judged together, not one by one. Min, Max, Step, Output
+ * and Argument type each decide whether the Value already in the box can be
+ * sent, so each of them refuses an edit that would strand it: a box holding
+ * a number it will itself refuse sends nothing on Enter, and looks fine.
+ */
+const numberInput = {
+  name: "oscar-number-input",
+  tag: "input",
+  // Only what never changes; min, max and step follow the settings and are
+  // put on the element by attach. The enterkeyhint puts "send" on a phone
+  // keyboard's Enter, which is what it does here.
+  attributes: { type: "number", class: "oscar-number-input", enterkeyhint: "send" },
+
+  sends: true,
+  receives: true,
+  dmx: true,
+
+  block: {
+    label: "Number Input",
+    category: "OSC",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M4,17V9H2V7H6V17H4M22,15C22,16.11 21.1,17 20,17H16V15H20V13H18V11H20V9H16V7H20A2,2 0 0,1 ' +
+      '22,9V10.5A1.5,1.5 0 0,1 20.5,12A1.5,1.5 0 0,1 22,13.5V15M14,15V17H8V13C8,11.89 8.9,11 ' +
+      '10,11H12V9H8V7H12A2,2 0 0,1 14,9V11C14,12.11 13.1,13 12,13H10V15H14Z"/></svg>',
+  },
+
+  defaults: Object.assign(
+    {
+      enabled: true,
+      ip: "localhost",
+      port: 7000,
+      message: "/number1",
+      listen: false,
+      value: 0,
+      min: "",
+      max: "",
+      step: "",
+      argType: "f",
+    },
+    dmxDefaults(1)
+  ),
+
+  fields: [enabled(), transport()]
+    .concat(connection())
+    .concat([
+      listen(),
+      field("value", "Value", "number", { step: "any" }),
+      field("min", "Min", "number", { step: "any", placeholder: "no limit" }),
+      field("max", "Max", "number", { step: "any", placeholder: "no limit" }),
+      field("step", "Step", "number", { step: "any", min: 0, placeholder: "any" }),
+      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
+    ])
+    .concat(dmxFields()),
+
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
+    value: checkValue,
+    min: checkLimit("Min", "max"),
+    max: checkLimit("Max", "min"),
+    step: checkStep,
+    transport: function (value, config) {
+      return stranded(config, "transport", value);
+    },
+    argType: checkArgType(function (config) {
+      return [config.value];
+    }),
+  }),
+
+  attach: function (el, ctx) {
+    const entry = commitOn(el, function (raw) {
+      const value = toNumber(raw);
+      // A cleared or half-typed box is a question, not a zero: Number("") is
+      // 0, and 0 is a real cue. Nothing goes out, and the text stays as typed
+      // so it can be finished.
+      if (value === null) return;
+      // Every refusal comes before the value is stored. A number the wire
+      // will not take -- 3000000000 as an int -- must not end up in the
+      // project either, where the panel's own check would refuse it.
+      if (complaintAbout(settings(ctx), value)) return;
+      ctx.set("value", value);
+      const message = resolve(ctx, value);
+      ctx.send(message);
+      // Only a number that went out is news for the other devices.
+      if (message) share(ctx, { value: value });
+    });
+
+    apply();
+
+    /**
+     * Push the limits and the value onto the native input. The limits go on
+     * the element too, not only into accepts(): the stepper arrows stop at
+     * them, and the browser paints a value outside them as out of range.
+     */
+    function apply() {
+      const range = limits(settings(ctx));
+      el.min = attribute(range.min);
+      el.max = attribute(range.max);
+      el.step = attribute(ctx.get("step")) || "any";
+      const value = toNumber(ctx.get("value"));
+      entry.show(value === null ? "" : String(value));
+    }
+
+    /**
+     * Take a value the rig sent: it fills the box and goes no further.
+     * Brought inside the limits and onto the step, as the slider keeps a
+     * value inside its range, so the box never shows a number it would
+     * itself refuse: Enter on what the rig sent has to re-send it.
+     */
+    function adopt(values) {
+      const fitted = take(values[0]);
+      // Every device heard the rig: recorded for whoever joins later, passed
+      // to nobody.
+      if (fitted !== null) share(ctx, { value: fitted }, { heard: true });
+    }
+
+    /** Another device typed. Shown, and never shared again: it came from there. */
+    function adoptShared(state) {
+      if (state) take(state.value);
+    }
+
+    /** Show a number that arrived; returns what was shown, or null. */
+    function take(raw) {
+      if (entry.editing()) return null;
+      const value = toNumber(raw);
+      if (value === null) return null;
+      const fitted = nearest(settings(ctx), value);
+      // What even the nearest number cannot fix -- a value past an int, limits
+      // that leave no room -- is ignored rather than shown and then refused.
+      if (complaintAbout(settings(ctx), fitted)) return null;
+      ctx.set("value", fitted);
+      apply();
+      return fitted;
+    }
+
+    const stop = ctx.onChange(["value", "min", "max", "step", "transport"], apply);
+    // The host rewriting the element strips min, max and step with the rest,
+    // and a box with no max lets the stepper run past the range.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(apply) : null;
+    const stopOsc = follow(ctx, adopt);
+    const stopShared = onShared(ctx, adoptShared);
+
+    return function detach() {
+      entry.detach();
+      if (stop) stop();
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
+    };
+  },
+};
+
+/** A limit as the element wants it: a number's text, or "" for none. */
+function attribute(raw) {
+  const number = toNumber(raw);
+  return number === null ? "" : String(number);
+}
+
+/** The settings that decide whether a number can go out. */
+function settings(ctx) {
+  return {
+    min: ctx.get("min"),
+    max: ctx.get("max"),
+    step: ctx.get("step"),
+    argType: ctx.get("argType"),
+    transport: ctx.get("transport"),
+  };
+}
+
+/**
+ * The limits in force, each of which may be null for none.
+ *
+ * On DMX without both Min and Max the number is the level itself, so 0-255
+ * bound it as well as whatever single limit is set. `dmx` says the bounds
+ * came from there, so a complaint can say why.
+ */
+function limits(config) {
+  let min = toNumber(config && config.min);
+  let max = toNumber(config && config.max);
+  if (!sendsDmx(config) || (min !== null && max !== null)) return { min: min, max: max, dmx: false };
+  const level = dmxRange(min, max);
+  min = min === null ? level.min : Math.max(min, level.min);
+  max = max === null ? level.max : Math.min(max, level.max);
+  return { min: min, max: max, dmx: true };
+}
+
+/**
+ * Why this number cannot be sent under these settings, or null. The one
+ * judgement behind the keyboard, the panel's Value, and every setting that
+ * could strand the Value.
+ */
+function complaintAbout(config, number) {
+  const complaint = refusal((config && config.argType) || "f", number);
+  if (complaint) return complaint;
+  const range = limits(config);
+  const why = range.dmx ? " (a DMX level is 0-255; set both Min and Max to type in other units)" : "";
+  if (range.min !== null && number < range.min) return "The value has to be at least " + range.min + why;
+  if (range.max !== null && number > range.max) return "The value has to be at most " + range.max + why;
+  if (!onStep(number, config && config.step, range.min)) {
+    return "The value has to be a whole number of steps from " + (range.min === null ? 0 : range.min);
+  }
+  return null;
+}
+
+/**
+ * Would this edit leave the Value already in the box unsendable? A Value
+ * that is not a number at all is left to its own check.
+ */
+function stranded(config, key, value) {
+  const next = Object.assign({}, config);
+  next[key] = value;
+  const held = toNumber(next.value);
+  if (held === null) return null;
+  const complaint = complaintAbout(next, held);
+  return complaint ? complaint + "; change the value first" : null;
+}
+
+/**
+ * Whether a value is a whole number of steps from the base, which the
+ * browser takes to be Min, or 0 without one. Measured with a tolerance,
+ * because 0.3 is not three of 0.1 in floating point.
+ */
+function onStep(value, step, min) {
+  const size = toNumber(step);
+  if (size === null || size <= 0) return true;
+  const steps = (value - (min === null ? 0 : min)) / size;
+  return Math.abs(steps - Math.round(steps)) < 1e-9;
+}
+
+/**
+ * The number nearest a received one that the box would accept: inside the
+ * limits, then on the step, stepping back in if rounding left the range.
+ */
+function nearest(config, value) {
+  const range = limits(config);
+  let result = value;
+  if (range.min !== null) result = Math.max(range.min, result);
+  if (range.max !== null) result = Math.min(range.max, result);
+
+  const size = toNumber(config.step);
+  if (size === null || size <= 0) return result;
+  const base = range.min === null ? 0 : range.min;
+  let steps = Math.round((result - base) / size);
+  if (range.max !== null && base + steps * size > range.max) steps -= 1;
+  // Trimmed, because three steps of 0.1 is 0.30000000000000004 and that is
+  // what the box would show.
+  return Number((base + steps * size).toPrecision(12));
+}
+
+function resolve(ctx, value) {
+  return outgoing(routing(ctx), value, levelOf(value, ctx.get("min"), ctx.get("max")));
+}
+
+function blank(value) {
+  return value === "" || value === null || value === undefined;
+}
+
+/**
+ * Blank is allowed -- it is how you say "no limit" -- and nonsense is not.
+ * The two limits must also be the right way round: the browser treats every
+ * value as out of range when Min is above Max, and the box goes dead.
+ */
+function checkLimit(label, otherKey) {
+  return function (value, config) {
+    const key = otherKey === "max" ? "min" : "max";
+    // Clearing a limit can strand the Value too: on DMX it brings 0-255 back.
+    if (blank(value)) return stranded(config, key, value);
+    const number = toNumber(value);
+    if (number === null) return label + " has to be a number, or blank for no limit";
+    const other = toNumber(config && config[otherKey]);
+    if (other !== null && (otherKey === "max" ? number > other : number < other)) {
+      return "Min has to be at most Max";
+    }
+    return stranded(config, key, value);
+  };
+}
+
+function checkStep(value, config) {
+  if (blank(value)) return stranded(config, "step", value);
+  const number = toNumber(value);
+  if (number === null || number <= 0) return "Step has to be a number above zero, or blank for any";
+  return stranded(config, "step", value);
+}
+
+/**
+ * Judged against the type that will carry it and the limits it has to sit
+ * inside: a value the box would refuse from the keyboard is refused from the
+ * panel too, and for the same reasons.
+ */
+function checkValue(value, config) {
+  const number = toNumber(value);
+  if (number === null) return "The value has to be a number";
+  return complaintAbout(config, number);
+}
+
+module.exports = { numberInput };
+
+},{"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20,"./typed":23}],18:[function(require,module,exports){
 "use strict";
 
 const { toArgs } = require("../osc-args");
+const { SLOTS, protocol } = require("../dmx/spec");
+const { toWhole, toLevels, spread } = require("../dmx/levels");
+const { sendsOsc, sendsDmx } = require("./fields");
+const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
 
 /**
- * Decide the message a widget should put on the wire, or null for silence.
+ * Decide what a widget should put on the wire, or null for silence.
  *
  * Every widget funnels through here, so the Enabled switch cannot be
- * implemented three slightly different ways, and a value that no argument type
- * can carry is dropped rather than guessed at.
+ * implemented three slightly different ways, and a value that no argument
+ * type can carry is dropped rather than guessed at.
+ *
+ * A widget hands over two readings of the same gesture:
+ *
+ *   raw    the value in the widget's own units -- 0-100, a cue number, "go"
+ *          -- which is what OSC carries. A list for a widget that produces
+ *          several values at once: a pad two, a colour three.
+ *   units  the same gesture as 0..1 (a list for several), which is what a
+ *          DMX slot is scaled from. Only the widget knows its own range, so
+ *          only the widget can work this out (unitOf in lib/dmx/levels.js);
+ *          a slider labelled 20-2000 Hz still means "full" at the top. A
+ *          button passes 1 or 0. Omitted by a widget that cannot drive DMX.
+ *
+ * The result is { ip, port, address, args } for OSC, { dmx: {...} } for DMX,
+ * or both on one object when Output says both, and the host sends whichever
+ * halves are present. The halves are independent: a button whose Value ON
+ * is "go" cannot send that as a float, but it can still put its dimmer to
+ * full, and silence on one wire is no reason for silence on the other.
  */
-function outgoing(config, raw) {
+function outgoing(config, raw, units) {
   if (!config || !config.enabled) return null;
 
-  // A list carries a widget that produces several values at once -- a pad
-  // sends two, a colour three or four -- all sharing one argument type.
+  const message = {};
+  let sending = false;
+
+  if (sendsOsc(config)) {
+    const args = oscArgs(config, raw);
+    if (args) {
+      // The cable is named once, in one spelling, so the server never has to
+      // wonder whether " Serial" is a host name. The port rides along unread.
+      message.ip = isSerialTarget(config.ip) ? SERIAL_HOST : config.ip;
+      message.port = config.port;
+      message.address = config.message;
+      message.args = args;
+      sending = true;
+    }
+  }
+
+  if (sendsDmx(config)) {
+    const dmx = dmxRequest(config, units);
+    if (dmx) {
+      message.dmx = dmx;
+      sending = true;
+    }
+  }
+
+  return sending ? message : null;
+}
+
+/** The OSC arguments for one gesture, or null if any value cannot be sent. */
+function oscArgs(config, raw) {
   const values = Array.isArray(raw) ? raw : [raw];
   const args = [];
   for (const value of values) {
@@ -546,39 +3876,212 @@ function outgoing(config, raw) {
     if (built === null) return null;
     for (const arg of built) args.push(arg);
   }
+  return args;
+}
+
+/**
+ * The DMX half for one gesture, or null.
+ *
+ * Null means the fixture stays where it is rather than going to zero. That
+ * is the whole point: an unreadable level coerced to 0 is a blackout, and it
+ * would look exactly like someone pulling the fader down. The block is
+ * refused, not truncated, when it runs past channel 512 or is too narrow for
+ * the widget's values; the settings panel refuses both too, and a project
+ * file edited by hand reaches here instead.
+ */
+function dmxRequest(config, units) {
+  const spec = protocol(config.dmxProtocol);
+  if (!spec) return null;
+
+  const universe = toWhole(config.dmxUniverse, spec.minUniverse, spec.maxUniverse);
+  const channel = toWhole(config.dmxChannel, 1, SLOTS);
+  const count = toWhole(config.dmxCount, 1, SLOTS);
+  if (universe === null || channel === null || count === null) return null;
+  if (channel + count - 1 > SLOTS) return null;
+
+  const levels = spread(toLevels(units), count);
+  if (levels === null) return null;
 
   return {
-    ip: config.ip,
-    port: config.port,
-    address: config.message,
-    args: args,
+    protocol: spec.id,
+    host: typeof config.dmxHost === "string" ? config.dmxHost.trim() : "",
+    universe: universe,
+    channel: channel,
+    levels: levels,
   };
 }
 
-module.exports = { outgoing };
+/**
+ * The same settings limited to one transport, or null when they do not use
+ * it. For a widget that sends its OSC in several messages but its DMX in one
+ * -- the pad in two-message mode -- so each half goes out exactly once.
+ */
+function only(config, transport) {
+  if (!config) return null;
+  if (transport === "osc" && !sendsOsc(config)) return null;
+  if (transport === "dmx" && !sendsDmx(config)) return null;
+  return Object.assign({}, config, { transport: transport });
+}
 
-},{"../osc-args":1}],6:[function(require,module,exports){
+/**
+ * The settings every sending widget shares, read off its host in one go.
+ *
+ * Widgets differ in how they produce a value, not in where it goes, so the
+ * routing half of a panel is read the same way for all of them. Keys a widget
+ * does not have read as undefined, which outgoing() treats as OSC only.
+ */
+function routing(ctx) {
+  return {
+    enabled: ctx.get("enabled"),
+    transport: ctx.get("transport"),
+    ip: ctx.get("ip"),
+    port: ctx.get("port"),
+    message: ctx.get("message"),
+    argType: ctx.get("argType"),
+    dmxProtocol: ctx.get("dmxProtocol"),
+    dmxHost: ctx.get("dmxHost"),
+    dmxUniverse: ctx.get("dmxUniverse"),
+    dmxChannel: ctx.get("dmxChannel"),
+    dmxCount: ctx.get("dmxCount"),
+  };
+}
+
+module.exports = { outgoing, only, routing };
+
+},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":5,"../serial-target":8,"./fields":12}],19:[function(require,module,exports){
 "use strict";
 
-const { field, enabled, connection, connectionChecks, checkNumber } = require("./fields");
-const { outgoing } = require("./outgoing");
-const { NUMERIC_ARG_TYPES } = require("../osc-args");
-
-const ORIENTATIONS = [
-  { id: "horizontal", name: "Horizontal" },
-  { id: "vertical", name: "Vertical" },
+/**
+ * Every widget OSCAR ships, in the order the block palette shows them.
+ *
+ * Adding a widget is one new file in this folder plus one line here. Nothing
+ * else needs editing: lib/widgets/index.js reads this list, and the editor and
+ * the preview register whatever it holds through the adapter.
+ *
+ * Keep one require per line so parallel additions merge without conflict.
+ */
+module.exports = [
+  require("./button").button,
+  require("./slider").slider,
+  require("./xypad").xypad,
+  require("./meter").meter,
+  require("./colour").colour,
+  require("./text-input").textInput,
+  require("./number-input").numberInput,
+  require("./dropdown").dropdown,
+  require("./media-browser").mediaBrowser,
 ];
+
+},{"./button":9,"./colour":10,"./dropdown":11,"./media-browser":15,"./meter":16,"./number-input":17,"./slider":21,"./text-input":22,"./xypad":24}],20:[function(require,module,exports){
+"use strict";
+
+/**
+ * Agreeing with the other devices on the surface.
+ *
+ * Several tablets showing one layout each run their own copy of a widget,
+ * and a copy that does not hear about the others is wrong the moment one of
+ * them is touched: a toggle that one operator switched on still draws off
+ * on the next tablet, and its next press sends the ON edge again. So a
+ * widget tells the host what it now shows -- { on }, { value }, { x, y } --
+ * every time a hand changes it, and follows what the host says the others
+ * show. Neither needs switching on: two tablets agreeing is not a feature
+ * anyone should have to find.
+ *
+ * Both host methods are optional (see the ctx contract in index.js), so
+ * every widget goes through here rather than checking for them itself.
+ *
+ * The rules that keep this from becoming a loop are the host's and the
+ * server's, not the widget's, and a widget cannot break them: the host
+ * refuses share() and send() while a shared state is being delivered, and
+ * the server passes a change on only when it changed something. What a
+ * widget owes in return is to treat what arrives the way it treats what
+ * the rig sends -- apply it to the element, store it with set(), and
+ * nothing else -- and to ignore it while a hand is on the control.
+ */
+
+/**
+ * Tell the other devices what this widget now shows.
+ *
+ * `how` is optional and says what kind of news this is:
+ *   { heard: true }        the value came from the rig, not from a hand.
+ *                          Every device on the layout was sent the same OSC
+ *                          message, so it is recorded for whoever joins
+ *                          later and nobody else is told -- a copy from
+ *                          each tablet for each message of a fader stream
+ *                          is traffic at best, and at worst arrives late
+ *                          and pulls a thumb back to where the rig was.
+ *   { release: { ... } }   what the widget shows once this device is gone.
+ *                          For state that lasts only as long as a finger is
+ *                          down: a tablet that drops off the network
+ *                          mid-press never gets to say the finger came up.
+ */
+function share(ctx, state, how) {
+  if (typeof ctx.share === "function") ctx.share(state, how);
+}
+
+/**
+ * Follow this widget's state as the other devices report it.
+ *
+ *   const stopShared = onShared(ctx, function (state) { ... });
+ *   ... in detach:  if (stopShared) stopShared();
+ *
+ * `state` is whatever the widgets on the other devices shared, merged, so
+ * a key may be missing and a value is to be read with toNumber() from
+ * osc-args.js or checked for the type expected, never assumed.
+ *
+ * @returns an unsubscribe function, or null where the host has no other
+ *   devices to speak of.
+ */
+function onShared(ctx, fn) {
+  if (typeof ctx.onShared !== "function") return null;
+  return ctx.onShared(fn);
+}
+
+module.exports = { share, onShared };
+
+},{}],21:[function(require,module,exports){
+"use strict";
+
+const {
+  field,
+  enabled,
+  listen,
+  connection,
+  connectionChecks,
+  checkNumber,
+  ORIENTATIONS,
+  transport,
+  dmxFields,
+  dmxDefaults,
+  dmxChecks,
+} = require("./fields");
+const { outgoing, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
+const { unitOf } = require("../dmx/levels");
 
 /**
  * OSC slider.
  *
  * With Invert on, the value sent is mirrored within [Min, Max] while the thumb
- * stays where the hand put it.
+ * stays where the hand put it. With Listen on, a value arriving at Message
+ * moves the thumb -- except while a finger is on it. The same slider on
+ * another device moves it the same way, Listen or not: every tablet on the
+ * surface shows one { value }. On DMX the level is where the value sent sits
+ * within [Min, Max], so Invert mirrors it as well.
  */
 const slider = {
   name: "oscar-slider",
   tag: "input",
-  attributes: { type: "range", step: "0.01", min: "0", max: "100", orient: "horizontal" },
+  // Only what never changes. min, max and orient follow the settings, and a
+  // copy of them here would be re-applied by the host over the real ones on
+  // every class or style edit, flipping a vertical slider flat.
+  attributes: { type: "range", step: "0.01" },
+
+  sends: true,
+  receives: true,
+  dmx: true,
 
   block: {
     label: "Slider",
@@ -589,35 +4092,52 @@ const slider = {
       '13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z"/></svg>',
   },
 
-  defaults: {
-    enabled: true,
-    ip: "localhost",
-    port: 7000,
-    message: "/slider1",
-    min: 0,
-    max: 100,
-    value: 0,
-    orientation: "horizontal",
-    invert: false,
-    argType: "f",
-  },
+  defaults: Object.assign(
+    {
+      enabled: true,
+      ip: "localhost",
+      port: 7000,
+      message: "/slider1",
+      listen: false,
+      min: 0,
+      max: 100,
+      value: 0,
+      orientation: "horizontal",
+      invert: false,
+      argType: "f",
+    },
+    dmxDefaults(1)
+  ),
 
-  fields: [enabled()].concat(connection()).concat([
-    field("min", "Min", "number", { step: "any" }),
-    field("max", "Max", "number", { step: "any" }),
-    field("value", "Value", "number", { step: "any" }),
-    field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
-    field("invert", "Invert", "checkbox"),
-    field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
-  ]),
+  fields: [enabled(), transport()]
+    .concat(connection())
+    .concat([
+      listen(),
+      field("min", "Min", "number", { step: "any" }),
+      field("max", "Max", "number", { step: "any" }),
+      field("value", "Value", "number", { step: "any" }),
+      field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
+      field("invert", "Invert", "checkbox"),
+      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
+    ])
+    .concat(dmxFields()),
 
-  checks: Object.assign({}, connectionChecks(), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
     min: checkNumber("Min"),
     max: checkNumber("Max"),
     value: checkValue,
   }),
 
   attach: function (el, ctx) {
+    // True from the pointer landing on the thumb until it lifts. The network
+    // is ignored for as long as it is: a value arriving mid-drag would snatch
+    // the thumb out from under the finger.
+    let held = false;
+    // The last value that arrived while it was. The other devices are told of
+    // a change once, so one dropped for good would leave this thumb out of
+    // step with theirs after the finger lifts, until somebody moved it again.
+    let missed = null;
+
     apply();
 
     /**
@@ -644,38 +4164,111 @@ const slider = {
       const max = Number(ctx.get("max"));
       const value = ctx.get("invert") ? max - raw + min : raw;
 
+      // The hand has spoken since; what arrived before it is old news.
+      missed = null;
       ctx.set("value", value);
       ctx.send(resolve(ctx, value));
+      share(ctx, { value: value });
+    }
+
+    function hold() {
+      held = true;
+    }
+
+    function release() {
+      held = false;
+      if (missed === null) return;
+      // Catch up with what came in under the finger -- through take(), the
+      // view-only path: this is still a value from outside, and lifting a
+      // finger must not put it on the wire.
+      const raw = missed;
+      missed = null;
+      take(raw);
+    }
+
+    /**
+     * Show a value decided elsewhere -- by the rig, or by a hand on another
+     * device. Stores it and moves the thumb through apply(), the view-only
+     * path, and nothing else: a value that came in must never go back out.
+     * Returns the value kept, or null when there was nothing to keep: an
+     * unreadable value, or a finger on the thumb, which outranks anything
+     * arriving for as long as it is down.
+     */
+    function take(raw) {
+      const value = toNumber(raw);
+      if (value === null) return null;
+      if (held) {
+        missed = value;
+        return null;
+      }
+      const kept = within(value, ctx.get("min"), ctx.get("max"));
+      ctx.set("value", kept);
+      apply();
+      return kept;
+    }
+
+    /**
+     * Take a value the rig sent, and have it recorded as heard: the other
+     * devices were sent the same message, so nobody needs telling, but a
+     * device joining later starts where the rig left the thumb.
+     */
+    function adopt(values) {
+      const kept = take(values[0]);
+      if (kept !== null) share(ctx, { value: kept }, { heard: true });
+    }
+
+    /** Take the value another device shows. Never shared again: it came from there. */
+    function adoptShared(state) {
+      take(state.value);
     }
 
     el.addEventListener("input", onInput);
+    el.addEventListener("pointerdown", hold);
+    el.addEventListener("pointerup", release);
+    el.addEventListener("pointercancel", release);
+    // A pointerup that lands on another window would otherwise leave the
+    // slider deaf to the rig until the next press.
+    const root = typeof window === "undefined" ? null : window;
+    if (root) root.addEventListener("blur", release);
+
     // A settings edit changes the range or flips the direction under a thumb
     // that is already somewhere; re-apply rather than leave the two disagreeing.
     const stop = ctx.onChange(["min", "max", "value", "orientation", "invert"], apply);
+    // The host rewriting the element strips orient, min and max, and losing
+    // max clamps the thumb through the browser's default range on the way.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(apply) : null;
+    const stopOsc = follow(ctx, adopt);
+    const stopShared = onShared(ctx, adoptShared);
 
     return function detach() {
       el.removeEventListener("input", onInput);
+      el.removeEventListener("pointerdown", hold);
+      el.removeEventListener("pointerup", release);
+      el.removeEventListener("pointercancel", release);
+      if (root) root.removeEventListener("blur", release);
       if (stop) stop();
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
     };
   },
 };
 
+/** Keep a received value inside the slider's range, so thumb and value agree. */
+function within(value, min, max) {
+  const lo = toNumber(min);
+  const hi = toNumber(max);
+  if (lo === null || hi === null) return value;
+  return Math.min(Math.max(lo, hi), Math.max(Math.min(lo, hi), value));
+}
+
 function resolve(ctx, value) {
-  return outgoing(
-    {
-      enabled: ctx.get("enabled"),
-      ip: ctx.get("ip"),
-      port: ctx.get("port"),
-      message: ctx.get("message"),
-      argType: ctx.get("argType"),
-    },
-    value
-  );
+  return outgoing(routing(ctx), value, unitOf(value, ctx.get("min"), ctx.get("max")));
 }
 
 function checkValue(value, config) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "The value has to be a number";
+  const number = toNumber(value);
+  if (number === null) return "The value has to be a number";
   const min = Number(config.min);
   const max = Number(config.max);
   const low = Math.min(min, max);
@@ -686,14 +4279,408 @@ function checkValue(value, config) {
   return null;
 }
 
+// ORIENTATIONS lives in fields.js now; it is still exported from here because
+// this is where it used to be, and a caller that learned it here keeps working.
 module.exports = { slider, ORIENTATIONS };
 
-},{"../osc-args":1,"./fields":4,"./outgoing":5}],7:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20}],22:[function(require,module,exports){
 "use strict";
 
-const { field, enabled, connection, connectionChecks, checkNumber } = require("./fields");
-const { outgoing } = require("./outgoing");
-const { NUMERIC_ARG_TYPES } = require("../osc-args");
+const { field, enabled, listen, connection, connectionChecks } = require("./fields");
+const { outgoing, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { commitOn, refusal, checkArgType } = require("./typed");
+const { ARG_TYPES } = require("../osc-args");
+
+/**
+ * OSC text box: type a value, press Enter, and it goes out.
+ *
+ * The full argument-type list, not only string: the thing that makes a typed
+ * box useful is that it carries whatever is typed -- a clip name today, a cue
+ * number tomorrow -- and the panel refuses a value the chosen type cannot
+ * carry rather than sending nothing without a word. Sends on Enter and on
+ * leaving the field, never per keystroke; typed.js says why. Not a DMX
+ * widget: text is not a level.
+ *
+ * With Listen on, a value arriving at Message is shown in the box -- unless
+ * the box is being typed into, in which case the operator's half-written
+ * value outranks the network.
+ */
+const textInput = {
+  name: "oscar-text-input",
+  tag: "input",
+  // Browsers offer previously typed text in any text box; on a control
+  // surface those suggestions are noise over the cue being typed. The
+  // enterkeyhint puts "send" on a phone keyboard's Enter, which is what it
+  // does here.
+  attributes: { type: "text", class: "oscar-text-input", autocomplete: "off", enterkeyhint: "send" },
+
+  sends: true,
+  receives: true,
+  dmx: false,
+
+  block: {
+    label: "Text Input",
+    category: "OSC",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M17,7H22V17H17V19A1,1 0 0,0 18,20H20V22H17.5C16.95,22 16,21.55 16,21C16,21.55 15.05,22 ' +
+      '14.5,22H12V20H14A1,1 0 0,0 15,19V5A1,1 0 0,0 14,4H12V2H14.5C15.05,2 16,2.45 16,3C16,2.45 ' +
+      '16.95,2 17.5,2H20V4H18A1,1 0 0,0 17,5V7M2,7H13V9H4V15H13V17H2V7M20,15V9H17V15H20Z"/></svg>',
+  },
+
+  defaults: {
+    enabled: true,
+    ip: "localhost",
+    port: 7000,
+    message: "/text1",
+    listen: false,
+    value: "",
+    placeholder: "Type, then press Enter",
+    argType: "s",
+  },
+
+  fields: [enabled()].concat(connection()).concat([
+    listen(),
+    field("value", "Value", "text"),
+    field("placeholder", "Placeholder", "text"),
+    field("argType", "Argument type", "select", { options: ARG_TYPES }),
+  ]),
+
+  checks: Object.assign({}, connectionChecks(), {
+    value: checkValue,
+    argType: checkArgType(function (config) {
+      return text(config.value).trim() ? [config.value] : [];
+    }),
+  }),
+
+  attach: function (el, ctx) {
+    const entry = commitOn(el, function (raw) {
+      // An empty box has nothing in it to send. Left to the argument types it
+      // would still go out -- "" as a string, F as a bool, a bare address as
+      // none -- and F is a real cue fired by pressing Enter on nothing. The
+      // emptiness is kept, so a cleared box stays cleared after a reload.
+      if (!raw.trim()) {
+        ctx.set("value", "");
+        return;
+      }
+      // Refused before it is stored: "GO" in a float box goes nowhere, and
+      // must not end up in the project, where the panel would refuse it.
+      if (refusal(ctx.get("argType") || "s", raw)) return;
+      ctx.set("value", raw);
+      const message = outgoing(routing(ctx), raw);
+      ctx.send(message);
+      // Only text that went out is news for the other devices. Longer than
+      // the server will record is simply not shared.
+      if (message) share(ctx, { value: raw });
+    });
+
+    apply();
+
+    /** Show the stored text, so a reload does not empty the box. */
+    function apply() {
+      const hint = ctx.get("placeholder");
+      el.placeholder = hint === null || hint === undefined ? "" : String(hint);
+      entry.show(text(ctx.get("value")));
+    }
+
+    /**
+     * Take a value the rig sent: it fills the box and goes no further. A
+     * number or a bool is shown as its text; a value OSCAR could not read,
+     * or a message with no argument, changes nothing.
+     */
+    function adopt(values) {
+      // Every device heard the rig: recorded for whoever joins later, passed
+      // to nobody.
+      if (take(values[0])) share(ctx, { value: text(values[0]) }, { heard: true });
+    }
+
+    /** Another device typed. Shown, and never shared again: it came from there. */
+    function adoptShared(state) {
+      if (state) take(state.value);
+    }
+
+    /** Show text that arrived, unless a hand is typing here. */
+    function take(value) {
+      if (entry.editing()) return false;
+      if (value === null || value === undefined || typeof value === "object") return false;
+      ctx.set("value", text(value));
+      apply();
+      return true;
+    }
+
+    const stop = ctx.onChange(["value", "placeholder"], apply);
+    // The host rewriting the element strips the placeholder with the rest.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(apply) : null;
+    const stopOsc = follow(ctx, adopt);
+    const stopShared = onShared(ctx, adoptShared);
+
+    return function detach() {
+      entry.detach();
+      if (stop) stop();
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
+    };
+  },
+};
+
+function text(value) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+/**
+ * A blank Value is fine under any type: it is the box's starting text, and an
+ * empty box sends nothing, so a float box may start empty. Anything typed
+ * there has to be sendable as the chosen type.
+ */
+function checkValue(value, config) {
+  if (!text(value).trim()) return null;
+  return refusal((config && config.argType) || "s", value);
+}
+
+module.exports = { textInput };
+
+},{"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20,"./typed":23}],23:[function(require,module,exports){
+"use strict";
+
+const { isSendable, toNumber } = require("../osc-args");
+const { unitOf } = require("../dmx/levels");
+const { MAX_LEVEL } = require("../dmx/spec");
+
+/**
+ * What the typed controls -- the text box, the number box and the dropdown --
+ * have in common: when a typed value counts as finished, how a value is judged
+ * against the argument type that will carry it, and what a bare number means
+ * to a DMX channel.
+ *
+ * The button and the slider decide *when* to send from a gesture. A typed
+ * field has no gesture, only keystrokes, and a keystroke is never a value:
+ * typing 12.5 is 1, then 12, then 12.5, and the first two are real cues a rig
+ * would act on. So nothing here sends per keystroke. A value is finished when
+ * Enter is pressed, or when the field is left (the browser's `change`, which
+ * fires on blur only if the text was actually edited). Enter sends even when
+ * nothing changed, because re-sending a cue on purpose is a normal thing to
+ * do; `change` sends only what differs from what the wire last saw, because
+ * the browser fires it right after Enter as well, and that would put the
+ * same cue out twice.
+ */
+
+/**
+ * Wire a field up to send when its value is finished.
+ *
+ *   const entry = commitOn(el, function (value) { ... });
+ *   ... in detach:  entry.detach();
+ *
+ * `send` is given the field's text. It parses, refuses, sends, and stores;
+ * this only decides that the moment has come.
+ *
+ * Two more rules ride along, both about the difference between typing and
+ * everything else:
+ *
+ *   An `input` event that arrives while the pointer is held on the control is
+ *   not typing -- a hand cannot hold a mouse button on a field and type into
+ *   it -- it is a click on a number box's stepper arrow, and one step is a
+ *   finished value, exactly as one notch on a slider is. It is sent at once.
+ *   (Browsers also fire `change` for a step, which is then the same value and
+ *   goes nowhere.) "Held" has to end wherever the button comes up: a press
+ *   inside the box released outside it -- dragging to select the text -- puts
+ *   no pointerup on the box, and a hold that outlives it turns every later
+ *   keystroke into a cue. So the release is heard on the window, leaving the
+ *   field ends it too, and an `input` that says it is an insertion or a
+ *   deletion is typing whatever the pointer is doing.
+ *
+ *   A field that has been typed into since it last committed is being
+ *   edited, and `editing()` says so; a widget that follows the rig leaves such
+ *   a field alone, or an echo would overwrite half a number under the
+ *   operator's fingers. Committing, or leaving the field, ends the edit.
+ *
+ * `show(text)` is how the widget itself puts a value in the box -- from the
+ * settings or from the network -- so that text counts as already on the wire
+ * and not as an edit in progress.
+ */
+function commitOn(el, send) {
+  let last = el.value;
+  let dirty = false;
+  let held = false;
+
+  function commit(force) {
+    const value = el.value;
+    dirty = false;
+    if (!force && value === last) return;
+    last = value;
+    send(value);
+  }
+
+  function onKeyDown(e) {
+    if (e.key !== "Enter") return;
+    // The Enter that confirms an IME composition picks a candidate; it is
+    // not the end of the value. (229 is how older engines report it.)
+    if (e.isComposing || e.keyCode === 229) return;
+    // Inside a form, Enter would submit and reload the surface mid-show.
+    if (e.preventDefault) e.preventDefault();
+    commit(true);
+  }
+
+  function onChange() {
+    commit(false);
+  }
+
+  function onInput(e) {
+    if (held && !isTyping(e)) commit(true);
+    else dirty = true;
+  }
+
+  function onBlur() {
+    // `change` has already fired for a real edit; whatever is left in the
+    // box was walked away from, and the field is nobody's any more.
+    dirty = false;
+    held = false;
+  }
+
+  function hold() {
+    held = true;
+  }
+
+  function release() {
+    held = false;
+  }
+
+  el.addEventListener("keydown", onKeyDown);
+  el.addEventListener("change", onChange);
+  el.addEventListener("input", onInput);
+  el.addEventListener("blur", onBlur);
+  el.addEventListener("pointerdown", hold);
+  el.addEventListener("pointerup", release);
+  el.addEventListener("pointercancel", release);
+  // The element's own window where there is one: in an editor the canvas is
+  // an iframe, and a release inside it never reaches the outer window.
+  const root = (el.ownerDocument && el.ownerDocument.defaultView) || (typeof window === "undefined" ? null : window);
+  if (root) {
+    root.addEventListener("pointerup", release);
+    root.addEventListener("pointercancel", release);
+    root.addEventListener("blur", release);
+  }
+
+  return {
+    editing: function () {
+      return dirty;
+    },
+    show: function (text) {
+      el.value = text;
+      last = text;
+      dirty = false;
+    },
+    detach: function () {
+      el.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("change", onChange);
+      el.removeEventListener("input", onInput);
+      el.removeEventListener("blur", onBlur);
+      el.removeEventListener("pointerdown", hold);
+      el.removeEventListener("pointerup", release);
+      el.removeEventListener("pointercancel", release);
+      if (root) {
+        root.removeEventListener("pointerup", release);
+        root.removeEventListener("pointercancel", release);
+        root.removeEventListener("blur", release);
+      }
+    },
+  };
+}
+
+/**
+ * Does this `input` event say it came from the keyboard? A stepper click
+ * reports no inputType, or a replacement; typing, pasting, deleting and undo
+ * all report an insert*, delete* or history* one.
+ */
+function isTyping(e) {
+  const kind = e && typeof e.inputType === "string" ? e.inputType : "";
+  if (kind === "insertReplacementText") return false;
+  return /^(insert|delete|history)/.test(kind);
+}
+
+/**
+ * The complaint for a value the argument type cannot carry, or null.
+ *
+ * "abc" is perfectly good as a string and unsendable as a float. The same
+ * refusal is raised from both ends: editing the value under a type, and
+ * switching the type over a value -- the second is checkArgType below --
+ * because a panel that only checks one of them lets "GO" sit in a box that
+ * has just been switched to float, and the widget goes silently dead.
+ */
+function refusal(argType, value) {
+  if (isSendable(argType, value)) return null;
+  return 'The value "' + value + '" cannot be sent as ' + argType;
+}
+
+/**
+ * A validator for the argType field: the new type has to be able to carry
+ * whatever the widget already holds. `valuesOf(config)` lists those values.
+ */
+function checkArgType(valuesOf) {
+  return function (argType, config) {
+    for (const value of valuesOf(config || {})) {
+      const complaint = refusal(argType, value);
+      if (complaint) return complaint + "; change the value first";
+    }
+    return null;
+  };
+}
+
+/**
+ * What a typed number means to a DMX channel, as 0..1, or null.
+ *
+ * With Min and Max both set, the level is where the number sits between them,
+ * as it is on a slider: a box that takes 0-100 puts 50 at half. With no range
+ * to scale by, the number is taken as the level itself, 0-255, which is the
+ * unit a lighting operator types in anyway.
+ *
+ * Out of range is null, not the nearest end. A slider pins because a hand
+ * dragged past the end of the track means "all the way"; a typed -1 is a
+ * slip of the finger, and pinning it to 0 is a blackout nobody asked for.
+ * Unreadable stays null too, and nothing is sent.
+ */
+function levelOf(value, min, max) {
+  const range = dmxRange(min, max);
+  const number = toNumber(value);
+  if (number === null || number < range.min || number > range.max) return null;
+  return unitOf(number, range.min, range.max);
+}
+
+/**
+ * The numbers a DMX channel can take from a typed control: Min to Max when
+ * both are set, otherwise the raw level, 0-255.
+ */
+function dmxRange(min, max) {
+  const lo = toNumber(min);
+  const hi = toNumber(max);
+  if (lo !== null && hi !== null) return { min: lo, max: hi };
+  return { min: 0, max: MAX_LEVEL };
+}
+
+module.exports = { commitOn, refusal, checkArgType, levelOf, dmxRange };
+
+},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":5}],24:[function(require,module,exports){
+"use strict";
+
+const {
+  field,
+  enabled,
+  listen,
+  connection,
+  connectionChecks,
+  checkNumber,
+  transport,
+  dmxFields,
+  dmxDefaults,
+  dmxChecks,
+} = require("./fields");
+const { outgoing, only, routing } = require("./outgoing");
+const { follow } = require("./incoming");
+const { share, onShared } = require("./shared");
+const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
+const { unitOf } = require("../dmx/levels");
 
 const SEND_MODES = [
   { id: "one", name: "One message, two values" },
@@ -713,7 +4700,12 @@ function round(value) {
  *
  * One message carrying both values is the default, which is what most software
  * expects for a position. Two separate messages suits targets that want one
- * value per address.
+ * value per address. With Listen on, the handle follows the same shape coming
+ * back: /pad with two values, or /pad/x and /pad/y with one each -- except
+ * while a finger is dragging it. The same pad on another device moves it the
+ * same way, Listen or not: every tablet on the surface shows one { x, y }.
+ * On DMX, X lands on the first channel of the block and Y on the next: pan
+ * and tilt on a moving head.
  */
 const xypad = {
   name: "oscar-xypad",
@@ -721,6 +4713,10 @@ const xypad = {
   // The handle is drawn by CSS on this element, not by a child. A child would
   // swallow the drag, the way a button's label used to.
   attributes: { class: "oscar-xypad" },
+
+  sends: true,
+  receives: true,
+  dmx: true,
 
   block: {
     label: "XY Pad",
@@ -731,35 +4727,43 @@ const xypad = {
       'M15,9A2,2 0 0,1 17,11A2,2 0 0,1 15,13A2,2 0 0,1 13,11A2,2 0 0,1 15,9Z"/></svg>',
   },
 
-  defaults: {
-    enabled: true,
-    ip: "localhost",
-    port: 7000,
-    message: "/pad",
-    sendMode: "one",
-    minX: 0,
-    maxX: 100,
-    minY: 0,
-    maxY: 100,
-    x: 0,
-    y: 0,
-    invertX: false,
-    invertY: false,
-    argType: "f",
-  },
+  defaults: Object.assign(
+    {
+      enabled: true,
+      ip: "localhost",
+      port: 7000,
+      message: "/pad",
+      listen: false,
+      sendMode: "one",
+      minX: 0,
+      maxX: 100,
+      minY: 0,
+      maxY: 100,
+      x: 0,
+      y: 0,
+      invertX: false,
+      invertY: false,
+      argType: "f",
+    },
+    dmxDefaults(2)
+  ),
 
-  fields: [enabled()].concat(connection()).concat([
-    field("sendMode", "Send", "select", { options: SEND_MODES }),
-    field("minX", "Min X", "number", { step: "any" }),
-    field("maxX", "Max X", "number", { step: "any" }),
-    field("minY", "Min Y", "number", { step: "any" }),
-    field("maxY", "Max Y", "number", { step: "any" }),
-    field("invertX", "Invert X", "checkbox"),
-    field("invertY", "Invert Y", "checkbox"),
-    field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
-  ]),
+  fields: [enabled(), transport()]
+    .concat(connection())
+    .concat([
+      listen(),
+      field("sendMode", "Send", "select", { options: SEND_MODES }),
+      field("minX", "Min X", "number", { step: "any" }),
+      field("maxX", "Max X", "number", { step: "any" }),
+      field("minY", "Min Y", "number", { step: "any" }),
+      field("maxY", "Max Y", "number", { step: "any" }),
+      field("invertX", "Invert X", "checkbox"),
+      field("invertY", "Invert Y", "checkbox"),
+      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
+    ])
+    .concat(dmxFields()),
 
-  checks: Object.assign({}, connectionChecks(), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(2), {
     minX: checkNumber("Min X"),
     maxX: checkNumber("Max X"),
     minY: checkNumber("Min Y"),
@@ -822,6 +4826,18 @@ const xypad = {
       track(e, true);
     }
 
+    /**
+     * A pointerup that lands on another window -- alt-tab, a notification --
+     * never reaches the pad. Without this the drag would stay open and the
+     * pad deaf to the rig until the next press. There is no pointer to read,
+     * so the last position it had is what goes out.
+     */
+    function onBlur() {
+      if (!dragging) return;
+      dragging = false;
+      flush();
+    }
+
     /** Work out the values under the pointer and schedule them. */
     function track(e, final) {
       const rect = el.getBoundingClientRect();
@@ -881,27 +4897,93 @@ const xypad = {
       const values = pending;
       pending = null;
 
-      const config = {
-        enabled: ctx.get("enabled"),
-        ip: ctx.get("ip"),
-        port: ctx.get("port"),
-        message: ctx.get("message"),
-        argType: ctx.get("argType"),
-      };
+      const config = routing(ctx);
+      const units = [
+        unitOf(values.x, ctx.get("minX"), ctx.get("maxX")),
+        unitOf(values.y, ctx.get("minY"), ctx.get("maxY")),
+      ];
 
       if (ctx.get("sendMode") === "two") {
-        ctx.send(outgoing(Object.assign({}, config, { message: config.message + "/x" }), values.x));
-        ctx.send(outgoing(Object.assign({}, config, { message: config.message + "/y" }), values.y));
-        return;
+        // Two OSC messages, but one DMX frame: pan and tilt are one position
+        // on a moving head, and a half-updated block would swing it through
+        // somewhere nobody pointed at.
+        const osc = only(config, "osc");
+        ctx.send(outgoing(osc && Object.assign({}, osc, { message: config.message + "/x" }), values.x));
+        ctx.send(outgoing(osc && Object.assign({}, osc, { message: config.message + "/y" }), values.y));
+        ctx.send(outgoing(only(config, "dmx"), null, units));
+      } else {
+        ctx.send(outgoing(config, [values.x, values.y], units));
       }
-      ctx.send(outgoing(config, [values.x, values.y]));
+      // One position for the other devices, whichever way it went out.
+      share(ctx, { x: values.x, y: values.y });
+    }
+
+    /** The address, or pair of addresses, the pad answers to. */
+    function addresses() {
+      const message = ctx.get("message");
+      if (ctx.get("sendMode") === "two") return [message + "/x", message + "/y"];
+      return message;
+    }
+
+    /**
+     * Take a position the rig sent: one message with both values, or one
+     * axis at a time. Stores it and moves the handle through place(), the
+     * view-only path -- a value that came in must never go back out. Then
+     * has the position recorded as heard: the other devices were sent the
+     * same message, so nobody needs telling, but a device joining later
+     * starts where the rig left the handle.
+     */
+    function adopt(values, address) {
+      // The finger outranks the rig for as long as it is down.
+      if (dragging) return;
+
+      if (ctx.get("sendMode") === "two") {
+        const value = toNumber(values[0]);
+        if (value === null) return;
+        const axis = address === ctx.get("message") + "/x" ? "x" : "y";
+        ctx.set(axis, within(value, ctx.get("min" + axis.toUpperCase()), ctx.get("max" + axis.toUpperCase())));
+      } else {
+        const x = toNumber(values[0]);
+        const y = toNumber(values[1]);
+        // Half a position is no position; a handle moved along one axis
+        // only would misreport the other.
+        if (x === null || y === null) return;
+        ctx.set("x", within(x, ctx.get("minX"), ctx.get("maxX")));
+        ctx.set("y", within(y, ctx.get("minY"), ctx.get("maxY")));
+      }
+      place();
+      share(ctx, { x: ctx.get("x"), y: ctx.get("y") }, { heard: true });
+    }
+
+    /**
+     * Take the position another device shows. Never shared again: it came
+     * from there. The record is merged from everything ever shared for this
+     * pad, so each axis is taken on its own; one that cannot be read is
+     * left where it is rather than guessed at.
+     */
+    function adoptShared(state) {
+      if (dragging) return;
+      const x = toNumber(state.x);
+      const y = toNumber(state.y);
+      if (x === null && y === null) return;
+      if (x !== null) ctx.set("x", within(x, ctx.get("minX"), ctx.get("maxX")));
+      if (y !== null) ctx.set("y", within(y, ctx.get("minY"), ctx.get("maxY")));
+      place();
     }
 
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointermove", onPointerMove);
     el.addEventListener("pointerup", onPointerUp);
     el.addEventListener("pointercancel", onPointerUp);
+    // Guarded so the widget can be exercised outside a browser.
+    const root = typeof window === "undefined" ? null : window;
+    if (root) root.addEventListener("blur", onBlur);
     const stop = ctx.onChange(["minX", "maxX", "minY", "maxY", "invertX", "invertY"], place);
+    // The handle position is an inline property, which goes when the host
+    // rewrites the element's attributes; the stored x and y put it back.
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(place) : null;
+    const stopOsc = follow(ctx, adopt, addresses);
+    const stopShared = onShared(ctx, adoptShared);
 
     return function detach() {
       if (frame && cancelRaf) cancelRaf(frame);
@@ -909,14 +4991,212 @@ const xypad = {
       el.removeEventListener("pointermove", onPointerMove);
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("pointercancel", onPointerUp);
+      if (root) root.removeEventListener("blur", onBlur);
       if (stop) stop();
+      if (stopRewrite) stopRewrite();
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
     };
   },
 };
 
+/** Keep a received value inside an axis's range, so handle and value agree. */
+function within(value, min, max) {
+  const lo = toNumber(min);
+  const hi = toNumber(max);
+  if (lo === null || hi === null) return value;
+  return clamp(value, Math.min(lo, hi), Math.max(lo, hi));
+}
+
 module.exports = { xypad, SEND_MODES };
 
-},{"../osc-args":1,"./fields":4,"./outgoing":5}],8:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":5,"./fields":12,"./incoming":13,"./outgoing":18,"./shared":20}],25:[function(require,module,exports){
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}],26:[function(require,module,exports){
 (function (global){(function (){
 /**
   * bootstrap-table - An extended table to integration with some of the most widely used CSS frameworks. (Supports Bootstrap, Semantic UI, Bulma, Material Design, Foundation)
@@ -930,7 +5210,7 @@ module.exports = { xypad, SEND_MODES };
 !function(t,e){"object"==typeof exports&&"undefined"!=typeof module?module.exports=e(require("jquery")):"function"==typeof define&&define.amd?define(["jquery"],e):(t="undefined"!=typeof globalThis?globalThis:t||self).BootstrapTable=e(t.jQuery)}(this,function(t){"use strict";function e(t,e){(null==e||e>t.length)&&(e=t.length);for(var n=0,i=Array(e);n<e;n++)i[n]=t[n];return i}function n(t,e){if(!(t instanceof e))throw new TypeError("Cannot call a class as a function")}function i(t,e){for(var n=0;n<e.length;n++){var i=e[n];i.enumerable=i.enumerable||!1,i.configurable=!0,"value"in i&&(i.writable=!0),Object.defineProperty(t,h(i.key),i)}}function r(t,e,n){return e&&i(t.prototype,e),n&&i(t,n),Object.defineProperty(t,"prototype",{writable:!1}),t}function o(t,e){var n="undefined"!=typeof Symbol&&t[Symbol.iterator]||t["@@iterator"];if(!n){if(Array.isArray(t)||(n=d(t))||e){n&&(t=n);var i=0,r=function(){};return{s:r,n:function(){return i>=t.length?{done:!0}:{done:!1,value:t[i++]}},e:function(t){throw t},f:r}}throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}var o,a=!0,s=!1;return{s:function(){n=n.call(t)},n:function(){var t=n.next();return a=t.done,t},e:function(t){s=!0,o=t},f:function(){try{a||null==n.return||n.return()}finally{if(s)throw o}}}}function a(t,e,n){return(e=h(e))in t?Object.defineProperty(t,e,{value:n,enumerable:!0,configurable:!0,writable:!0}):t[e]=n,t}function s(t,e){var n=Object.keys(t);if(Object.getOwnPropertySymbols){var i=Object.getOwnPropertySymbols(t);e&&(i=i.filter(function(e){return Object.getOwnPropertyDescriptor(t,e).enumerable})),n.push.apply(n,i)}return n}function l(t){for(var e=1;e<arguments.length;e++){var n=null!=arguments[e]?arguments[e]:{};e%2?s(Object(n),!0).forEach(function(e){a(t,e,n[e])}):Object.getOwnPropertyDescriptors?Object.defineProperties(t,Object.getOwnPropertyDescriptors(n)):s(Object(n)).forEach(function(e){Object.defineProperty(t,e,Object.getOwnPropertyDescriptor(n,e))})}return t}function c(t,e){return function(t){if(Array.isArray(t))return t}(t)||function(t,e){var n=null==t?null:"undefined"!=typeof Symbol&&t[Symbol.iterator]||t["@@iterator"];if(null!=n){var i,r,o,a,s=[],l=!0,c=!1;try{if(o=(n=n.call(t)).next,0===e);else for(;!(l=(i=o.call(n)).done)&&(s.push(i.value),s.length!==e);l=!0);}catch(t){c=!0,r=t}finally{try{if(!l&&null!=n.return&&(a=n.return(),Object(a)!==a))return}finally{if(c)throw r}}return s}}(t,e)||d(t,e)||function(){throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function u(t){return function(t){if(Array.isArray(t))return e(t)}(t)||function(t){if("undefined"!=typeof Symbol&&null!=t[Symbol.iterator]||null!=t["@@iterator"])return Array.from(t)}(t)||d(t)||function(){throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function h(t){var e=function(t,e){if("object"!=typeof t||!t)return t;var n=t[Symbol.toPrimitive];if(void 0!==n){var i=n.call(t,e);if("object"!=typeof i)return i;throw new TypeError("@@toPrimitive must return a primitive value.")}return("string"===e?String:Number)(t)}(t,"string");return"symbol"==typeof e?e:e+""}function f(t){return f="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t},f(t)}function d(t,n){if(t){if("string"==typeof t)return e(t,n);var i={}.toString.call(t).slice(8,-1);return"Object"===i&&t.constructor&&(i=t.constructor.name),"Map"===i||"Set"===i?Array.from(t):"Arguments"===i||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(i)?e(t,n):void 0}}var p,g,v="undefined"!=typeof globalThis?globalThis:"undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof self?self:{},b={};function m(){if(g)return p;g=1;var t=function(t){return t&&t.Math===Math&&t};return p=t("object"==typeof globalThis&&globalThis)||t("object"==typeof window&&window)||t("object"==typeof self&&self)||t("object"==typeof v&&v)||t("object"==typeof p&&p)||function(){return this}()||Function("return this")()}var y,w,S,x,O,C,k,T,P={};function A(){return w?y:(w=1,y=function(t){try{return!!t()}catch(t){return!0}})}function I(){if(x)return S;x=1;var t=A();return S=!t(function(){return 7!==Object.defineProperty({},1,{get:function(){return 7}})[1]})}function $(){if(C)return O;C=1;var t=A();return O=!t(function(){var t=function(){}.bind();return"function"!=typeof t||t.hasOwnProperty("prototype")})}function E(){if(T)return k;T=1;var t=$(),e=Function.prototype.call;return k=t?e.bind(e):function(){return e.apply(e,arguments)},k}var R,j,_,N,L,F,D,B,V,H,M,U,z,q,W,G,K,Y,J,Q,X,Z,tt,et,nt,it,rt,ot,at,st,lt,ct,ut,ht,ft,dt,pt,gt,vt,bt,mt,yt={};function wt(){if(R)return yt;R=1;var t={}.propertyIsEnumerable,e=Object.getOwnPropertyDescriptor,n=e&&!t.call({1:2},1);return yt.f=n?function(t){var n=e(this,t);return!!n&&n.enumerable}:t,yt}function St(){return _?j:(_=1,j=function(t,e){return{enumerable:!(1&t),configurable:!(2&t),writable:!(4&t),value:e}})}function xt(){if(L)return N;L=1;var t=$(),e=Function.prototype,n=e.call,i=t&&e.bind.bind(n,n);return N=t?i:function(t){return function(){return n.apply(t,arguments)}},N}function Ot(){if(D)return F;D=1;var t=xt(),e=t({}.toString),n=t("".slice);return F=function(t){return n(e(t),8,-1)}}function Ct(){if(V)return B;V=1;var t=xt(),e=A(),n=Ot(),i=Object,r=t("".split);return B=e(function(){return!i("z").propertyIsEnumerable(0)})?function(t){return"String"===n(t)?r(t,""):i(t)}:i}function kt(){return M?H:(M=1,H=function(t){return null==t})}function Tt(){if(z)return U;z=1;var t=kt(),e=TypeError;return U=function(n){if(t(n))throw new e("Can't call method on "+n);return n}}function Pt(){if(W)return q;W=1;var t=Ct(),e=Tt();return q=function(n){return t(e(n))}}function At(){if(K)return G;K=1;var t="object"==typeof document&&document.all;return G=void 0===t&&void 0!==t?function(e){return"function"==typeof e||e===t}:function(t){return"function"==typeof t}}function It(){if(J)return Y;J=1;var t=At();return Y=function(e){return"object"==typeof e?null!==e:t(e)}}function $t(){if(X)return Q;X=1;var t=m(),e=At();return Q=function(n,i){return arguments.length<2?(r=t[n],e(r)?r:void 0):t[n]&&t[n][i];var r},Q}function Et(){if(tt)return Z;tt=1;var t=xt();return Z=t({}.isPrototypeOf)}function Rt(){if(nt)return et;nt=1;var t=m().navigator,e=t&&t.userAgent;return et=e?String(e):""}function jt(){if(rt)return it;rt=1;var t,e,n=m(),i=Rt(),r=n.process,o=n.Deno,a=r&&r.versions||o&&o.version,s=a&&a.v8;return s&&(e=(t=s.split("."))[0]>0&&t[0]<4?1:+(t[0]+t[1])),!e&&i&&(!(t=i.match(/Edge\/(\d+)/))||t[1]>=74)&&(t=i.match(/Chrome\/(\d+)/))&&(e=+t[1]),it=e}function _t(){if(at)return ot;at=1;var t=jt(),e=A(),n=m().String;return ot=!!Object.getOwnPropertySymbols&&!e(function(){var e=Symbol("symbol detection");return!n(e)||!(Object(e)instanceof Symbol)||!Symbol.sham&&t&&t<41})}function Nt(){if(lt)return st;lt=1;var t=_t();return st=t&&!Symbol.sham&&"symbol"==typeof Symbol.iterator}function Lt(){if(ut)return ct;ut=1;var t=$t(),e=At(),n=Et(),i=Nt(),r=Object;return ct=i?function(t){return"symbol"==typeof t}:function(i){var o=t("Symbol");return e(o)&&n(o.prototype,r(i))}}function Ft(){if(ft)return ht;ft=1;var t=String;return ht=function(e){try{return t(e)}catch(t){return"Object"}}}function Dt(){if(pt)return dt;pt=1;var t=At(),e=Ft(),n=TypeError;return dt=function(i){if(t(i))return i;throw new n(e(i)+" is not a function")}}function Bt(){if(vt)return gt;vt=1;var t=Dt(),e=kt();return gt=function(n,i){var r=n[i];return e(r)?void 0:t(r)}}function Vt(){if(mt)return bt;mt=1;var t=E(),e=At(),n=It(),i=TypeError;return bt=function(r,o){var a,s;if("string"===o&&e(a=r.toString)&&!n(s=t(a,r)))return s;if(e(a=r.valueOf)&&!n(s=t(a,r)))return s;if("string"!==o&&e(a=r.toString)&&!n(s=t(a,r)))return s;throw new i("Can't convert object to primitive value")}}var Ht,Mt,Ut,zt,qt,Wt,Gt,Kt,Yt,Jt,Qt,Xt,Zt,te,ee,ne,ie,re,oe,ae,se,le,ce,ue,he={exports:{}};function fe(){return Mt?Ht:(Mt=1,Ht=!1)}function de(){if(zt)return Ut;zt=1;var t=m(),e=Object.defineProperty;return Ut=function(n,i){try{e(t,n,{value:i,configurable:!0,writable:!0})}catch(e){t[n]=i}return i}}function pe(){if(qt)return he.exports;qt=1;var t=fe(),e=m(),n=de(),i="__core-js_shared__",r=he.exports=e[i]||n(i,{});return(r.versions||(r.versions=[])).push({version:"3.49.0",mode:t?"pure":"global",copyright:"© 2013–2025 Denis Pushkarev (zloirock.ru), 2025–2026 CoreJS Company (core-js.io). All rights reserved.",license:"https://github.com/zloirock/core-js/blob/v3.49.0/LICENSE",source:"https://github.com/zloirock/core-js"}),he.exports}function ge(){if(Gt)return Wt;Gt=1;var t=pe();return Wt=function(e,n){return t[e]||(t[e]=n||{})}}function ve(){if(Yt)return Kt;Yt=1;var t=Tt(),e=Object;return Kt=function(n){return e(t(n))}}function be(){if(Qt)return Jt;Qt=1;var t=xt(),e=ve(),n=t({}.hasOwnProperty);return Jt=Object.hasOwn||function(t,i){return n(e(t),i)}}function me(){if(Zt)return Xt;Zt=1;var t=xt(),e=0,n=Math.random(),i=t(1.1.toString);return Xt=function(t){return"Symbol("+(void 0===t?"":t)+")_"+i(++e+n,36)}}function ye(){if(ee)return te;ee=1;var t=m(),e=ge(),n=be(),i=me(),r=_t(),o=Nt(),a=t.Symbol,s=e("wks"),l=o?a.for||a:a&&a.withoutSetter||i;return te=function(t){return n(s,t)||(s[t]=r&&n(a,t)?a[t]:l("Symbol."+t)),s[t]}}function we(){if(ie)return ne;ie=1;var t=E(),e=It(),n=Lt(),i=Bt(),r=Vt(),o=ye(),a=TypeError,s=o("toPrimitive");return ne=function(o,l){if(!e(o)||n(o))return o;var c,u=i(o,s);if(u){if(void 0===l&&(l="default"),c=t(u,o,l),!e(c)||n(c))return c;throw new a("Can't convert object to primitive value")}return void 0===l&&(l="number"),r(o,l)}}function Se(){if(oe)return re;oe=1;var t=we(),e=Lt();return re=function(n){var i=t(n,"string");return e(i)?i:i+""}}function xe(){if(se)return ae;se=1;var t=m(),e=It(),n=t.document,i=e(n)&&e(n.createElement);return ae=function(t){return i?n.createElement(t):{}}}function Oe(){if(ce)return le;ce=1;var t=I(),e=A(),n=xe();return le=!t&&!e(function(){return 7!==Object.defineProperty(n("div"),"a",{get:function(){return 7}}).a})}function Ce(){if(ue)return P;ue=1;var t=I(),e=E(),n=wt(),i=St(),r=Pt(),o=Se(),a=be(),s=Oe(),l=Object.getOwnPropertyDescriptor;return P.f=t?l:function(t,c){if(t=r(t),c=o(c),s)try{return l(t,c)}catch(t){}if(a(t,c))return i(!e(n.f,t,c),t[c])},P}var ke,Te,Pe,Ae,Ie,$e,Ee,Re={};function je(){if(Te)return ke;Te=1;var t=I(),e=A();return ke=t&&e(function(){return 42!==Object.defineProperty(function(){},"prototype",{value:42,writable:!1}).prototype})}function _e(){if(Ae)return Pe;Ae=1;var t=It(),e=String,n=TypeError;return Pe=function(i){if(t(i))return i;throw new n(e(i)+" is not an object")}}function Ne(){if(Ie)return Re;Ie=1;var t=I(),e=Oe(),n=je(),i=_e(),r=Se(),o=TypeError,a=Object.defineProperty,s=Object.getOwnPropertyDescriptor,l="enumerable",c="configurable",u="writable";return Re.f=t?n?function(t,e,n){if(i(t),e=r(e),i(n),"function"==typeof t&&"prototype"===e&&"value"in n&&u in n&&!n[u]){var o=s(t,e);o&&o[u]&&(t[e]=n.value,n={configurable:c in n?n[c]:o[c],enumerable:l in n?n[l]:o[l],writable:!1})}return a(t,e,n)}:a:function(t,n,s){if(i(t),n=r(n),i(s),e)try{return a(t,n,s)}catch(t){}if("get"in s||"set"in s)throw new o("Accessors not supported");return"value"in s&&(t[n]=s.value),t},Re}function Le(){if(Ee)return $e;Ee=1;var t=I(),e=Ne(),n=St();return $e=t?function(t,i,r){return e.f(t,i,n(1,r))}:function(t,e,n){return t[e]=n,t},$e}var Fe,De,Be,Ve,He,Me,Ue,ze,qe,We,Ge,Ke,Ye,Je,Qe,Xe={exports:{}};function Ze(){if(De)return Fe;De=1;var t=I(),e=be(),n=Function.prototype,i=t&&Object.getOwnPropertyDescriptor,r=e(n,"name"),o=r&&"something"===function(){}.name,a=r&&(!t||t&&i(n,"name").configurable);return Fe={EXISTS:r,PROPER:o,CONFIGURABLE:a}}function tn(){if(Ve)return Be;Ve=1;var t=xt(),e=At(),n=pe(),i=t(Function.toString);return e(n.inspectSource)||(n.inspectSource=function(t){return i(t)}),Be=n.inspectSource}function en(){if(ze)return Ue;ze=1;var t=ge(),e=me(),n=t("keys");return Ue=function(t){return n[t]||(n[t]=e(t))}}function nn(){return We?qe:(We=1,qe={})}function rn(){if(Ke)return Ge;Ke=1;var t,e,n,i=function(){if(Me)return He;Me=1;var t=m(),e=At(),n=t.WeakMap;return He=e(n)&&/native code/.test(String(n))}(),r=m(),o=It(),a=Le(),s=be(),l=pe(),c=en(),u=nn(),h="Object already initialized",f=r.TypeError,d=r.WeakMap;if(i||l.state){var p=l.state||(l.state=new d);p.get=p.get,p.has=p.has,p.set=p.set,t=function(t,e){if(p.has(t))throw new f(h);return e.facade=t,p.set(t,e),e},e=function(t){return p.get(t)||{}},n=function(t){return p.has(t)}}else{var g=c("state");u[g]=!0,t=function(t,e){if(s(t,g))throw new f(h);return e.facade=t,a(t,g,e),e},e=function(t){return s(t,g)?t[g]:{}},n=function(t){return s(t,g)}}return Ge={set:t,get:e,has:n,enforce:function(i){return n(i)?e(i):t(i,{})},getterFor:function(t){return function(n){var i;if(!o(n)||(i=e(n)).type!==t)throw new f("Incompatible receiver, "+t+" required");return i}}}}function on(){if(Ye)return Xe.exports;Ye=1;var t=xt(),e=A(),n=At(),i=be(),r=I(),o=Ze().CONFIGURABLE,a=tn(),s=rn(),l=s.enforce,c=s.get,u=String,h=Object.defineProperty,f=t("".slice),d=t("".replace),p=t([].join),g=r&&!e(function(){return 8!==h(function(){},"length",{value:8}).length}),v=String(String).split("String"),b=Xe.exports=function(t,e,n){"Symbol("===f(u(e),0,7)&&(e="["+d(u(e),/^Symbol\(([^)]*)\).*$/,"$1")+"]"),n&&n.getter&&(e="get "+e),n&&n.setter&&(e="set "+e),(!i(t,"name")||o&&t.name!==e)&&(r?h(t,"name",{value:e,configurable:!0}):t.name=e),g&&n&&i(n,"arity")&&t.length!==n.arity&&h(t,"length",{value:n.arity});try{n&&i(n,"constructor")&&n.constructor?r&&h(t,"prototype",{writable:!1}):t.prototype&&(t.prototype=void 0)}catch(t){}var a=l(t);return i(a,"source")||(a.source=p(v,"string"==typeof e?e:"")),t};return Function.prototype.toString=b(function(){return n(this)&&c(this).source||a(this)},"toString"),Xe.exports}function an(){if(Qe)return Je;Qe=1;var t=At(),e=Ne(),n=on(),i=de();return Je=function(r,o,a,s){s||(s={});var l=s.enumerable,c=void 0!==s.name?s.name:o;if(t(a)&&n(a,c,s),s.global)l?r[o]=a:i(o,a);else{try{s.unsafe?r[o]&&(l=!0):delete r[o]}catch(t){}l?r[o]=a:e.f(r,o,{value:a,enumerable:!1,configurable:!s.nonConfigurable,writable:!s.nonWritable})}return r}}var sn,ln,cn,un,hn,fn,dn,pn,gn,vn,bn,mn,yn,wn,Sn,xn,On,Cn={};function kn(){if(un)return cn;un=1;var t=function(){if(ln)return sn;ln=1;var t=Math.ceil,e=Math.floor;return sn=Math.trunc||function(n){var i=+n;return(i>0?e:t)(i)}}();return cn=function(e){var n=+e;return n!=n||0===n?0:t(n)}}function Tn(){if(fn)return hn;fn=1;var t=kn(),e=Math.max,n=Math.min;return hn=function(i,r){var o=t(i);return o<0?e(o+r,0):n(o,r)}}function Pn(){if(pn)return dn;pn=1;var t=kn(),e=Math.min;return dn=function(n){var i=t(n);return i>0?e(i,9007199254740991):0}}function An(){if(vn)return gn;vn=1;var t=Pn();return gn=function(e){return t(e.length)}}function In(){if(mn)return bn;mn=1;var t=Pt(),e=Tn(),n=An(),i=function(i){return function(r,o,a){var s=t(r),l=n(s);if(0===l)return!i&&-1;var c,u=e(a,l);if(i&&o!=o){for(;l>u;)if((c=s[u++])!=c)return!0}else for(;l>u;u++)if((i||u in s)&&s[u]===o)return i||u||0;return!i&&-1}};return bn={includes:i(!0),indexOf:i(!1)}}function $n(){if(wn)return yn;wn=1;var t=xt(),e=be(),n=Pt(),i=In().indexOf,r=nn(),o=t([].push);return yn=function(t,a){var s,l=n(t),c=0,u=[];for(s in l)!e(r,s)&&e(l,s)&&o(u,s);for(;a.length>c;)e(l,s=a[c++])&&(~i(u,s)||o(u,s));return u},yn}function En(){return xn?Sn:(xn=1,Sn=["constructor","hasOwnProperty","isPrototypeOf","propertyIsEnumerable","toLocaleString","toString","valueOf"])}function Rn(){if(On)return Cn;On=1;var t=$n(),e=En().concat("length","prototype");return Cn.f=Object.getOwnPropertyNames||function(n){return t(n,e)},Cn}var jn,_n,Nn,Ln,Fn,Dn,Bn,Vn,Hn,Mn,Un,zn,qn,Wn,Gn,Kn,Yn,Jn,Qn,Xn,Zn,ti,ei,ni,ii,ri,oi,ai,si,li,ci={};function ui(){return jn||(jn=1,ci.f=Object.getOwnPropertySymbols),ci}function hi(){if(Nn)return _n;Nn=1;var t=$t(),e=xt(),n=Rn(),i=ui(),r=_e(),o=e([].concat);return _n=t("Reflect","ownKeys")||function(t){var e=n.f(r(t)),a=i.f;return a?o(e,a(t)):e}}function fi(){if(Fn)return Ln;Fn=1;var t=be(),e=hi(),n=Ce(),i=Ne();return Ln=function(r,o,a){for(var s=e(o),l=i.f,c=n.f,u=0;u<s.length;u++){var h=s[u];t(r,h)||a&&t(a,h)||l(r,h,c(o,h))}}}function di(){if(Bn)return Dn;Bn=1;var t=A(),e=At(),n=/#|\.prototype\./,i=function(n,i){var l=o[r(n)];return l===s||l!==a&&(e(i)?t(i):!!i)},r=i.normalize=function(t){return String(t).replace(n,".").toLowerCase()},o=i.data={},a=i.NATIVE="N",s=i.POLYFILL="P";return Dn=i}function pi(){if(Hn)return Vn;Hn=1;var t=m(),e=Ce().f,n=Le(),i=an(),r=de(),o=fi(),a=di();return Vn=function(s,l){var c,u,h,f,d,p=s.target,g=s.global,v=s.stat;if(c=g?t:v?t[p]||r(p,{}):t[p]&&t[p].prototype)for(u in l){if(f=l[u],h=s.dontCallGetSet?(d=e(c,u))&&d.value:c[u],!a(g?u:p+(v?".":"#")+u,s.forced)&&void 0!==h){if(typeof f==typeof h)continue;o(f,h)}(s.sham||h&&h.sham)&&n(f,"sham",!0),i(c,u,f,s)}}}function gi(){if(Un)return Mn;Un=1;var t=Ot();return Mn=Array.isArray||function(e){return"Array"===t(e)}}function vi(){if(qn)return zn;qn=1;var t=TypeError;return zn=function(e){if(e>9007199254740991)throw new t("Maximum allowed index exceeded");return e}}function bi(){if(Gn)return Wn;Gn=1;var t=I(),e=Ne(),n=St();return Wn=function(i,r,o){t?e.f(i,r,n(0,o)):i[r]=o},Wn}function mi(){if(Yn)return Kn;Yn=1;var t=I(),e=gi(),n=TypeError,i=Object.getOwnPropertyDescriptor,r=t&&!function(){if(void 0!==this)return!0;try{Object.defineProperty([],"length",{writable:!1}).length=1}catch(t){return t instanceof TypeError}}();return Kn=r?function(t,r){if(e(t)&&!i(t,"length").writable)throw new n("Cannot set read only .length");return t.length=r}:function(t,e){return t.length=e}}function yi(){if(Qn)return Jn;Qn=1;var t={};return t[ye()("toStringTag")]="z",Jn="[object z]"===String(t)}function wi(){if(Zn)return Xn;Zn=1;var t=yi(),e=At(),n=Ot(),i=ye()("toStringTag"),r=Object,o="Arguments"===n(function(){return arguments}());return Xn=t?n:function(t){var a,s,l;return void 0===t?"Undefined":null===t?"Null":"string"==typeof(s=function(t,e){try{return t[e]}catch(t){}}(a=r(t),i))?s:o?n(a):"Object"===(l=n(a))&&e(a.callee)?"Arguments":l}}function Si(){if(ei)return ti;ei=1;var t=xt(),e=A(),n=At(),i=wi(),r=$t(),o=tn(),a=function(){},s=r("Reflect","construct"),l=/^\s*(?:class|function)\b/,c=t(l.exec),u=!l.test(a),h=function(t){if(!n(t))return!1;try{return s(a,[],t),!0}catch(t){return!1}},f=function(t){if(!n(t))return!1;switch(i(t)){case"AsyncFunction":case"GeneratorFunction":case"AsyncGeneratorFunction":return!1}try{return u||!!c(l,o(t))}catch(t){return!0}};return f.sham=!0,ti=!s||e(function(){var t;return h(h.call)||!h(Object)||!h(function(){t=!0})||t})?f:h}function xi(){if(ii)return ni;ii=1;var t=gi(),e=Si(),n=It(),i=ye()("species"),r=Array;return ni=function(o){var a;return t(o)&&(a=o.constructor,(e(a)&&(a===r||t(a.prototype))||n(a)&&null===(a=a[i]))&&(a=void 0)),void 0===a?r:a}}function Oi(){if(oi)return ri;oi=1;var t=xi();return ri=function(e,n){return new(t(e))(0===n?0:n)}}function Ci(){if(si)return ai;si=1;var t=A(),e=ye(),n=jt(),i=e("species");return ai=function(e){return n>=51||!t(function(){var t=[];return(t.constructor={})[i]=function(){return{foo:1}},1!==t[e](Boolean).foo})}}!function(){if(li)return b;li=1;var t=pi(),e=A(),n=gi(),i=It(),r=ve(),o=An(),a=vi(),s=bi(),l=mi(),c=Oi(),u=Ci(),h=ye(),f=jt(),d=h("isConcatSpreadable"),p=f>=51||!e(function(){var t=[];return t[d]=!1,t.concat()[0]!==t}),g=function(t){if(!i(t))return!1;var e=t[d];return void 0!==e?!!e:n(t)};t({target:"Array",proto:!0,arity:1,forced:!p||!u("concat")},{concat:function(t){var e,n,i,u,h,f=r(this),d=c(f,0),p=0;for(e=-1,i=arguments.length;e<i;e++)if(g(h=-1===e?f:arguments[e]))for(u=o(h),a(p+u),n=0;n<u;n++,p++)n in h&&s(d,p,h[n]);else a(p+1),s(d,p++,h);return l(d,p),d}})}();var ki,Ti,Pi,Ai,Ii,$i,Ei,Ri,ji,_i,Ni={},Li={};function Fi(){if(Ti)return ki;Ti=1;var t=$n(),e=En();return ki=Object.keys||function(n){return t(n,e)}}function Di(){if(Ii)return Ai;Ii=1;var t=$t();return Ai=t("document","documentElement")}function Bi(){if(Ei)return $i;Ei=1;var t,e=_e(),n=function(){if(Pi)return Li;Pi=1;var t=I(),e=je(),n=Ne(),i=_e(),r=Pt(),o=Fi();return Li.f=t&&!e?Object.defineProperties:function(t,e){i(t);for(var a,s=r(e),l=o(e),c=l.length,u=0;c>u;)n.f(t,a=l[u++],s[a]);return t},Li}(),i=En(),r=nn(),o=Di(),a=xe(),s=en(),l="prototype",c="script",u=s("IE_PROTO"),h=function(){},f=function(t){return"<"+c+">"+t+"</"+c+">"},d=function(t){t.write(f("")),t.close();var e=t.parentWindow.Object;return t=null,e},p=function(){try{t=new ActiveXObject("htmlfile")}catch(t){}var e,n,r;p="undefined"!=typeof document?document.domain&&t?d(t):(n=a("iframe"),r="java"+c+":",n.style.display="none",o.appendChild(n),n.src=String(r),(e=n.contentWindow.document).open(),e.write(f("document.F=Object")),e.close(),e.F):d(t);for(var s=i.length;s--;)delete p[l][i[s]];return p()};return r[u]=!0,$i=Object.create||function(t,i){var r;return null!==t?(h[l]=e(t),r=new h,h[l]=null,r[u]=t):r=p(),void 0===i?r:n.f(r,i)}}function Vi(){if(ji)return Ri;ji=1;var t=ye(),e=Bi(),n=Ne().f,i=t("unscopables"),r=Array.prototype;return void 0===r[i]&&n(r,i,{configurable:!0,value:e(null)}),Ri=function(t){r[i][t]=!0}}!function(){if(_i)return Ni;_i=1;var t=pi(),e=In().includes,n=A(),i=Vi(),r=n(function(){return!Array(1).includes()}),o=n(function(){return[,1].includes(void 0,1)});t({target:"Array",proto:!0,forced:r||o},{includes:function(t){return e(this,t,arguments.length>1?arguments[1]:void 0)}}),i("includes")}();var Hi,Mi,Ui,zi={};!function(){if(Ui)return zi;Ui=1;var t=pi(),e=function(){if(Mi)return Hi;Mi=1;var t=I(),e=xt(),n=E(),i=A(),r=Fi(),o=ui(),a=wt(),s=ve(),l=Ct(),c=Object.assign,u=Object.defineProperty,h=e([].concat);return Hi=!c||i(function(){if(t&&1!==c({b:1},c(u({},"a",{enumerable:!0,get:function(){u(this,"b",{value:3,enumerable:!1})}}),{b:2})).b)return!0;var e={},n={},i=Symbol("assign detection"),o="abcdefghijklmnopqrst";return e[i]=7,o.split("").forEach(function(t){n[t]=t}),7!==c({},e)[i]||r(c({},n)).join("")!==o})?function(e,i){for(var c=s(e),u=arguments.length,f=1,d=o.f,p=a.f;u>f;)for(var g,v=l(arguments[f++]),b=d?h(r(v),d(v)):r(v),m=b.length,y=0;m>y;)g=b[y++],t&&!n(p,v,g)||(c[g]=v[g]);return c}:c,Hi}();t({target:"Object",stat:!0,arity:2,forced:Object.assign!==e},{assign:e})}();var qi,Wi={};!function(){if(qi)return Wi;qi=1;var t=pi(),e=ve(),n=Fi();t({target:"Object",stat:!0,forced:A()(function(){n(1)})},{keys:function(t){return n(e(t))}})}();var Gi,Ki,Yi,Ji,Qi,Xi,Zi,tr,er,nr,ir,rr,or,ar={};function sr(){if(Ki)return Gi;Ki=1;var t=wi(),e=String;return Gi=function(n){if("Symbol"===t(n))throw new TypeError("Cannot convert a Symbol value to a string");return e(n)}}function lr(){if(Ji)return Yi;Ji=1;var t=_e();return Yi=function(){var e=t(this),n="";return e.hasIndices&&(n+="d"),e.global&&(n+="g"),e.ignoreCase&&(n+="i"),e.multiline&&(n+="m"),e.dotAll&&(n+="s"),e.unicode&&(n+="u"),e.unicodeSets&&(n+="v"),e.sticky&&(n+="y"),n}}function cr(){if(Xi)return Qi;Xi=1;var t=A(),e=m().RegExp,n=t(function(){var t=e("a","y");return t.lastIndex=2,null!==t.exec("abcd")}),i=n||t(function(){return!e("a","y").sticky}),r=n||t(function(){var t=e("^r","gy");return t.lastIndex=2,null!==t.exec("str")});return Qi={BROKEN_CARET:r,MISSED_STICKY:i,UNSUPPORTED_Y:n}}function ur(){if(tr)return Zi;tr=1;var t=A(),e=m().RegExp;return Zi=t(function(){var t=e(".","s");return!(t.dotAll&&t.test("\n")&&"s"===t.flags)})}function hr(){if(nr)return er;nr=1;var t=A(),e=m().RegExp;return er=t(function(){var t=e("(?<a>b)","g");return"b"!==t.exec("b").groups.a||"bc"!=="b".replace(t,"$<a>c")})}function fr(){if(rr)return ir;rr=1;var t,e,n=E(),i=xt(),r=sr(),o=lr(),a=cr(),s=ge(),l=Bi(),c=rn().get,u=ur(),h=hr(),f=s("native-string-replace",String.prototype.replace),d=RegExp.prototype.exec,p=d,g=i("".charAt),v=i("".indexOf),b=i("".replace),m=i("".slice),y=(e=/b*/g,n(d,t=/a/,"a"),n(d,e,"a"),0!==t.lastIndex||0!==e.lastIndex),w=a.BROKEN_CARET,S=void 0!==/()??/.exec("")[1],x=function(t,e){for(var n=t.groups=l(null),i=0;i<e.length;i++){var r=e[i];n[r[0]]=t[r[1]]}};return(y||S||w||u||h)&&(p=function(t){var e,i,a,s=this,l=c(s),u=r(t),h=l.raw;if(h)return h.lastIndex=s.lastIndex,e=n(p,h,u),s.lastIndex=h.lastIndex,e&&l.groups&&x(e,l.groups),e;var O=l.groups,C=w&&s.sticky,k=n(o,s),T=s.source,P=0,A=u;if(C){k=b(k,"y",""),-1===v(k,"g")&&(k+="g"),A=m(u,s.lastIndex);var I=s.lastIndex>0&&g(u,s.lastIndex-1);s.lastIndex>0&&(!s.multiline||s.multiline&&"\n"!==I&&"\r"!==I&&"\u2028"!==I&&"\u2029"!==I)&&(T="(?: (?:"+T+"))",A=" "+A,P++),i=new RegExp("^(?:"+T+")",k)}S&&(i=new RegExp("^"+T+"$(?!\\s)",k)),y&&(a=s.lastIndex);var $=n(d,C?i:s,A);return C?$?($.input=u,$[0]=m($[0],P),$.index=s.lastIndex,s.lastIndex+=$[0].length):s.lastIndex=0:y&&$&&(s.lastIndex=s.global?$.index+$[0].length:a),S&&$&&$.length>1&&n(f,$[0],i,function(){for(var t=1;t<arguments.length-2;t++)void 0===arguments[t]&&($[t]=void 0)}),$&&O&&x($,O),$}),ir=p}function dr(){if(or)return ar;or=1;var t=pi(),e=fr();return t({target:"RegExp",proto:!0,forced:/./.exec!==e},{exec:e}),ar}dr();var pr,gr,vr,br,mr,yr,wr,Sr={};function xr(){if(gr)return pr;gr=1;var t=It(),e=Ot(),n=ye()("match");return pr=function(i){var r;return t(i)&&(void 0!==(r=i[n])?!!r:"RegExp"===e(i))}}function Or(){if(br)return vr;br=1;var t=xr(),e=TypeError;return vr=function(n){if(t(n))throw new e("The method doesn't accept regular expressions");return n}}function Cr(){if(yr)return mr;yr=1;var t=ye()("match");return mr=function(e){var n=/./;try{"/./"[e](n)}catch(i){try{return n[t]=!1,"/./"[e](n)}catch(t){}}return!1}}!function(){if(wr)return Sr;wr=1;var t=pi(),e=xt(),n=Or(),i=Tt(),r=sr(),o=Cr(),a=e("".indexOf);t({target:"String",proto:!0,forced:!o("includes")},{includes:function(t){return!!~a(r(i(this)),r(n(t)),arguments.length>1?arguments[1]:void 0)}})}();var kr,Tr,Pr,Ar,Ir,$r,Er,Rr={};function jr(){if(Tr)return kr;Tr=1;var t=Ot(),e=xt();return kr=function(n){if("Function"===t(n))return e(n)}}function _r(){if(Ar)return Pr;Ar=1;var t=jr(),e=Dt(),n=$(),i=t(t.bind);return Pr=function(t,r){return e(t),void 0===r?t:n?i(t,r):function(){return t.apply(r,arguments)}},Pr}function Nr(){if($r)return Ir;$r=1;var t=_r(),e=Ct(),n=ve(),i=An(),r=Oi(),o=bi(),a=function(a){var s=1===a,l=2===a,c=3===a,u=4===a,h=6===a,f=7===a,d=5===a||h;return function(p,g,v){for(var b,m,y=n(p),w=e(y),S=i(w),x=t(g,v),O=0,C=0,k=s?r(p,S):l||f?r(p,0):void 0;S>O;O++)if((d||O in w)&&(m=x(b=w[O],O,y),a))if(s)o(k,O,m);else if(m)switch(a){case 3:return!0;case 5:return b;case 6:return O;case 2:o(k,C++,b)}else switch(a){case 4:return!1;case 7:o(k,C++,b)}return h?-1:c||u?u:k}};return Ir={forEach:a(0),map:a(1),filter:a(2),some:a(3),every:a(4),find:a(5),findIndex:a(6),filterReject:a(7)}}!function(){if(Er)return Rr;Er=1;var t=pi(),e=Nr().find,n=Vi(),i="find",r=!0;i in[]&&Array(1)[i](function(){r=!1}),t({target:"Array",proto:!0,forced:r},{find:function(t){return e(this,t,arguments.length>1?arguments[1]:void 0)}}),n(i)}();var Lr,Fr,Dr,Br,Vr,Hr,Mr,Ur={};function zr(){if(Fr)return Lr;Fr=1;var t=A();return Lr=!t(function(){function t(){}return t.prototype.constructor=null,Object.getPrototypeOf(new t)!==t.prototype})}function qr(){if(Br)return Dr;Br=1;var t=be(),e=At(),n=ve(),i=en(),r=zr(),o=i("IE_PROTO"),a=Object,s=a.prototype;return Dr=r?a.getPrototypeOf:function(i){var r=n(i);if(t(r,o))return r[o];var l=r.constructor;return e(l)&&r instanceof l?l.prototype:r instanceof a?s:null},Dr}!function(){if(Mr)return Ur;Mr=1;var t=pi(),e=function(){if(Hr)return Vr;Hr=1;var t=I(),e=A(),n=xt(),i=qr(),r=Fi(),o=Pt(),a=n(wt().f),s=n([].push),l=t&&e(function(){var t=Object.create(null);return t[2]=2,!a(t,2)}),c=function(e){return function(n){for(var c,u=o(n),h=r(u),f=l&&null===i(u),d=h.length,p=0,g=[];d>p;)c=h[p++],t&&!(f?c in u:a(u,c))||s(g,e?[c,u[c]]:u[c]);return g}};return Vr={entries:c(!0),values:c(!1)}}().entries;t({target:"Object",stat:!0},{entries:function(t){return e(t)}})}();var Wr,Gr,Kr,Yr={};!function(){if(Kr)return Yr;Kr=1;var t=yi(),e=an(),n=function(){if(Gr)return Wr;Gr=1;var t=yi(),e=wi();return Wr=t?{}.toString:function(){return"[object "+e(this)+"]"}}();t||e(Object.prototype,"toString",n,{unsafe:!0})}();var Jr,Qr,Xr,Zr,to,eo,no,io,ro,oo,ao,so,lo,co,uo,ho,fo,po={};function go(){if(Qr)return Jr;Qr=1,dr();var t=E(),e=an(),n=fr(),i=A(),r=ye(),o=Le(),a=r("species"),s=RegExp.prototype;return Jr=function(l,c,u,h){var f=r(l),d=!i(function(){var t={};return t[f]=function(){return 7},7!==""[l](t)}),p=d&&!i(function(){var t=!1,e=/a/;if("split"===l){var n={};n[a]=function(){return e},(e={constructor:n,flags:""})[f]=/./[f]}return e.exec=function(){return t=!0,null},e[f](""),!t});if(!d||!p||u){var g=/./[f],v=c(f,""[l],function(e,i,r,o,a){var l=i.exec;return l===n||l===s.exec?d&&!a?{done:!0,value:t(g,i,r,o)}:{done:!0,value:t(e,r,i,o)}:{done:!1}});e(String.prototype,l,v[0]),e(s,f,v[1])}h&&o(s[f],"sham",!0)}}function vo(){if(Zr)return Xr;Zr=1;var t=Si(),e=Ft(),n=TypeError;return Xr=function(i){if(t(i))return i;throw new n(e(i)+" is not a constructor")}}function bo(){if(eo)return to;eo=1;var t=_e(),e=vo(),n=kt(),i=ye()("species");return to=function(r,o){var a,s=t(r).constructor;return void 0===s||n(a=t(s)[i])?o:e(a)}}function mo(){if(io)return no;io=1;var t=xt(),e=kn(),n=sr(),i=Tt(),r=t("".charAt),o=t("".charCodeAt),a=t("".slice),s=function(t){return function(s,l){var c,u,h=n(i(s)),f=e(l),d=h.length;return f<0||f>=d?t?"":void 0:(c=o(h,f))<55296||c>56319||f+1===d||(u=o(h,f+1))<56320||u>57343?t?r(h,f):c:t?a(h,f,f+2):u-56320+(c-55296<<10)+65536}};return no={codeAt:s(!1),charAt:s(!0)}}function yo(){if(oo)return ro;oo=1;var t=mo().charAt;return ro=function(e,n,i){return n+(i&&t(e,n).length||1)}}function wo(){if(co)return lo;co=1;var t=E(),e=be(),n=Et(),i=function(){if(so)return ao;so=1;var t=m(),e=A(),n=t.RegExp,i=!e(function(){var t=!0;try{n(".","d")}catch(e){t=!1}var e={},i="",r=t?"dgimsy":"gimsy",o=function(t,n){Object.defineProperty(e,t,{get:function(){return i+=n,!0}})},a={dotAll:"s",global:"g",ignoreCase:"i",multiline:"m",sticky:"y"};for(var s in t&&(a.hasIndices="d"),a)o(s,a[s]);return Object.getOwnPropertyDescriptor(n.prototype,"flags").get.call(e)!==r||i!==r});return ao={correct:i}}(),r=lr(),o=RegExp.prototype;return lo=i.correct?function(t){return t.flags}:function(a){return i.correct||!n(o,a)||e(a,"flags")?a.flags:t(r,a)}}function So(){if(ho)return uo;ho=1;var t=E(),e=_e(),n=At(),i=Ot(),r=fr(),o=TypeError;return uo=function(a,s){var l=a.exec;if(n(l)){var c=t(l,a,s);return null!==c&&e(c),c}if("RegExp"===i(a))return t(r,a,s);throw new o("RegExp#exec called on incompatible receiver")}}!function(){if(fo)return po;fo=1;var t=E(),e=xt(),n=go(),i=_e(),r=It(),o=Tt(),a=bo(),s=yo(),l=Pn(),c=sr(),u=Bt(),h=wo(),f=So(),d=cr(),p=A(),g=d.UNSUPPORTED_Y,v=Math.min,b=e([].push),m=e("".slice),y=e("".indexOf),w=!p(function(){var t=/(?:)/,e=t.exec;t.exec=function(){return e.apply(this,arguments)};var n="ab".split(t);return 2!==n.length||"a"!==n[0]||"b"!==n[1]}),S="c"==="abbc".split(/(b)*/)[1]||4!=="test".split(/(?:)/,-1).length||2!=="ab".split(/(?:ab)*/).length||4!==".".split(/(.?)(.?)/).length||".".split(/()()/).length>1||"".split(/.?/).length;n("split",function(e,n,d){var p="0".split(void 0,0).length?function(e,i){return void 0===e&&0===i?[]:t(n,this,e,i)}:n;return[function(n,i){var a=o(this),s=r(n)?u(n,e):void 0;return s?t(s,n,a,i):t(p,c(a),n,i)},function(t,e){var r=i(this),o=c(t);if(!S){var u=d(p,r,o,e,p!==n);if(u.done)return u.value}var w=a(r,RegExp),x=c(h(r)),O=!!~y(x,"u")||!!~y(x,"v");g?~y(x,"g")||(x+="g"):~y(x,"y")||(x+="y");var C=new w(g?"^(?:"+r.source+")":r,x),k=void 0===e?4294967295:e>>>0;if(0===k)return[];if(0===o.length)return null===f(C,o)?[o]:[];for(var T=0,P=0,A=[];P<o.length;){C.lastIndex=g?0:P;var I,$=f(C,g?m(o,P):o);if(null===$||(I=v(l(C.lastIndex+(g?P:0)),o.length))===T)P=s(o,P,O);else{if(b(A,m(o,T,P)),A.length===k)return A;for(var E=1;E<=$.length-1;E++)if(b(A,$[E]),A.length===k)return A;P=T=I}}return b(A,m(o,T)),A}]},S||!w,g)}();var xo,Oo,Co,ko,To,Po,Ao,Io={};function $o(){return Oo?xo:(Oo=1,xo="\t\n\v\f\r                　\u2028\u2029\ufeff")}function Eo(){if(ko)return Co;ko=1;var t=xt(),e=Tt(),n=sr(),i=$o(),r=t("".replace),o=RegExp("^["+i+"]+"),a=RegExp("(^|[^"+i+"])["+i+"]+$"),s=function(t){return function(i){var s=n(e(i));return 1&t&&(s=r(s,o,"")),2&t&&(s=r(s,a,"$1")),s}};return Co={start:s(1),end:s(2),trim:s(3)}}!function(){if(Ao)return Io;Ao=1;var t=pi(),e=Eo().trim,n=function(){if(Po)return To;Po=1;var t=Ze().PROPER,e=A(),n=$o();return To=function(i){return e(function(){return!!n[i]()||"​᠎"!=="​᠎"[i]()||t&&n[i].name!==i})}}();t({target:"String",proto:!0,forced:n("trim")},{trim:function(){return e(this)}})}();var Ro,jo,_o,No,Lo,Fo,Do,Bo,Vo,Ho={};function Mo(){return jo?Ro:(jo=1,Ro={CSSRuleList:0,CSSStyleDeclaration:0,CSSValueList:0,ClientRectList:0,DOMRectList:0,DOMStringList:0,DOMTokenList:1,DataTransferItemList:0,FileList:0,HTMLAllCollection:0,HTMLCollection:0,HTMLFormElement:0,HTMLSelectElement:0,MediaList:0,MimeTypeArray:0,NamedNodeMap:0,NodeList:1,PaintRequestList:0,Plugin:0,PluginArray:0,SVGLengthList:0,SVGNumberList:0,SVGPathSegList:0,SVGPointList:0,SVGStringList:0,SVGTransformList:0,SourceBufferList:0,StyleSheetList:0,TextTrackCueList:0,TextTrackList:0,TouchList:0})}function Uo(){if(No)return _o;No=1;var t=xe()("span").classList,e=t&&t.constructor&&t.constructor.prototype;return _o=e===Object.prototype?void 0:e}function zo(){if(Fo)return Lo;Fo=1;var t=A();return Lo=function(e,n){var i=[][e];return!!i&&t(function(){i.call(null,n||function(){return 1},1)})}}!function(){if(Vo)return Ho;Vo=1;var t=m(),e=Mo(),n=Uo(),i=function(){if(Bo)return Do;Bo=1;var t=Nr().forEach,e=zo()("forEach");return Do=e?[].forEach:function(e){return t(this,e,arguments.length>1?arguments[1]:void 0)},Do}(),r=Le(),o=function(t){if(t&&t.forEach!==i)try{r(t,"forEach",i)}catch(e){t.forEach=i}};for(var a in e)e[a]&&o(t[a]&&t[a].prototype);o(n)}();var qo,Wo={};!function(){if(qo)return Wo;qo=1;var t,e=pi(),n=jr(),i=Ce().f,r=Pn(),o=sr(),a=Or(),s=Tt(),l=Cr(),c=fe(),u=n("".slice),h=Math.min,f=l("startsWith");e({target:"String",proto:!0,forced:!!(c||f||(t=i(String.prototype,"startsWith"),!t||t.writable))&&!f},{startsWith:function(t){var e=o(s(this));a(t);var n=o(t),i=r(h(arguments.length>1?arguments[1]:void 0,e.length));return u(e,i,i+n.length)===n}})}();var Go,Ko={};!function(){if(Go)return Ko;Go=1;var t=pi(),e=Nr().filter;t({target:"Array",proto:!0,forced:!Ci()("filter")},{filter:function(t){return e(this,t,arguments.length>1?arguments[1]:void 0)}})}();var Yo,Jo,Qo,Xo,Zo,ta,ea,na,ia,ra,oa,aa,sa,la,ca,ua,ha,fa={};function da(){if(Jo)return Yo;Jo=1;var t=E(),e=_e(),n=Bt();return Yo=function(i,r,o){var a,s;e(i);try{if(!(a=n(i,"return"))){if("throw"===r)throw o;return o}a=t(a,i)}catch(t){s=!0,a=t}if("throw"===r)throw o;if(s)throw a;return e(a),o}}function pa(){if(Xo)return Qo;Xo=1;var t=_e(),e=da();return Qo=function(n,i,r,o){try{return o?i(t(r)[0],r[1]):i(r)}catch(t){e(n,"throw",t)}}}function ga(){return ta?Zo:(ta=1,Zo={})}function va(){if(na)return ea;na=1;var t=ye(),e=ga(),n=t("iterator"),i=Array.prototype;return ea=function(t){return void 0!==t&&(e.Array===t||i[n]===t)}}function ba(){if(ra)return ia;ra=1;var t=wi(),e=Bt(),n=kt(),i=ga(),r=ye()("iterator");return ia=function(o){if(!n(o))return e(o,r)||e(o,"@@iterator")||i[t(o)]}}function ma(){if(aa)return oa;aa=1;var t=E(),e=Dt(),n=_e(),i=Ft(),r=ba(),o=TypeError;return oa=function(a,s){var l=arguments.length<2?r(a):s;if(e(l))return n(t(l,a));throw new o(i(a)+" is not iterable")},oa}function ya(){if(ua)return ca;ua=1;var t=ye()("iterator"),e=!1;try{var n=0,i={next:function(){return{done:!!n++}},return:function(){e=!0}};i[t]=function(){return this},Array.from(i,function(){throw 2})}catch(t){}return ca=function(n,i){try{if(!i&&!e)return!1}catch(t){return!1}var r=!1;try{var o={};o[t]=function(){return{next:function(){return{done:r=!0}}}},n(o)}catch(t){}return r},ca}!function(){if(ha)return fa;ha=1;var t=pi(),e=function(){if(la)return sa;la=1;var t=_r(),e=E(),n=ve(),i=pa(),r=va(),o=Si(),a=An(),s=bi(),l=mi(),c=ma(),u=ba(),h=da(),f=Array;return sa=function(d){var p=o(this),g=arguments.length,v=g>1?arguments[1]:void 0,b=void 0!==v;b&&(v=t(v,g>2?arguments[2]:void 0));var m,y,w,S,x,O,C=n(d),k=u(C),T=0;if(!k||this===f&&r(k))for(m=a(C),y=p?new this(m):f(m);m>T;T++)O=b?v(C[T],T):C[T],s(y,T,O);else for(y=p?new this:[],x=(S=c(C,k)).next;!(w=e(x,S)).done;T++){O=b?i(S,v,[w.value,T],!0):w.value;try{s(y,T,O)}catch(t){h(S,"throw",t)}}return l(y,T),y},sa}();t({target:"Array",stat:!0,forced:!ya()(function(t){Array.from(t)})},{from:e})}();var wa,Sa,xa,Oa,Ca,ka,Ta,Pa,Aa,Ia,$a,Ea,Ra,ja,_a,Na,La,Fa,Da,Ba={};function Va(){if(Sa)return wa;Sa=1;var t,e,n,i=A(),r=At(),o=It(),a=Bi(),s=qr(),l=an(),c=ye(),u=fe(),h=c("iterator"),f=!1;return[].keys&&("next"in(n=[].keys())?(e=s(s(n)))!==Object.prototype&&(t=e):f=!0),!o(t)||i(function(){var e={};return t[h].call(e)!==e})?t={}:u&&(t=a(t)),r(t[h])||l(t,h,function(){return this}),wa={IteratorPrototype:t,BUGGY_SAFARI_ITERATORS:f}}function Ha(){if(Oa)return xa;Oa=1;var t=Ne().f,e=be(),n=ye()("toStringTag");return xa=function(i,r,o){i&&!o&&(i=i.prototype),i&&!e(i,n)&&t(i,n,{configurable:!0,value:r})}}function Ma(){if(ka)return Ca;ka=1;var t=Va().IteratorPrototype,e=Bi(),n=St(),i=Ha(),r=ga(),o=function(){return this};return Ca=function(a,s,l,c){var u=s+" Iterator";return a.prototype=e(t,{next:n(+!c,l)}),i(a,u,!1,!0),r[u]=o,a}}function Ua(){if(Ia)return Aa;Ia=1;var t=It();return Aa=function(e){return t(e)||null===e}}function za(){if(Ea)return $a;Ea=1;var t=Ua(),e=String,n=TypeError;return $a=function(i){if(t(i))return i;throw new n("Can't set "+e(i)+" as a prototype")}}function qa(){if(ja)return Ra;ja=1;var t=function(){if(Pa)return Ta;Pa=1;var t=xt(),e=Dt();return Ta=function(n,i,r){try{return t(e(Object.getOwnPropertyDescriptor(n,i)[r]))}catch(t){}},Ta}(),e=It(),n=Tt(),i=za();return Ra=Object.setPrototypeOf||("__proto__"in{}?function(){var r,o=!1,a={};try{(r=t(Object.prototype,"__proto__","set"))(a,[]),o=a instanceof Array}catch(t){}return function(t,a){return n(t),i(a),e(t)?(o?r(t,a):t.__proto__=a,t):t}}():void 0)}function Wa(){if(Na)return _a;Na=1;var t=pi(),e=E(),n=fe(),i=Ze(),r=At(),o=Ma(),a=qr(),s=qa(),l=Ha(),c=Le(),u=an(),h=ye(),f=ga(),d=Va(),p=i.PROPER,g=i.CONFIGURABLE,v=d.IteratorPrototype,b=d.BUGGY_SAFARI_ITERATORS,m=h("iterator"),y="keys",w="values",S="entries",x=function(){return this};return _a=function(i,h,d,O,C,k,T){o(d,h,O);var P,A,I,$=function(t){if(t===C&&N)return N;if(!b&&t&&t in j)return j[t];switch(t){case y:case w:case S:return function(){return new d(this,t)}}return function(){return new d(this)}},E=h+" Iterator",R=!1,j=i.prototype,_=j[m]||j["@@iterator"]||C&&j[C],N=!b&&_||$(C),L="Array"===h&&j.entries||_;if(L&&(P=a(L.call(new i)))!==Object.prototype&&P.next&&(n||a(P)===v||(s?s(P,v):r(P[m])||u(P,m,x)),l(P,E,!0,!0),n&&(f[E]=x)),p&&C===w&&_&&_.name!==w&&(!n&&g?c(j,"name",w):(R=!0,N=function(){return e(_,this)})),C)if(A={values:$(w),keys:k?N:$(y),entries:$(S)},T)for(I in A)(b||R||!(I in j))&&u(j,I,A[I]);else t({target:h,proto:!0,forced:b||R},A);return n&&!T||j[m]===N||u(j,m,N,{name:C}),f[h]=N,A}}function Ga(){return Fa?La:(Fa=1,La=function(t,e){return{value:t,done:e}})}!function(){if(Da)return Ba;Da=1;var t=mo().charAt,e=sr(),n=rn(),i=Wa(),r=Ga(),o="String Iterator",a=n.set,s=n.getterFor(o);i(String,"String",function(t){a(this,{type:o,string:e(t),index:0})},function(){var e,n=s(this),i=n.string,o=n.index;return o>=i.length?r(void 0,!0):(e=t(i,o),n.index+=e.length,r(e,!1))})}();var Ka=function(){return r(function t(){n(this,t)},null,[{key:"$",value:function(t){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:document;return"string"==typeof t?e.querySelector(t):t instanceof Element?t:null}},{key:"$$",value:function(t){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:document;return"string"==typeof t?Array.from(e.querySelectorAll(t)):t instanceof NodeList?Array.from(t):t instanceof Element?[t]:[]}},{key:"create",value:function(t){if("string"!=typeof t)return null;var e=t.trim();if(!e)return null;var n=document.createElement("template");return n.innerHTML=e,n.content.firstChild}},{key:"addClass",value:function(t,e){var n;if("string"==typeof t&&(t=this.$(t)),!t||!t.classList)return t;if(!e)return t;var i=e.split(" ").filter(function(t){return t});return(n=t.classList).add.apply(n,u(i)),t}},{key:"removeClass",value:function(t,e){var n;if("string"==typeof t&&(t=this.$(t)),!t||!t.classList)return t;if(!e)return t;var i=e.split(" ").filter(function(t){return t});return(n=t.classList).remove.apply(n,u(i)),t}},{key:"toggleClass",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),t&&t.classList&&e?(e.split(" ").filter(function(t){return t}).forEach(function(e){return t.classList.toggle(e)}),t):t}},{key:"hasClass",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),!(!t||!t.classList)&&(!!e&&t.classList.contains(e))}},{key:"attr",value:function(t,e,n){return"string"==typeof t&&(t=this.$(t)),t?void 0===n?t.getAttribute(e):(t.setAttribute(e,n),t):void 0===n?null:t}},{key:"removeAttr",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),t?(t.removeAttribute(e),t):t}},{key:"data",value:function(t,e,n){return"string"==typeof t&&(t=this.$(t)),t?void 0===n?t.dataset[e]:(t.dataset[e]=n,t):void 0===n?void 0:t}},{key:"append",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),"string"==typeof e&&(e=this.create(e)),t&&e&&t.appendChild(e),t}},{key:"prepend",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),"string"==typeof e&&(e=this.create(e)),t&&e&&t.insertBefore(e,t.firstChild),t}},{key:"insertAfter",value:function(t,e){return"string"==typeof e&&(e=this.$(e)),"string"==typeof t&&(t=this.create(t)),e&&t&&e.parentNode&&e.parentNode.insertBefore(t,e.nextSibling),t}},{key:"insertBefore",value:function(t,e){return"string"==typeof e&&(e=this.$(e)),"string"==typeof t&&(t=this.create(t)),e&&t&&e.parentNode&&e.parentNode.insertBefore(t,e),t}},{key:"find",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),t?Array.from(t.querySelectorAll(e)):[]}},{key:"findFirst",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),t?t.querySelector(e):null}},{key:"css",value:function(t,e,n){return"string"==typeof t&&(t=this.$(t)),t?"object"===f(e)?(Object.assign(t.style,e),t):void 0===n?getComputedStyle(t)[e]:(t.style[e]=n,t):null}},{key:"width",value:function(t){return"string"==typeof t&&(t=this.$(t)),t?t.offsetWidth:0}},{key:"height",value:function(t){return"string"==typeof t&&(t=this.$(t)),t?t.offsetHeight:0}},{key:"outerWidth",value:function(t){var e=arguments.length>1&&void 0!==arguments[1]&&arguments[1];if("string"==typeof t&&(t=this.$(t)),!t)return 0;var n=t.offsetWidth;if(e){var i=getComputedStyle(t);n+=(parseInt(i.marginLeft,10)||0)+(parseInt(i.marginRight,10)||0)}return n}},{key:"outerHeight",value:function(t){var e=arguments.length>1&&void 0!==arguments[1]&&arguments[1];if("string"==typeof t&&(t=this.$(t)),!t)return 0;var n=t.offsetHeight;if(e){var i=getComputedStyle(t);n+=(parseInt(i.marginTop,10)||0)+(parseInt(i.marginBottom,10)||0)}return n}},{key:"val",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),t?void 0===e?t.value:(t.value=e,t):void 0===e?null:t}},{key:"html",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),t?void 0===e?t.innerHTML:(t.innerHTML=e,t):void 0===e?null:t}},{key:"text",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),t?void 0===e?t.textContent:(t.textContent=e,t):void 0===e?null:t}},{key:"remove",value:function(t){return"string"==typeof t&&(t=this.$(t)),t&&t.parentNode?(t.parentNode.removeChild(t),t):t}},{key:"empty",value:function(t){return"string"==typeof t&&(t=this.$(t)),t?(t.innerHTML="",t):t}},{key:"each",value:function(t,e){return"string"==typeof t?t=this.$$(t):t instanceof NodeList?t=Array.from(t):Array.isArray(t)||(t=[t]),t.forEach(function(t,n){e.call(t,n,t)}),t}},{key:"parent",value:function(t,e){if("string"==typeof t&&(t=this.$(t)),!t)return null;var n=t.parentElement;if(e)for(;n&&!n.matches(e);)n=n.parentElement;return n}},{key:"children",value:function(t,e){if("string"==typeof t&&(t=this.$(t)),!t)return[];var n=Array.from(t.children);return e&&(n=n.filter(function(t){return t.matches(e)})),n}},{key:"next",value:function(t,e){if("string"==typeof t&&(t=this.$(t)),!t)return null;var n=t.nextElementSibling;if(e)for(;n&&!n.matches(e);)n=n.nextElementSibling;return n}},{key:"prev",value:function(t,e){if("string"==typeof t&&(t=this.$(t)),!t)return null;var n=t.previousElementSibling;if(e)for(;n&&!n.matches(e);)n=n.previousElementSibling;return n}},{key:"offset",value:function(t){if("string"==typeof t&&(t=this.$(t)),!t)return{top:0,left:0,width:0,height:0};var e=t.getBoundingClientRect();return{top:e.top+window.scrollY,left:e.left+window.scrollX,width:e.width,height:e.height}}},{key:"position",value:function(t){return"string"==typeof t&&(t=this.$(t)),t?{top:t.offsetTop,left:t.offsetLeft}:{top:0,left:0}}},{key:"is",value:function(t,e){return"string"==typeof t&&(t=this.$(t)),!!t&&t.matches(e)}}])}();function Ya(){var e,n,i;if(void 0!==t&&null!==(e=t.fn)&&void 0!==e&&null!==(e=e.bootstrapTable)&&void 0!==e&&e.theme&&!t.fn.bootstrapTable.theme.startsWith("bootstrap"))return;var r=5;return"undefined"!=typeof window&&null!==(n=window.bootstrap)&&void 0!==n&&null!==(n=n.Tooltip)&&void 0!==n&&n.VERSION?r=parseInt(window.bootstrap.Tooltip.VERSION,10):void 0!==t&&null!==(i=t.fn)&&void 0!==i&&null!==(i=i.dropdown)&&void 0!==i&&null!==(i=i.Constructor)&&void 0!==i&&i.VERSION&&(r=parseInt(t.fn.dropdown.Constructor.VERSION,10)),r}var Ja,Qa=Object.freeze({__proto__:null,assignIcons:function(t,e,n){for(var i=0,r=Object.keys(t);i<r.length;i++){var o=r[i];t[o][e]=n[o]}},getBootstrapVersion:Ya,getIcons:function(t,e){return t[e]||{}},getIconsPrefix:function(t){return{bootstrap3:"glyphicon",bootstrap4:"fa",bootstrap5:"bi","bootstrap-table":"icon",bulma:"fa",foundation:"fa",materialize:"material-icons",semantic:"fa"}[t]||"fa"},getSearchInput:function(t){if("string"==typeof t.options.searchSelector)return Ka.$(t.options.searchSelector);var e=t.$toolbar?t.$toolbar[0]:null;if(!e)return null;var n=Ka.find(e,".search input");return n.length>0?n[0]:null}}),Xa={};function Za(t){if("object"!==f(t)||null===t)return!1;for(var e=t;null!==Object.getPrototypeOf(e);)e=Object.getPrototypeOf(e);return Object.getPrototypeOf(t)===e}function ts(){for(var t=arguments.length,e=new Array(t),n=0;n<t;n++)e[n]=arguments[n];var i,r=e[0]||{},o=1,a=!1;for("boolean"==typeof r&&(a=r,r=e[o]||{},o++),"object"!==f(r)&&"function"!=typeof r&&(r={});o<e.length;o++){var s=e[o];if(null!=s)for(var l in s){var c=s[l];if("__proto__"!==l&&r!==c){var u=Array.isArray(c);if(a&&c&&(Za(c)||u)){var h=r[l];if(u&&Array.isArray(h)&&h.every(function(t){return!Za(t)&&!Array.isArray(t)})){r[l]=c;continue}i=u&&!Array.isArray(h)?[]:u||Za(h)?h:{},r[l]=ts(a,i,c)}else void 0!==c&&(r[l]=c)}}}return r}!function(){if(Ja)return Xa;Ja=1;var t=pi(),e=A(),n=ve(),i=qr(),r=zr();t({target:"Object",stat:!0,forced:e(function(){i(1)}),sham:!r},{getPrototypeOf:function(t){return i(n(t))}})}();var es,ns,is,rs,os,as,ss,ls,cs,us=Object.freeze({__proto__:null,compareObjects:function(t,e,n){var i=Object.keys(t),r=Object.keys(e);if(n&&i.length!==r.length)return!1;for(var o=0,a=i;o<a.length;o++){var s=a[o];if(r.includes(s)&&t[s]!==e[s])return!1}return!0},deepCopy:function(t){return void 0===t?t:ts(!0,Array.isArray(t)?[]:{},t)},extend:ts,isEmptyObject:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 0===Object.entries(t).length&&t.constructor===Object},isObject:Za}),hs={};function fs(){if(ns)return es;ns=1;var t=At(),e=It(),n=qa();return es=function(i,r,o){var a,s;return n&&t(a=r.constructor)&&a!==o&&e(s=a.prototype)&&s!==o.prototype&&n(i,s),i}}function ds(){if(rs)return is;rs=1;var t=Ne().f;return is=function(e,n,i){i in e||t(e,i,{configurable:!0,get:function(){return n[i]},set:function(t){n[i]=t}})}}function ps(){if(as)return os;as=1;var t=on(),e=Ne();return os=function(n,i,r){return r.get&&t(r.get,i,{getter:!0}),r.set&&t(r.set,i,{setter:!0}),e.f(n,i,r)}}function gs(){if(ls)return ss;ls=1;var t=$t(),e=ps(),n=ye(),i=I(),r=n("species");return ss=function(n){var o=t(n);i&&o&&!o[r]&&e(o,r,{configurable:!0,get:function(){return this}})}}!function(){if(cs)return hs;cs=1;var t=I(),e=m(),n=xt(),i=di(),r=fs(),o=Le(),a=Bi(),s=Rn().f,l=Et(),c=xr(),u=sr(),h=wo(),f=cr(),d=ds(),p=an(),g=A(),v=be(),b=rn().enforce,y=gs(),w=ye(),S=ur(),x=hr(),O=w("match"),C=e.RegExp,k=C.prototype,T=e.SyntaxError,P=n(k.exec),$=n("".charAt),E=n("".replace),R=n("".indexOf),j=n("".slice),_=/^\?<[^\s\d!#%&*+<=>@^][^\s!#%&*+<=>@^]*>/,N=/a/g,L=/a/g,F=new C(N)!==N,D=f.MISSED_STICKY,B=f.UNSUPPORTED_Y,V=t&&(!F||D||S||x||g(function(){return L[O]=!1,C(N)!==N||C(L)===L||"/a/i"!==String(C(N,"i"))}));if(i("RegExp",V)){for(var H=function(t,e){var n,i,s,f,d,p,g=l(k,this),m=c(t),y=void 0===e,w=[],O=t;if(!g&&m&&y&&t.constructor===H)return t;if((m||l(k,t))&&(t=t.source,y&&(e=h(O))),t=void 0===t?"":u(t),e=void 0===e?"":u(e),O=t,S&&"dotAll"in N&&(i=!!e&&R(e,"s")>-1)&&(e=E(e,/s/g,"")),n=e,D&&"sticky"in N&&(s=!!e&&R(e,"y")>-1)&&B&&(e=E(e,/y/g,"")),x&&(f=function(t){for(var e,n=t.length,i=0,r="",o=[],s=a(null),l=!1,c=!1,u=0,h="";i<n;i++){if("\\"===(e=$(t,i))){if(e+=$(t,++i),!c&&"\\"===$(e,1)){r+="\\x5c";continue}}else if("]"===e)l=!1;else if(!l)switch(!0){case"["===e:l=!0;break;case"("===e:r+=e,P(_,j(t,i+1))?(i+=2,c=!0,u++):"?"!==$(t,i+1)&&u++;continue;case">"===e&&c:if(""===h||v(s,h))throw new T("Invalid capture group name");s[h]=!0,o[o.length]=[h,u],c=!1,h="";continue}c?h+=e:r+=e}for(var f=0;f<o.length;f++)for(var d="\\k<"+o[f][0]+">",p="\\"+o[f][1];R(r,d)>-1;)r=E(r,d,p);return[r,o]}(t),t=f[0],w=f[1]),d=r(C(t,e),g?this:k,H),(i||s||w.length)&&(p=b(d),i&&(p.dotAll=!0,p.raw=H(function(t){for(var e,n=t.length,i=0,r="",o=!1;i<n;i++)"\\"!==(e=$(t,i))?o||"."!==e?("["===e?o=!0:"]"===e&&(o=!1),r+=e):r+="[\\s\\S]":r+=e+$(t,++i);return r}(t),n)),s&&(p.sticky=!0),w.length&&(p.groups=w)),t!==O)try{o(d,"source",""===O?"(?:)":O)}catch(t){}return d},M=s(C),U=0;M.length>U;)d(H,C,M[U++]);k.constructor=H,H.prototype=k,p(e,"RegExp",H,{constructor:!0})}y("RegExp")}();var vs,bs={};!function(){if(vs)return bs;vs=1;var t=Ze().PROPER,e=an(),n=_e(),i=sr(),r=A(),o=wo(),a="toString",s=RegExp.prototype,l=s[a],c=r(function(){return"/a/b"!==l.call({source:"a",flags:"b"})}),u=t&&l.name!==a;(c||u)&&e(s,a,function(){var t=n(this);return"/"+i(t.source)+"/"+i(o(t))},{unsafe:!0})}();var ms,ys,ws,Ss,xs,Os={};function Cs(){if(Ss)return ws;Ss=1;var t=xt(),e=ve(),n=Math.floor,i=t("".charAt),r=t("".replace),o=t("".slice),a=/\$([$&'`]|\d{1,2}|<[^>]*>)/g,s=/\$([$&'`]|\d{1,2})/g;return ws=function(t,l,c,u,h,f){var d=c+t.length,p=u.length,g=s;return void 0!==h&&(h=e(h),g=a),r(f,g,function(e,r){var a;switch(i(r,0)){case"$":return"$";case"&":return t;case"`":return o(l,0,c);case"'":return o(l,d);case"<":a=h[o(r,1,-1)];break;default:var s=+r;if(0===s)return e;if(s>p){var f=n(s/10);return 0===f?e:f<=p?void 0===u[f-1]?i(r,1):u[f-1]+i(r,1):e}a=u[s-1]}return void 0===a?"":a})}}!function(){if(xs)return Os;xs=1;var t=function(){if(ys)return ms;ys=1;var t=$(),e=Function.prototype,n=e.apply,i=e.call;return ms="object"==typeof Reflect&&Reflect.apply||(t?i.bind(n):function(){return i.apply(n,arguments)}),ms}(),e=E(),n=xt(),i=go(),r=A(),o=_e(),a=At(),s=It(),l=kn(),c=Pn(),u=sr(),h=Tt(),f=yo(),d=Bt(),p=Cs(),g=wo(),v=So(),b=ye()("replace"),m=Math.max,y=Math.min,w=n([].concat),S=n([].push),x=n("".indexOf),O=n("".slice),C=function(t){return void 0===t?t:String(t)},k="$0"==="a".replace(/./,"$0"),T=!!/./[b]&&""===/./[b]("a","$0");i("replace",function(n,i,r){var k=T?"$":"$0";return[function(t,n){var r=h(this),o=s(t)?d(t,b):void 0;return o?e(o,t,r,n):e(i,u(r),t,n)},function(e,n){var s=o(this),h=u(e),d=a(n);d||(n=u(n));var b=u(g(s));if("string"==typeof n&&!~x(n,k)&&!~x(n,"$<")&&!~x(b,"y")){var T=r(i,s,h,n);if(T.done)return T.value}var P,A=!!~x(b,"g");A&&(P=!!~x(b,"u")||!!~x(b,"v"),s.lastIndex=0);for(var I,$=[];null!==(I=v(s,h))&&(S($,I),A);){""===u(I[0])&&(s.lastIndex=f(h,c(s.lastIndex),P))}for(var E="",R=0,j=0;j<$.length;j++){for(var _,N=u((I=$[j])[0]),L=m(y(l(I.index),h.length),0),F=[],D=1;D<I.length;D++)S(F,C(I[D]));var B=I.groups;if(d){var V=w([N],F,L,h);void 0!==B&&S(V,B),_=u(t(n,void 0,V))}else _=p(N,h,L,F,B,n);L>=R&&(E+=O(h,R,L)+_,R=L+N.length)}return E+O(h,R)}]},!!r(function(){var t=/./;return t.exec=function(){var t=[];return t.groups={a:"7"},t},"7"!=="".replace(t,"$<a>")})||!k||T)}();var ks={"Æ":"AE","æ":"ae","Ø":"O","ø":"o","Å":"A","å":"a","Ä":"A","ä":"a","Ö":"O","ö":"o","Ü":"U","ü":"u","ẞ":"SS","ß":"ss","Œ":"OE","œ":"oe","Č":"C","č":"c","Ć":"C","ć":"c","Š":"S","š":"s","Ž":"Z","ž":"z","Ł":"L","ł":"l","Đ":"Dj","đ":"dj","Ń":"N","ń":"n","Ę":"E","ę":"e","Ą":"A","ą":"a","Ŕ":"R","ŕ":"r","Ğ":"G","ğ":"g","İ":"I","ı":"i","Ş":"S","ş":"s","Ă":"A","ă":"a","Â":"A","â":"a","Î":"I","î":"i","Ș":"S","ș":"s","Ț":"T","ț":"t","Α":"A","Ά":"A","α":"a","ά":"a","Β":"V","β":"v","Γ":"G","γ":"g","Δ":"D","δ":"d","Ε":"E","Έ":"E","ε":"e","έ":"e","Ζ":"Z","ζ":"z","Η":"I","Ή":"I","η":"i","ή":"i","Ι":"I","Ί":"I","ι":"i","ί":"i","Κ":"K","κ":"k","Λ":"L","λ":"l","Μ":"M","μ":"m","Ν":"N","ν":"n","Ξ":"X","ξ":"x","Ο":"O","Ό":"O","ο":"o","ό":"o","Π":"P","π":"p","Ρ":"R","ρ":"r","Σ":"S","σ":"s","ς":"s","Τ":"T","τ":"t","Υ":"Y","Ύ":"Y","υ":"y","ύ":"y","Φ":"F","φ":"f","Χ":"CH","χ":"ch","Ψ":"PS","ψ":"ps","Ω":"O","Ώ":"O","ω":"o","ώ":"o"};function Ts(t){for(var e=arguments.length,n=new Array(e>1?e-1:0),i=1;i<e;i++)n[i-1]=arguments[i];var r=!0,o=0,a=t.replace(/%s/g,function(){var t=n[o++];return void 0===t?(r=!1,""):t});return r?a:""}function Ps(t){return t.toString().replace(/'/g,"&#39;")}function As(t){return t?t.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"):t}function Is(t){return t?t.toString().replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/'/g,"&#39;").replace(/</g,"&lt;").replace(/>/g,"&gt;"):t}var $s,Es=Object.freeze({__proto__:null,escapeApostrophe:Ps,escapeAttr:Is,escapeHTML:As,normalizeAccent:function(t){if("string"!=typeof t)return t;var e=new RegExp("[".concat(Object.keys(ks).join(""),"]"),"g");return t.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(e,function(t){return ks[t]}).toLowerCase().trim()},normalizeStyle:function(t){if(t){var e=t.trim();if(e)return e.replace(/;?\s*$/,"; ")}},removeHTML:function(t){return t?t.toString().replace(/(<([^>]+)>)/gi,"").replace(/&[#A-Za-z0-9]+;/gi,"").trim():t},sprintf:Ts,unescapeHTML:function(t){return"string"==typeof t&&t?t.toString().replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,"&"):t}}),Rs={};!function(){if($s)return Rs;$s=1;var t=pi(),e=jr(),n=In().indexOf,i=zo(),r=e([].indexOf),o=!!r&&1/r([1],1,-0)<0;t({target:"Array",proto:!0,forced:o||!i("indexOf")},{indexOf:function(t){var e=arguments.length>1?arguments[1]:void 0;return o?r(this,t,e)||0:n(this,t,e)}})}();var js,_s,Ns={};function Ls(t){return"string"==typeof t?t:Array.isArray(t)?t.map(function(t){return Ls(t)}).filter(function(t){return t}).join(" "):t&&"object"===f(t)?Object.entries(t).map(function(t){var e=c(t,2),n=e[0];return e[1]?n:""}).filter(function(t){return t}).join(" "):""}function Fs(t,e){if(!e)return t;var n=/\s*!important\s*$/i,i=function(t){return"string"==typeof t&&n.test(t)?{value:t.replace(n,""),priority:"important"}:{value:t,priority:""}};if("string"==typeof e)e.split(";").forEach(function(e){var n=e.indexOf(":");if(n>0){var r=e.substring(0,n).trim(),o=e.substring(n+1).trim(),a=i(o),s=a.value,l=a.priority;t.style.setProperty(r,s,l)}});else if(Array.isArray(e)){var r,a=o(e);try{for(a.s();!(r=a.n()).done;){var s=r.value;Fs(t,s)}}catch(t){a.e(t)}finally{a.f()}}else if("object"===f(e))for(var l=0,u=Object.entries(e);l<u.length;l++){var h=c(u[l],2),d=h[0],p=h[1],g=i(p),v=g.value,b=g.priority;t.style.setProperty(d,v,b)}return t}!function(){if(js)return Ns;js=1;var t=pi(),e=Nr().map;t({target:"Array",proto:!0,forced:!Ci()("map")},{map:function(t){return e(this,t,arguments.length>1?arguments[1]:void 0)}})}();var Ds,Bs=Object.freeze({__proto__:null,classToString:Ls,getScrollBarWidth:function(){if(void 0===_s){var t=Ka.create('<div class="fixed-table-scroll-inner"></div>'),e=Ka.create('<div class="fixed-table-scroll-outer"></div>');Ka.append(e,t),Ka.append(document.body,e);var n=t.offsetWidth;Ka.css(e,"overflow","scroll");var i=t.offsetWidth;n===i&&(i=e.clientWidth),Ka.remove(e),_s=n-i}return _s},h:function(t,e,n){var i=t instanceof HTMLElement?t:document.createElement(t),r=e||{},o=n||[];"A"===i.tagName&&(i.href="javascript:");for(var a=0,s=Object.entries(r);a<s.length;a++){var l=c(s[a],2),h=l[0],f=l[1];if(void 0!==f)if(["text","innerText"].includes(h))i.innerText=f;else if(["html","innerHTML"].includes(h))i.innerHTML=f;else if("children"===h)o.push.apply(o,u(f));else if("class"===h)i.setAttribute("class",Ls(f));else if("style"===h)"string"==typeof f?i.setAttribute("style",f):Fs(i,f);else if(h.startsWith("@")||h.startsWith("on")){var d=h.startsWith("@")?h.substring(1):h.substring(2).toLowerCase(),p=Array.isArray(f)?f:[f];i.addEventListener.apply(i,[d].concat(u(p)))}else h.startsWith(".")?i[h.substring(1)]=f:i.setAttribute(h,f)}return o.length&&i.append.apply(i,u(o)),i},htmlToNodes:function(t){if(t&&"object"===f(t)&&"jquery"in t)return Array.from(t);if(t instanceof Node)return[t];"string"!=typeof t&&(t=new String(t).toString());var e=document.createElement("div");return e.innerHTML=t,e.childNodes},isDomNode:function(t){return t instanceof Node||Boolean(t&&"object"===f(t)&&"number"==typeof t.length&&t.length>=0&&"jquery"in t)},parseStyle:Fs}),Vs={};function Hs(t){for(var e=0,n=Object.entries(t);e<n.length;e++){var i=c(n[e],2),r=i[0],o=i[1],a=r.split(/(?=[A-Z])/).join("-").toLowerCase();a!==r&&(t[a]=o,delete t[r])}return t}function Ms(t,e,n){var i=arguments.length>3&&void 0!==arguments[3]?arguments[3]:void 0;if(void 0!==i&&(n=i),"string"!=typeof e||t.hasOwnProperty(e)||!e.includes("."))return n?As(t[e]):t[e];var r,a=t,s=o(e.split("."));try{for(s.s();!(r=s.n()).done;){var l=r.value;if(null==a)return;a=a[l]}}catch(t){s.e(t)}finally{s.f()}return n?As(a):a}!function(){if(Ds)return Vs;Ds=1;var t,e=pi(),n=jr(),i=Ce().f,r=Pn(),o=sr(),a=Or(),s=Tt(),l=Cr(),c=fe(),u=n("".slice),h=Math.min,f=l("endsWith");e({target:"String",proto:!0,forced:!!(c||f||(t=i(String.prototype,"endsWith"),!t||t.writable))&&!f},{endsWith:function(t){var e=o(s(this));a(t);var n=o(t),i=arguments.length>1?arguments[1]:void 0,l=e.length,c=void 0===i?l:h(r(i),l);return u(e,c-n.length,c)===n}})}();var Us,zs=Object.freeze({__proto__:null,checkAutoMergeCells:function(t){var e,n=o(t);try{for(n.s();!(e=n.n()).done;)for(var i=e.value,r=0,a=Object.keys(i);r<a.length;r++){var s=a[r];if(s.startsWith("_")&&(s.endsWith("_rowspan")||s.endsWith("_colspan")))return!0}}catch(t){n.e(t)}finally{n.f()}return!1},findIndex:function(t,e){var n,i=o(t);try{for(i.s();!(n=i.n()).done;){var r=n.value;if(JSON.stringify(r)===JSON.stringify(e))return t.indexOf(r)}}catch(t){i.e(t)}finally{i.f()}return-1},flattenRowspanCells:function(t){for(var e=0;e<t.length;e++)for(var n=t[e],i=0,r=Object.keys(n);i<r.length;i++){var o=r[i];if(o.startsWith("_")&&o.endsWith("_rowspan")){var a=o.replace(/^_/,"").replace(/_rowspan$/,""),s=+n[o]||1;if(!(s<=1)){for(var l=Ms(n,a,!1),c=n.hasOwnProperty(a),u=1;u<s&&e+u<t.length;u++){var h=t[e+u];if(a.includes(".")&&!c){for(var d=a.split("."),p=h,g=0;g<d.length-1;g++)"object"===f(p[d[g]])&&null!==p[d[g]]||(p[d[g]]={}),p=p[d[g]];p[d[d.length-1]]=l}else h[a]=l;delete h["_".concat(a,"_rowspan")]}delete n[o]}}}},getFieldTitle:function(t,e){var n,i=o(t);try{for(i.s();!(n=i.n()).done;){var r=n.value;if(r.field===e)return r.title}}catch(t){i.e(t)}finally{i.f()}return""},getItemField:Ms,getRealDataAttr:Hs,hasRowspanCells:function(t){var e,n=o(t);try{for(n.s();!(e=n.n()).done;)for(var i=e.value,r=0,a=Object.keys(i);r<a.length;r++){var s=a[r];if(s.startsWith("_")&&s.endsWith("_rowspan")&&(+i[s]||0)>1)return!0}}catch(t){n.e(t)}finally{n.f()}return!1},setFieldIndex:function(t){var e,n=0,i=[],r=o(t[0]);try{for(r.s();!(e=r.n()).done;){n+=+e.value.colspan||1}}catch(t){r.e(t)}finally{r.f()}for(var a=0;a<t.length;a++){i[a]=[];for(var s=0;s<n;s++)i[a][s]=!1}for(var l=0;l<t.length;l++){var c,u=o(t[l]);try{for(u.s();!(c=u.n()).done;){var h=c.value,f=+h.rowspan||1,d=+h.colspan||1,p=i[l].indexOf(!1);h.colspanIndex=p,1===d?(h.fieldIndex=p,void 0===h.field&&(h.field=p)):h.colspanGroup=+h.colspan;for(var g=0;g<f;g++)for(var v=0;v<d;v++)i[l+g][p+v]=!0}}catch(t){u.e(t)}finally{u.f()}}},trToData:function(t,e){for(var n=[],i=[],r=Array.from(e),o=0;o<r.length;o++){var a=r[o],s={};s._id=Ka.attr(a,"id"),s._class=Ka.attr(a,"class"),s._data=Hs(l({},a.dataset)),s._style=Ka.attr(a,"style");for(var c=Ka.children(a,"td,th"),u=0;u<c.length;u++){for(var h=c[u],f=parseInt(Ka.attr(h,"colspan"),10)||1,d=parseInt(Ka.attr(h,"rowspan"),10)||1,p=u;i[o]&&i[o][p];p++);for(var g=p;g<p+f;g++)for(var v=o;v<o+d;v++)i[v]||(i[v]=[]),i[v][g]=!0;var b=t[p].field;s[b]=Ps(Ka.html(h).trim()),s["_".concat(b,"_id")]=Ka.attr(h,"id"),s["_".concat(b,"_class")]=Ka.attr(h,"class"),s["_".concat(b,"_rowspan")]=Ka.attr(h,"rowspan"),s["_".concat(b,"_colspan")]=Ka.attr(h,"colspan"),s["_".concat(b,"_title")]=Ka.attr(h,"title"),s["_".concat(b,"_data")]=Hs(l({},h.dataset)),s["_".concat(b,"_style")]=Ka.attr(h,"style")}n.push(s)}return n},updateFieldGroup:function(t,e){var n,i,r=(n=[]).concat.apply(n,u(t)),a=o(t);try{for(a.s();!(i=a.n()).done;){var s,l=o(i.value);try{for(l.s();!(s=l.n()).done;){var c=s.value;if(c.colspanGroup>1){for(var h=0,f=function(t){var e=r.filter(function(e){return e.fieldIndex===t}),n=e[e.length-1];if(!n)return 1;if(e.length>1)for(var i=0;i<e.length-1;i++)e[i].visible=n.visible;n.visible&&h++},d=c.colspanIndex;d<c.colspanIndex+c.colspanGroup;d++)f(d);c.colspan=h,c.visible=h>0}}}catch(t){l.e(t)}finally{l.f()}}}catch(t){a.e(t)}finally{a.f()}if(!(t.length<2)){var p,g=o(e);try{var v=function(){var t=p.value,e=r.filter(function(e){return e.fieldIndex===t.fieldIndex});if(e.length>1){var n,i=o(e);try{for(i.s();!(n=i.n()).done;){n.value.visible=t.visible}}catch(t){i.e(t)}finally{i.f()}}};for(g.s();!(p=g.n()).done;)v()}catch(t){g.e(t)}finally{g.f()}}}}),qs={};!function(){if(Us)return qs;Us=1;var t=E(),e=xt(),n=go(),i=_e(),r=It(),o=Pn(),a=sr(),s=Tt(),l=Bt(),c=yo(),u=wo(),h=So(),f=e("".indexOf);n("match",function(e,n,d){return[function(n){var i=s(this),o=r(n)?l(n,e):void 0;return o?t(o,n,i):new RegExp(n)[e](a(i))},function(t){var e=i(this),r=a(t),s=d(n,e,r);if(s.done)return s.value;var l=a(u(e));if(!~f(l,"g"))return h(e,r);var p=!!~f(l,"u")||!!~f(l,"v");e.lastIndex=0;for(var g,v=[],b=0;null!==(g=h(e,r));){var m=a(g[0]);v[b]=m,""===m&&(e.lastIndex=c(r,o(e.lastIndex),p)),b++}return 0===b?null:v}]})}();var Ws,Gs,Ks,Ys,Js,Qs={};function Xs(){return Gs?Ws:(Gs=1,Ws=Object.is||function(t,e){return t===e?0!==t||1/t==1/e:t!=t&&e!=e})}function Zs(){if(Js)return Ys;Js=1;var t=Pt(),e=Vi(),n=ga(),i=rn(),r=Ne().f,o=Wa(),a=Ga(),s=fe(),l=I(),c="Array Iterator",u=i.set,h=i.getterFor(c);Ys=o(Array,"Array",function(e,n){u(this,{type:c,target:t(e),index:0,kind:n})},function(){var t=h(this),e=t.target,n=t.index++;if(!e||n>=e.length)return t.target=null,a(void 0,!0);switch(t.kind){case"keys":return a(n,!1);case"values":return a(e[n],!1)}return a([n,e[n]],!1)},"values");var f=n.Arguments=n.Array;if(e("keys"),e("values"),e("entries"),!s&&l&&"values"!==f.name)try{r(f,"name",{value:"values"})}catch(t){}return Ys}!function(){if(Ks)return Qs;Ks=1;var t=E(),e=go(),n=_e(),i=It(),r=Tt(),o=Xs(),a=sr(),s=Bt(),l=So();e("search",function(e,c,u){return[function(n){var o=r(this),l=i(n)?s(n,e):void 0;return l?t(l,n,o):new RegExp(n)[e](a(o))},function(t){var e=n(this),i=a(t),r=u(c,e,i);if(r.done)return r.value;var s=e.lastIndex;o(s,0)||(e.lastIndex=0);var h=l(e,i);return o(e.lastIndex,s)||(e.lastIndex=s),null===h?-1:h.index}]})}(),Zs();var tl,el,nl,il={};function rl(){if(el)return tl;el=1;var t=xt();return tl=t([].slice)}!function(){if(nl)return il;nl=1;var t=pi(),e=gi(),n=Si(),i=It(),r=Tn(),o=An(),a=Pt(),s=bi(),l=mi(),c=ye(),u=Ci(),h=rl(),f=u("slice"),d=c("species"),p=Array,g=Math.max;t({target:"Array",proto:!0,forced:!f},{slice:function(t,c){var u,f,v,b=a(this),m=o(b),y=r(t,m),w=r(void 0===c?m:c,m);if(e(b)&&(u=b.constructor,(n(u)&&(u===p||e(u.prototype))||i(u)&&null===(u=u[d]))&&(u=void 0),u===p||void 0===u))return h(b,y,w);for(f=new(void 0===u?p:u)(g(w-y,0)),v=0;y<w;y++,v++)y in b&&s(f,v,b[y]);return l(f,v),f}})}();var ol,al={};!function(){if(ol)return al;ol=1;var t=m(),e=Mo(),n=Uo(),i=Zs(),r=Le(),o=Ha(),a=ye()("iterator"),s=i.values,l=function(t,n){if(t){if(t[a]!==s)try{r(t,a,s)}catch(e){t[a]=s}if(o(t,n,!0),e[n])for(var l in i)if(t[l]!==i[l])try{r(t,l,i[l])}catch(e){t[l]=i[l]}}};for(var c in e)l(t[c]&&t[c].prototype,c);l(n,"DOMTokenList")}();var sl,ll,cl,ul,hl,fl,dl,pl,gl,vl,bl,ml,yl,wl,Sl,xl,Ol={};function Cl(){if(cl)return ll;cl=1;var t=m(),e=I(),n=Object.getOwnPropertyDescriptor;return ll=function(i){if(!e)return t[i];var r=n(t,i);return r&&r.value}}function kl(){if(dl)return fl;dl=1;var t=an();return fl=function(e,n,i){for(var r in n)t(e,r,n[r],i);return e}}function Tl(){if(gl)return pl;gl=1;var t=Et(),e=TypeError;return pl=function(n,i){if(t(i,n))return n;throw new e("Incorrect invocation")}}function Pl(){if(bl)return vl;bl=1;var t=TypeError;return vl=function(e,n){if(e<n)throw new t("Not enough arguments");return e}}function Al(){if(yl)return ml;yl=1;var t=rl(),e=Math.floor,n=function(i,r){var o=i.length;if(o<8)for(var a,s,l=1;l<o;){for(s=l,a=i[l];s&&r(i[s-1],a)>0;)i[s]=i[--s];s!==l++&&(i[s]=a)}else for(var c=e(o/2),u=n(t(i,0,c),r),h=n(t(i,c),r),f=u.length,d=h.length,p=0,g=0;p<f||g<d;)i[p+g]=p<f&&g<d?r(u[p],h[g])<=0?u[p++]:h[g++]:p<f?u[p++]:h[g++];return i};return ml=n}function Il(){if(Sl)return wl;Sl=1,Zs(),function(){if(sl)return Ol;sl=1;var t=pi(),e=xt(),n=Tn(),i=RangeError,r=String.fromCharCode,o=String.fromCodePoint,a=e([].join);t({target:"String",stat:!0,arity:1,forced:!!o&&1!==o.length},{fromCodePoint:function(t){for(var e,o=[],s=arguments.length,l=0;s>l;){if(n(e=+arguments[l],1114111)!==e)throw new i(e+" is not a valid code point");o[l++]=e<65536?r(e):r(55296+((e-=65536)>>10),e%1024+56320)}return a(o,"")}})}();var t=pi(),e=m(),n=Cl(),i=$t(),r=E(),o=xt(),a=I(),s=function(){if(hl)return ul;hl=1;var t=A(),e=ye(),n=I(),i=fe(),r=e("iterator");return ul=!t(function(){var t=new URL("b?a=1&b=2&c=3","https://a"),e=t.searchParams,o=new URLSearchParams("a=1&a=2&b=3"),a="";return t.pathname="c%20d",e.forEach(function(t,n){e.delete("b"),a+=n+t}),o.delete("a",2),o.delete("b",void 0),i&&(!t.toJSON||!o.has("a",1)||o.has("a",2)||!o.has("a",void 0)||o.has("b"))||!e.size&&(i||!n)||!e.sort||"https://a/c%20d?a=1&c=3"!==t.href||"3"!==e.get("c")||"a=1"!==String(new URLSearchParams("?a=1"))||!e[r]||"a"!==new URL("https://a@b").username||"b"!==new URLSearchParams(new URLSearchParams("a=b")).get("a")||"xn--e1aybc"!==new URL("https://тест").host||"#%D0%B1"!==new URL("https://a#б").hash||"a1c3"!==a||"x"!==new URL("https://x",void 0).host})}(),l=an(),c=ps(),u=kl(),h=Ha(),f=Ma(),d=rn(),p=Tl(),g=At(),v=be(),b=_r(),y=wi(),w=_e(),S=It(),x=sr(),O=Bi(),C=St(),k=ma(),T=ba(),P=Ga(),$=Pl(),R=ye(),j=Al(),_=R("iterator"),N="URLSearchParams",L=N+"Iterator",F=d.set,D=d.getterFor(N),B=d.getterFor(L),V=n("fetch"),H=n("Request"),M=n("Headers"),U=H&&H.prototype,z=M&&M.prototype,q=e.TypeError,W=e.encodeURIComponent,G=String.fromCharCode,K=i("String","fromCodePoint"),Y=parseInt,J=o("".charAt),Q=o([].join),X=o([].push),Z=o("".replace),tt=o([].shift),et=o([].splice),nt=o("".split),it=o("".slice),rt=o(/./.exec),ot=/\+/g,at=/^[0-9a-f]+$/i,st=function(t,e){var n=it(t,e,e+2);return rt(at,n)?Y(n,16):NaN},lt=function(t){for(var e=0,n=128;n>0&&0!==(t&n);n>>=1)e++;return e},ct=function(t){var e=null,n=t.length;switch(n){case 1:e=t[0];break;case 2:e=(31&t[0])<<6|63&t[1];break;case 3:e=(15&t[0])<<12|(63&t[1])<<6|63&t[2];break;case 4:e=(7&t[0])<<18|(63&t[1])<<12|(63&t[2])<<6|63&t[3]}return null===e||e>1114111||e>=55296&&e<=57343||e<(n>3?65536:n>2?2048:n>1?128:0)?null:e},ut=function(t){for(var e=(t=Z(t,ot," ")).length,n="",i=0;i<e;){var r=J(t,i);if("%"===r){if("%"===J(t,i+1)||i+3>e){n+="%",i++;continue}var o=st(t,i+1);if(o!=o){n+=r,i++;continue}i+=2;var a=lt(o);if(0===a)r=G(o);else{if(1===a||a>4){n+="�",i++;continue}for(var s=[o],l=1;l<a&&!(++i+3>e||"%"!==J(t,i));){var c=st(t,i+1);if(c!=c||c>191||c<128)break;if(1===l){if(224===o&&c<160)break;if(237===o&&c>159)break;if(240===o&&c<144)break;if(244===o&&c>143)break}X(s,c),i+=2,l++}if(s.length!==a){n+="�";continue}var u=ct(s);if(null===u){for(var h=0;h<a;h++)n+="�";i++;continue}r=K(u)}}n+=r,i++}return n},ht=/[!'()~]|%20/g,ft={"!":"%21","'":"%27","(":"%28",")":"%29","~":"%7E","%20":"+"},dt=function(t){return ft[t]},pt=function(t){return Z(W(t),ht,dt)},gt=f(function(t,e){F(this,{type:L,target:D(t).entries,index:0,kind:e})},N,function(){var t=B(this),e=t.target,n=t.index++;if(!e||n>=e.length)return t.target=null,P(void 0,!0);var i=e[n];switch(t.kind){case"keys":return P(i.key,!1);case"values":return P(i.value,!1)}return P([i.key,i.value],!1)},!0),vt=function(t){this.entries=[],this.url=null,void 0!==t&&(S(t)?this.parseObject(t):this.parseQuery("string"==typeof t?"?"===J(t,0)?it(t,1):t:x(t)))};vt.prototype={type:N,bindURL:function(t){this.url=t,this.update()},parseObject:function(t){var e,n,i,o,a,s,l,c=this.entries,u=T(t);if(u)for(n=(e=k(t,u)).next;!(i=r(n,e)).done;){if(a=(o=k(w(i.value))).next,(s=r(a,o)).done||(l=r(a,o)).done||!r(a,o).done)throw new q("Expected sequence with length 2");X(c,{key:x(s.value),value:x(l.value)})}else for(var h in t)v(t,h)&&X(c,{key:h,value:x(t[h])})},parseQuery:function(t){if(t)for(var e,n,i=this.entries,r=nt(t,"&"),o=0;o<r.length;)(e=r[o++]).length&&(n=nt(e,"="),X(i,{key:ut(tt(n)),value:ut(Q(n,"="))}))},serialize:function(){for(var t,e=this.entries,n=[],i=0;i<e.length;)t=e[i++],X(n,pt(t.key)+"="+pt(t.value));return Q(n,"&")},update:function(){this.entries.length=0,this.parseQuery(this.url.query)},updateURL:function(){this.url&&this.url.update()}};var bt=function(){p(this,mt);var t=F(this,new vt(arguments.length>0?arguments[0]:void 0));a||(this.size=t.entries.length)},mt=bt.prototype;if(u(mt,{append:function(t,e){var n=D(this);$(arguments.length,2),X(n.entries,{key:x(t),value:x(e)}),a||this.size++,n.updateURL()},delete:function(t){for(var e=D(this),n=$(arguments.length,1),i=e.entries,r=x(t),o=n<2?void 0:arguments[1],s=void 0===o?o:x(o),l=0;l<i.length;){var c=i[l];c.key!==r||void 0!==s&&c.value!==s?l++:et(i,l,1)}a||(this.size=i.length),e.updateURL()},get:function(t){var e=D(this).entries;$(arguments.length,1);for(var n=x(t),i=0;i<e.length;i++)if(e[i].key===n)return e[i].value;return null},getAll:function(t){var e=D(this).entries;$(arguments.length,1);for(var n=x(t),i=[],r=0;r<e.length;r++)e[r].key===n&&X(i,e[r].value);return i},has:function(t){for(var e=D(this).entries,n=$(arguments.length,1),i=x(t),r=n<2?void 0:arguments[1],o=void 0===r?r:x(r),a=0;a<e.length;){var s=e[a++];if(s.key===i&&(void 0===o||s.value===o))return!0}return!1},set:function(t,e){var n=D(this);$(arguments.length,2);for(var i,r=n.entries,o=!1,s=x(t),l=x(e),c=0;c<r.length;c++)(i=r[c]).key===s&&(o?et(r,c--,1):(o=!0,i.value=l));o||X(r,{key:s,value:l}),a||(this.size=r.length),n.updateURL()},sort:function(){var t=D(this);j(t.entries,function(t,e){return t.key>e.key?1:-1}),t.updateURL()},forEach:function(t){for(var e,n=D(this).entries,i=b(t,arguments.length>1?arguments[1]:void 0),r=0;r<n.length;)i((e=n[r++]).value,e.key,this)},keys:function(){return new gt(this,"keys")},values:function(){return new gt(this,"values")},entries:function(){return new gt(this,"entries")}},{enumerable:!0}),l(mt,_,mt.entries,{name:"entries"}),l(mt,"toString",function(){return D(this).serialize()},{enumerable:!0}),a&&c(mt,"size",{get:function(){return D(this).entries.length},configurable:!0,enumerable:!0}),h(bt,N),t({global:!0,constructor:!0,forced:!s},{URLSearchParams:bt}),!s&&g(M)){var yt=o(z.has),wt=o(z.set),Ot=function(t){if(S(t)){var e,n=t.body;if(y(n)===N)return e=t.headers?new M(t.headers):new M,yt(e,"content-type")||wt(e,"content-type","application/x-www-form-urlencoded;charset=UTF-8"),O(t,{body:C(0,x(n)),headers:C(0,e)})}return t};if(g(V)&&t({global:!0,enumerable:!0,dontCallGetSet:!0,forced:!0},{fetch:function(t){return V(t,arguments.length>1?Ot(arguments[1]):{})}}),g(H)){var Ct=function(t){return p(this,U),new H(t,arguments.length>1?Ot(arguments[1]):{})};U.constructor=Ct,Ct.prototype=U,t({global:!0,constructor:!0,dontCallGetSet:!0,forced:!0},{Request:Ct})}}return wl={URLSearchParams:bt,getState:D}}function $l(t){return t.detailView&&t.detailViewIcon&&!t.cardView}function El(t){return!isNaN(parseFloat(t))&&isFinite(t)}xl||(xl=1,Il());var Rl=Object.freeze({__proto__:null,addQueryToUrl:function(t,e){for(var n=t.split("#"),i=c(n[0].split("?"),2),r=i[0],o=i[1],a=new URLSearchParams(o),s=0,l=Object.entries(e);s<l.length;s++){var u=c(l[s],2),h=u[0],f=u[1];a.set(h,f)}return"".concat(r,"?").concat(a.toString(),"#").concat(n.slice(1).join("#"))},calculateObjectValue:function(t,e,n,i){var r=e;if("string"==typeof e){var a=e.split(".");if(a.length>1){r=window;var s,l=o(a);try{for(l.s();!(s=l.n()).done;){r=r[s.value]}}catch(t){l.e(t)}finally{l.f()}}else r=window[e]}return null!==r&&"object"===f(r)?r:"function"==typeof r?r.apply(t,n||[]):!r&&"string"==typeof e&&n&&Ts.apply(void 0,[e].concat(u(n)))?Ts.apply(void 0,[e].concat(u(n))):i},debounce:function(t,e,n){var i;return function(){var r=this,o=arguments,a=n&&!i;clearTimeout(i),i=setTimeout(function(){i=null,n||t.apply(r,o)},e),a&&t.apply(r,o)}},getDetailViewIndexOffset:function(t){return $l(t)&&"right"!==t.detailViewAlign?1:0},getEventName:function(t){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:"";return e=e||"".concat(+new Date).concat(~~(1e6*Math.random())),"".concat(t,"-").concat(e)},hasDetailViewIcon:$l,isIEBrowser:function(){return navigator.userAgent.includes("MSIE ")||/Trident.*rv:11\./.test(navigator.userAgent)},isNumeric:El});var jl=Object.freeze({__proto__:null,regexCompare:function(t,e){try{var n=e.match(/^\/(.*?)\/([gim]*)$/);if(-1!==t.toString().search(n?new RegExp(n[1],n[2]):new RegExp(e,"gim")))return!0}catch(t){return console.error(t),!1}return!1},replaceSearchMark:function(t,e){var n=t instanceof Element,i=n?t:document.createElement("div"),r=new RegExp(e,"gim"),a=function(t,e){for(var n,i=[],r=0;null!==(n=e.exec(t));){r!==n.index&&i.push(document.createTextNode(t.substring(r,n.index)));var o=document.createElement("mark");o.innerText=n[0],i.push(o),r=n.index+n[0].length}if(i.length)return r!==t.length&&i.push(document.createTextNode(t.substring(r))),i},s=function(t){for(var e=0;e<t.childNodes.length;e++){var n=t.childNodes[e];if(n.nodeType===document.TEXT_NODE){var i=a(n.data,r);if(i){var l,c=o(i);try{for(c.s();!(l=c.n()).done;){var u=l.value;t.insertBefore(u,n)}}catch(t){c.e(t)}finally{c.f()}t.removeChild(n),e+=i.length-1}}n.nodeType===document.ELEMENT_NODE&&s(n)}};return n||(i.innerHTML=t),s(i),n?i:i.innerHTML},sort:function(t,e,n,i,r,o){if(null==t&&(t=""),null==e&&(e=""),i.sortStable&&t===e&&(t=r,e=o),El(t)&&El(e))return(t=parseFloat(t))<(e=parseFloat(e))?-1*n:t>e?n:0;if(i.sortEmptyLast){if(""===t)return 1;if(""===e)return-1}return t===e?0:("string"!=typeof t&&(t=t.toString()),-1===t.localeCompare(e)?-1*n:n)}});var _l=Object.freeze({__proto__:null,getCheckboxHtml:function(t){var e=t.name,n=t.value,i=void 0===n?"":n,r=t.checked,o=void 0!==r&&r,a=t.disabled,s=void 0!==a&&a,l=t.label,c=void 0===l?"":l,u=t.extraClass,h=void 0===u?"":u,f=t.centered,d=void 0===f||f,p=t.withLabel,g=void 0!==p&&p,v=o?' checked="checked"':"",b=s?' disabled="disabled"':"",m=void 0!==i&&""!==i?' value="'.concat(Is(i),'"'):"",y=h?" ".concat(h):"",w=Is(e),S=As(c);return 5===Ya()?g?'<label class="dropdown-item dropdown-item-marker d-flex align-items-center gap-2">\n        <input class="form-check-input m-0'.concat(y,'" type="checkbox" name="').concat(w,'"').concat(m).concat(v).concat(b," />\n        <span>").concat(S,"</span>\n      </label>"):'<div class="form-check'.concat(d?" d-flex justify-content-center":"",'">\n      <input class="form-check-input').concat(y,'" type="checkbox" name="').concat(w,'"').concat(m).concat(v).concat(b," />\n    </div>"):g?'<label><input type="checkbox" name="'.concat(w,'"').concat(m).concat(v).concat(b).concat(y,"> <span>").concat(S,"</span></label>"):'<label><input type="checkbox" name="'.concat(w,'"').concat(m).concat(v).concat(b).concat(y," /><span></span></label>")},getCheckboxVdomConfig:function(t){var e=t.inputAttrs,n=t.formCheckClass,i=t.formCheckInputClass,r=t.centered,o=void 0===r||r;if(5===Ya()){var a=o?" d-flex justify-content-center":"";return{inputAttrs:l(l({},e),{},{class:i}),wrapperAttrs:{class:"".concat(n).concat(a)},wrapperTag:"div",hasSpan:!1}}return{inputAttrs:e,wrapperAttrs:{},wrapperTag:"label",hasSpan:!0}},getDropdownColumnCheckboxHtml:function(t){var e=t.dataField,n=t.value,i=t.checked?' checked="checked"':"",r=t.disabled?' disabled="disabled"':"",o=As(t.label);return 5===Ya()?'<label class="dropdown-item dropdown-item-marker d-flex align-items-center gap-2">\n      <input class="form-check-input m-0" type="checkbox" data-field="'.concat(Is(e),'" value="').concat(Is(n),'"').concat(i).concat(r," />\n      <span>").concat(o,"</span>\n    </label>"):'<input type="checkbox" data-field="'.concat(Is(e),'" value="').concat(Is(n),'"').concat(i).concat(r,"> <span>").concat(o,"</span>")},wrapCheckbox:function(t){var e=!(arguments.length>1&&void 0!==arguments[1])||arguments[1];return 5===Ya()?'<div class="form-check'.concat(e?" d-flex justify-content-center":"",'">').concat(t,"</div>"):"<label>".concat(t,"<span></span></label>")}}),Nl=l(l(l(l(l(l(l(l({},Qa),us),Es),Bs),zs),jl),Rl),_l),Ll=Nl.getBootstrapVersion(),Fl={3:{classes:{buttonActive:"active",buttons:"default",buttonsDropdown:"btn-group",buttonsGroup:"btn-group",buttonsPrefix:"btn",dropdownActive:"active",dropup:"dropup",input:"form-control",inputGroup:"input-group",inputPrefix:"input-",paginationActive:"active",paginationDropdown:"btn-group dropdown",pull:"pull",select:"form-control"},html:{dropdownCaret:'<span class="caret"></span>',icon:'<i class="%s %s"></i>',inputGroup:'<div class="input-group">%s<span class="input-group-btn">%s</span></div>',pageDropdown:['<ul class="dropdown-menu" role="menu">',"</ul>"],pageDropdownItem:'<li role="menuitem" class="%s"><a href="#">%s</a></li>',pagination:['<ul class="pagination%s">',"</ul>"],paginationItem:'<li class="page-item%s"><a class="page-link" aria-label="%s" href="javascript:void(0)">%s</a></li>',searchButton:'<button class="%s" type="button" name="search" title="%s">%s %s</button>',searchClearButton:'<button class="%s" type="button" name="clearSearch" title="%s">%s %s</button>',searchInput:'<input class="%s%s" type="text" placeholder="%s">',toolbarDropdown:['<ul class="dropdown-menu" role="menu">',"</ul>"],toolbarDropdownItem:'<li class="dropdown-item-marker" role="menuitem"><label>%s</label></li>',toolbarDropdownSeparator:'<li class="divider"></li>'}},4:{classes:{buttonActive:"active",buttons:"secondary",buttonsDropdown:"btn-group",buttonsGroup:"btn-group",buttonsPrefix:"btn",dropdownActive:"active",dropup:"dropup",input:"form-control",inputGroup:"btn-group",inputPrefix:"form-control-",paginationActive:"active",paginationDropdown:"btn-group dropdown",pull:"float",select:"form-control"},html:{dropdownCaret:'<span class="caret"></span>',icon:'<i class="%s %s"></i>',inputGroup:'<div class="input-group">%s<div class="input-group-append">%s</div></div>',pageDropdown:['<div class="dropdown-menu">',"</div>"],pageDropdownItem:'<a class="dropdown-item %s" href="#">%s</a>',pagination:['<ul class="pagination%s">',"</ul>"],paginationItem:'<li class="page-item%s"><a class="page-link" aria-label="%s" href="javascript:void(0)">%s</a></li>',searchButton:'<button class="%s" type="button" name="search" title="%s">%s %s</button>',searchClearButton:'<button class="%s" type="button" name="clearSearch" title="%s">%s %s</button>',searchInput:'<input class="%s%s" type="text" placeholder="%s">',toolbarDropdown:['<div class="dropdown-menu dropdown-menu-right">',"</div>"],toolbarDropdownItem:'<label class="dropdown-item dropdown-item-marker">%s</label>',toolbarDropdownSeparator:'<div class="dropdown-divider"></div>'}},5:{classes:{buttonActive:"active",buttons:"secondary",buttonsDropdown:"btn-group",buttonsGroup:"btn-group",buttonsPrefix:"btn",dropdownActive:"active",dropup:"dropup",formCheck:"form-check",formCheckInput:"form-check-input",input:"form-control",inputGroup:"btn-group",inputPrefix:"form-control-",paginationActive:"active",paginationDropdown:"btn-group dropdown",pull:"float",select:"form-select"},html:{dataToggle:"data-bs-toggle",dropdownCaret:'<span class="caret"></span>',icon:'<i class="%s %s"></i>',inputGroup:'<div class="input-group">%s%s</div>',pageDropdown:['<div class="dropdown-menu">',"</div>"],pageDropdownItem:'<a class="dropdown-item %s" href="#">%s</a>',pagination:['<ul class="pagination%s">',"</ul>"],paginationItem:'<li class="page-item%s"><a class="page-link" aria-label="%s" href="javascript:void(0)">%s</a></li>',searchButton:'<button class="%s" type="button" name="search" title="%s">%s %s</button>',searchClearButton:'<button class="%s" type="button" name="clearSearch" title="%s">%s %s</button>',searchInput:'<input class="%s%s" type="text" placeholder="%s">',toolbarDropdown:['<div class="dropdown-menu dropdown-menu-end">',"</div>"],toolbarDropdownItem:'<label class="dropdown-item dropdown-item-marker">%s</label>',toolbarDropdownSeparator:'<div class="dropdown-divider"></div>'}}}[Ll||5],Dl={ajax:void 0,ajaxOptions:{},buttons:{},buttonsAlign:"right",buttonsAttributeTitle:"title",buttonsClass:Fl.classes.buttons,buttonsOrder:["paginationSwitch","refresh","toggle","fullscreen","columns"],buttonsPrefix:Fl.classes.buttonsPrefix,buttonsToolbar:void 0,cache:!0,cardView:!1,checkboxHeader:!0,classes:"table table-bordered table-hover",clickToSelect:!1,columns:[[]],contentType:"application/json",customSearch:void 0,customSort:void 0,data:[],dataField:"rows",dataType:"json",detailFilter:function(t,e){return!0},detailFormatter:function(t,e){return""},detailView:!1,detailViewAlign:"left",detailViewByClick:!1,detailViewIcon:!0,escape:!1,escapeTitle:!0,filterOptions:{filterAlgorithm:"and"},fixedScroll:!1,footerField:"footer",footerStyle:function(t){return{}},headerStyle:function(t){return{}},height:void 0,icons:{},iconSize:void 0,iconsPrefix:void 0,idField:void 0,ignoreClickToSelectOn:function(t){var e=t.tagName;return["A","BUTTON"].includes(e)},loadingFontSize:"auto",loadingTemplate:function(t){return'<span class="loading-wrap">\n    <span class="loading-text">'.concat(t,'</span>\n    <span class="animation-wrap"><span class="animation-dot"></span></span>\n    </span>\n  ')},locale:void 0,maintainMetaData:!1,method:"get",minimumCountColumns:1,multipleSelectRow:!1,pageList:[10,25,50,100],pageNumber:1,pageSize:10,pagination:!1,paginationDetailHAlign:"left",paginationHAlign:"right",paginationLoadMore:!1,paginationLoop:!0,paginationNextText:"&rsaquo;",paginationPagesBySide:1,paginationParts:["pageInfo","pageSize","pageList"],paginationPreText:"&lsaquo;",paginationSuccessivelySize:5,paginationUseIntermediate:!1,paginationVAlign:"bottom",queryParams:function(t){return t},queryParamsType:"limit",regexSearch:!1,rememberOrder:!1,responseHandler:function(t){return t},rowAttributes:function(t,e){return{}},rowStyle:function(t,e){return{}},search:!1,searchable:!1,searchAccentNeutralise:!1,searchAlign:"right",searchHighlight:!1,searchOnEnterKey:!1,searchSelector:!1,searchText:"",searchTimeOut:500,selectItemName:"btSelectItem",serverSort:!0,showButtonIcons:!0,showButtonText:!1,showColumns:!1,showColumnsSearch:!1,showColumnsToggleAll:!1,showExtendedPagination:!1,showFooter:!1,showFullscreen:!1,showHeader:!0,showPaginationSwitch:!1,showRefresh:!1,showSearchButton:!1,showSearchClearButton:!1,showToggle:!1,sidePagination:"client",silentSort:!0,singleSelect:!1,smartDisplay:!0,sortable:!0,sortClass:void 0,sortEmptyLast:!1,sortName:void 0,sortOrder:void 0,sortReset:!1,sortResetPage:!1,sortStable:!1,strictSearch:!1,theadClasses:"",toolbar:void 0,toolbarAlign:"left",totalField:"total",totalNotFiltered:0,totalNotFilteredField:"totalNotFiltered",totalRows:0,trimOnSearch:!0,undefinedText:"-",uniqueId:void 0,url:void 0,virtualScroll:!1,virtualScrollItemHeight:void 0,visibleSearch:!1,onAll:function(t,e){return!1},onCheck:function(t){return!1},onCheckAll:function(t){return!1},onCheckSome:function(t){return!1},onClickCell:function(t,e,n,i){return!1},onClickRow:function(t,e){return!1},onCollapseRow:function(t,e){return!1},onColumnSwitch:function(t,e){return!1},onColumnSwitchAll:function(t){return!1},onDblClickCell:function(t,e,n,i){return!1},onDblClickRow:function(t,e){return!1},onExpandRow:function(t,e,n){return!1},onLoadError:function(t){return!1},onLoadSuccess:function(t){return!1},onPageChange:function(t,e){return!1},onPostBody:function(){return!1},onPostFooter:function(){return!1},onPostHeader:function(){return!1},onPreBody:function(t){return!1},onRefresh:function(t){return!1},onRefreshOptions:function(t){return!1},onResetView:function(){return!1},onScrollBody:function(){return!1},onSearch:function(t){return!1},onSort:function(t,e){return!1},onToggle:function(t){return!1},onTogglePagination:function(t){return!1},onUncheck:function(t){return!1},onUncheckAll:function(t){return!1},onUncheckSome:function(t){return!1},onVirtualScroll:function(t,e){return!1}},Bl={formatAllRows:function(){return"All"},formatClearSearch:function(){return"Clear Search"},formatColumns:function(){return"Columns"},formatColumnsToggleAll:function(){return"Toggle all"},formatDetailPagination:function(t){return"Showing ".concat(t," rows")},formatFullscreen:function(){return"Fullscreen"},formatLoadingMessage:function(){return"Loading, please wait"},formatNoMatches:function(){return"No matching records found"},formatPaginationSwitch:function(){return"Hide/Show pagination"},formatPaginationSwitchDown:function(){return"Show pagination"},formatPaginationSwitchUp:function(){return"Hide pagination"},formatRecordsPerPage:function(t){return"".concat(t," rows per page")},formatRefresh:function(){return"Refresh"},formatSearch:function(){return"Search"},formatShowingRows:function(t,e,n,i){return void 0!==i&&i>0&&i>n?"Showing ".concat(t," to ").concat(e," of ").concat(n," rows (filtered from ").concat(i," total rows)"):"Showing ".concat(t," to ").concat(e," of ").concat(n," rows")},formatSRPaginationNextText:function(){return"next page"},formatSRPaginationPageText:function(t){return"to page ".concat(t)},formatSRPaginationPreText:function(){return"previous page"},formatToggleOff:function(){return"Hide card view"},formatToggleOn:function(){return"Show card view"}},Vl={align:void 0,cardVisible:!0,cellStyle:void 0,checkbox:!1,checkboxEnabled:!0,class:void 0,clickToSelect:!0,colspan:void 0,detailFormatter:void 0,escape:void 0,events:void 0,falign:void 0,field:void 0,footerFormatter:void 0,footerStyle:void 0,formatter:void 0,halign:void 0,order:"asc",radio:!1,rowspan:void 0,searchable:!0,searchFormatter:!0,searchHighlightFormatter:!1,showSelectTitle:!1,sortable:!1,sorter:void 0,sortName:void 0,switchable:!0,switchableLabel:void 0,title:void 0,titleTooltip:void 0,valign:void 0,visible:!0,width:void 0,widthUnit:"px"};Object.assign(Dl,Bl);var Hl,Ml={COLUMN_DEFAULTS:Vl,CONSTANTS:Fl,DEFAULTS:Dl,EVENTS:{"all.bs.table":"onAll","check-all.bs.table":"onCheckAll","check-some.bs.table":"onCheckSome","check.bs.table":"onCheck","click-cell.bs.table":"onClickCell","click-row.bs.table":"onClickRow","collapse-row.bs.table":"onCollapseRow","column-switch-all.bs.table":"onColumnSwitchAll","column-switch.bs.table":"onColumnSwitch","dbl-click-cell.bs.table":"onDblClickCell","dbl-click-row.bs.table":"onDblClickRow","expand-row.bs.table":"onExpandRow","load-error.bs.table":"onLoadError","load-success.bs.table":"onLoadSuccess","page-change.bs.table":"onPageChange","post-body.bs.table":"onPostBody","post-footer.bs.table":"onPostFooter","post-header.bs.table":"onPostHeader","pre-body.bs.table":"onPreBody","refresh-options.bs.table":"onRefreshOptions","refresh.bs.table":"onRefresh","reset-view.bs.table":"onResetView","scroll-body.bs.table":"onScrollBody","search.bs.table":"onSearch","sort.bs.table":"onSort","toggle-pagination.bs.table":"onTogglePagination","toggle.bs.table":"onToggle","uncheck-all.bs.table":"onUncheckAll","uncheck-some.bs.table":"onUncheckSome","uncheck.bs.table":"onUncheck","virtual-scroll.bs.table":"onVirtualScroll"},ICONS:{glyphicon:{clearSearch:"glyphicon-trash",columns:"glyphicon-th icon-th",detailClose:"glyphicon-minus icon-minus",detailOpen:"glyphicon-plus icon-plus",fullscreen:"glyphicon-fullscreen",paginationSwitchDown:"glyphicon-collapse-down icon-chevron-down",paginationSwitchUp:"glyphicon-collapse-up icon-chevron-up",refresh:"glyphicon-refresh icon-refresh",search:"glyphicon-search",toggleOff:"glyphicon-list-alt icon-list-alt",toggleOn:"glyphicon-list-alt icon-list-alt"},fa:{clearSearch:"fa-trash",columns:"fa-th-list",detailClose:"fa-minus",detailOpen:"fa-plus",fullscreen:"fa-arrows-alt",paginationSwitchDown:"fa-caret-square-down",paginationSwitchUp:"fa-caret-square-up",refresh:"fa-sync",search:"fa-search",toggleOff:"fa-toggle-off",toggleOn:"fa-toggle-on"},bi:{clearSearch:"bi-trash",columns:"bi-list-ul",detailClose:"bi-dash",detailOpen:"bi-plus",fullscreen:"bi-arrows-move",paginationSwitchDown:"bi-caret-down-square",paginationSwitchUp:"bi-caret-up-square",refresh:"bi-arrow-clockwise",search:"bi-search",toggleOff:"bi-toggle-off",toggleOn:"bi-toggle-on"},icon:{clearSearch:"icon-trash-2",columns:"icon-list",detailClose:"icon-minus",detailOpen:"icon-plus",fullscreen:"icon-maximize",paginationSwitchDown:"icon-arrow-up-circle",paginationSwitchUp:"icon-arrow-down-circle",refresh:"icon-refresh-cw",search:"icon-search",toggleOff:"icon-toggle-right",toggleOn:"icon-toggle-right"},"material-icons":{clearSearch:"delete",columns:"view_list",detailClose:"remove",detailOpen:"add",fullscreen:"fullscreen",paginationSwitchDown:"grid_on",paginationSwitchUp:"grid_off",refresh:"refresh",search:"search",sort:"sort",toggleOff:"tablet",toggleOn:"tablet_android"}},LOCALES:{en:Bl,"en-US":Bl},METHODS:["getOptions","refreshOptions","getData","getFooterData","getSelections","load","append","prepend","remove","removeAll","insertRow","updateRow","getRowByUniqueId","updateByUniqueId","removeByUniqueId","updateCell","updateCellByUniqueId","showRow","hideRow","getHiddenRows","showColumn","hideColumn","getVisibleColumns","getHiddenColumns","showAllColumns","hideAllColumns","mergeCells","checkAll","uncheckAll","checkInvert","check","uncheck","checkBy","uncheckBy","refresh","destroy","resetView","showLoading","hideLoading","togglePagination","toggleFullscreen","toggleView","resetSearch","filterBy","sortBy","sortReset","scrollTo","getScrollPosition","selectPage","prevPage","nextPage","toggleDetailView","expandRow","collapseRow","expandRowByUniqueId","collapseRowByUniqueId","expandAllRows","collapseAllRows","updateColumnTitle","updateFormatText"],THEME:"bootstrap".concat(Ll),VERSION:"1.27.3"},Ul={initConstants:function(){var e=this.options;this.constants=Ml.CONSTANTS,this.constants.theme=t.fn.bootstrapTable.theme,this.constants.dataToggle=this.constants.html.dataToggle||"data-toggle";var n=Nl.getIconsPrefix(t.fn.bootstrapTable.theme);"string"==typeof e.icons&&(e.icons=Nl.calculateObjectValue(null,e.icons)),e.iconsPrefix=e.iconsPrefix||t.fn.bootstrapTable.defaults.iconsPrefix||n,e.icons=Object.assign(Nl.getIcons(Ml.ICONS,e.iconsPrefix),t.fn.bootstrapTable.defaults.icons,e.icons);var i=e.buttonsPrefix?"".concat(e.buttonsPrefix,"-"):"";this.constants.buttonsClass=[e.buttonsPrefix,i+e.buttonsClass,Nl.sprintf("".concat(i,"%s"),e.iconSize)].join(" ").trim(),this.buttons=Nl.calculateObjectValue(this,e.buttons,[],{}),"object"!==f(this.buttons)&&(this.buttons={})},initLocale:function(){if(this.options.locale){var e=t.fn.bootstrapTable.locales,n=this.options.locale.split(/-|_/);n[0]=n[0].toLowerCase(),n[1]&&(n[1]=n[1].toUpperCase());var i={};e[this.options.locale]?i=e[this.options.locale]:e[n.join("-")]?i=e[n.join("-")]:e[n[0]]&&(i=e[n[0]]),this._defaultLocales=this._defaultLocales||{};for(var r=0,o=Object.entries(i);r<o.length;r++){var a=c(o[r],2),s=a[0],l=a[1],u=this._defaultLocales.hasOwnProperty(s)?this._defaultLocales[s]:Ml.DEFAULTS[s];this.options[s]===u&&(this.options[s]=l,this._defaultLocales[s]=l)}}},initContainer:function(){var e=["top","both"].includes(this.options.paginationVAlign)?'<div class="fixed-table-pagination clearfix"></div>':"",n=["bottom","both"].includes(this.options.paginationVAlign)?'<div class="fixed-table-pagination"></div>':"",i=Nl.calculateObjectValue(this.options,this.options.loadingTemplate,[this.options.formatLoadingMessage()]);this.$container=t('\n      <div class="bootstrap-table '.concat(this.constants.theme,'">\n      <div class="fixed-table-toolbar"></div>\n      ').concat(e,'\n      <div class="fixed-table-container">\n      <div class="fixed-table-header"><table></table></div>\n      <div class="fixed-table-body">\n      <div class="fixed-table-loading">\n      ').concat(i,'\n      </div>\n      </div>\n      <div class="fixed-table-footer"></div>\n      </div>\n      ').concat(n,"\n      </div>\n    ")),this.$container.insertAfter(this.$el),this.$tableContainer=this.$container.find(".fixed-table-container"),this.$tableHeader=this.$container.find(".fixed-table-header"),this.$tableBody=this.$container.find(".fixed-table-body"),this.$tableLoading=this.$container.find(".fixed-table-loading"),this.$tableFooter=this.$el.find("tfoot"),this.options.buttonsToolbar?this.$toolbar=t("body").find(this.options.buttonsToolbar):this.$toolbar=this.$container.find(".fixed-table-toolbar"),this.$pagination=this.$container.find(".fixed-table-pagination"),this.$tableBody.append(this.$el),this.$container.after('<div class="clearfix"></div>'),this.$el.addClass(this.options.classes),this.$tableLoading.addClass(this.options.classes),this.options.height&&(this.$tableContainer.addClass("fixed-height"),this.options.showFooter&&this.$tableContainer.addClass("has-footer"),this.options.classes.split(" ").includes("table-bordered")&&(this.$tableBody.append('<div class="fixed-table-border"></div>'),this.$tableBorder=this.$tableBody.find(".fixed-table-border"),this.$tableLoading.addClass("fixed-table-border")),this.$tableFooter=this.$container.find(".fixed-table-footer"))},initTable:function(){var e=this,n=[];if(this.$header=this.$el.find(">thead"),this.$header.length?this.options.theadClasses&&this.$header.addClass(this.options.theadClasses):this.$header=t('<thead class="'.concat(this.options.theadClasses,'"></thead>')).appendTo(this.$el),this._headerTrClasses=[],this._headerTrStyles=[],this.$header.find("tr").each(function(i,r){var o=t(r),a=[];o.find("th").each(function(e,n){var i=t(n);void 0!==i.data("field")&&i.data("field","".concat(i.data("field")));var r=Object.assign({},i.data());for(var o in r)t.fn.bootstrapTable.columnDefaults.hasOwnProperty(o)&&delete r[o];a.push(Nl.extend({},{_data:Nl.getRealDataAttr(r),title:i.html(),class:i.attr("class"),titleTooltip:i.attr("title"),rowspan:i.attr("rowspan")?+i.attr("rowspan"):void 0,colspan:i.attr("colspan")?+i.attr("colspan"):void 0,scope:i.attr("scope")?i.attr("scope"):void 0,style:Nl.normalizeStyle(i.attr("style"))},i.data()))}),n.push(a),o.attr("class")&&e._headerTrClasses.push(o.attr("class")),o.attr("style")&&e._headerTrStyles.push(o.attr("style"))}),Array.isArray(this.options.columns[0])||(this.options.columns=[this.options.columns]),this.options.columns=Nl.extend(!0,[],n,this.options.columns),this.columns=[],this.fieldsColumnsIndex=[],!1!==this.optionsColumnsChanged&&Nl.setFieldIndex(this.options.columns),this.options.columns.forEach(function(t,n){t.forEach(function(t,i){var r=Nl.extend({},Ml.COLUMN_DEFAULTS,t,{passed:t});void 0!==r.fieldIndex&&(e.columns[r.fieldIndex]=r,e.fieldsColumnsIndex[r.field]=r.fieldIndex),e.options.columns[n][i]=r})}),!this.options.data.length){var i=Nl.trToData(this.columns,this.$el.find(">tbody>tr").get());i.length&&(this.options.data=i,this.fromHtml=!0)}this.options.pagination&&"server"!==this.options.sidePagination||(this.footerData=Nl.trToData(this.columns,this.$el.find(">tfoot>tr").get())),this.footerData&&this.$el.find("tfoot").html("<tr></tr>"),!this.options.showFooter||this.options.cardView?this.$tableFooter.hide():this.$tableFooter.show()}},zl={};!function(){if(Hl)return zl;Hl=1;var t=pi(),e=Nr().findIndex,n=Vi(),i="findIndex",r=!0;i in[]&&Array(1)[i](function(){r=!1}),t({target:"Array",proto:!0,forced:r},{findIndex:function(t){return e(this,t,arguments.length>1?arguments[1]:void 0)}}),n(i)}();var ql,Wl,Gl,Kl={};function Yl(){if(Wl)return ql;Wl=1;var t=Ft(),e=TypeError;return ql=function(n,i){if(!delete n[i])throw new e("Cannot delete property "+t(i)+" of "+t(n))}}!function(){if(Gl)return Kl;Gl=1;var t=pi(),e=ve(),n=Tn(),i=kn(),r=An(),o=mi(),a=vi(),s=Oi(),l=bi(),c=Yl(),u=Ci()("splice"),h=Math.max,f=Math.min;t({target:"Array",proto:!0,forced:!u},{splice:function(t,u){var d,p,g,v,b,m,y=e(this),w=r(y),S=n(t,w),x=arguments.length;for(0===x?d=p=0:1===x?(d=0,p=w-S):(d=x-2,p=f(h(i(u),0),w-S)),a(w+d-p),g=s(y,p),v=0;v<p;v++)(b=S+v)in y&&l(g,v,y[b]);if(o(g,p),d<p){for(v=S;v<w-p;v++)m=v+d,(b=v+p)in y?y[m]=y[b]:c(y,m);for(v=w;v>w-p+d;v--)c(y,v-1)}else if(d>p)for(v=w-p;v>S;v--)m=v+d-1,(b=v+p-1)in y?y[m]=y[b]:c(y,m);for(v=0;v<d;v++)y[v+S]=arguments[v+2];return o(y,w-p+d),g}})}();var Jl,Ql,Xl,Zl,tc,ec,nc,ic=function(){return r(function t(e){var i=this;n(this,t),this.rows=e.rows,this.scrollEl=e.scrollEl,this.contentEl=e.contentEl,this.callback=e.callback,this.itemHeight=e.itemHeight,this.cache={},this.scrollTop=this.scrollEl.scrollTop,this.initDOM(this.rows,e.fixedScroll),this.scrollEl.scrollTop=this.scrollTop,this.lastCluster=0;var r=function(){i.lastCluster!==(i.lastCluster=i.getNum())&&(i.initDOM(i.rows),i.callback(i.startIndex,i.endIndex))};this.scrollEl.addEventListener("scroll",r,!1),this.destroy=function(){i.contentEl.innerHtml="",i.scrollEl.removeEventListener("scroll",r,!1)}},[{key:"initDOM",value:function(t,e){void 0===this.clusterHeight?(this.cache.scrollTop=this.scrollEl.scrollTop,this.cache.data=this.contentEl.innerHTML=t[0]+t[0]+t[0],this.getRowsHeight(t)):0===this.blockHeight&&this.getRowsHeight(t);var n=this.initData(t,this.getNum(e)),i=n.rows.join(""),r=this.checkChanges("data",i),o=this.checkChanges("top",n.topOffset),a=this.checkChanges("bottom",n.bottomOffset),s=[];r&&o?(n.topOffset&&s.push(this.getExtra("top",n.topOffset)),s.push(i),n.bottomOffset&&s.push(this.getExtra("bottom",n.bottomOffset)),this.startIndex=n.start,this.endIndex=n.end,this.contentEl.innerHTML=s.join(""),e&&(this.contentEl.scrollTop=this.cache.scrollTop)):a&&(this.contentEl.lastChild.style.height="".concat(n.bottomOffset,"px"))}},{key:"getRowsHeight",value:function(){if(void 0===this.itemHeight||0===this.itemHeight){var t=this.contentEl.children,e=t[Math.floor(t.length/2)];this.itemHeight=e.offsetHeight}this.blockHeight=50*this.itemHeight,this.clusterRows=200,this.clusterHeight=4*this.blockHeight}},{key:"getNum",value:function(t){return this.scrollTop=t?this.cache.scrollTop:this.scrollEl.scrollTop,Math.floor(this.scrollTop/(this.clusterHeight-this.blockHeight))||0}},{key:"initData",value:function(t,e){if(t.length<50)return{topOffset:0,bottomOffset:0,rowsAbove:0,rows:t};var n=Math.max((this.clusterRows-50)*e,0),i=n+this.clusterRows,r=Math.max(n*this.itemHeight,0),o=Math.max((t.length-i)*this.itemHeight,0),a=[],s=n;r<1&&s++;for(var l=n;l<i;l++)t[l]&&a.push(t[l]);return{start:n,end:i,topOffset:r,bottomOffset:o,rowsAbove:s,rows:a}}},{key:"checkChanges",value:function(t,e){var n=e!==this.cache[t];return this.cache[t]=e,n}},{key:"getExtra",value:function(t,e){var n=document.createElement("tr");return n.className="virtual-scroll-".concat(t),e&&(n.style.height="".concat(e,"px")),n.outerHTML}}])}(),rc={initBodyEvent:function(){var e=this;this.$body.find("> tr[data-index] > td").off("click dblclick").on("click dblclick",function(n){var i=t(n.currentTarget);if(!(i.find(".detail-icon").length||i.index()-Nl.getDetailViewIndexOffset(e.options)<0)){var r=i.parent(),o=t(n.target).parents(".card-views").children(),a=t(n.target).parents(".card-view"),s=r.data("index"),l=e.data[s],c=e.options.cardView?o.index(a):i[0].cellIndex,u=e.getVisibleFields()[c-Nl.getDetailViewIndexOffset(e.options)],h=e.columns[e.fieldsColumnsIndex[u]],f=Nl.getItemField(l,u,e.options.escape,h.escape);if(e.trigger("click"===n.type?"click-cell":"dbl-click-cell",u,f,l,i),e.trigger("click"===n.type?"click-row":"dbl-click-row",l,r,u),"click"===n.type&&e.options.clickToSelect&&h.clickToSelect&&!Nl.calculateObjectValue(e.options,e.options.ignoreClickToSelectOn,[n.target])){var d=r.find(Nl.sprintf('[name="%s"]',e.options.selectItemName));d.length&&d[0].click()}"click"===n.type&&e.options.detailViewByClick&&e.toggleDetailView(s,e.header.detailFormatters[e.fieldsColumnsIndex[u]])}}).off("mousedown").on("mousedown",function(t){e.multipleSelectRowCtrlKey=t.ctrlKey||t.metaKey,e.multipleSelectRowShiftKey=t.shiftKey}),this.$body.find("> tr[data-index] > td > .detail-icon").off("click").on("click",function(n){return n.preventDefault(),e.toggleDetailView(t(n.currentTarget).parent().parent().data("index")),!1}),this.$selectItem=this.$body.find(Nl.sprintf('[name="%s"]',this.options.selectItemName)),this.$selectItem.off("click").on("click",function(n){n.stopImmediatePropagation();var i=t(n.currentTarget);e._toggleCheck(i.prop("checked"),i.data("index"))}),this.header.events.forEach(function(n,i){var r=n;if(r){if("string"==typeof r&&(r=Nl.calculateObjectValue(null,r)),!r)throw new Error("Unknown event in the scope: ".concat(n));var o=e.header.fields[i],a=e.getVisibleFields().indexOf(o);if(-1!==a){a+=Nl.getDetailViewIndexOffset(e.options);var s=function(n){if(!r.hasOwnProperty(n))return 1;var i=r[n];e.$body.find(">tr:not(.no-records-found)").each(function(r,s){var l=t(s),c=l.find(e.options.cardView?".card-views>.card-view":">td").eq(a),u=n.indexOf(" "),h=n.substring(0,u),f=n.substring(u+1);c.find(f).off(h).on(h,function(t){var n=l.data("index"),r=e.data[n],a=r[o];i.apply(e,[t,a,r,n])})})};for(var l in r)s(l)}}})},initHiddenRows:function(){this.hiddenRows=[]},initRow:function(t,e,n,i){var r=this;if(!(Nl.findIndex(this.hiddenRows,t)>-1)){var o=Nl.calculateObjectValue(this.options,this.options.rowStyle,[t,e],{}),a=Nl.calculateObjectValue(this.options,this.options.rowAttributes,[t,e],{}),s={};if(t._data&&!Nl.isEmptyObject(t._data))for(var h=0,d=Object.entries(t._data);h<d.length;h++){var p=c(d[h],2),g=p[0],v=p[1];if("index"===g)return;s["data-".concat(g)]="object"===f(v)?JSON.stringify(v):v}var b=Nl.h("tr",l(l({id:Array.isArray(t)?void 0:t._id,class:o&&o.classes||(Array.isArray(t)?void 0:t._class),style:o&&o.css||(Array.isArray(t)?void 0:t._style),"data-index":e,"data-uniqueid":Nl.getItemField(t,this.options.uniqueId,!1),"data-has-detail-view":this.options.detailView&&Nl.calculateObjectValue(null,this.options.detailFilter,[e,t])?"true":void 0},a),s)),m=[],y="";Nl.hasDetailViewIcon(this.options)&&(y=Nl.h("td"),Nl.calculateObjectValue(null,this.options.detailFilter,[e,t])&&y.append(Nl.h("a",{class:"detail-icon",href:"#",html:Nl.sprintf(this.constants.html.icon,this.options.iconsPrefix,this.options.icons.detailOpen)}))),y&&"right"!==this.options.detailViewAlign&&m.push(y);var w=this.header.fields.map(function(n,i){var o,a=r.columns[i],s=Nl.getItemField(t,n,r.options.escape,a.escape),l={class:r.header.classes[i]?[r.header.classes[i]]:[],style:r.header.styles[i]?[r.header.styles[i]]:[]},h="card-view card-view-field-".concat(n);if((!r.fromHtml&&!r.autoMergeCells||void 0!==s||a.checkbox||a.radio)&&a.visible&&(!r.options.cardView||a.cardVisible)){for(var f=0,d=["class","style","id","rowspan","colspan","title"];f<d.length;f++){var p=d[f],g=t["_".concat(n,"_").concat(p)];g&&(l[p]?l[p].push(g):l[p]=g)}var v=Nl.calculateObjectValue(r.header,r.header.cellStyles[i],[s,t,e,n],{});if(v.classes&&l.class.push(v.classes),v.css&&l.style.push(v.css),o=Nl.calculateObjectValue(a,r.header.formatters[i],[s,t,e,n],s),a.checkbox||a.radio||(o=null==o?r.options.undefinedText:o),a.searchable&&r.searchText&&r.options.searchHighlight&&!a.checkbox&&!a.radio){var b=r.searchText.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");if(r.options.searchAccentNeutralise&&"string"==typeof o){var m=new RegExp("".concat(Nl.normalizeAccent(b)),"gmi").exec(Nl.normalizeAccent(o));m&&(b=o.substring(m.index,m.index+b.length))}var y=Nl.replaceSearchMark(o,b);o=Nl.calculateObjectValue(a,a.searchHighlightFormatter,[o,r.searchText],y)}if(t["_".concat(n,"_data")]&&!Nl.isEmptyObject(t["_".concat(n,"_data")]))for(var w=0,S=Object.entries(t["_".concat(n,"_data")]);w<S.length;w++){var x=c(S[w],2),O=x[0],C=x[1];if("index"===O)return;l["data-".concat(O)]=C}if(a.checkbox||a.radio){var k=a.checkbox?"checkbox":"radio",T=Nl.isObject(o)&&o.hasOwnProperty("checked")?o.checked:(!0===o||s)&&!1!==o,P=!a.checkboxEnabled||o&&o.disabled,A=r.header.formatters[i]&&("string"==typeof o||Nl.isDomNode(o))?Nl.htmlToNodes(o):[];t[r.header.stateField]=!0===o||!!s||o&&o.checked;var I={"data-index":e,name:r.options.selectItemName,type:k,value:t[r.options.idField],checked:T?"checked":void 0,disabled:P?"disabled":void 0},$=Nl.getCheckboxVdomConfig({inputAttrs:I,formCheckClass:r.constants.classes.formCheck,formCheckInputClass:r.constants.classes.formCheckInput}),E=[Nl.h("input",$.inputAttrs)];$.hasSpan&&E.push(Nl.h("span"));var R=[Nl.h($.wrapperTag,$.wrapperAttrs,E)].concat(u(A));return Nl.h(r.options.cardView?"div":"td",{class:[r.options.cardView?h:"bs-checkbox",a.class],style:r.options.cardView?void 0:l.style},R)}if(r.options.cardView){if(r.options.smartDisplay&&""===o)return Nl.h("div",{class:h});var j=r.options.showHeader?Nl.h("span",{class:["card-view-title",v.classes],style:l.style,html:Nl.getFieldTitle(r.columns,n)}):"";return Nl.h("div",{class:h},[j,Nl.h("span",{class:["card-view-value",v.classes],style:l.style},u(Nl.htmlToNodes(o)))])}return Nl.h("td",l,u(Nl.htmlToNodes(o)))}}).filter(function(t){return t});return m.push.apply(m,u(w)),y&&"right"===this.options.detailViewAlign&&m.push(y),this.options.cardView?b.append(Nl.h("td",{colspan:this.header.fields.length},[Nl.h("div",{class:"card-views"},m)])):b.append.apply(b,m),b}},initBody:function(e,n){var i=this,r=this.getData();this.trigger("pre-body",r),this.$body=this.$el.find(">tbody"),this.$body.length||(this.$body=t("<tbody></tbody>").appendTo(this.$el)),this.options.pagination&&"server"!==this.options.sidePagination||(this.pageFrom=1,this.pageTo=r.length);var o=[],a=t(document.createDocumentFragment()),s=!1,l=[];this.autoMergeCells=Nl.checkAutoMergeCells(r.slice(this.pageFrom-1,this.pageTo));for(var c=this.pageFrom-1;c<this.pageTo;c++){var u=r[c],h=this.initRow(u,c,r,a);if(s=s||!!h,h&&h instanceof Node){var f=this.options.uniqueId,d=[h];if(f&&u.hasOwnProperty(f)){var p=u[f],g=this.$body.find(Nl.sprintf('> tr[data-uniqueid="%s"][data-has-detail-view]',p)).next();g.is("tr.detail-view")&&(l.push(c),n&&p===n||d.push(g[0]))}this.options.virtualScroll?o.push(t("<div>").html(d).html()):a.append(d)}}this.$el.removeAttr("role"),s?this.options.virtualScroll?(this.virtualScroll&&this.virtualScroll.destroy(),this.virtualScroll=new ic({rows:o,fixedScroll:e,scrollEl:this.$tableBody[0],contentEl:this.$body[0],itemHeight:this.options.virtualScrollItemHeight,callback:function(t,e){i.fitHeader(),i.initBodyEvent(),i.trigger("virtual-scroll",t,e)}})):this.$body.html(a):(this.$body.html('<tr class="no-records-found">'.concat(Nl.sprintf('<td colspan="%s">%s</td>',this.getVisibleFields().length+Nl.getDetailViewIndexOffset(this.options),this.options.formatNoMatches()),"</tr>")),this.$el.attr("role","presentation")),l.forEach(function(t){i.expandRow(t)}),e||this.scrollTo(0),this.initBodyEvent(),this.initFooter(),this.resetView(),this.updateSelected(),"server"!==this.options.sidePagination&&(this.options.totalRows=r.length),this.trigger("post-body",r)},resetView:function(t){var e=0;if(t&&t.height&&(this.options.height=t.height),this.$tableContainer.toggleClass("has-card-view",this.options.cardView),this.options.height){var n=this.$tableBody.get(0);this.hasScrollBar=n.scrollWidth>n.clientWidth}if(!this.options.cardView&&this.options.showHeader&&this.options.height?(this.$tableHeader.show(),this.resetHeader(),e+=this.$header.outerHeight(!0)+1):(this.$tableHeader.hide(),this.trigger("post-header")),!this.options.cardView&&this.options.showFooter&&(this.$tableFooter.show(),this.fitFooter(),this.options.height&&(e+=this.$tableFooter.outerHeight(!0))),this.$container.hasClass("fullscreen"))this.$tableContainer.css("height",""),this.$tableContainer.css("width","");else if(this.options.height){this.$tableBorder&&(this.$tableBorder.css("width",""),this.$tableBorder.css("height",""));var i=this.$toolbar.outerHeight(!0),r=this.$pagination.outerHeight(!0),o=this.options.height-i-r,a=this.$tableBody.find(">table"),s=a.outerHeight();if(this.$tableContainer.css("height","".concat(o,"px")),this.$tableBorder&&a.is(":visible")){var l=o-s-2;this.hasScrollBar&&(l-=Nl.getScrollBarWidth()),this.$tableBorder.css("width","".concat(a.outerWidth(),"px")),this.$tableBorder.css("height","".concat(l,"px"))}}this.options.cardView?(this.$el.css("margin-top","0"),this.$tableContainer.css("padding-bottom","0"),this.$tableFooter.hide()):(this.resetCaret(),this.$tableContainer.css("padding-bottom","".concat(e,"px"))),this.trigger("reset-view")},showLoading:function(){this.$tableLoading.toggleClass("open",!0);var t=this.options.loadingFontSize;"auto"===this.options.loadingFontSize&&(t=.04*this.$tableLoading.width(),t=Math.max(12,t),t=Math.min(32,t),t="".concat(t,"px"));var e=this.$tableLoading.find(".loading-wrap");e.length?e.css("font-size",t):this.$tableLoading.css("font-size",t),this.$tableLoading.find(".loading-text").css("font-size",t)},hideLoading:function(){this.$tableLoading.toggleClass("open",!1)},scrollTo:function(e){var n={unit:"px",value:0};"object"===f(e)?n=Object.assign(n,e):"string"==typeof e&&"bottom"===e?n.value=this.$tableBody[0].scrollHeight:"string"!=typeof e&&"number"!=typeof e||(n.value=e);var i=n.value;"rows"===n.unit&&(i=0,this.$body.find("> tr:lt(".concat(n.value,")")).each(function(e,n){i+=t(n).outerHeight(!0)})),this.$tableBody.scrollTop(i)},getScrollPosition:function(){return this.$tableBody.scrollTop()},showRow:function(t){this._toggleRow(t,!0)},hideRow:function(t){this._toggleRow(t,!1)},_toggleRow:function(t,e){var n;if(t.hasOwnProperty("index")?n=this.getData()[t.index]:t.hasOwnProperty("uniqueId")&&(n=this.getRowByUniqueId(t.uniqueId)),n){var i=Nl.findIndex(this.hiddenRows,n);e||-1!==i?e&&i>-1&&this.hiddenRows.splice(i,1):this.hiddenRows.push(n),this.initBody(!0),this.initPagination()}},getHiddenRows:function(t){if(t)return this.initHiddenRows(),this.initBody(!0),void this.initPagination();var e,n=[],i=o(this.getData());try{for(i.s();!(e=i.n()).done;){var r=e.value;this.hiddenRows.includes(r)&&n.push(r)}}catch(t){i.e(t)}finally{i.f()}return this.hiddenRows=n,n},showColumn:function(t){this._toggleColumns(Array.isArray(t)?t:[t],!0,!0)},hideColumn:function(t){this._toggleColumns(Array.isArray(t)?t:[t],!1,!0)},_toggleColumnVisibility:function(t,e){return void 0!==t&&this.columns[t].visible!==e&&(this.columns[t].visible=e,!0)},_updateAfterColumnToggle:function(t,e,n){if(this.initHeader(),this.initSearch(),this.initPagination(),this.initBody(),this.options.showColumns){var i=this.$toolbar.find('.keep-open input:not(".toggle-all")').prop("disabled",!1);if(n){var r,a=o(t);try{for(a.s();!(r=a.n()).done;){var s=r.value;i.filter(Nl.sprintf('[value="%s"]',s)).prop("checked",e)}}catch(t){a.e(t)}finally{a.f()}}i.filter(":checked").length<=this.options.minimumCountColumns&&i.filter(":checked").prop("disabled",!0)}},_toggleColumns:function(t,e,n){if(t.length){var i,r=[],a=o(t);try{for(a.s();!(i=a.n()).done;){var s=i.value,l=this.fieldsColumnsIndex[s];this._toggleColumnVisibility(l,e)&&r.push(l)}}catch(t){a.e(t)}finally{a.f()}r.length&&this._updateAfterColumnToggle(r,e,n)}},showAllColumns:function(){this._toggleAllColumns(!0)},hideAllColumns:function(){this._toggleAllColumns(!1)},_toggleAllColumns:function(e){var n,i=this,r=o(this.columns.slice().reverse());try{for(r.s();!(n=r.n()).done;){var a=n.value;if(a.switchable){if(!e&&this.options.showColumns&&this.getVisibleColumns().filter(function(t){return t.switchable}).length===this.options.minimumCountColumns)continue;a.visible=e}}}catch(t){r.e(t)}finally{r.f()}if(this.initHeader(),this.initSearch(),this.initPagination(),this.initBody(),this.options.showColumns){var s=this.$toolbar.find('.keep-open input[type="checkbox"]:not(".toggle-all")').prop("disabled",!1);e?s.prop("checked",e):s.get().reverse().forEach(function(n){s.filter(":checked").length>i.options.minimumCountColumns&&t(n).prop("checked",e)}),s.filter(":checked").length<=this.options.minimumCountColumns&&s.filter(":checked").prop("disabled",!0)}},mergeCells:function(t){var e,n,i=t.index,r=this.getVisibleFields().indexOf(t.field),o=+t.rowspan||1,a=+t.colspan||1,s=this.$body.find(">tr[data-index]");r+=Nl.getDetailViewIndexOffset(this.options);var l=s.eq(i).find(">td").eq(r);if(!(i<0||r<0||i>=this.data.length)){for(e=i;e<i+o;e++)for(n=r;n<r+a;n++)s.eq(e).find(">td").eq(n).hide();l.attr("rowspan",o).attr("colspan",a).show()}},getVisibleColumns:function(){var t=this;return this.columns.filter(function(e){return e.visible&&!t.isSelectionColumn(e)})},getHiddenColumns:function(){return this.columns.filter(function(t){return!t.visible})}},oc={updateSelected:function(){var e=this.$selectItem.filter(":enabled").length&&this.$selectItem.filter(":enabled").length===this.$selectItem.filter(":enabled").filter(":checked").length;this.$selectAll.add(this.$selectAll_).prop("checked",e),this.$selectItem.each(function(e,n){t(n).closest("tr")[t(n).prop("checked")?"addClass":"removeClass"]("selected")})},isSelectionColumn:function(t){return t.radio||t.checkbox},getSelections:function(){var t=this;return(this.options.maintainMetaData?this.options.data:this.data).filter(function(e){return!0===e[t.header.stateField]})},updateRows:function(){var e=this;this.$selectItem.each(function(n,i){e.data[t(i).data("index")][e.header.stateField]=t(i).prop("checked")})},resetRows:function(){if(this.data.length&&(this.$selectAll.prop("checked",!1),this.$selectItem.prop("checked",!1)),this.header.stateField){var t,e=o(this.data);try{for(e.s();!(t=e.n()).done;){t.value[this.header.stateField]=!1}}catch(t){e.e(t)}finally{e.f()}}this.initHiddenRows()},checkAll:function(){this._toggleCheckAll(!0)},uncheckAll:function(){this._toggleCheckAll(!1)},_toggleCheckAll:function(t){var e=this.getSelections();this.$selectAll.add(this.$selectAll_).prop("checked",t),this.$selectItem.filter(":enabled").prop("checked",t),this.updateRows(),this.updateSelected();var n=this.getSelections();t?this.trigger("check-all",n,e):this.trigger("uncheck-all",n,e)},checkInvert:function(){var e=this.$selectItem.filter(":enabled"),n=e.filter(":checked");e.each(function(e,n){t(n).prop("checked",!t(n).prop("checked"))}),this.updateRows(),this.updateSelected(),this.trigger("uncheck-some",n),n=this.getSelections(),this.trigger("check-some",n)},check:function(t){this._toggleCheck(!0,t)},uncheck:function(t){this._toggleCheck(!1,t)},_toggleCheck:function(t,e){var n=this.$selectItem.filter('[data-index="'.concat(e,'"]')),i=this.data[e];if(n.is(":radio")||this.options.singleSelect||this.options.multipleSelectRow&&!this.multipleSelectRowCtrlKey&&!this.multipleSelectRowShiftKey){var r,a=o(this.options.data);try{for(a.s();!(r=a.n()).done;){r.value[this.header.stateField]=!1}}catch(t){a.e(t)}finally{a.f()}this.$selectItem.filter(":checked").not(n).prop("checked",!1)}if(i[this.header.stateField]=t,this.options.multipleSelectRow){if(this.multipleSelectRowShiftKey&&this.multipleSelectRowLastSelectedIndex>=0)for(var s=c(this.multipleSelectRowLastSelectedIndex<e?[this.multipleSelectRowLastSelectedIndex,e]:[e,this.multipleSelectRowLastSelectedIndex],2),l=s[0],u=s[1],h=l+1;h<u;h++)this.data[h][this.header.stateField]=!0,this.$selectItem.filter('[data-index="'.concat(h,'"]')).prop("checked",!0);this.multipleSelectRowCtrlKey=!1,this.multipleSelectRowShiftKey=!1,this.multipleSelectRowLastSelectedIndex=t?e:-1}n.prop("checked",t),this.updateSelected(),this.trigger(t?"check":"uncheck",this.data[e],n)},checkBy:function(t){this._toggleCheckBy(!0,t)},uncheckBy:function(t){this._toggleCheckBy(!1,t)},_toggleCheckBy:function(t,e){var n=this;if(e.hasOwnProperty("field")&&e.hasOwnProperty("values")){var i=[];this.data.forEach(function(r,o){if(!r.hasOwnProperty(e.field))return!1;if(e.values.includes(r[e.field])){var a=n.$selectItem.filter(":enabled").filter(Nl.sprintf('[data-index="%s"]',o)),s=!!e.hasOwnProperty("onlyCurrentPage")&&e.onlyCurrentPage;if(!(a=t?a.not(":checked"):a.filter(":checked")).length&&s)return;a.prop("checked",t),r[n.header.stateField]=t,i.push(r),n.trigger(t?"check":"uncheck",r,a)}}),this.updateSelected(),this.trigger(t?"check-some":"uncheck-some",i)}}},ac={};!function(){if(nc)return ac;nc=1;var t=pi(),e=xt(),n=Dt(),i=ve(),r=An(),o=Yl(),a=sr(),s=A(),l=Al(),c=zo(),u=function(){if(Ql)return Jl;Ql=1;var t=Rt().match(/firefox\/(\d+)/i);return Jl=!!t&&+t[1]}(),h=function(){if(Zl)return Xl;Zl=1;var t=Rt();return Xl=/MSIE|Trident/.test(t)}(),f=jt(),d=function(){if(ec)return tc;ec=1;var t=Rt().match(/AppleWebKit\/(\d+)\./);return tc=!!t&&+t[1]}(),p=[],g=e(p.sort),v=e(p.push),b=s(function(){p.sort(void 0)}),m=s(function(){p.sort(null)}),y=c("sort"),w=!s(function(){if(f)return f<70;if(!(u&&u>3)){if(h)return!0;if(d)return d<603;var t,e,n,i,r="";for(t=65;t<76;t++){switch(e=String.fromCharCode(t),t){case 66:case 69:case 70:case 72:n=3;break;case 68:case 71:n=4;break;default:n=2}for(i=0;i<47;i++)p.push({k:e+i,v:n})}for(p.sort(function(t,e){return e.v-t.v}),i=0;i<p.length;i++)e=p[i].k.charAt(0),r.charAt(r.length-1)!==e&&(r+=e);return"DGBEFHACIJK"!==r}});t({target:"Array",proto:!0,forced:b||!m||!y||!w},{sort:function(t){void 0!==t&&n(t);var e=i(this);if(w)return void 0===t?g(e):g(e,t);var s,c,u=[],h=r(e);for(c=0;c<h;c++)c in e&&v(u,e[c]);for(l(u,function(t){return function(e,n){if(void 0===n)return-1;if(void 0===e)return 1;if(void 0!==t)return+t(e,n)||0;var i=a(e),r=a(n);return i===r?0:i>r?1:-1}}(t)),s=r(u),c=0;c<s;)e[c]=u[c++];for(;c<h;)o(e,c++);return e}})}();var sc,lc,cc,uc,hc,fc={};function dc(){if(lc)return sc;lc=1;var t=m();return sc=t}function pc(){if(uc)return cc;uc=1;var t=xt();return cc=t(1.1.valueOf)}!function(){if(hc)return fc;hc=1;var t=pi(),e=fe(),n=I(),i=m(),r=dc(),o=xt(),a=di(),s=be(),l=fs(),c=Et(),u=Lt(),h=we(),f=A(),d=Rn().f,p=Ce().f,g=Ne().f,v=pc(),b=Eo().trim,y="Number",w=i[y],S=r[y],x=w.prototype,O=i.TypeError,C=o("".slice),k=o("".charCodeAt),T=function(t){var e,n,i,r,o,a,s,l,c=h(t,"number");if(u(c))throw new O("Cannot convert a Symbol value to a number");if("string"==typeof c&&c.length>2)if(c=b(c),43===(e=k(c,0))||45===e){if(88===(n=k(c,2))||120===n)return NaN}else if(48===e){switch(k(c,1)){case 66:case 98:i=2,r=49;break;case 79:case 111:i=8,r=55;break;default:return+c}for(a=(o=C(c,2)).length,s=0;s<a;s++)if((l=k(o,s))<48||l>r)return NaN;return parseInt(o,i)}return+c},P=a(y,!w(" 0o1")||!w("0b1")||w("+0x1")),$=function(t){var e,n=arguments.length<1?0:w(function(t){var e=h(t,"number");return"bigint"==typeof e?e:T(e)}(t));return c(x,e=this)&&f(function(){v(e)})?l(Object(n),this,$):n};$.prototype=x,P&&!e&&(x.constructor=$),t({global:!0,constructor:!0,wrap:!0,forced:P},{Number:$});var E=function(t,e){for(var i,r=n?d(e):"MAX_VALUE,MIN_VALUE,NaN,NEGATIVE_INFINITY,POSITIVE_INFINITY,EPSILON,MAX_SAFE_INTEGER,MIN_SAFE_INTEGER,isFinite,isInteger,isNaN,isSafeInteger,parseFloat,parseInt,fromString,range".split(","),o=0;r.length>o;o++)s(e,i=r[o])&&!s(t,i)&&g(t,i,p(e,i))};e&&S&&E(r[y],S),(P||e)&&E(r[y],w)}();var gc={initServer:function(e,n){var i=this,r={},a=this.header.fields.indexOf(this.options.sortName),s={searchText:this.searchText,sortName:this.options.sortName,sortOrder:this.options.sortOrder};if(this.header.sortNames[a]&&(s.sortName=this.header.sortNames[a]),this.options.pagination&&"server"===this.options.sidePagination&&(s.pageSize=this.options.pageSize===this.options.formatAllRows()?this.options.totalRows:this.options.pageSize,s.pageNumber=this.options.pageNumber),this.options.url||this.options.ajax){if("limit"===this.options.queryParamsType&&(s={search:s.searchText,sort:s.sortName,order:s.sortOrder},this.options.pagination&&"server"===this.options.sidePagination&&(s.offset=this.options.pageSize===this.options.formatAllRows()?0:this.options.pageSize*(this.options.pageNumber-1),s.limit=this.options.pageSize,0!==s.limit&&this.options.pageSize!==this.options.formatAllRows()||delete s.limit)),this.options.search&&"server"===this.options.sidePagination&&this.options.searchable&&this.columns.filter(function(t){return t.searchable}).length){s.searchable=[];var l,c=o(this.columns);try{for(c.s();!(l=c.n()).done;){var u=l.value;!u.checkbox&&u.searchable&&(this.options.visibleSearch&&u.visible||!this.options.visibleSearch)&&s.searchable.push(u.field)}}catch(t){c.e(t)}finally{c.f()}}if(Nl.isEmptyObject(this.filterColumnsPartial)||(s.filter=JSON.stringify(this.filterColumnsPartial,null)),Nl.extend(s,n||{}),!1!==(r=Nl.calculateObjectValue(this.options,this.options.queryParams,[s],r))){e||this.showLoading();var h=Nl.extend({},Nl.calculateObjectValue(null,this.options.ajaxOptions),{type:this.options.method,url:this.options.url,data:"application/json"===this.options.contentType&&"post"===this.options.method?JSON.stringify(r):r,cache:this.options.cache,contentType:this.options.contentType,dataType:this.options.dataType,success:function(t,n,r){var o=Nl.calculateObjectValue(i.options,i.options.responseHandler,[t,r],t);"client"===i.options.sidePagination&&i.options.paginationLoadMore&&(i._paginationLoaded=i.data.length===o.length),i.load(o),i.trigger("load-success",o,r&&r.status,r),e||i.hideLoading(),"server"===i.options.sidePagination&&i.options.pageNumber>1&&o[i.options.totalField]>0&&!o[i.options.dataField].length&&i.updatePagination()},error:function(t){if(t&&0===t.status&&i._xhrAbort)i._xhrAbort=!1;else{var n=[];"server"===i.options.sidePagination&&((n={})[i.options.totalField]=0,n[i.options.dataField]=[]),i.load(n),i.trigger("load-error",t&&t.status,t),e||i.hideLoading()}}});return this.options.ajax?Nl.calculateObjectValue(this,this.options.ajax,[h],null):(this._xhr&&4!==this._xhr.readyState&&(this._xhrAbort=!0,this._xhr.abort()),this._xhr=t.ajax(h)),r}}},initData:function(t,e){"append"===e?this.options.data=this.options.data.concat(t):"prepend"===e?this.options.data=[].concat(t).concat(this.options.data):(t=t||Nl.deepCopy(this.options.data),this.options.data=Array.isArray(t)?t:t[this.options.dataField]),this.data=u(this.options.data),this.options.sortReset&&(this.unsortedData=u(this.data)),"server"!==this.options.sidePagination&&this.initSort()},initSort:function(){var t=this,e=this.options.sortName,n="desc"===this.options.sortOrder?-1:1,i=this.header.fields.indexOf(this.options.sortName);-1!==i?(this.options.sortStable&&this.data.forEach(function(t,e){t.hasOwnProperty("_position")||(t._position=e)}),Nl.hasRowspanCells(this.data)&&Nl.flattenRowspanCells(this.data),this.options.customSort?Nl.calculateObjectValue(this.options,this.options.customSort,[this.options.sortName,this.options.sortOrder,this.data]):this.data.sort(function(r,o){t.header.sortNames[i]&&(e=t.header.sortNames[i]);var a=Nl.getItemField(r,e,t.options.escape),s=Nl.getItemField(o,e,t.options.escape),l=Nl.calculateObjectValue(t.header,t.header.sorters[i],[a,s,r,o]);return void 0!==l?t.options.sortStable&&0===l?n*(r._position-o._position):n*l:Nl.sort(a,s,n,t.options,r._position,o._position)}),void 0!==this.options.sortClass&&setTimeout(function(){t.$el.removeClass(t.options.sortClass);var e=t.$header.find('[data-field="'.concat(t.options.sortName,'"]')).index();t.$el.find("tr td:nth-child(".concat(e+1,")")).addClass(t.options.sortClass)},250)):this.options.sortReset&&(this.data=u(this.unsortedData))},onSort:function(e){var n=e.type,i=e.currentTarget,r="keypress"===n?t(i):t(i).parent(),o=this.$header.find("th").eq(r.index());if(this.$header.add(this.$header_).find("span.order").remove(),this.options.sortName===r.data("field")){var a=this.options.sortOrder,s=this.columns[this.fieldsColumnsIndex[r.data("field")]].sortOrder||this.columns[this.fieldsColumnsIndex[r.data("field")]].order;void 0===a?this.options.sortOrder="asc":"asc"===a?this.options.sortOrder=this.options.sortReset?"asc"===s?"desc":void 0:"desc":"desc"===this.options.sortOrder&&(this.options.sortOrder=this.options.sortReset?"desc"===s?"asc":void 0:"asc"),void 0===this.options.sortOrder&&(this.options.sortName=void 0)}else this.options.sortName=r.data("field"),this.options.rememberOrder?this.options.sortOrder="asc"===r.data("order")?"desc":"asc":this.options.sortOrder=this.columns[this.fieldsColumnsIndex[r.data("field")]].sortOrder||this.columns[this.fieldsColumnsIndex[r.data("field")]].order;r.add(o).data("order",this.options.sortOrder),this.resetCaret(),this._sort()},_sort:function(){if("server"===this.options.sidePagination&&this.options.serverSort)return this.options.pageNumber=1,this.trigger("sort",this.options.sortName,this.options.sortOrder),void this.initServer(this.options.silentSort);this.options.pagination&&this.options.sortResetPage&&(this.options.pageNumber=1,this.initPagination()),this.trigger("sort",this.options.sortName,this.options.sortOrder),this.initSort(),this.initBody()},sortReset:function(){this.options.sortName=void 0,this.options.sortOrder=void 0,this._sort()},sortBy:function(t){this.options.sortName=t.field,this.options.sortOrder=t.hasOwnProperty("sortOrder")?t.sortOrder:"asc",this._sort()},getData:function(t){var e=this,n=this.options.data;if(!(this.searchText||this.options.customSearch||void 0!==this.options.sortName||this.enableCustomSort)&&Nl.isEmptyObject(this.filterColumns)&&"function"!=typeof this.options.filterOptions.filterAlgorithm&&Nl.isEmptyObject(this.filterColumnsPartial)||t&&t.unfiltered||(n=this.data),t&&!t.includeHiddenRows){var i=this.getHiddenRows();n=n.filter(function(t){return-1===Nl.findIndex(i,t)})}return t&&t.useCurrentPage&&(n=n.slice(this.pageFrom-1,this.pageTo)),t&&t.formatted?n.map(function(t){for(var n={},i=0,r=Object.entries(t);i<r.length;i++){var o=c(r[i],2),a=o[0],s=o[1],l=e.columns[e.fieldsColumnsIndex[a]];l&&(n[a]=Nl.calculateObjectValue(l,e.header.formatters[l.fieldIndex],[s,t,t.index,l.field],s))}return n}):n},getFooterData:function(){var t;return null!==(t=this.footerData)&&void 0!==t?t:[]},load:function(t){var e=t;this.options.pagination&&"server"===this.options.sidePagination&&(this.options.totalRows=e[this.options.totalField],this.options.totalNotFiltered=e[this.options.totalNotFilteredField],this.footerData=e[this.options.footerField]?[e[this.options.footerField]]:void 0);var n=this.options.fixedScroll||e.fixedScroll;e=Array.isArray(e)?e:e[this.options.dataField],this.initData(e),this.initSearch(),this.initPagination(),this.initBody(n)},append:function(t){this.initData(t,"append"),this.initSearch(),this.initPagination(),this.initSort(),this.initBody(!0)},prepend:function(t){this.initData(t,"prepend"),this.initSearch(),this.initPagination(),this.initSort(),this.initBody(!0)},remove:function(t){for(var e=0,n=this.options.data.length-1;n>=0;n--){var i=this.options.data[n],r=Nl.getItemField(i,t.field,this.options.escape,i.escape);void 0===r&&"$index"!==t.field||(!i.hasOwnProperty(t.field)&&"$index"===t.field&&t.values.includes(n)||t.values.includes(r))&&(e++,this.options.data.splice(n,1))}e&&("server"===this.options.sidePagination&&(this.options.totalRows-=e,this.data=u(this.options.data)),this.initSearch(),this.initPagination(),this.initSort(),this.initBody(!0))},removeAll:function(){this.options.data.length>0&&(this.data.splice(0,this.data.length),this.options.data.splice(0,this.options.data.length),this.initSearch(),this.initPagination(),this.initBody(!0))},insertRow:function(t){if(t.hasOwnProperty("index")&&t.hasOwnProperty("row")){var e=this.data[t.index],n=this.options.data.indexOf(e);-1!==n?(this.data.splice(t.index,0,t.row),this.options.data.splice(n,0,t.row),this.initSearch(),this.initPagination(),this.initSort(),this.initBody(!0)):this.append([t.row])}},updateRow:function(t){var e,n=o(Array.isArray(t)?t:[t]);try{for(n.s();!(e=n.n()).done;){var i=e.value;if(i.hasOwnProperty("index")&&i.hasOwnProperty("row")){var r=this.data[i.index],a=this.options.data.indexOf(r);i.hasOwnProperty("replace")&&i.replace?(this.data[i.index]=i.row,this.options.data[a]=i.row):(Nl.extend(this.data[i.index],i.row),Nl.extend(this.options.data[a],i.row))}}}catch(t){n.e(t)}finally{n.f()}this.initSearch(),this.initPagination(),this.initSort(),this.initBody(!0)},getRowByUniqueId:function(t){var e,n,i=this.options.uniqueId,r=t,o=null;for(e=this.options.data.length-1;e>=0;e--){n=this.options.data[e];var a=Nl.getItemField(n,i,this.options.escape,n.escape);if(void 0!==a&&("string"==typeof a?r=t.toString():"number"==typeof a&&(Number(a)===a&&a%1==0?r=parseInt(t,10):a===Number(a)&&0!==a&&(r=parseFloat(t))),a===r)){o=n;break}}return o},updateByUniqueId:function(t){var e,n=null,i=o(Array.isArray(t)?t:[t]);try{for(i.s();!(e=i.n()).done;){var r=e.value;if(r.hasOwnProperty("id")&&r.hasOwnProperty("row")){var a=this.options.data.indexOf(this.getRowByUniqueId(r.id));-1!==a&&(r.hasOwnProperty("replace")&&r.replace?this.options.data[a]=r.row:Nl.extend(this.options.data[a],r.row),n=r.id)}}}catch(t){i.e(t)}finally{i.f()}this.initSearch(),this.initPagination(),this.initSort(),this.initBody(!0,n)},removeByUniqueId:function(t){var e=this.options.data.length,n=this.getRowByUniqueId(t);n&&this.options.data.splice(this.options.data.indexOf(n),1),e!==this.options.data.length&&("server"===this.options.sidePagination&&(this.options.totalRows-=1,this.data=u(this.options.data)),this.initSearch(),this.initPagination(),this.initBody(!0))},_updateCellOnly:function(e,n){if(-1!==n){var i=this.initRow(this.data[n],n),r=this.getVisibleFields().indexOf(e);-1!==r&&(r+=Nl.getDetailViewIndexOffset(this.options),this.$body.find(">tr[data-index=".concat(n,"]")).find(">td:eq(".concat(r,")")).replaceWith(t(i).find(">td:eq(".concat(r,")"))),this.initBodyEvent(),this.initFooter(),this.resetView(),this.updateSelected())}},updateCell:function(t){if(t.hasOwnProperty("index")&&t.hasOwnProperty("field")&&t.hasOwnProperty("value")){var e=this.data[t.index],n=this.options.data.indexOf(e);this.data[t.index][t.field]=t.value,this.options.data[n][t.field]=t.value,!1!==t.reinit?(this.initSort(),this.initBody(!0)):this._updateCellOnly(t.field,t.index)}},updateCellByUniqueId:function(t){var e=this;(Array.isArray(t)?t:[t]).forEach(function(t){var n=t.id,i=t.field,r=t.value,o=e.getRowByUniqueId(n),a=e.data.indexOf(o),s=e.options.data.indexOf(o);o&&-1!==a&&(e.data[a][i]=r,e.options.data[s][i]=r)}),!1!==t.reinit?(this.initSort(),this.initBody(!0)):this._updateCellOnly(t.field,this.data.indexOf(this.getRowByUniqueId(t.id)))}},vc={toggleDetailView:function(t,e){this.$body.find(Nl.sprintf('> tr[data-index="%s"]',t)).next().is("tr.detail-view")?this.collapseRow(t):this.expandRow(t,e),this.resetView()},expandRow:function(t,e){var n=this.data[t],i=this.$body.find(Nl.sprintf('> tr[data-index="%s"][data-has-detail-view]',t));if(this.options.detailViewIcon&&i.find("a.detail-icon").html(Nl.sprintf(this.constants.html.icon,this.options.iconsPrefix,this.options.icons.detailClose)),!i.next().is("tr.detail-view")){i.after(Nl.sprintf('<tr class="detail-view"><td colspan="%s"></td></tr>',i.children("td").length));var r=i.next().find("td"),o=e||this.options.detailFormatter,a=Nl.calculateObjectValue(this.options,o,[t,n,r],"");1===r.length&&r.append(a),this.trigger("expand-row",t,n,r)}},expandRowByUniqueId:function(t){var e=this.getRowByUniqueId(t);e&&this.expandRow(this.data.indexOf(e))},collapseRow:function(t){var e=this.data[t],n=this.$body.find(Nl.sprintf('> tr[data-index="%s"][data-has-detail-view]',t));n.next().is("tr.detail-view")&&(this.options.detailViewIcon&&n.find("a.detail-icon").html(Nl.sprintf(this.constants.html.icon,this.options.iconsPrefix,this.options.icons.detailOpen)),this.trigger("collapse-row",t,e,n.next()),n.next().remove())},collapseRowByUniqueId:function(t){var e=this.getRowByUniqueId(t);e&&this.collapseRow(this.data.indexOf(e))},expandAllRows:function(){for(var e=this.$body.find("> tr[data-index][data-has-detail-view]"),n=0;n<e.length;n++)this.expandRow(t(e[n]).data("index"))},collapseAllRows:function(){for(var e=this.$body.find("> tr[data-index][data-has-detail-view]"),n=0;n<e.length;n++)this.collapseRow(t(e[n]).data("index"))}},bc={initHeader:function(){var e=this,n={},i=[];this.header={fields:[],styles:[],classes:[],formatters:[],detailFormatters:[],events:[],sorters:[],sortNames:[],cellStyles:[],searchables:[]},Nl.updateFieldGroup(this.options.columns,this.columns),this.options.columns.forEach(function(t,r){var o=[];o.push("<tr".concat(Nl.sprintf(' class="%s"',e._headerTrClasses[r])," ").concat(Nl.sprintf(' style="%s"',e._headerTrStyles[r]),">"));var a="";if(0===r&&Nl.hasDetailViewIcon(e.options)){var s=e.options.columns.length>1?' rowspan="'.concat(e.options.columns.length,'"'):"";a='<th class="detail"'.concat(s,'>\n          <div class="fht-cell"></div>\n          </th>')}a&&"right"!==e.options.detailViewAlign&&o.push(a),t.forEach(function(t,i){var a=Nl.sprintf(' class="%s"',t.class),s=t.widthUnit,l=parseFloat(t.width),u=t.halign?t.halign:t.align,h=Nl.sprintf("text-align: %s; ",u),d=Nl.sprintf("text-align: %s; ",t.align),p=Nl.sprintf("vertical-align: %s; ",t.valign);if(p+=Nl.sprintf("width: %s; ",!t.checkbox&&!t.radio||l?l?l+s:void 0:t.showSelectTitle?void 0:"36px"),void 0!==t.fieldIndex||t.visible){var g=Nl.calculateObjectValue(null,e.options.headerStyle,[t]),v=[],b=[],m="";if(g&&g.css)for(var y=0,w=Object.entries(g.css);y<w.length;y++){var S=c(w[y],2),x=S[0],O=S[1];v.push("".concat(x,": ").concat(O))}if(g&&g.classes&&(m=Nl.sprintf(' class="%s"',t.class?[t.class,g.classes].join(" "):g.classes)),void 0!==t.fieldIndex){if(e.header.fields[t.fieldIndex]=t.field,e.header.styles[t.fieldIndex]=d+p,e.header.classes[t.fieldIndex]=t.class,e.header.formatters[t.fieldIndex]=t.formatter,e.header.detailFormatters[t.fieldIndex]=t.detailFormatter,e.header.events[t.fieldIndex]=t.events,e.header.sorters[t.fieldIndex]=t.sorter,e.header.sortNames[t.fieldIndex]=t.sortName,e.header.cellStyles[t.fieldIndex]=t.cellStyle,e.header.searchables[t.fieldIndex]=t.searchable,!t.visible)return;if(e.options.cardView&&!t.cardVisible)return;n[t.field]=t}if(Object.keys(t._data||{}).length>0)for(var C=0,k=Object.entries(t._data);C<k.length;C++){var T=c(k[C],2),P=T[0],A=T[1];b.push("data-".concat(P,"='").concat("object"===f(A)?JSON.stringify(A):A,"'"))}o.push("<th".concat(Nl.sprintf(' title="%s"',t.titleTooltip)),t.checkbox||t.radio?Nl.sprintf(' class="bs-checkbox %s"',t.class||""):m||a,Nl.sprintf(' style="%s"',(t.style||"")+h+p+v.join("; ")||void 0),Nl.sprintf(' rowspan="%s"',t.rowspan),Nl.sprintf(' colspan="%s"',t.colspan),Nl.sprintf(' scope="%s"',t.scope),Nl.sprintf(' data-field="%s"',t.field),0===i&&r>0?" data-not-first-th":"",b.length>0?b.join(" "):"",">"),o.push(Nl.sprintf('<div class="th-inner %s">',e.options.sortable&&t.sortable?"sortable".concat("center"===u?" sortable-center":""," both"):""));var I=e.options.escape&&e.options.escapeTitle?Nl.escapeHTML(t.title):t.title,$=I;t.checkbox&&(I="",!e.options.singleSelect&&e.options.checkboxHeader&&(I=Nl.getCheckboxHtml({name:"btSelectAll",centered:!0,withLabel:!1})),e.header.stateField=t.field),t.radio&&(I="",e.header.stateField=t.field),!I&&t.showSelectTitle&&(I+=$),o.push(I),o.push("</div>"),o.push('<div class="fht-cell"></div>'),o.push("</div>"),o.push("</th>")}}),a&&"right"===e.options.detailViewAlign&&o.push(a),o.push("</tr>"),o.length>3&&i.push(o.join(""))}),this.$header.html(i.join("")),this.$header.find("th[data-field]").each(function(e,i){t(i).data(n[t(i).data("field")])}),this.$container.off("click",".th-inner").on("click",".th-inner",function(n){var i=t(n.currentTarget);if(e.options.detailView&&!i.parent().hasClass("bs-checkbox")&&i.closest(".bootstrap-table")[0]!==e.$container[0])return!1;e.options.sortable&&i.parent().data().sortable&&e.onSort(n)});var r=Nl.getEventName("resize.bootstrap-table",this.$el.attr("id"));t(window).off(r),!this.options.showHeader||this.options.cardView?(this.$header.hide(),this.$tableHeader.hide(),this.$tableLoading.css("top",0)):(this.$header.show(),this.$tableHeader.show(),this.$tableLoading.css("top",this.$header.outerHeight()+1),this.resetCaret(),t(window).on(r,function(){return e.resetView()})),this.$selectAll=this.$header.find('[name="btSelectAll"]'),this.$selectAll.off("click").on("click",function(n){n.stopPropagation();var i=t(n.currentTarget).prop("checked");e[i?"checkAll":"uncheckAll"](),e.updateSelected()})},getVisibleFields:function(){var t,e=[],n=o(this.header.fields);try{for(n.s();!(t=n.n()).done;){var i=t.value,r=this.columns[this.fieldsColumnsIndex[i]];r&&r.visible&&(!this.options.cardView||r.cardVisible)&&e.push(i)}}catch(t){n.e(t)}finally{n.f()}return e},resetHeader:function(){var t=this;this._setDelayTimeout("header",function(){return t.fitHeader()},this.$el.is(":hidden")?100:0)},fitHeader:function(){var e=this;if(this.$el.is(":hidden"))this._setDelayTimeout("header",function(){return e.fitHeader()},100);else{var n=this.$tableBody.get(0),i=this.hasScrollBar&&n.scrollHeight>n.clientHeight+this.$header.outerHeight()?Nl.getScrollBarWidth():0;this.$el.css("margin-top",-this.$header.outerHeight());var r=this.$tableHeader.find(":focus");if(r.length>0){var o=r.parents("th");if(o.length>0){var a=o.attr("data-field");if(void 0!==a){var s=this.$header.find("[data-field='".concat(a,"']"));s.length>0&&s.find(":input").addClass("focus-temp")}}}this.$header_=this.$header.clone(!0,!0),this.$selectAll_=this.$header_.find('[name="btSelectAll"]');var l=this.$el.find("caption"),c=this.$tableHeader.css("margin-right",i).find("table").css("width",this.$el.outerWidth()).html("").attr("class",this.$el.attr("class"));l.length>0&&c.append(l.clone(!0,!0)),c.append(this.$header_),this.$tableLoading.css("width",this.$el.outerWidth());var u=t(".focus-temp:visible:eq(0)");u.length>0&&(u.focus(),this.$header.find(".focus-temp").removeClass("focus-temp")),this.$header.find("th[data-field]").each(function(n,i){e.$header_.find(Nl.sprintf('th[data-field="%s"]',t(i).data("field"))).data(t(i).data())});for(var h=this.getVisibleFields(),f=this.$header_.find("th"),d=this.$body.find(">tr:not(.no-records-found,.virtual-scroll-top)").eq(0);d.length&&d.find('>td[colspan]:not([colspan="1"])').length;)d=d.next();var p=d.find("> *").length;d.find("> *").each(function(n,i){var r=t(i);if(Nl.hasDetailViewIcon(e.options)&&(0===n&&"right"!==e.options.detailViewAlign||n===p-1&&"right"===e.options.detailViewAlign)){var o=f.filter(".detail"),a=o.innerWidth()-o.find(".fht-cell").width();o.find(".fht-cell").width(r.innerWidth()-a)}else{var s=n-Nl.getDetailViewIndexOffset(e.options),l=e.$header_.find(Nl.sprintf('th[data-field="%s"]',h[s]));l.length>1&&(l=t(f[r[0].cellIndex]));var c=l.innerWidth()-l.find(".fht-cell").width();l.find(".fht-cell").width(r.innerWidth()-c)}}),this.horizontalScroll(),this.trigger("post-header")}},resetCaret:function(){var e=this.options,n=e.sortName,i=e.sortOrder,r="asc"===i?"ascending":"descending";this.$header.find("th").each(function(e,o){var a=t(o).data("field")===n;t(o).attr("aria-sort",a?r:null).find(".sortable").removeClass("desc asc").addClass(a?i:"both")})},initFooter:function(){if(this.options.showFooter&&!this.options.cardView){var t=this.getData(),e=[],n="";Nl.hasDetailViewIcon(this.options)&&(n=Nl.h("th",{class:"detail"},[Nl.h("div",{class:"th-inner"}),Nl.h("div",{class:"fht-cell"})])),n&&"right"!==this.options.detailViewAlign&&e.push(n);var i,r=o(this.columns);try{for(r.s();!(i=r.n()).done;){var a=i.value,s=this.footerData&&this.footerData.length>0;if(a.visible&&(!s||a.field in this.footerData[0])){if(this.options.cardView&&!a.cardVisible)return;var c=Nl.calculateObjectValue(null,a.footerStyle||this.options.footerStyle,[a]),h=c&&c.css||{},f=s&&this.footerData[0]["_".concat(a.field,"_colspan")]||0,d=s&&this.footerData[0][a.field]||"";d=Nl.calculateObjectValue(a,a.footerFormatter,[t,d],d),e.push(Nl.h("th",{class:[a.class,c&&c.classes],style:l({"text-align":a.falign?a.falign:a.align,"vertical-align":a.valign},h),colspan:f||void 0},[Nl.h("div",{class:"th-inner"},u(Nl.htmlToNodes(d))),Nl.h("div",{class:"fht-cell"})]))}}}catch(t){r.e(t)}finally{r.f()}n&&"right"===this.options.detailViewAlign&&e.push(n),this.options.height||this.$tableFooter.length||(this.$el.append("<tfoot><tr></tr></tfoot>"),this.$tableFooter=this.$el.find("tfoot")),this.$tableFooter.find("tr").length||this.$tableFooter.html("<table><thead><tr></tr></thead></table>"),this.$tableFooter.find("tr").html(e),this.trigger("post-footer",this.$tableFooter)}},fitFooter:function(){var e=this;if(this.$el.is(":hidden"))this._setDelayTimeout("footer",function(){return e.fitFooter()},100);else{var n=this.$tableBody.get(0),i=this.hasScrollBar&&n.scrollHeight>n.clientHeight+this.$header.outerHeight()?Nl.getScrollBarWidth():0;this.$tableFooter.css("margin-right",i).find("table").css("width",this.$el.outerWidth()).attr("class",this.$el.attr("class"));var r=this.$tableFooter.find("th"),o=this.$body.find(">tr:first-child:not(.no-records-found)");for(r.find(".fht-cell").width("auto");o.length&&o.find('>td[colspan]:not([colspan="1"])').length;)o=o.next();var a=o.find("> *").length;o.find("> *").each(function(n,i){var o=t(i);if(Nl.hasDetailViewIcon(e.options)&&(0===n&&"left"===e.options.detailViewAlign||n===a-1&&"right"===e.options.detailViewAlign)){var s=r.filter(".detail"),l=s.innerWidth()-s.find(".fht-cell").width();s.find(".fht-cell").width(o.innerWidth()-l)}else{var c=r.eq(n),u=c.innerWidth()-c.find(".fht-cell").width();c.find(".fht-cell").width(o.innerWidth()-u)}}),this.horizontalScroll()}},horizontalScroll:function(){var t=this;this.$tableBody.off("scroll").on("scroll",function(){var e=t.$tableBody.scrollLeft();t.options.showHeader&&t.options.height&&t.$tableHeader.scrollLeft(e),t.options.showFooter&&!t.options.cardView&&t.$tableFooter.scrollLeft(e),t.trigger("scroll-body",t.$tableBody)})},updateColumnTitle:function(e){e.hasOwnProperty("field")&&e.hasOwnProperty("title")&&(this.columns[this.fieldsColumnsIndex[e.field]].title=this.options.escape&&this.options.escapeTitle?Nl.escapeHTML(e.title):e.title,this.columns[this.fieldsColumnsIndex[e.field]].visible&&(this.$header.find("th[data-field]").each(function(n,i){if(t(i).data("field")===e.field)return t(t(i).find(".th-inner")[0]).html(e.title),!1}),this.resetView()))}},mc={initPagination:function(){var t=this,e=this.options;if(e.pagination){this.$pagination.show();var n,i,r,o,a,s,l,c=[],u=!1,h=this.getData({includeHiddenRows:!1}),f=e.pageList;if("string"==typeof f&&(f=f.replace(/\[|\]| /g,"").toLowerCase().split(",")),f=f.map(function(t){return"string"==typeof t?t.toLowerCase()===e.formatAllRows().toLowerCase()||["all","unlimited"].includes(t.toLowerCase())?e.formatAllRows():+t:t}),this.paginationParts=e.paginationParts,"string"==typeof this.paginationParts&&(this.paginationParts=this.paginationParts.replace(/\[|\]| |'/g,"").split(",")),"server"!==e.sidePagination&&(e.totalRows=h.length),this.totalPages=0,e.pageSize<=0&&(console.warn("pageSize must be a positive number, falling back to show all rows."),e.pageSize=e.totalRows||1,u=!0),e.totalRows&&(e.pageSize===e.formatAllRows()&&(e.pageSize=e.totalRows,u=!0),this.totalPages=1+~~((e.totalRows-1)/e.pageSize),e.totalPages=this.totalPages),this.totalPages>0&&e.pageNumber>this.totalPages&&(e.pageNumber=this.totalPages),this.pageFrom=(e.pageNumber-1)*e.pageSize+1,this.pageTo=e.pageNumber*e.pageSize,this.pageTo>e.totalRows&&(this.pageTo=e.totalRows),this.options.pagination&&"server"!==this.options.sidePagination&&(this.options.totalNotFiltered=this.options.data.length),this.options.showExtendedPagination||(this.options.totalNotFiltered=void 0),(this.paginationParts.includes("pageInfo")||this.paginationParts.includes("pageInfoShort")||this.paginationParts.includes("pageSize"))&&c.push('<div class="'.concat(this.constants.classes.pull,"-").concat(e.paginationDetailHAlign,' pagination-detail">')),this.paginationParts.includes("pageInfo")||this.paginationParts.includes("pageInfoShort")){var d=this.options.totalRows;"client"===this.options.sidePagination&&this.options.paginationLoadMore&&!this._paginationLoaded&&this.totalPages>1&&(d+=" +");var p=this.paginationParts.includes("pageInfoShort")?e.formatDetailPagination(d):e.formatShowingRows(this.pageFrom,this.pageTo,d,e.totalNotFiltered);c.push('<span class="pagination-info">\n      '.concat(p,"\n      </span>"))}if(this.paginationParts.includes("pageSize")){c.push('<div class="page-list">');var g=['<div class="'.concat(this.constants.classes.paginationDropdown,'">\n        <button class="').concat(this.constants.buttonsClass,' dropdown-toggle" type="button" ').concat(this.constants.dataToggle,'="dropdown">\n        <span class="page-size">\n        ').concat(u?e.formatAllRows():e.pageSize,"\n        </span>\n        ").concat(this.constants.html.dropdownCaret,"\n        </button>\n        ").concat(this.constants.html.pageDropdown[0])];f.forEach(function(n,i){var r;(!e.smartDisplay||0===i||f[i-1]<e.totalRows||n===e.formatAllRows())&&(r=u?n===e.formatAllRows()?t.constants.classes.dropdownActive:"":n===e.pageSize?t.constants.classes.dropdownActive:"",g.push(Nl.sprintf(t.constants.html.pageDropdownItem,r,n)))}),g.push("".concat(this.constants.html.pageDropdown[1],"</div>")),c.push(e.formatRecordsPerPage(g.join("")))}if((this.paginationParts.includes("pageInfo")||this.paginationParts.includes("pageInfoShort")||this.paginationParts.includes("pageSize"))&&c.push("</div></div>"),this.paginationParts.includes("pageList")){c.push('<div class="'.concat(this.constants.classes.pull,"-").concat(e.paginationHAlign,' pagination">'),Nl.sprintf(this.constants.html.pagination[0],Nl.sprintf(" pagination-%s",e.iconSize)),Nl.sprintf(this.constants.html.paginationItem," page-pre",e.formatSRPaginationPreText(),e.paginationPreText)),this.totalPages<e.paginationSuccessivelySize?(i=1,r=this.totalPages):r=(i=e.pageNumber-e.paginationPagesBySide)+2*e.paginationPagesBySide,e.pageNumber<e.paginationSuccessivelySize-1&&(r=e.paginationSuccessivelySize),e.paginationSuccessivelySize>this.totalPages-i&&(i=i-(e.paginationSuccessivelySize-(this.totalPages-i))+1),i<1&&(i=1),r>this.totalPages&&(r=this.totalPages);var v=Math.round(e.paginationPagesBySide/2),b=function(n){var i=arguments.length>1&&void 0!==arguments[1]?arguments[1]:"";return Nl.sprintf(t.constants.html.paginationItem,i+(n===e.pageNumber?" ".concat(t.constants.classes.paginationActive):""),e.formatSRPaginationPageText(n),n)};if(i>1){var m=e.paginationPagesBySide;for(m>=i&&(m=i-1),n=1;n<=m;n++)c.push(b(n));i-1===m+1?(n=i-1,c.push(b(n))):i-1>m&&(i-2*e.paginationPagesBySide>e.paginationPagesBySide&&e.paginationUseIntermediate?(n=Math.round((i-v)/2+v),c.push(b(n," page-intermediate"))):c.push(Nl.sprintf(this.constants.html.paginationItem," page-first-separator disabled","","...")))}for(n=i;n<=r;n++)c.push(b(n));if(this.totalPages>r){var y=this.totalPages-(e.paginationPagesBySide-1);for(r>=y&&(y=r+1),r+1===y-1?(n=r+1,c.push(b(n))):y>r+1&&(this.totalPages-r>2*e.paginationPagesBySide&&e.paginationUseIntermediate?(n=Math.round((this.totalPages-v-r)/2+r),c.push(b(n," page-intermediate"))):c.push(Nl.sprintf(this.constants.html.paginationItem," page-last-separator disabled","","..."))),n=y;n<=this.totalPages;n++)c.push(b(n))}c.push(Nl.sprintf(this.constants.html.paginationItem," page-next",e.formatSRPaginationNextText(),e.paginationNextText)),c.push(this.constants.html.pagination[1],"</div>")}this.$pagination.html(c.join(""));var w=["bottom","both"].includes(e.paginationVAlign)?" ".concat(this.constants.classes.dropup):"";this.$pagination.last().find(".page-list > div").addClass(w),e.onlyInfoPagination||(o=this.$pagination.find(".page-list a"),a=this.$pagination.find(".page-pre"),s=this.$pagination.find(".page-next"),l=this.$pagination.find(".page-item").not(".page-next, .page-pre, .page-last-separator, .page-first-separator"),this.totalPages<=1&&this.$pagination.find("div.pagination").hide(),e.smartDisplay&&(f.length<2||e.totalRows<=f[0])&&this.$pagination.find("div.page-list").hide(),this.$pagination[this.getData().length?"show":"hide"](),e.paginationLoop||(1===e.pageNumber&&a.addClass("disabled"),e.pageNumber===this.totalPages&&s.addClass("disabled")),u&&(e.pageSize=e.formatAllRows()),o.off("click").on("click",function(e){return t.onPageListChange(e)}),a.off("click").on("click",function(e){return t.onPagePre(e)}),s.off("click").on("click",function(e){return t.onPageNext(e)}),l.off("click").on("click",function(e){return t.onPageNumber(e)}))}else this.$pagination.hide()},updatePagination:function(e){e&&t(e.currentTarget).hasClass("disabled")||(this.options.maintainMetaData||this.resetRows(),this.initPagination(),this.trigger("page-change",this.options.pageNumber,this.options.pageSize),"server"===this.options.sidePagination||"client"===this.options.sidePagination&&this.options.paginationLoadMore&&!this._paginationLoaded&&this.options.pageNumber===this.totalPages?this.initServer():this.initBody())},onPageListChange:function(e){e.preventDefault();var n=t(e.currentTarget);return n.parent().addClass(this.constants.classes.dropdownActive).siblings().removeClass(this.constants.classes.dropdownActive),this.options.pageSize=n.text().toUpperCase()===this.options.formatAllRows().toUpperCase()?this.options.formatAllRows():+n.text(),this.$toolbar.find(".page-size").text(this.options.pageSize),this.updatePagination(e),!1},onPagePre:function(e){if(!t(e.target).hasClass("disabled"))return e.preventDefault(),this.options.pageNumber-1==0?this.options.pageNumber=this.options.totalPages:this.options.pageNumber--,this.updatePagination(e),!1},onPageNext:function(e){if(!t(e.target).hasClass("disabled"))return e.preventDefault(),this.options.pageNumber+1>this.options.totalPages?this.options.pageNumber=1:this.options.pageNumber++,this.updatePagination(e),!1},onPageNumber:function(e){if(e.preventDefault(),this.options.pageNumber!==+t(e.currentTarget).text())return this.options.pageNumber=+t(e.currentTarget).text(),this.updatePagination(e),!1},selectPage:function(t){t>0&&t<=this.options.totalPages&&(this.options.pageNumber=t,this.updatePagination())},prevPage:function(){this.options.pageNumber>1&&(this.options.pageNumber--,this.updatePagination())},nextPage:function(){this.options.pageNumber<this.options.totalPages&&(this.options.pageNumber++,this.updatePagination())},togglePagination:function(){this.options.pagination=!this.options.pagination;var t=this.options.showButtonIcons?this.options.pagination?this.options.icons.paginationSwitchDown:this.options.icons.paginationSwitchUp:"",e=this.options.showButtonText?this.options.pagination?this.options.formatPaginationSwitchUp():this.options.formatPaginationSwitchDown():"";this.$toolbar.find('button[name="paginationSwitch"]').html("".concat(Nl.sprintf(this.constants.html.icon,this.options.iconsPrefix,t)," ").concat(e)),this.updatePagination(),this.trigger("toggle-pagination",this.options.pagination)}},yc={initSearchText:function(){if(this.options.search&&(this.searchText="",""!==this.options.searchText)){var e=Nl.getSearchInput(this);t(e).val(this.options.searchText),this.onSearch({currentTarget:e,firedByInitSearchText:!0})}},initSearch:function(){var e=this;if(this.filterOptions=this.filterOptions||this.options.filterOptions,"server"!==this.options.sidePagination){if(this.options.customSearch)return this.data=Nl.calculateObjectValue(this.options,this.options.customSearch,[this.options.data,this.searchText,this.filterColumns]),this.options.sortReset&&(this.unsortedData=u(this.data)),void this.initSort();var n=this.searchText&&(this.fromHtml?Nl.escapeHTML(this.searchText):this.searchText),i=n?n.toLowerCase():"",r=Nl.isEmptyObject(this.filterColumns)?null:this.filterColumns;this.options.searchAccentNeutralise&&(i=Nl.normalizeAccent(i)),"function"==typeof this.filterOptions.filterAlgorithm?this.data=this.options.data.filter(function(t){return e.filterOptions.filterAlgorithm.apply(null,[t,r])}):"string"==typeof this.filterOptions.filterAlgorithm&&(this.data=r?this.options.data.filter(function(t){var n=e.filterOptions.filterAlgorithm;if(!["and","or"].includes(n))return!0;for(var i in r)if(Object.prototype.hasOwnProperty.call(r,i)){var o=Nl.getItemField(t,i,!1),a=Array.isArray(r[i]),s=!a&&r[i]===o||a&&r[i].includes(o);if(s&&"or"===n)return!0;if(!s&&"and"===n)return!1}return"and"===n}):u(this.options.data));var o=this.getVisibleFields();this.data=i?this.data.filter(function(r,a){for(var s=0;s<e.header.fields.length;s++)if(e.header.searchables[s]&&(!e.options.visibleSearch||-1!==o.indexOf(e.header.fields[s]))){var l=Nl.isNumeric(e.header.fields[s])?parseInt(e.header.fields[s],10):e.header.fields[s],c=e.columns[e.fieldsColumnsIndex[l]],u=Nl.getItemField(r,l,!1);if(e.options.searchAccentNeutralise&&(u=Nl.normalizeAccent(u)),c&&c.searchFormatter&&(u=Nl.calculateObjectValue(c,e.header.formatters[s],[u,r,a,c.field],u),e.header.formatters[s]&&"number"!=typeof u&&(u=t("<div>").html(u).text())),"string"==typeof u||"number"==typeof u)if(e.options.strictSearch){if("".concat(u).toLowerCase()===i)return!0}else if(e.options.regexSearch){if(Nl.regexCompare(u,n))return!0}else{var h=/(?:(<=|=>|=<|>=|>|<)(?:\s+)?(-?\d+)?|(-?\d+)?(\s+)?(<=|=>|=<|>=|>|<))/gm.exec(e.searchText),f=!1;if(h){var d=h[1]||"".concat(h[5],"l"),p=h[2]||h[3],g=parseInt(u,10),v=parseInt(p,10);switch(d){case">":case"<l":f=g>v;break;case"<":case">l":f=g<v;break;case"<=":case"=<":case">=l":case"=>l":f=g<=v;break;case">=":case"=>":case"<=l":case"=<l":f=g>=v}}if(f||"".concat(u).toLowerCase().includes(i))return!0}}return!1}):this.data,this.options.sortReset&&(this.unsortedData=u(this.data)),this.initSort()}},onSearch:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},n=e.currentTarget,i=e.firedByInitSearchText,r=!(arguments.length>1&&void 0!==arguments[1])||arguments[1];if(void 0!==n&&t(n).length&&r){var o=t(n).val().trim();if(this.options.trimOnSearch&&t(n).val()!==o&&t(n).val(o),this.searchText===o)return;var a=Nl.getSearchInput(this),s=t(a),l=n instanceof jQuery?n:t(n);(l.is(s)||l.hasClass("search-input"))&&(this.searchText=o,this.options.searchText=o)}i||(this.options.pageNumber=1),this.initSearch(),i?"client"===this.options.sidePagination&&this.updatePagination():this.updatePagination(),this.trigger("search",this.searchText)},resetSearch:function(e){var n=Nl.getSearchInput(this),i=e||"";t(n).val(i),this.searchText=i,this.options.searchText=i,this.onSearch({currentTarget:n},!1)},filterBy:function(t,e){this.filterOptions=Nl.isEmptyObject(e)?this.options.filterOptions:Nl.extend({},this.options.filterOptions,e),this.filterColumns=Nl.isEmptyObject(t)?{}:t,this.options.pageNumber=1,this.initSearch(),this.updatePagination()}},wc={renderButton:function(t,e){var n,i=this.options;if(e.hasOwnProperty("html"))n="function"==typeof e.html?e.html():e.html;else{var r=this.constants.buttonsClass;if(e.hasOwnProperty("attributes")&&e.attributes.class&&(r+=" ".concat(e.attributes.class)),n='<button class="'.concat(r,'" type="button" name="').concat(t,'"'),e.hasOwnProperty("attributes"))for(var o=0,a=Object.entries(e.attributes);o<a.length;o++){var s=c(a[o],2),l=s[0],u=s[1];if("class"!==l){var h="title"===l?i.buttonsAttributeTitle:l;n+=" ".concat(h,'="').concat(u,'"')}}n+=">",i.showButtonIcons&&e.hasOwnProperty("icon")&&(n+="".concat(Nl.sprintf(this.constants.html.icon,i.iconsPrefix,e.icon)," ")),i.showButtonText&&e.hasOwnProperty("text")&&(n+=e.text),n+="</button>"}return n},initToolbar:function(){var e,n,i,r=this,a=this.options,s=0;this.$toolbar.find(".bs-bars").children().length&&t("body").append(t(a.toolbar)),this.$toolbar.html(""),"string"!=typeof a.toolbar&&"object"!==f(a.toolbar)||t(Nl.sprintf('<div class="bs-bars %s-%s"></div>',this.constants.classes.pull,a.toolbarAlign)).appendTo(this.$toolbar).append(t(a.toolbar)),e=['<div class="'.concat(["columns","columns-".concat(a.buttonsAlign),this.constants.classes.buttonsGroup,"".concat(this.constants.classes.pull,"-").concat(a.buttonsAlign)].join(" "),'">')],"string"==typeof a.buttonsOrder&&(a.buttonsOrder=a.buttonsOrder.replace(/\[|\]| |'/g,"").split(",")),this.buttons=Object.assign(this.buttons,{paginationSwitch:{text:a.pagination?a.formatPaginationSwitchUp():a.formatPaginationSwitchDown(),icon:a.pagination?a.icons.paginationSwitchDown:a.icons.paginationSwitchUp,render:!1,event:this.togglePagination,attributes:{"aria-label":a.formatPaginationSwitch(),title:a.formatPaginationSwitch()}},refresh:{text:a.formatRefresh(),icon:a.icons.refresh,render:!1,event:this.refresh,attributes:{"aria-label":a.formatRefresh(),title:a.formatRefresh()}},toggle:{text:a.formatToggleOn(),icon:a.icons.toggleOff,render:!1,event:this.toggleView,attributes:{"aria-label":a.formatToggleOn(),title:a.formatToggleOn()}},fullscreen:{text:a.formatFullscreen(),icon:a.icons.fullscreen,render:!1,event:this.toggleFullscreen,attributes:{"aria-label":a.formatFullscreen(),title:a.formatFullscreen()}},columns:{render:!1,html:function(){var t=[];if(t.push('<div class="keep-open '.concat(r.constants.classes.buttonsDropdown,'">\n            <button class="').concat(r.constants.buttonsClass,' dropdown-toggle" type="button" ').concat(r.constants.dataToggle,'="dropdown"\n            aria-label="').concat(a.formatColumns(),'" ').concat(a.buttonsAttributeTitle,'="').concat(a.formatColumns(),'">\n            ').concat(a.showButtonIcons?Nl.sprintf(r.constants.html.icon,a.iconsPrefix,a.icons.columns):"","\n            ").concat(a.showButtonText?a.formatColumns():"","\n            ").concat(r.constants.html.dropdownCaret,"\n            </button>\n            ").concat(r.constants.html.toolbarDropdown[0])),a.showColumnsSearch&&(t.push(Nl.sprintf(r.constants.html.toolbarDropdownItem,Nl.sprintf('<input type="text" class="%s" name="columnsSearch" placeholder="%s" autocomplete="off">',r.constants.classes.input,a.formatSearch()))),t.push(r.constants.html.toolbarDropdownSeparator)),a.showColumnsToggleAll){var e=r.getVisibleColumns().length===r.columns.filter(function(t){return!r.isSelectionColumn(t)}).length;t.push(Nl.getCheckboxHtml({name:"toggle-all",checked:e,label:a.formatColumnsToggleAll(),extraClass:"toggle-all",centered:!1,withLabel:!0})),t.push(r.constants.html.toolbarDropdownSeparator)}var n=0;return r.columns.forEach(function(t){t.visible&&n++}),r.columns.forEach(function(e,i){if(!r.isSelectionColumn(e)&&(!a.cardView||e.cardVisible)){var o=e.visible?' checked="checked"':"",l=n<=a.minimumCountColumns&&o?' disabled="disabled"':"";if(e.switchable){var c=Nl.getDropdownColumnCheckboxHtml({dataField:e.field,value:i,checked:!!o,disabled:!!l,label:e.switchableLabel||e.title});5===Nl.getBootstrapVersion()?t.push(c):t.push(Nl.sprintf(r.constants.html.toolbarDropdownItem,c)),s++}}}),t.push(r.constants.html.toolbarDropdown[1],"</div>"),t.join("")}}});for(var l={},h=0,d=Object.entries(this.buttons);h<d.length;h++){var p=c(d[h],2),g=p[0],v=p[1];l[g]=this.renderButton(g,v);var b="show".concat(g.charAt(0).toUpperCase()).concat(g.substring(1)),m=a[b];!(!v.hasOwnProperty("render")||v.hasOwnProperty("render")&&v.render)||void 0!==m&&!0!==m||(a[b]=!0),a.buttonsOrder.includes(g)||a.buttonsOrder.push(g)}var y,w=o(a.buttonsOrder);try{for(w.s();!(y=w.n()).done;){var S=y.value;a["show".concat(S.charAt(0).toUpperCase()).concat(S.substring(1))]&&e.push(l[S])}}catch(t){w.e(t)}finally{w.f()}if(e.push("</div>"),this.showToolbar||e.length>2)if(e.some(function(t){return Nl.isDomNode(t)})){var x,O=t(e[0]),C=o(e.slice(1,-1));try{for(C.s();!(x=C.n()).done;){var k=x.value;O.append.apply(O,u(Nl.htmlToNodes(k)))}}catch(t){C.e(t)}finally{C.f()}this.$toolbar.append(O)}else this.$toolbar.append(e.join(""));for(var T=function(){var t=c(A[P],2),e=t[0],n=t[1];if(n.hasOwnProperty("event")){if("function"==typeof n.event||"string"==typeof n.event){var i="string"==typeof n.event?window[n.event]:n.event;return r.$toolbar.find('button[name="'.concat(e,'"]')).off("click").on("click",function(){return i.call(r)}),1}for(var o=function(){var t=c(s[a],2),n=t[0],i=t[1],o="string"==typeof i?window[i]:i;r.$toolbar.find('button[name="'.concat(e,'"]')).off(n).on(n,function(){return o.call(r)})},a=0,s=Object.entries(n.event);a<s.length;a++)o()}},P=0,A=Object.entries(this.buttons);P<A.length;P++)T();if(a.showColumns){var I=(i=this.$toolbar.find(".keep-open")).find('input[type="checkbox"]:not(".toggle-all")'),$=i.find('input[type="checkbox"].toggle-all');if(s<=a.minimumCountColumns&&i.find("input").prop("disabled",!0),i.find("li, label").off("click").on("click",function(t){t.stopImmediatePropagation()}),I.off("click").on("click",function(e){var n=e.currentTarget,i=t(n);r._toggleColumns([i.data("field")],i.prop("checked"),!1),r.trigger("column-switch",i.data("field"),i.prop("checked")),$.prop("checked",I.filter(":checked").length===r.columns.filter(function(t){return!r.isSelectionColumn(t)}).length)}),$.off("click").on("click",function(e){var n=e.currentTarget;r._toggleAllColumns(t(n).prop("checked")),r.trigger("column-switch-all",t(n).prop("checked"))}),a.showColumnsSearch){var E=i.find('[name="columnsSearch"]'),R=i.find(".dropdown-item-marker");E.on("keyup paste change",function(e){var n=e.currentTarget,i=t(n).val().toLowerCase();R.show(),I.each(function(e,n){var r=t(n).parents(".dropdown-item-marker");r.text().toLowerCase().includes(i)||r.hide()})})}}var j=function(t){var e=t.is("select")?"change":"keyup drop blur mouseup";t.off(e).on(e,function(t){a.searchOnEnterKey&&13!==t.keyCode||[37,38,39,40].includes(t.keyCode)||(clearTimeout(n),n=setTimeout(function(){r.onSearch({currentTarget:t.currentTarget})},a.searchTimeOut))})};if((a.search||this.showSearchClearButton)&&"string"!=typeof a.searchSelector){e=[];var _=Nl.sprintf(this.constants.html.searchButton,this.constants.buttonsClass,a.formatSearch(),a.showButtonIcons?Nl.sprintf(this.constants.html.icon,a.iconsPrefix,a.icons.search):"",a.showButtonText?a.formatSearch():""),N=Nl.sprintf(this.constants.html.searchClearButton,this.constants.buttonsClass,a.formatClearSearch(),a.showButtonIcons?Nl.sprintf(this.constants.html.icon,a.iconsPrefix,a.icons.clearSearch):"",a.showButtonText?a.formatClearSearch():""),L='<input class="'.concat(this.constants.classes.input,"\n        ").concat(Nl.sprintf(" %s%s",this.constants.classes.inputPrefix,a.iconSize),'\n        search-input" type="search" aria-label="').concat(a.formatSearch(),'" placeholder="').concat(a.formatSearch(),'" autocomplete="off">'),F=L;if(a.showSearchButton||a.showSearchClearButton){var D=(a.showSearchButton?_:"")+(a.showSearchClearButton?N:"");F=a.search?Nl.sprintf(this.constants.html.inputGroup,L,D):D}e.push(Nl.sprintf('\n        <div class="'.concat(this.constants.classes.pull,"-").concat(a.searchAlign," search ").concat(this.constants.classes.inputGroup,'">\n          %s\n        </div>\n      '),F)),this.$toolbar.append(e.join(""));var B=Nl.getSearchInput(this),V=t(B);a.showSearchButton?(this.$toolbar.find(".search button[name=search]").off("click").on("click",function(){clearTimeout(n),n=setTimeout(function(){r.onSearch({currentTarget:B})},a.searchTimeOut)}),a.searchOnEnterKey&&j(V)):j(V),a.showSearchClearButton&&this.$toolbar.find(".search button[name=clearSearch]").click(function(){r.resetSearch()})}else"string"==typeof a.searchSelector&&j(t(Nl.getSearchInput(this)))},refresh:function(t){t&&t.url&&(this.options.url=t.url),t&&t.pageNumber&&(this.options.pageNumber=t.pageNumber),t&&t.pageSize&&(this.options.pageSize=t.pageSize),t&&t.query&&(this.options.url=Nl.addQueryToUrl(this.options.url,t.query)),this.trigger("refresh",this.initServer(t&&t.silent))},toggleView:function(){this.options.cardView=!this.options.cardView,this.initHeader();var t=this.options.showButtonIcons?this.options.cardView?this.options.icons.toggleOn:this.options.icons.toggleOff:"",e=this.options.cardView?this.options.formatToggleOff():this.options.formatToggleOn();this.$toolbar.find('button[name="toggle"]').html("".concat(Nl.sprintf(this.constants.html.icon,this.options.iconsPrefix,t)," ").concat(this.options.showButtonText?e:"")).attr("aria-label",e).attr(this.options.buttonsAttributeTitle,e),this.initBody(),this.trigger("toggle",this.options.cardView)},toggleFullscreen:function(){this.$el.closest(".bootstrap-table").toggleClass("fullscreen"),this.resetView()}},Sc=function(){function e(i,r){n(this,e),this.options=r,this.$el=t(i),this.$el_=this.$el.clone(),this._timeoutId={header:0,footer:0}}return r(e,[{key:"init",value:function(){this.initConstants(),this.initLocale(),this.initContainer(),this.initTable(),this.initHeader(),this.initData(),this.initHiddenRows(),this.initToolbar(),this.initPagination(),this.initBody(),this.initSearchText(),this.initServer()}},{key:"trigger",value:function(n){for(var i,r,o="".concat(n,".bs.table"),a=arguments.length,s=new Array(a>1?a-1:0),l=1;l<a;l++)s[l-1]=arguments[l];(i=this.options)[e.EVENTS[o]].apply(i,[].concat(s,[this])),this.$el.trigger(t.Event(o,{sender:this}),s),(r=this.options).onAll.apply(r,[o].concat([].concat(s,[this]))),this.$el.trigger(t.Event("all.bs.table",{sender:this}),[o,s])}},{key:"getOptions",value:function(){var t=Nl.extend({},this.options);return delete t.data,Nl.extend(!0,{},t)}},{key:"refreshOptions",value:function(t){Nl.compareObjects(this.options,t,!0)||(this.optionsColumnsChanged=!!t.columns,this.options=Nl.extend(this.options,t),this.trigger("refresh-options",this.options),this.destroy(),this.init())}},{key:"_setDelayTimeout",value:function(t,e,n){clearTimeout(this._timeoutId[t]),this._timeoutId[t]=setTimeout(e,n)}},{key:"destroy",value:function(){for(var e=0,n=Object.keys(this._timeoutId);e<n.length;e++){var i=n[e];clearTimeout(this._timeoutId[i])}this.$el.insertBefore(this.$container),t(this.options.toolbar).insertBefore(this.$el),this.$container.next().remove(),this.$container.remove(),this.$el.html(this.$el_.html()).css("margin-top","0").attr("class",this.$el_.attr("class")||"");var r=Nl.getEventName("resize.bootstrap-table",this.$el.attr("id"));t(window).off(r)}},{key:"updateFormatText",value:function(t,e){/^format/.test(t)&&this.options[t]&&("string"==typeof e?this.options[t]=function(){return e}:"function"==typeof e&&(this.options[t]=e),this.initToolbar(),this.initPagination(),this.initBody())}}])}();return Object.assign(Sc.prototype,Ul),Object.assign(Sc.prototype,bc),Object.assign(Sc.prototype,gc),Object.assign(Sc.prototype,wc),Object.assign(Sc.prototype,yc),Object.assign(Sc.prototype,mc),Object.assign(Sc.prototype,rc),Object.assign(Sc.prototype,oc),Object.assign(Sc.prototype,vc),Sc.VERSION=Ml.VERSION,Sc.DEFAULTS=Ml.DEFAULTS,Sc.LOCALES=Ml.LOCALES,Sc.COLUMN_DEFAULTS=Ml.COLUMN_DEFAULTS,Sc.METHODS=Ml.METHODS,Sc.EVENTS=Ml.EVENTS,t.BootstrapTable=Sc,t.fn.bootstrapTable=function(e){for(var n=arguments.length,i=new Array(n>1?n-1:0),r=1;r<n;r++)i[r-1]=arguments[r];var o;return this.each(function(n,r){var a=t(r).data("bootstrap.table");if("string"==typeof e){var s;if(!Ml.METHODS.includes(e))throw new Error("Unknown method: ".concat(e));if(!a)return;return o=(s=a)[e].apply(s,i),void("destroy"===e&&t(r).removeData("bootstrap.table"))}if(a)console.warn("You cannot initialize the table more than once!");else{var l=Nl.extend(!0,{},Sc.DEFAULTS,t(r).data(),"object"===f(e)&&e);a=new t.BootstrapTable(r,l),t(r).data("bootstrap.table",a),a.init()}}),void 0===o?this:o},t.fn.bootstrapTable.Constructor=Sc,t.fn.bootstrapTable.theme=Ml.THEME,t.fn.bootstrapTable.VERSION=Ml.VERSION,t.fn.bootstrapTable.icons=Ml.ICONS,t.fn.bootstrapTable.defaults=Sc.DEFAULTS,t.fn.bootstrapTable.columnDefaults=Sc.COLUMN_DEFAULTS,t.fn.bootstrapTable.events=Sc.EVENTS,t.fn.bootstrapTable.locales=Sc.LOCALES,t.fn.bootstrapTable.methods=Sc.METHODS,t.fn.bootstrapTable.utils=Nl,t(function(){t('[data-toggle="table"]').bootstrapTable()}),Sc});
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"jquery":10}],9:[function(require,module,exports){
+},{"jquery":28}],27:[function(require,module,exports){
 /*!
  * jquery-confirm v3.3.4 (http://craftpip.github.io/jquery-confirm/)
  * Author: Boniface Pereira
@@ -941,7 +5221,7 @@ module.exports = { xypad, SEND_MODES };
  * Licensed under MIT (https://github.com/craftpip/jquery-confirm/blob/master/LICENSE)
  */
 (function(factory){if(typeof define==="function"&&define.amd){define(["jquery"],factory);}else{if(typeof module==="object"&&module.exports){module.exports=function(root,jQuery){if(jQuery===undefined){if(typeof window!=="undefined"){jQuery=require("jquery");}else{jQuery=require("jquery")(root);}}factory(jQuery);return jQuery;};}else{factory(jQuery);}}}(function($){var w=window;$.fn.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}$(this).each(function(){var $this=$(this);if($this.attr("jc-attached")){console.warn("jConfirm has already been attached to this element ",$this[0]);return;}$this.on("click",function(e){e.preventDefault();var jcOption=$.extend({},options);if($this.attr("data-title")){jcOption.title=$this.attr("data-title");}if($this.attr("data-content")){jcOption.content=$this.attr("data-content");}if(typeof jcOption.buttons==="undefined"){jcOption.buttons={};}jcOption["$target"]=$this;if($this.attr("href")&&Object.keys(jcOption.buttons).length===0){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];jcOption.buttons=buttons;jcOption.buttons[firstBtn].action=function(){location.href=$this.attr("href");};}jcOption.closeIcon=false;var instance=$.confirm(jcOption);});$this.attr("jc-attached",true);});return $(this);};$.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});options.buttons=buttons;}return w.jconfirm(options);};$.alert=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];options.buttons[firstBtn]=buttons[firstBtn];}return w.jconfirm(options);};$.dialog=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false,closeIcon:function(){}};}options.buttons={};if(typeof options.closeIcon==="undefined"){options.closeIcon=function(){};}options.confirmKeys=[13];return w.jconfirm(options);};w.jconfirm=function(options){if(typeof options==="undefined"){options={};}var pluginOptions=$.extend(true,{},w.jconfirm.pluginDefaults);if(w.jconfirm.defaults){pluginOptions=$.extend(true,pluginOptions,w.jconfirm.defaults);}pluginOptions=$.extend(true,{},pluginOptions,options);var instance=new w.Jconfirm(pluginOptions);w.jconfirm.instances.push(instance);return instance;};w.Jconfirm=function(options){$.extend(this,options);this._init();};w.Jconfirm.prototype={_init:function(){var that=this;if(!w.jconfirm.instances.length){w.jconfirm.lastFocused=$("body").find(":focus");}this._id=Math.round(Math.random()*99999);this.contentParsed=$(document.createElement("div"));if(!this.lazyOpen){setTimeout(function(){that.open();},0);}},_buildHTML:function(){var that=this;this._parseAnimation(this.animation,"o");this._parseAnimation(this.closeAnimation,"c");this._parseBgDismissAnimation(this.backgroundDismissAnimation);this._parseColumnClass(this.columnClass);this._parseTheme(this.theme);this._parseType(this.type);var template=$(this.template);template.find(".jconfirm-box").addClass(this.animationParsed).addClass(this.backgroundDismissAnimationParsed).addClass(this.typeParsed);if(this.typeAnimated){template.find(".jconfirm-box").addClass("jconfirm-type-animated");}if(this.useBootstrap){template.find(".jc-bs3-row").addClass(this.bootstrapClasses.row);template.find(".jc-bs3-row").addClass("justify-content-md-center justify-content-sm-center justify-content-xs-center justify-content-lg-center");template.find(".jconfirm-box-container").addClass(this.columnClassParsed);if(this.containerFluid){template.find(".jc-bs3-container").addClass(this.bootstrapClasses.containerFluid);}else{template.find(".jc-bs3-container").addClass(this.bootstrapClasses.container);}}else{template.find(".jconfirm-box").css("width",this.boxWidth);}if(this.titleClass){template.find(".jconfirm-title-c").addClass(this.titleClass);}template.addClass(this.themeParsed);var ariaLabel="jconfirm-box"+this._id;template.find(".jconfirm-box").attr("aria-labelledby",ariaLabel).attr("tabindex",-1);template.find(".jconfirm-content").attr("id",ariaLabel);if(this.bgOpacity!==null){template.find(".jconfirm-bg").css("opacity",this.bgOpacity);}if(this.rtl){template.addClass("jconfirm-rtl");}this.$el=template.appendTo(this.container);this.$jconfirmBoxContainer=this.$el.find(".jconfirm-box-container");this.$jconfirmBox=this.$body=this.$el.find(".jconfirm-box");this.$jconfirmBg=this.$el.find(".jconfirm-bg");this.$title=this.$el.find(".jconfirm-title");this.$titleContainer=this.$el.find(".jconfirm-title-c");this.$content=this.$el.find("div.jconfirm-content");this.$contentPane=this.$el.find(".jconfirm-content-pane");this.$icon=this.$el.find(".jconfirm-icon-c");this.$closeIcon=this.$el.find(".jconfirm-closeIcon");this.$holder=this.$el.find(".jconfirm-holder");this.$btnc=this.$el.find(".jconfirm-buttons");this.$scrollPane=this.$el.find(".jconfirm-scrollpane");that.setStartingPoint();this._contentReady=$.Deferred();this._modalReady=$.Deferred();this.$holder.css({"padding-top":this.offsetTop,"padding-bottom":this.offsetBottom,});this.setTitle();this.setIcon();this._setButtons();this._parseContent();this.initDraggable();if(this.isAjax){this.showLoading(false);}$.when(this._contentReady,this._modalReady).then(function(){if(that.isAjaxLoading){setTimeout(function(){that.isAjaxLoading=false;that.setContent();that.setTitle();that.setIcon();setTimeout(function(){that.hideLoading(false);that._updateContentMaxHeight();},100);if(typeof that.onContentReady==="function"){that.onContentReady();}},50);}else{that._updateContentMaxHeight();that.setTitle();that.setIcon();if(typeof that.onContentReady==="function"){that.onContentReady();}}if(that.autoClose){that._startCountDown();}}).then(function(){that._watchContent();});if(this.animation==="none"){this.animationSpeed=1;this.animationBounce=1;}this.$body.css(this._getCSS(this.animationSpeed,this.animationBounce));this.$contentPane.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBg.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBoxContainer.css(this._getCSS(this.animationSpeed,1));},_typePrefix:"jconfirm-type-",typeParsed:"",_parseType:function(type){this.typeParsed=this._typePrefix+type;},setType:function(type){var oldClass=this.typeParsed;this._parseType(type);this.$jconfirmBox.removeClass(oldClass).addClass(this.typeParsed);},themeParsed:"",_themePrefix:"jconfirm-",setTheme:function(theme){var previous=this.theme;this.theme=theme||this.theme;this._parseTheme(this.theme);if(previous){this.$el.removeClass(previous);}this.$el.addClass(this.themeParsed);this.theme=theme;},_parseTheme:function(theme){var that=this;theme=theme.split(",");$.each(theme,function(k,a){if(a.indexOf(that._themePrefix)===-1){theme[k]=that._themePrefix+$.trim(a);}});this.themeParsed=theme.join(" ").toLowerCase();},backgroundDismissAnimationParsed:"",_bgDismissPrefix:"jconfirm-hilight-",_parseBgDismissAnimation:function(bgDismissAnimation){var animation=bgDismissAnimation.split(",");var that=this;$.each(animation,function(k,a){if(a.indexOf(that._bgDismissPrefix)===-1){animation[k]=that._bgDismissPrefix+$.trim(a);}});this.backgroundDismissAnimationParsed=animation.join(" ").toLowerCase();},animationParsed:"",closeAnimationParsed:"",_animationPrefix:"jconfirm-animation-",setAnimation:function(animation){this.animation=animation||this.animation;this._parseAnimation(this.animation,"o");},_parseAnimation:function(animation,which){which=which||"o";var animations=animation.split(",");var that=this;$.each(animations,function(k,a){if(a.indexOf(that._animationPrefix)===-1){animations[k]=that._animationPrefix+$.trim(a);}});var a_string=animations.join(" ").toLowerCase();if(which==="o"){this.animationParsed=a_string;}else{this.closeAnimationParsed=a_string;}return a_string;},setCloseAnimation:function(closeAnimation){this.closeAnimation=closeAnimation||this.closeAnimation;this._parseAnimation(this.closeAnimation,"c");},setAnimationSpeed:function(speed){this.animationSpeed=speed||this.animationSpeed;},columnClassParsed:"",setColumnClass:function(colClass){if(!this.useBootstrap){console.warn("cannot set columnClass, useBootstrap is set to false");return;}this.columnClass=colClass||this.columnClass;this._parseColumnClass(this.columnClass);this.$jconfirmBoxContainer.addClass(this.columnClassParsed);},_updateContentMaxHeight:function(){var height=$(window).height()-(this.$jconfirmBox.outerHeight()-this.$contentPane.outerHeight())-(this.offsetTop+this.offsetBottom);this.$contentPane.css({"max-height":height+"px"});},setBoxWidth:function(width){if(this.useBootstrap){console.warn("cannot set boxWidth, useBootstrap is set to true");return;}this.boxWidth=width;this.$jconfirmBox.css("width",width);},_parseColumnClass:function(colClass){colClass=colClass.toLowerCase();var p;switch(colClass){case"xl":case"xlarge":p="col-md-12";break;case"l":case"large":p="col-md-8 col-md-offset-2";break;case"m":case"medium":p="col-md-6 col-md-offset-3";break;case"s":case"small":p="col-md-4 col-md-offset-4";break;case"xs":case"xsmall":p="col-md-2 col-md-offset-5";break;default:p=colClass;}this.columnClassParsed=p;},initDraggable:function(){var that=this;var $t=this.$titleContainer;this.resetDrag();if(this.draggable){$t.on("mousedown",function(e){$t.addClass("jconfirm-hand");that.mouseX=e.clientX;that.mouseY=e.clientY;that.isDrag=true;});$(window).on("mousemove."+this._id,function(e){if(that.isDrag){that.movingX=e.clientX-that.mouseX+that.initialX;that.movingY=e.clientY-that.mouseY+that.initialY;that.setDrag();}});$(window).on("mouseup."+this._id,function(){$t.removeClass("jconfirm-hand");if(that.isDrag){that.isDrag=false;that.initialX=that.movingX;that.initialY=that.movingY;}});}},resetDrag:function(){this.isDrag=false;this.initialX=0;this.initialY=0;this.movingX=0;this.movingY=0;this.mouseX=0;this.mouseY=0;this.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");},setDrag:function(){if(!this.draggable){return;}this.alignMiddle=false;var boxWidth=this.$jconfirmBox.outerWidth();var boxHeight=this.$jconfirmBox.outerHeight();var windowWidth=$(window).width();var windowHeight=$(window).height();var that=this;var dragUpdate=1;if(that.movingX%dragUpdate===0||that.movingY%dragUpdate===0){if(that.dragWindowBorder){var leftDistance=(windowWidth/2)-boxWidth/2;var topDistance=(windowHeight/2)-boxHeight/2;topDistance-=that.dragWindowGap;leftDistance-=that.dragWindowGap;if(leftDistance+that.movingX<0){that.movingX=-leftDistance;}else{if(leftDistance-that.movingX<0){that.movingX=leftDistance;}}if(topDistance+that.movingY<0){that.movingY=-topDistance;}else{if(topDistance-that.movingY<0){that.movingY=topDistance;}}}that.$jconfirmBoxContainer.css("transform","translate("+that.movingX+"px, "+that.movingY+"px)");}},_scrollTop:function(){if(typeof pageYOffset!=="undefined"){return pageYOffset;}else{var B=document.body;var D=document.documentElement;D=(D.clientHeight)?D:B;return D.scrollTop;}},_watchContent:function(){var that=this;if(this._timer){clearInterval(this._timer);}var prevContentHeight=0;this._timer=setInterval(function(){if(that.smoothContent){var contentHeight=that.$content.outerHeight()||0;if(contentHeight!==prevContentHeight){prevContentHeight=contentHeight;}var wh=$(window).height();var total=that.offsetTop+that.offsetBottom+that.$jconfirmBox.height()-that.$contentPane.height()+that.$content.height();if(total<wh){that.$contentPane.addClass("no-scroll");}else{that.$contentPane.removeClass("no-scroll");}}},this.watchInterval);},_overflowClass:"jconfirm-overflow",_hilightAnimating:false,highlight:function(){this.hiLightModal();},hiLightModal:function(){var that=this;if(this._hilightAnimating){return;}that.$body.addClass("hilight");var duration=parseFloat(that.$body.css("animation-duration"))||2;this._hilightAnimating=true;setTimeout(function(){that._hilightAnimating=false;that.$body.removeClass("hilight");},duration*1000);},_bindEvents:function(){var that=this;this.boxClicked=false;this.$scrollPane.click(function(e){if(!that.boxClicked){var buttonName=false;var shouldClose=false;var str;if(typeof that.backgroundDismiss==="function"){str=that.backgroundDismiss();}else{str=that.backgroundDismiss;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}else{that.hiLightModal();}}that.boxClicked=false;});this.$jconfirmBox.click(function(e){that.boxClicked=true;});var isKeyDown=false;$(window).on("jcKeyDown."+that._id,function(e){if(!isKeyDown){isKeyDown=true;}});$(window).on("keyup."+that._id,function(e){if(isKeyDown){that.reactOnKey(e);isKeyDown=false;}});$(window).on("resize."+this._id,function(){that._updateContentMaxHeight();setTimeout(function(){that.resetDrag();},100);});},_cubic_bezier:"0.36, 0.55, 0.19",_getCSS:function(speed,bounce){return{"-webkit-transition-duration":speed/1000+"s","transition-duration":speed/1000+"s","-webkit-transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")","transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")"};},_setButtons:function(){var that=this;var total_buttons=0;if(typeof this.buttons!=="object"){this.buttons={};}$.each(this.buttons,function(key,button){total_buttons+=1;if(typeof button==="function"){that.buttons[key]=button={action:button};}that.buttons[key].text=button.text||key;that.buttons[key].btnClass=button.btnClass||"btn-default";that.buttons[key].action=button.action||function(){};that.buttons[key].keys=button.keys||[];that.buttons[key].isHidden=button.isHidden||false;that.buttons[key].isDisabled=button.isDisabled||false;$.each(that.buttons[key].keys,function(i,a){that.buttons[key].keys[i]=a.toLowerCase();});var button_element=$('<button type="button" class="btn"></button>').html(that.buttons[key].text).addClass(that.buttons[key].btnClass).prop("disabled",that.buttons[key].isDisabled).css("display",that.buttons[key].isHidden?"none":"").click(function(e){e.preventDefault();var res=that.buttons[key].action.apply(that,[that.buttons[key]]);that.onAction.apply(that,[key,that.buttons[key]]);that._stopCountDown();if(typeof res==="undefined"||res){that.close();}});that.buttons[key].el=button_element;that.buttons[key].setText=function(text){button_element.html(text);};that.buttons[key].addClass=function(className){button_element.addClass(className);};that.buttons[key].removeClass=function(className){button_element.removeClass(className);};that.buttons[key].disable=function(){that.buttons[key].isDisabled=true;button_element.prop("disabled",true);};that.buttons[key].enable=function(){that.buttons[key].isDisabled=false;button_element.prop("disabled",false);};that.buttons[key].show=function(){that.buttons[key].isHidden=false;button_element.css("display","");};that.buttons[key].hide=function(){that.buttons[key].isHidden=true;button_element.css("display","none");};that["$_"+key]=that["$$"+key]=button_element;that.$btnc.append(button_element);});if(total_buttons===0){this.$btnc.hide();}if(this.closeIcon===null&&total_buttons===0){this.closeIcon=true;}if(this.closeIcon){if(this.closeIconClass){var closeHtml='<i class="'+this.closeIconClass+'"></i>';this.$closeIcon.html(closeHtml);}this.$closeIcon.click(function(e){e.preventDefault();var buttonName=false;var shouldClose=false;var str;if(typeof that.closeIcon==="function"){str=that.closeIcon();}else{str=that.closeIcon;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}});this.$closeIcon.show();}else{this.$closeIcon.hide();}},setTitle:function(string,force){force=force||false;if(typeof string!=="undefined"){if(typeof string==="string"){this.title=string;}else{if(typeof string==="function"){if(typeof string.promise==="function"){console.error("Promise was returned from title function, this is not supported.");}var response=string();if(typeof response==="string"){this.title=response;}else{this.title=false;}}else{this.title=false;}}}if(this.isAjaxLoading&&!force){return;}this.$title.html(this.title||"");this.updateTitleContainer();},setIcon:function(iconClass,force){force=force||false;if(typeof iconClass!=="undefined"){if(typeof iconClass==="string"){this.icon=iconClass;}else{if(typeof iconClass==="function"){var response=iconClass();if(typeof response==="string"){this.icon=response;}else{this.icon=false;}}else{this.icon=false;}}}if(this.isAjaxLoading&&!force){return;}this.$icon.html(this.icon?'<i class="'+this.icon+'"></i>':"");this.updateTitleContainer();},updateTitleContainer:function(){if(!this.title&&!this.icon){this.$titleContainer.hide();}else{this.$titleContainer.show();}},setContentPrepend:function(content,force){if(!content){return;}this.contentParsed.prepend(content);},setContentAppend:function(content){if(!content){return;}this.contentParsed.append(content);},setContent:function(content,force){force=!!force;var that=this;if(content){this.contentParsed.html("").append(content);}if(this.isAjaxLoading&&!force){return;}this.$content.html("");this.$content.append(this.contentParsed);setTimeout(function(){that.$body.find("input[autofocus]:visible:first").focus();},100);},loadingSpinner:false,showLoading:function(disableButtons){this.loadingSpinner=true;this.$jconfirmBox.addClass("loading");if(disableButtons){this.$btnc.find("button").prop("disabled",true);}},hideLoading:function(enableButtons){this.loadingSpinner=false;this.$jconfirmBox.removeClass("loading");if(enableButtons){this.$btnc.find("button").prop("disabled",false);}},ajaxResponse:false,contentParsed:"",isAjax:false,isAjaxLoading:false,_parseContent:function(){var that=this;var e="&nbsp;";if(typeof this.content==="function"){var res=this.content.apply(this);if(typeof res==="string"){this.content=res;}else{if(typeof res==="object"&&typeof res.always==="function"){this.isAjax=true;this.isAjaxLoading=true;res.always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});this.content=e;}else{this.content=e;}}}if(typeof this.content==="string"&&this.content.substr(0,4).toLowerCase()==="url:"){this.isAjax=true;this.isAjaxLoading=true;var u=this.content.substring(4,this.content.length);$.get(u).done(function(html){that.contentParsed.html(html);}).always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});}if(!this.content){this.content=e;}if(!this.isAjax){this.contentParsed.html(this.content);this.setContent();that._contentReady.resolve();}},_stopCountDown:function(){clearInterval(this.autoCloseInterval);if(this.$cd){this.$cd.remove();}},_startCountDown:function(){var that=this;var opt=this.autoClose.split("|");if(opt.length!==2){console.error("Invalid option for autoClose. example 'close|10000'");return false;}var button_key=opt[0];var time=parseInt(opt[1]);if(typeof this.buttons[button_key]==="undefined"){console.error("Invalid button key '"+button_key+"' for autoClose");return false;}var seconds=Math.ceil(time/1000);this.$cd=$('<span class="countdown"> ('+seconds+")</span>").appendTo(this["$_"+button_key]);this.autoCloseInterval=setInterval(function(){that.$cd.html(" ("+(seconds-=1)+") ");if(seconds<=0){that["$$"+button_key].trigger("click");that._stopCountDown();}},1000);},_getKey:function(key){switch(key){case 192:return"tilde";case 13:return"enter";case 16:return"shift";case 9:return"tab";case 20:return"capslock";case 17:return"ctrl";case 91:return"win";case 18:return"alt";case 27:return"esc";case 32:return"space";}var initial=String.fromCharCode(key);if(/^[A-z0-9]+$/.test(initial)){return initial.toLowerCase();}else{return false;}},reactOnKey:function(e){var that=this;var a=$(".jconfirm");if(a.eq(a.length-1)[0]!==this.$el[0]){return false;}var key=e.which;if(this.$content.find(":input").is(":focus")&&/13|32/.test(key)){return false;}var keyChar=this._getKey(key);if(keyChar==="esc"&&this.escapeKey){if(this.escapeKey===true){this.$scrollPane.trigger("click");}else{if(typeof this.escapeKey==="string"||typeof this.escapeKey==="function"){var buttonKey;if(typeof this.escapeKey==="function"){buttonKey=this.escapeKey();}else{buttonKey=this.escapeKey;}if(buttonKey){if(typeof this.buttons[buttonKey]==="undefined"){console.warn("Invalid escapeKey, no buttons found with key "+buttonKey);}else{this["$_"+buttonKey].trigger("click");}}}}}$.each(this.buttons,function(key,button){if(button.keys.indexOf(keyChar)!==-1){that["$_"+key].trigger("click");}});},setDialogCenter:function(){console.info("setDialogCenter is deprecated, dialogs are centered with CSS3 tables");},_unwatchContent:function(){clearInterval(this._timer);},close:function(onClosePayload){var that=this;if(typeof this.onClose==="function"){this.onClose(onClosePayload);}this._unwatchContent();$(window).unbind("resize."+this._id);$(window).unbind("keyup."+this._id);$(window).unbind("jcKeyDown."+this._id);if(this.draggable){$(window).unbind("mousemove."+this._id);$(window).unbind("mouseup."+this._id);this.$titleContainer.unbind("mousedown");}that.$el.removeClass(that.loadedClass);$("body").removeClass("jconfirm-no-scroll-"+that._id);that.$jconfirmBoxContainer.removeClass("jconfirm-no-transition");setTimeout(function(){that.$body.addClass(that.closeAnimationParsed);that.$jconfirmBg.addClass("jconfirm-bg-h");var closeTimer=(that.closeAnimation==="none")?1:that.animationSpeed;setTimeout(function(){that.$el.remove();var l=w.jconfirm.instances;var i=w.jconfirm.instances.length-1;for(i;i>=0;i--){if(w.jconfirm.instances[i]._id===that._id){w.jconfirm.instances.splice(i,1);}}if(!w.jconfirm.instances.length){if(that.scrollToPreviousElement&&w.jconfirm.lastFocused&&w.jconfirm.lastFocused.length&&$.contains(document,w.jconfirm.lastFocused[0])){var $lf=w.jconfirm.lastFocused;if(that.scrollToPreviousElementAnimate){var st=$(window).scrollTop();var ot=w.jconfirm.lastFocused.offset().top;var wh=$(window).height();if(!(ot>st&&ot<(st+wh))){var scrollTo=(ot-Math.round((wh/3)));$("html, body").animate({scrollTop:scrollTo},that.animationSpeed,"swing",function(){$lf.focus();});}else{$lf.focus();}}else{$lf.focus();}w.jconfirm.lastFocused=false;}}if(typeof that.onDestroy==="function"){that.onDestroy();}},closeTimer*0.4);},50);return true;},open:function(){if(this.isOpen()){return false;}this._buildHTML();this._bindEvents();this._open();return true;},setStartingPoint:function(){var el=false;if(this.animateFromElement!==true&&this.animateFromElement){el=this.animateFromElement;w.jconfirm.lastClicked=false;}else{if(w.jconfirm.lastClicked&&this.animateFromElement===true){el=w.jconfirm.lastClicked;w.jconfirm.lastClicked=false;}else{return false;}}if(!el){return false;}var offset=el.offset();var iTop=el.outerHeight()/2;var iLeft=el.outerWidth()/2;iTop-=this.$jconfirmBox.outerHeight()/2;iLeft-=this.$jconfirmBox.outerWidth()/2;var sourceTop=offset.top+iTop;sourceTop=sourceTop-this._scrollTop();var sourceLeft=offset.left+iLeft;var wh=$(window).height()/2;var ww=$(window).width()/2;var targetH=wh-this.$jconfirmBox.outerHeight()/2;var targetW=ww-this.$jconfirmBox.outerWidth()/2;sourceTop-=targetH;sourceLeft-=targetW;if(Math.abs(sourceTop)>wh||Math.abs(sourceLeft)>ww){return false;}this.$jconfirmBoxContainer.css("transform","translate("+sourceLeft+"px, "+sourceTop+"px)");},_open:function(){var that=this;if(typeof that.onOpenBefore==="function"){that.onOpenBefore();}this.$body.removeClass(this.animationParsed);this.$jconfirmBg.removeClass("jconfirm-bg-h");this.$body.focus();that.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");setTimeout(function(){that.$body.css(that._getCSS(that.animationSpeed,1));that.$body.css({"transition-property":that.$body.css("transition-property")+", margin"});that.$jconfirmBoxContainer.addClass("jconfirm-no-transition");that._modalReady.resolve();if(typeof that.onOpen==="function"){that.onOpen();}that.$el.addClass(that.loadedClass);},this.animationSpeed);},loadedClass:"jconfirm-open",isClosed:function(){return !this.$el||this.$el.parent().length===0;},isOpen:function(){return !this.isClosed();},toggle:function(){if(!this.isOpen()){this.open();}else{this.close();}}};w.jconfirm.instances=[];w.jconfirm.lastFocused=false;w.jconfirm.pluginDefaults={template:'<div class="jconfirm"><div class="jconfirm-bg jconfirm-bg-h"></div><div class="jconfirm-scrollpane"><div class="jconfirm-row"><div class="jconfirm-cell"><div class="jconfirm-holder"><div class="jc-bs3-container"><div class="jc-bs3-row"><div class="jconfirm-box-container jconfirm-animated"><div class="jconfirm-box" role="dialog" aria-labelledby="labelled" tabindex="-1"><div class="jconfirm-closeIcon">&times;</div><div class="jconfirm-title-c"><span class="jconfirm-icon-c"></span><span class="jconfirm-title"></span></div><div class="jconfirm-content-pane"><div class="jconfirm-content"></div></div><div class="jconfirm-buttons"></div><div class="jconfirm-clear"></div></div></div></div></div></div></div></div></div></div>',title:"Hello",titleClass:"",type:"default",typeAnimated:true,draggable:true,dragWindowGap:15,dragWindowBorder:true,animateFromElement:true,alignMiddle:true,smoothContent:true,content:"Are you sure to continue?",buttons:{},defaultButtons:{ok:{action:function(){}},close:{action:function(){}}},contentLoaded:function(){},icon:"",lazyOpen:false,bgOpacity:null,theme:"light",animation:"scale",closeAnimation:"scale",animationSpeed:400,animationBounce:1,escapeKey:true,rtl:false,container:"body",containerFluid:false,backgroundDismiss:false,backgroundDismissAnimation:"shake",autoClose:false,closeIcon:null,closeIconClass:false,watchInterval:100,columnClass:"col-md-4 col-md-offset-4 col-sm-6 col-sm-offset-3 col-xs-10 col-xs-offset-1",boxWidth:"50%",scrollToPreviousElement:true,scrollToPreviousElementAnimate:true,useBootstrap:true,offsetTop:40,offsetBottom:40,bootstrapClasses:{container:"container",containerFluid:"container-fluid",row:"row"},onContentReady:function(){},onOpenBefore:function(){},onOpen:function(){},onClose:function(){},onDestroy:function(){},onAction:function(){}};var keyDown=false;$(window).on("keydown",function(e){if(!keyDown){var $target=$(e.target);var pass=false;if($target.closest(".jconfirm-box").length){pass=true;}if(pass){$(window).trigger("jcKeyDown");}keyDown=true;}});$(window).on("keyup",function(){keyDown=false;});w.jconfirm.lastClicked=false;$(document).on("mousedown","button, a, [jc-source]",function(){w.jconfirm.lastClicked=$(this);});}));
-},{"jquery":10}],10:[function(require,module,exports){
+},{"jquery":28}],28:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -11659,7 +15939,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],11:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 /**
  * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
  *
@@ -11668,6 +15948,10 @@ return jQuery;
  * `ctx` the widget's behaviour runs against. Swapping editors means rewriting
  * this file; the widgets themselves do not change.
  */
+
+var { WIDGETS } = require("../../../lib/widgets");
+var { sendsDmx } = require("../../../lib/widgets/fields");
+var { exportAttributes } = require("../../../lib/export/config");
 
 /** Neutral field descriptor -> GrapesJS trait. */
 function toTrait(field) {
@@ -11693,6 +15977,18 @@ function toTrait(field) {
   return trait;
 }
 
+/** The fields a trait list holds, in order, as one comparable string. */
+function traitKeys(traits) {
+  if (!traits || typeof traits.map !== "function") return null;
+  return traits
+    .map(function (trait) {
+      // A GrapesJS trait is a model once the component has built it, and a
+      // plain descriptor before.
+      return trait.key || (typeof trait.get === "function" ? trait.get("name") : trait.name);
+    })
+    .join(" ");
+}
+
 /** Read every configured value off a component, for validators that need context. */
 function configOf(model, definition) {
   var config = {};
@@ -11705,17 +16001,153 @@ function configOf(model, definition) {
 }
 
 /**
+ * The fields that apply to a widget as it is currently configured.
+ *
+ * A field may carry `showIf: { key, in: [...] }` (lib/widgets/fields.js),
+ * which is how the DMX half of a panel stays out of the way of anyone sending
+ * only OSC. It is data rather than a callback so this file can also work out
+ * which settings it has to watch for the panel to keep up.
+ */
+function visibleFields(definition, config) {
+  return definition.fields.filter(function (field) {
+    var rule = field.showIf;
+    return !rule || rule.in.indexOf(config[rule.key]) !== -1;
+  });
+}
+
+/** The settings some field's visibility depends on. */
+function revealKeys(definition) {
+  var keys = [];
+  definition.fields.forEach(function (field) {
+    if (field.showIf && keys.indexOf(field.showIf.key) === -1) keys.push(field.showIf.key);
+  });
+  return keys;
+}
+
+function changeEvent(keys) {
+  return keys
+    .map(function (key) {
+      return "change:" + key;
+    })
+    .join(" ");
+}
+
+/**
+ * Which components are on their way out because someone deleted them.
+ *
+ * GrapesJS removes a widget's view for more reasons than deletion: opening a
+ * project, and the preview page taking a push, tear the whole surface down
+ * and build the new one (an undo does the same). Releasing DMX on every one
+ * of those would black the stage out on "Push to preview" while a tablet is
+ * mid-show. Only an actual deletion -- the trash icon, the Delete key, a
+ * script calling remove() -- goes through Component.remove(), which announces
+ * itself with component:remove:before; a load resets the wrapper's children
+ * and never does -- what it does remove that way is the wrapper itself, the
+ * page's body, and the whole surface going is not a widget being deleted.
+ * A move is a remove-and-append flagged `temporary`, so it does not count
+ * either. The set is per editor and filled once, however many widgets
+ * register against it.
+ */
+// The widget types that can hold DMX channels, by component type name.
+var DMX_TYPES = {};
+WIDGETS.forEach(function (definition) {
+  if (definition.dmx) DMX_TYPES[definition.name] = true;
+});
+
+var deletionsByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
+
+function deletionsOf(editor) {
+  var marked = deletionsByEditor && deletionsByEditor.get(editor);
+  if (marked) return marked;
+
+  marked = new WeakSet();
+  if (deletionsByEditor) deletionsByEditor.set(editor, marked);
+
+  // A host without events cannot tell a deletion from a reload, and holding
+  // the rig is the safe answer to not knowing.
+  if (typeof editor.on !== "function") return marked;
+
+  // Deleting a whole page is a deletion of everything on it, and GrapesJS
+  // announces it differently: the only component:remove:before is for the
+  // page's wrapper, which is rightly ignored below, and a page that is not
+  // showing has no views whose removal could hand anything back. So the
+  // channels are given up here, by id, before the page's components are gone
+  // (by page:remove they already are). A widget that holds no channels costs
+  // a message the server answers with "not known".
+  editor.on("page:remove:before", function (page) {
+    if (!page || typeof page.getMainComponent !== "function" || !editor.stopDMX) return;
+    var main = page.getMainComponent();
+    if (!main || typeof main.onAll !== "function") return;
+    main.onAll(function (model) {
+      if (DMX_TYPES[model.get("type")]) editor.stopDMX(model.getId());
+    });
+  });
+
+  editor.on("component:remove:before", function (component, remove, opts) {
+    if (!component || (opts && opts.temporary)) return;
+    if (typeof component.get === "function" && component.get("type") === "wrapper") return;
+    var mark = function (model) {
+      marked.add(model);
+    };
+    // A deleted container takes the widgets inside it with it.
+    if (typeof component.onAll === "function") component.onAll(mark);
+    else mark(component);
+  });
+
+  return marked;
+}
+
+/**
  * Build the `ctx` a widget's behaviour runs against.
  *
  * `set` writes with `silent` so that storing a value mid-drag cannot trigger
  * the validators or a re-render -- the old slider needed a `fromView` flag
  * threaded through its model to dodge exactly that, and the pad would have
  * fought its own handle.
+ *
+ * `onOsc` is the network coming the other way, and `send` is shut for as long
+ * as a message is being delivered through it. That is the host's half of the
+ * loop guard: a widget has no way to lift it, so a value that arrived from
+ * outside cannot be bounced straight back out by any widget, however it is
+ * written. (The widgets' half is in lib/widgets/incoming.js.)
+ *
+ * `onShared` is the other devices on the surface, and while their state is
+ * being delivered both `send` and `share` are shut: the device that acted
+ * already put the message on the wire, and a device that re-shared what it
+ * was handed would hand it straight back. `share` stays open while OSC is
+ * being delivered, on purpose -- a value the rig sent is recorded, so a
+ * device joining later starts where the rig left things -- but it goes out
+ * marked as heard, and the server tells nobody: the other devices were sent
+ * the same OSC message (lib/shared-sync.js).
+ *
+ * Only the pages that show the surface take part. The editor is handed no
+ * shareState (see oscar_socket.js), so neither method exists there.
+ *
+ * A message may carry an OSC half, a DMX half, or both (lib/widgets/outgoing.js);
+ * each goes out on its own bridge. The DMX half is stamped with the
+ * component's id on the way, which is what names this widget's claim on its
+ * channels: the same widget replaces its own claim on every move, and hands
+ * it back when deleted. The id lives in the project file, so a tablet that
+ * reloads the surface resumes driving the same channels instead of turning
+ * up as a second source fighting the first.
  */
 function contextFor(view, editor) {
   var model = view.model;
+  // How deep this widget is in taking an incoming OSC message, and in
+  // taking another device's state. Each shuts a different door.
+  var delivering = 0;
+  var adopting = 0;
 
-  return {
+  var ctx = {
+    onRewrite: function (fn) {
+      view.oscarRewrites = (view.oscarRewrites || []).concat([fn]);
+      return function () {
+        view.oscarRewrites = (view.oscarRewrites || []).filter(function (f) {
+          return f !== fn;
+        });
+      };
+    },
+
     get: function (key) {
       return model.get(key);
     },
@@ -11725,8 +16157,23 @@ function contextFor(view, editor) {
     },
 
     send: function (message) {
-      if (!message || !editor.sendOSC) return;
-      editor.sendOSC(message.ip, message.port, message.address, message.args);
+      if (delivering) {
+        console.warn("OSCAR: a widget tried to answer incoming OSC with outgoing OSC; dropped", message);
+        return;
+      }
+      if (adopting) {
+        // The device that acted already sent this; a second copy from every
+        // tablet watching would be a retrigger downstream.
+        console.warn("OSCAR: a widget tried to answer another device's state by sending; dropped", message);
+        return;
+      }
+      if (!message) return;
+      if (message.address && editor.sendOSC) {
+        editor.sendOSC(message.ip, message.port, message.address, message.args);
+      }
+      if (message.dmx && editor.sendDMX) {
+        editor.sendDMX(Object.assign({ source: model.getId() }, message.dmx));
+      }
     },
 
     setClass: function (name, on) {
@@ -11738,17 +16185,215 @@ function contextFor(view, editor) {
     },
 
     onChange: function (keys, fn) {
-      var event = keys
-        .map(function (key) {
-          return "change:" + key;
-        })
-        .join(" ");
+      var event = changeEvent(keys);
       model.on(event, fn);
       return function () {
         model.off(event, fn);
       };
     },
   };
+
+  // Only a host that can receive offers onOsc at all; the widgets check for
+  // it (through follow() in lib/widgets/incoming.js) rather than assume it.
+  if (editor.onOscIn) {
+    ctx.onOsc = function (fn) {
+      return editor.onOscIn(function (message) {
+        delivering++;
+        try {
+          fn(message);
+        } finally {
+          delivering--;
+        }
+      });
+    };
+  }
+
+  // Likewise share and onShared: only where the socket plugin put the other
+  // devices within reach. The state is keyed by the component's id, which
+  // is written into the project (see pinId), so the same widget carries the
+  // same id on every device the layout was pushed to.
+  if (editor.shareState) {
+    ctx.share = function (state, how) {
+      if (adopting) {
+        console.warn("OSCAR: a widget tried to re-share the state it was handed; dropped", state);
+        return;
+      }
+      // Whatever is shared while the rig's message is being delivered is
+      // something every device heard, whether or not the widget said so:
+      // it is recorded and nobody is told (lib/shared-sync.js).
+      var heard = delivering > 0 || !!(how && how.heard === true);
+      editor.shareState(model.getId(), state, { heard: heard, release: how && how.release });
+    };
+  }
+
+  if (editor.onSharedState) {
+    ctx.onShared = function (fn) {
+      return editor.onSharedState(model.getId(), function (state) {
+        adopting++;
+        try {
+          fn(state);
+        } finally {
+          adopting--;
+        }
+      });
+    };
+  }
+
+  return ctx;
+}
+
+// The widget types that follow the rig, by component type name.
+var RECEIVERS = {};
+WIDGETS.forEach(function (definition) {
+  if (definition.receives) RECEIVERS[definition.name] = definition;
+});
+
+// editor -> Map(component model -> detach), for the widgets kept running
+// without a view. Per editor, like the deletions above.
+var offstageByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
+
+/** Stop the viewless copy of one widget, if there is one: its view has arrived. */
+function stopOffstage(editor, model) {
+  var running = offstageByEditor && offstageByEditor.get(editor);
+  var detach = running && running.get(model);
+  if (!detach) return;
+  running.delete(model);
+  detach();
+}
+
+/**
+ * Keep the widgets of the pages that are not showing listening to the rig.
+ *
+ * GrapesJS only builds views for the page on the canvas, and a widget only
+ * runs while it has a view. So on a surface with several pages, what the rig
+ * said to a fader on page two while page one was up reached nobody: with a
+ * single tablet -- the usual rig -- no device anywhere was running that
+ * fader, the value was never stored or recorded, and the fader came back
+ * where it had been left, disagreeing with the rig. The next touch then sent
+ * from the stale position, which is a jump on the rig.
+ *
+ * The components of every page exist whether or not they are showing; only
+ * their views do not. So each widget that can receive is attached to an
+ * element that is never put on screen, against the same ctx a view would
+ * get. It does what it always does with what it hears -- stores it with
+ * set(), shares it as heard -- and because nothing can touch an element that
+ * is not in any document, it never sends. When its page is turned to, the
+ * view's own attach takes over (onRender stops this copy first) and starts
+ * from the stored value and, on a sharing device, the shared state.
+ *
+ * Widgets that only send are left alone: they have nothing to hear, and what
+ * other devices do to them is cached by the socket plugin without them.
+ *
+ *   var offstage = runOffstage(editor, { document: document });
+ *   offstage.start() / offstage.refresh() / offstage.stop()
+ *
+ * start() doubles as the refresh after a project load, which replaces every
+ * component without necessarily announcing a page change.
+ */
+function runOffstage(editor, options) {
+  var doc = (options && options.document) || (typeof document === "undefined" ? null : document);
+  var running = new Map();
+  var started = false;
+  if (offstageByEditor) offstageByEditor.set(editor, running);
+
+  function attach(model, definition) {
+    var el = doc.createElement(definition.tag);
+    var attributes = definition.attributes || {};
+    Object.keys(attributes).forEach(function (name) {
+      el.setAttribute(name, attributes[name]);
+    });
+    try {
+      running.set(model, definition.attach(el, contextFor({ model: model, el: el }, editor)) || function () {});
+    } catch (err) {
+      // One widget that cannot run without a view must not stop the page
+      // from turning, or the rest from listening.
+      console.warn("OSCAR: a widget could not be kept listening off its page:", err && err.message);
+    }
+  }
+
+  function refresh() {
+    var wanted = new Map();
+    if (started && doc && editor.Pages) {
+      var selected = editor.Pages.getSelected();
+      editor.Pages.getAll().forEach(function (page) {
+        if (page === selected || typeof page.getMainComponent !== "function") return;
+        var main = page.getMainComponent();
+        if (!main || typeof main.onAll !== "function") return;
+        main.onAll(function (model) {
+          var definition = RECEIVERS[model.get("type")];
+          if (definition) wanted.set(model, definition);
+        });
+      });
+    }
+
+    // Whatever is no longer off stage goes first: the page turned to, and
+    // after a load every component of the project that was replaced.
+    Array.from(running.keys()).forEach(function (model) {
+      if (!wanted.has(model)) stopOffstage(editor, model);
+    });
+    wanted.forEach(function (definition, model) {
+      if (!running.has(model)) attach(model, definition);
+    });
+  }
+
+  // A host that cannot receive has nothing for these widgets to hear.
+  if (typeof editor.on === "function" && editor.onOscIn) {
+    editor.on("page:select page:add page:remove", refresh);
+  }
+
+  return {
+    refresh: refresh,
+    start: function () {
+      started = !!editor.onOscIn;
+      refresh();
+    },
+    stop: function () {
+      started = false;
+      refresh();
+    },
+    get size() {
+      return running.size;
+    },
+  };
+}
+
+/**
+ * Write the component's id into the project.
+ *
+ * GrapesJS only saves a component's id when something refers to it -- a
+ * style rule, a script; otherwise the id is made up afresh on every load,
+ * and made up differently on every device. Widgets placed on the canvas
+ * pick up a style rule and keep their id that way, but one pasted in from
+ * an imported template does not, and the state the tablets share for it
+ * would be keyed by an id no other tablet has. Pinning it as an attribute
+ * makes the id part of the project on every path.
+ */
+function pinId(model) {
+  var attributes = model.get("attributes") || {};
+  if (attributes.id || typeof model.setId !== "function") return;
+  model.setId(model.getId());
+}
+
+/**
+ * Empty a component whose widget builds its own children.
+ *
+ * What the widget draws lives on the view's element only and GrapesJS never
+ * hears of it, which is the whole arrangement: no component, so nothing to
+ * save, select, move or delete. This is for children that got into the model
+ * some other way -- a project file edited by hand, or written by something
+ * that stored them.
+ */
+function disown(model) {
+  if (typeof model.components !== "function") return;
+  var children = model.components();
+  if (children && children.length) model.components("");
+}
+
+/** Let the widget put back what GrapesJS just wiped off its element. */
+function rewritten(view) {
+  (view.oscarRewrites || []).forEach(function (fn) {
+    fn();
+  });
 }
 
 /**
@@ -11759,12 +16404,31 @@ function contextFor(view, editor) {
 function register(definition) {
   return function (editor, options) {
     var ipserver = (options && options.ipserver) || "localhost";
+    var deletions = definition.dmx ? deletionsOf(editor) : null;
 
-    var defaults = Object.assign({}, definition.defaults, { ip: ipserver });
+    // A widget with an Ip setting starts pointed at this machine. One without
+    // -- a label, or a meter, which listens and never sends -- has nowhere to
+    // point, and must not carry a hidden ip that nothing shows or checks. The
+    // test is the setting itself rather than the sends flag, so the hidden
+    // value and the visible field cannot come apart.
+    var defaults = Object.assign(
+      {},
+      definition.defaults,
+      "ip" in (definition.defaults || {}) ? { ip: ipserver } : {}
+    );
 
     editor.DomComponents.addType(definition.name, {
       isComponent: function (el) {
-        if (matches(definition, el)) return { type: definition.name };
+        if (!matches(definition, el)) return;
+        // A widget that builds its own children (ownsChildren, lib/widgets/
+        // index.js) has none as far as the project goes. Markup pasted in or
+        // imported -- a page saved from a browser, with the tiles the widget
+        // drew still inside it -- would otherwise have them parsed into
+        // components: stored, selectable, draggable out, and drawn a second
+        // time next to the ones the widget builds. The parser only descends
+        // into an element whose components are not already given.
+        if (definition.ownsChildren) return { type: definition.name, components: [] };
+        return { type: definition.name };
       },
 
       model: {
@@ -11774,7 +16438,7 @@ function register(definition) {
             attributes: Object.assign({}, definition.attributes),
             droppable: false,
             resizable: true,
-            traits: definition.fields.map(toTrait),
+            traits: visibleFields(definition, defaults).map(toTrait),
           },
           defaults,
           // A widget whose label is its text content renders that text as its
@@ -11784,6 +16448,41 @@ function register(definition) {
 
         init: function () {
           var model = this;
+
+          // The id is what the other devices know this widget by; it has to
+          // reach the project file, or it never reaches them.
+          pinId(model);
+
+          if (definition.ownsChildren) disown(model);
+
+          // The type's trait list was built from its defaults. A component
+          // read back from a saved project may be set to DMX already, and
+          // switching Output has to bring the right half of the panel with
+          // it. GrapesJS rebuilds its traits on change:traits and redraws the
+          // panel itself, so the list is only ever set when it would differ --
+          // judged by which fields it holds, since two states of a widget can
+          // show the same number of different fields.
+          var reveals = revealKeys(definition);
+          if (reveals.length) {
+            var refresh = function () {
+              var wanted = visibleFields(definition, configOf(model, definition));
+              if (traitKeys(model.get("traits")) === traitKeys(wanted)) return;
+              model.set("traits", wanted.map(toTrait));
+            };
+            refresh();
+            model.on(changeEvent(reveals), refresh);
+          }
+
+          // A widget switched away from DMX must hand its channels back, or
+          // the rig holds that widget's last look with nothing left able to
+          // change it. Enabled off does not release: a disabled fader holds
+          // its level the way a silent OSC fader leaves the software where it
+          // was, and a blackout is not "no change".
+          if (definition.dmx) {
+            model.on("change:transport", function () {
+              if (!sendsDmx(configOf(model, definition)) && editor.stopDMX) editor.stopDMX(model.getId());
+            });
+          }
 
           if (definition.text) {
             model.on("change:" + definition.text, function () {
@@ -11807,13 +16506,44 @@ function register(definition) {
         },
       },
 
+      // GrapesJS's own updateAttributes strips every attribute off the element
+      // and re-applies the model's copy, and updateClasses does the same for
+      // the class list, on every class or style edit. Whatever the widget
+      // wrote straight onto the element goes with them, so each runs the
+      // widget's onRewrite handlers afterwards (extendFnView calls the
+      // original first).
+      extendFnView: ["updateAttributes", "updateClasses"],
+
       view: {
+        updateAttributes: function () {
+          rewritten(this);
+        },
+
+        updateClasses: function () {
+          rewritten(this);
+        },
+
         onRender: function () {
+          // The view takes over from the copy that listened while this page
+          // was not showing (runOffstage); two of them would share twice.
+          stopOffstage(editor, this.model);
           if (this.oscarDetach) this.oscarDetach();
           this.oscarDetach = definition.attach(this.el, contextFor(this, editor));
         },
 
         removed: function () {
+          // DMX is a stream: a deleted widget that was driving channels hands
+          // them back, or the rig holds its last look with nothing on the
+          // surface able to change it. Only a deletion, though (see
+          // deletionsOf): a surface being reloaded keeps every channel where
+          // it is, and so does a browser merely disconnecting -- that is the
+          // server's rule, and a phone locking its screen must not black out
+          // a show.
+          if (deletions && deletions.has(this.model)) {
+            deletions.delete(this.model);
+            if (editor.stopDMX) editor.stopDMX(this.model.getId());
+          }
+
           if (!this.oscarDetach) return;
           this.oscarDetach();
           this.oscarDetach = null;
@@ -11829,6 +16559,20 @@ function register(definition) {
       content: { type: definition.name },
     });
   };
+}
+
+/**
+ * One plugin per registered widget, each told the address other devices
+ * should send to. This is the whole of what an entry point needs to do to get
+ * every widget: spread it into the editor's `plugins` list.
+ */
+function widgetPlugins(ipServer) {
+  return WIDGETS.map(function (definition) {
+    var plugin = register(definition);
+    return function (editor) {
+      plugin(editor, { ipserver: ipServer });
+    };
+  });
 }
 
 /**
@@ -11848,21 +16592,254 @@ function matches(definition, el) {
   return true;
 }
 
-module.exports = { register: register, toTrait: toTrait, matches: matches };
-
-},{}],12:[function(require,module,exports){
 /**
- * OSC button, wired to GrapesJS.
+ * The markup and stylesheet an export is built from, with every widget's
+ * settings written into the markup.
  *
- * The button itself lives in lib/widgets/button.js and knows nothing about the
- * editor; this is only the wiring.
+ * The settings are handed to getHtml() as it serialises each component (its
+ * `attributes` option is called per component, children included) and exist
+ * only in the string it returns. They are never set on a model, not even for
+ * the length of the call, so there is nothing to strip afterwards and no
+ * moment at which an autosave, an undo step or a crash could catch a project
+ * holding a second copy of its settings -- the thing toTrait's comment rules
+ * out. Writing them on and taking them off again would also have GrapesJS
+ * rewrite every widget's element twice per export, mid-show.
+ *
+ * Which components are widgets, and which keys travel, comes from WIDGETS by
+ * way of lib/export/config.js; nothing here lists a widget.
+ *
+ * Only the first page: an exported file is one surface, and the dialog says
+ * so when the project has more.
  */
-var { register } = require("./adapters/grapesjs");
-var { button } = require("../../lib/widgets/button");
+function exportSnapshot(editor) {
+  var pages = editor.Pages.getAll();
+  var component = pages[0].getMainComponent();
+  var widgets = 0;
 
-module.exports = register(button);
+  var html = editor.getHtml({
+    component: component,
+    attributes: function (model, attributes) {
+      var settings = exportAttributes(model.get("type"), function (key) {
+        return model.get(key);
+      });
+      if (!settings) return attributes;
+      widgets++;
+      // The id is the widget's name on the wire: its claim on DMX channels
+      // and the key the devices share its state under. pinId writes it into
+      // every widget that has been through init; this covers one that has
+      // not, in the output only.
+      var id = attributes && attributes.id ? null : typeof model.getId === "function" && model.getId();
+      return Object.assign({}, attributes, id ? { id: id } : null, settings);
+    },
+  });
 
-},{"../../lib/widgets/button":3,"./adapters/grapesjs":11}],13:[function(require,module,exports){
+  return {
+    html: html,
+    css: editor.getCss({ component: component }) || "",
+    pages: pages.length,
+    widgets: widgets,
+  };
+}
+
+module.exports = {
+  exportSnapshot: exportSnapshot,
+  register: register,
+  widgetPlugins: widgetPlugins,
+  runOffstage: runOffstage,
+  toTrait: toTrait,
+  matches: matches,
+  visibleFields: visibleFields,
+  revealKeys: revealKeys,
+};
+
+},{"../../../lib/export/config":3,"../../../lib/widgets":14,"../../../lib/widgets/fields":12}],30:[function(require,module,exports){
+/**
+ * "Export" in the editor: turning the canvas into one file that works.
+ *
+ * What the toolbar had before is GrapesJS's own export-template command, a
+ * modal of markup to copy out -- labelled "See code", because that is all it
+ * is. It cannot produce a working interface: the settings that say where a
+ * widget sends are not in the markup, and nothing on the page would read
+ * them if they were.
+ *
+ * This asks the adapter for markup with those settings written in, and the
+ * OSCAR server to wrap it around the standalone runtime (POST /export).
+ *
+ * Not named oscar_*.js: requiring "./oscar_<name>" is how an entry point used
+ * to pull in one widget's file, and test/widgets.test.js refuses that pattern
+ * in the entry points so nobody wires a widget by hand again.
+ */
+
+var { exportSnapshot } = require("./adapters/grapesjs");
+
+var DEFAULT_NAME = "my-interface";
+
+/** A filename someone can find again, from whatever they typed. */
+function fileStem(name) {
+  var stem = String(name == null ? "" : name)
+    .trim()
+    .toLowerCase()
+    .replace(/\.html?$/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  return stem || DEFAULT_NAME;
+}
+
+/**
+ * Hand a blob to the browser as a download. The object URL is released a
+ * moment later rather than at once: revoking it in the same frame as the
+ * click races the download in Safari, and the file arrives empty.
+ */
+function download(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(function () {
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
+/** The files the server left as links, from its response header. */
+function linkedAssets(res) {
+  try {
+    var list = JSON.parse(decodeURIComponent(res.headers.get("X-Oscar-Linked-Assets") || "[]"));
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * @param {object} editor the GrapesJS editor
+ * @param {{ host: string, port: number, projectName?: () => string }} options
+ *        host and port are what the editor was started with, used only if
+ *        the server cannot be asked again
+ */
+function install(editor, options) {
+  var container = document.getElementById("export-panel");
+  if (!container) return;
+
+  var nameField = document.getElementById("export-name");
+  var hostField = document.getElementById("export-host");
+  var portField = document.getElementById("export-port");
+  var errorBox = document.getElementById("export-error");
+  var noteBox = document.getElementById("export-note");
+  var pagesBox = document.getElementById("export-pages");
+  var pageCount = document.getElementById("export-page-count");
+  var button = document.getElementById("export-button");
+
+  function say(box, message) {
+    box.textContent = message;
+    box.style.display = message ? "block" : "none";
+  }
+
+  function open() {
+    say(errorBox, "");
+    say(noteBox, "");
+    nameField.value = fileStem((options.projectName && options.projectName()) || "");
+
+    var pages = editor.Pages.getAll().length;
+    pageCount.textContent = String(pages);
+    pagesBox.style.display = pages > 1 ? "block" : "none";
+
+    // Asked for now rather than remembered from when the editor loaded: a
+    // laptop that has changed network since then has a new address, and the
+    // file is about to have this one baked into it. The address OSCAR reports
+    // is the one a tablet on the same Wi-Fi can reach -- not localhost, which
+    // would only ever work on this computer.
+    hostField.value = options.host || window.location.hostname || "";
+    portField.value = options.port || "";
+    fetch("/connection")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (conn) {
+        if (conn && conn.address) hostField.value = conn.address;
+        if (conn && conn.socketPort) portField.value = conn.socketPort;
+      })
+      .catch(function () {
+        /* the values from startup stand */
+      });
+
+    container.style.display = "block";
+    editor.Modal.open({
+      title: "Export a working interface",
+      content: container,
+      attributes: { class: "modal-login" },
+    });
+  }
+
+  button.onclick = function () {
+    var host = (hostField.value || "").trim();
+    var port = (portField.value || "").trim();
+    var stem = fileStem(nameField.value);
+
+    say(errorBox, "");
+    say(noteBox, "");
+    // The server checks both properly; this only saves a round trip.
+    if (!host) return say(errorBox, "Say where OSCAR can be reached.");
+    if (!port) return say(errorBox, "Say which port OSCAR's bridge is on.");
+
+    var snapshot = exportSnapshot(editor);
+    button.disabled = true;
+
+    fetch("/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: (nameField.value || "").trim() || DEFAULT_NAME,
+        fileName: stem,
+        html: snapshot.html,
+        css: snapshot.css,
+        connection: { host: host, port: port },
+      }),
+    })
+      .then(function (res) {
+        if (res.ok) {
+          return res.blob().then(function (blob) {
+            return { blob: blob, linked: linkedAssets(res) };
+          });
+        }
+        return res.json().then(
+          function (body) {
+            throw new Error((body && body.error) || "The export failed.");
+          },
+          function () {
+            throw new Error("The export failed.");
+          }
+        );
+      })
+      .then(function (result) {
+        download(result.blob, stem + ".html");
+        if (!result.linked.length) return editor.Modal.close();
+        // The one case where the file is not the whole story, so the dialog
+        // stays up to say it.
+        say(
+          noteBox,
+          "Downloaded. Too large to embed, so these stay as links and have to be " +
+            "kept next to the file: " + result.linked.join(", ")
+        );
+      })
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
+      })
+      .then(function () {
+        button.disabled = false;
+      });
+  };
+
+  editor.Commands.add("oscar-export", open);
+}
+
+module.exports = { install: install, fileStem: fileStem };
+
+},{"./adapters/grapesjs":29}],31:[function(require,module,exports){
 window.$ = $ = window.jQuery = require("jquery");
 
 // These plugins attach themselves to whichever jQuery they are handed. The
@@ -11878,7 +16855,10 @@ require("jquery-confirm")(window, $);
 var ICONS = {
   save: "M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z",
   open: "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
+  download: "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
+  pages:
+    "M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M19,21H8V7H19V21Z",
   remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
   locked:
     "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z",
@@ -11951,6 +16931,9 @@ function environmentReport() {
     "Node:       " + (info.node || "?"),
     "GrapesJS:   " + (typeof grapesjs !== "undefined" ? grapesjs.version : "?"),
     "Project:    format " + (info.projectFormat || "?"),
+    // Whether this build can open a serial port at all is the first question
+    // a "my Arduino does nothing" report raises. The port name stays out.
+    "Serial:     " + (info.serial ? (info.serial.supported ? info.serial.state : "not in this build") : "?"),
     "Browser:    " + navigator.userAgent,
   ];
   return lines.join("\n");
@@ -12075,16 +17058,14 @@ function checkForUpdate() {
 // format number and the "is this a project?" rule can never drift apart.
 var projectFormat = require("../../lib/project-format");
 
-var oscarButton = require("./oscar_button");
-var oscarSlider = require("./oscar_slider");
-var oscarXypad = require("./oscar_xypad");
+// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
+var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 
-/** Hand a widget plugin the address other devices should send to. */
-function withIp(plugin, ipServer) {
-  return function (editor) {
-    plugin(editor, { ipserver: ipServer });
-  };
-}
+// Tabs and the page-by-page lock, shared with the /preview page.
+var oscarPages = require("./pages");
+
+var oscarExport = require("./export_dialog");
+
 var isProjectData = projectFormat.isGrapesProject;
 
 function postJSON(url, body) {
@@ -12129,9 +17110,11 @@ function initGrape(ipServer, socketPort) {
       // Stamp the autosave the same way saved files are stamped, and never
       // let editor state into it.
       onStore: function (data) {
+        // formatFor, as for a saved file: a single page stays readable by
+        // an older OSCAR sharing this browser's storage.
         return Object.assign(
-          { oscarFormat: projectFormat.CURRENT_FORMAT },
-          projectFormat.stripEditorState(data)
+          { oscarFormat: projectFormat.formatFor(data) },
+          projectFormat.namePages(projectFormat.stripEditorState(data))
         );
       },
       onLoad: function (data) {
@@ -12162,6 +17145,11 @@ function initGrape(ipServer, socketPort) {
         // check would not catch it.
         data = projectFormat.stripEditorState(data);
 
+        // And name its pages, on every load for the same reason: GrapesJS
+        // drops an empty page name when it stores, so page one of an autosave
+        // carrying the current stamp is routinely unnamed.
+        data = projectFormat.namePages(data);
+
         // An autosave with no pages (from a crash mid-load, say) would leave
         // the editor blank and unusable on every launch, with no way out short
         // of clearing browser data. Start fresh -- `{}` is exactly what a
@@ -12178,9 +17166,7 @@ function initGrape(ipServer, socketPort) {
       // in as functions. Named plugins are resolved through window[name], which
       // silently does nothing when the name is wrong -- that is how the
       // gjs-blocks-basic mismatch went unnoticed.
-      withIp(oscarButton, ipServer),
-      withIp(oscarSlider, ipServer),
-      withIp(oscarXypad, ipServer),
+      ...widgetPlugins(ipServer),
       "grapesjs-preset-webpage",
       "gjs-blocks-basic",
       "grapesjs-custom-code",
@@ -12418,6 +17404,179 @@ function initGrape(ipServer, socketPort) {
     });
   };
 
+  // ---- pages -------------------------------------------------------------
+  // A surface can hold several pages -- a page per fixture group, or per
+  // scene. GrapesJS has had the model for this all along (editor.Pages, and a
+  // pages array in every project); what it lacks is any way to reach it.
+  var pages = editor.Pages;
+
+  function pageLabels() {
+    return oscarPages.pageEntries(pages).map(function (entry) {
+      return entry.label;
+    });
+  }
+
+  function labelOf(page) {
+    return projectFormat.pageLabel(page.getName(), pages.getAll().indexOf(page));
+  }
+
+  /**
+   * Ask for a page name in a jquery-confirm form. Not window.prompt: Electron
+   * does not implement it, so in the desktop app it would silently return
+   * nothing and the page could never be renamed.
+   */
+  function askPageName(title, current, except, onName) {
+    $.confirm({
+      title: title,
+      content:
+        '<form action="" class="oscar-page-name-form">' +
+        '<input class="oscar-page-name-input" type="text" maxlength="40" />' +
+        "</form>",
+      onContentReady: function () {
+        var dialog = this;
+        var input = dialog.$content.find(".oscar-page-name-input");
+        // Set as a value, not written into the markup: a page name is
+        // whatever someone typed.
+        input.val(current).trigger("focus").trigger("select");
+        dialog.$content.find("form").on("submit", function (e) {
+          // Enter submits the form; without this the page would reload.
+          e.preventDefault();
+          dialog.$$confirm.trigger("click");
+        });
+      },
+      buttons: {
+        confirm: function () {
+          var name = (this.$content.find(".oscar-page-name-input").val() || "").trim();
+          if (!name) {
+            $.alert("Give the page a name");
+            return false;
+          }
+          // Two tabs reading the same cannot be told apart on a tablet.
+          if (oscarPages.nameTaken(pageLabels(), name, except)) {
+            $.alert('There is already a page called "' + name + '"');
+            return false;
+          }
+          onName(name);
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function deletePage(page) {
+    // Never the last one: GrapesJS would be left with no page to draw, and a
+    // project with no pages is one OSCAR refuses to open.
+    if (pages.getAll().length < 2) return;
+
+    $.confirm({
+      title: "Delete Page",
+      // Built as text for the same reason as above.
+      content: $("<div>").text(
+        'Delete "' + labelOf(page) + '" and every widget on it? You won\'t be able to recover it afterwards.'
+      ),
+      buttons: {
+        confirm: function () {
+          if (pages.getAll().length < 2) return;
+          // Move off the page first, so the canvas is never showing a page
+          // that no longer exists.
+          if (pages.getSelected() === page) {
+            var all = pages.getAll();
+            var index = all.indexOf(page);
+            pages.select(all[index === 0 ? 1 : index - 1]);
+          }
+          pages.remove(page);
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function pageAction(label, title, onClick) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "oscar-page-action";
+    button.textContent = label;
+    button.setAttribute("aria-label", title);
+    button.onclick = onClick;
+    return button;
+  }
+
+  function renderPages() {
+    var list = document.getElementById("pages-list");
+    if (!list) return;
+
+    var all = pages.getAll();
+    list.innerHTML = "";
+
+    oscarPages.pageEntries(pages).forEach(function (entry, index) {
+      var page = all[index];
+      var row = document.createElement("li");
+      row.className = "oscar-page" + (entry.current ? " oscar-page-current" : "");
+
+      var open = document.createElement("button");
+      open.type = "button";
+      open.className = "oscar-page-open";
+      open.textContent = entry.label;
+      open.onclick = function () {
+        pages.select(page);
+      };
+      row.appendChild(open);
+
+      row.appendChild(
+        pageAction("Rename", "Rename " + entry.label, function () {
+          askPageName("Rename page", entry.label, index, function (name) {
+            page.setName(name);
+          });
+        })
+      );
+
+      if (all.length > 1) {
+        row.appendChild(
+          pageAction("Delete", "Delete " + entry.label, function () {
+            deletePage(page);
+          })
+        );
+      }
+
+      list.appendChild(row);
+    });
+  }
+
+  function addPage() {
+    var input = document.getElementById("new-page-name");
+    var name = ((input && input.value) || "").trim();
+
+    if (name && oscarPages.nameTaken(pageLabels(), name)) {
+      $.alert('There is already a page called "' + name + '"');
+      return;
+    }
+
+    // Naming it is optional; a page left unnamed is given a name, because
+    // GrapesJS would drop an empty one. Not simply "Page <count + 1>": after
+    // a deletion that name may still be on another tab.
+    var page = pages.add({ name: name || oscarPages.freePageName(pageLabels()) }, { select: true });
+    if (!page) {
+      $.alert("That page could not be added");
+      return;
+    }
+    if (input) input.value = "";
+  }
+
+  editor.Commands.add("open-pages", function () {
+    renderPages();
+    setModal("Pages", "pages-panel");
+  });
+
+  document.getElementById("add-page-button").onclick = addPage;
+  document.getElementById("new-page-name").onkeydown = function (e) {
+    if (e.key === "Enter") addPage();
+  };
+
+  // The list may be open while pages change under it (a rename, a load).
+  // page:update is what a rename fires, and it is also what tells the
+  // storage manager the project changed.
+  editor.on("page:add page:remove page:select page:update", renderPages);
+
   // ---- preview mode ------------------------------------------------------
   // GrapesJS's preview hides the panels but leaves components draggable in
   // absolute mode, so dragging a button in preview pulls it apart.
@@ -12438,25 +17597,50 @@ function initGrape(ipServer, socketPort) {
     editable: false,
     highlightable: false,
   };
-  var beforePreview = null;
+  // Only the page on the canvas has components to lock. A page switched to
+  // mid-preview arrives unlocked, so it is locked as it comes in; the lock
+  // remembers what it has touched, so coming back to a page does not record
+  // its locked state as the one to restore (see createLock).
+  var previewLock = oscarPages.createLock(PREVIEW_LOCK, { avoidStore: true });
+  var previewing = false;
+
+  // The designer's preview shows the same tabs the tablet does: a surface
+  // with several pages cannot be tried out from page one alone.
+  var previewTabs = oscarPages.pageTabs(editor, {
+    bar: document.getElementById("oscar-page-bar"),
+    body: document.body,
+    windows: function () {
+      return oscarPages.widgetWindows(editor, window);
+    },
+  });
+
+  // Only while previewing: a project being edited changes under a widget in
+  // ways a viewless copy is never told about.
+  var offstage = runOffstage(editor, { document: document });
+
+  editor.on("page:select", function () {
+    if (!previewing) return;
+    editor.select();
+    previewLock.lock(editor.getWrapper());
+  });
 
   editor.on("command:run:preview", function () {
     // Hand the canvas to the preview page before locking, so the lock doesn't
-    // travel with it.
-    postJSON("/save/preview", { project: editor.getProjectData() }).catch(function (err) {
+    // travel with it. Every page goes across, not only the one showing, and
+    // named, so a tab never has to guess.
+    postJSON("/save/preview", {
+      project: projectFormat.namePages(editor.getProjectData()),
+    }).catch(function (err) {
       console.log("Could not hand off preview", err);
     });
 
     editor.select();
-    beforePreview = [];
-    editor.getWrapper().onAll(function (component) {
-      var previous = {};
-      Object.keys(PREVIEW_LOCK).forEach(function (key) {
-        previous[key] = component.get(key);
-      });
-      beforePreview.push([component, previous]);
-      component.set(PREVIEW_LOCK, { avoidStore: true });
-    });
+    previewing = true;
+    previewLock.lock(editor.getWrapper());
+    previewTabs.show();
+    // As on the tablet: a fader on a page that is not showing still follows
+    // the rig, or trying a surface out here would not show what it does.
+    offstage.start();
 
     // The selection toolbar, badges and resize handles live outside the canvas
     // and would otherwise float over the control surface, delete button and
@@ -12465,12 +17649,10 @@ function initGrape(ipServer, socketPort) {
   });
 
   editor.on("command:stop:preview", function () {
-    if (beforePreview) {
-      beforePreview.forEach(function (entry) {
-        entry[0].set(entry[1], { avoidStore: true });
-      });
-      beforePreview = null;
-    }
+    previewing = false;
+    offstage.stop();
+    previewLock.release();
+    previewTabs.hide();
     editor.getEl().classList.remove("oscar-previewing");
   });
 
@@ -12485,12 +17667,41 @@ function initGrape(ipServer, socketPort) {
   });
 
   pn.addButton("options", {
+    id: "open-pages",
+    label: icon("pages"),
+    command: function () {
+      editor.runCommand("open-pages");
+    },
+    attributes: { title: "Pages", "data-tooltip-pos": "bottom" },
+  });
+
+  pn.addButton("options", {
     id: "open-load",
     label: icon("open"),
     command: function () {
       editor.runCommand("open-projects", { type: "Load" });
     },
     attributes: { title: "Load project", "data-tooltip-pos": "bottom" },
+  });
+
+  // ---- export ------------------------------------------------------------
+  // Distinct from "See code" beside it, which is GrapesJS's own view of the
+  // markup and cannot send anything. This one produces a file that does.
+  oscarExport.install(editor, {
+    host: ipServer,
+    port: socketPort,
+    projectName: function () {
+      return projectName ? projectName.value : "";
+    },
+  });
+
+  pn.addButton("options", {
+    id: "oscar-export",
+    label: icon("download"),
+    command: function () {
+      editor.runCommand("oscar-export");
+    },
+    attributes: { title: "Export a working interface", "data-tooltip-pos": "bottom" },
   });
 
   // ---- locked mode -------------------------------------------------------
@@ -12541,6 +17752,21 @@ function initGrape(ipServer, socketPort) {
       paintLockButton(state && state.locked);
     })
     .catch(function () {});
+
+  // ---- serial -------------------------------------------------------------
+  // The panel is its own script (oscar_serial.js); it adds its own button
+  // here, between the lock and About.
+  if (typeof oscar_serial === "function") {
+    oscar_serial({
+      panels: pn,
+      openModal: function () {
+        setModal("Serial (Arduino)", "serial-panel");
+      },
+      alert: function (text) {
+        $.alert(text);
+      },
+    });
+  }
 
   pn.addButton("options", {
     id: "open-info",
@@ -12597,6 +17823,8 @@ function initGrape(ipServer, socketPort) {
     "toggle-lock": null,
     "open-save": "Save project",
     "open-load": "Load project",
+    "open-pages": "Pages",
+    "oscar-export": "Export a working interface",
     "open-info": "About",
   });
 
@@ -12618,21 +17846,19 @@ function initGrape(ipServer, socketPort) {
   }
 }
 
-},{"../../lib/project-format":2,"./oscar_button":12,"./oscar_slider":15,"./oscar_xypad":16,"bootstrap-table":8,"jquery":10,"jquery-confirm":9}],14:[function(require,module,exports){
+},{"../../lib/project-format":7,"./adapters/grapesjs":29,"./export_dialog":30,"./pages":33,"bootstrap-table":26,"jquery":28,"jquery-confirm":27}],32:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
-var oscarButton = require("./oscar_button");
-var oscarSlider = require("./oscar_slider");
-var oscarXypad = require("./oscar_xypad");
+// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
+var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
+
+// Tabs, and the rule for staying on a page across a push; shared with the
+// editor so its preview draws the same thing the tablet does.
+var oscarPages = require("./pages");
 
 var editor;
-
-/** Hand a widget plugin the address other devices should send to. */
-function withIp(plugin, ipServer) {
-  return function (ed) {
-    plugin(ed, { ipserver: ipServer });
-  };
-}
+var tabs = null;
+var offstage = null;
 
 // One browserify bundle serves both the editor and the preview page, so each
 // entry point only boots when its own container is on the page.
@@ -12664,14 +17890,38 @@ function initGrape(ipServer, socketPort) {
     plugins: [
       "oscar_socket",
       "oscar_ip",
-      withIp(oscarButton, ipServer),
-      withIp(oscarSlider, ipServer),
-      withIp(oscarXypad, ipServer),
+      ...widgetPlugins(ipServer),
       "grapesjs-touch",
     ],
     pluginsOpts: {
-      oscar_socket: { ipserver: ipServer, socketPort: socketPort },
+      // `surface`: this page is a device showing the layout, so it agrees with
+      // the others on what each widget shows. The editor never sets it.
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true },
     },
+  });
+
+  tabs = oscarPages.pageTabs(editor, {
+    bar: document.getElementById("oscar-page-bar"),
+    body: document.body,
+    windows: heldWindows,
+  });
+
+  // A page that is not showing still has to hear the rig, or its faders come
+  // back where they were left rather than where the rig put them.
+  offstage = runOffstage(editor, { document: document });
+
+  // Pages.select brings the next page in with its components unlocked: the
+  // lock was set on the components of the page that was showing, and these
+  // are not those. On every switch, whoever asked for it -- a tab, or the
+  // reselect after a push -- the page that came in is locked before anyone
+  // can put a finger on it.
+  editor.on("page:select", function () {
+    lockDown();
+    // The rig's word on a widget is recorded by the server but told to no
+    // device, since every device showing that widget heard the rig itself
+    // (lib/shared-sync.js). A device that was on another page did not, so
+    // what it has cached for the page coming in may be behind. Ask again.
+    if (editor.syncSharedState) editor.syncSharedState();
   });
 
   editor.on("load", function () {
@@ -12686,6 +17936,10 @@ function initGrape(ipServer, socketPort) {
   });
 }
 
+function heldWindows() {
+  return oscarPages.widgetWindows(editor, window);
+}
+
 /** Fetch whatever was last pushed and display it, ready to drive a show. */
 function showLatest() {
   return fetch("/show/preview")
@@ -12697,8 +17951,23 @@ function showLatest() {
       // one, so only hand it something shaped like a GrapesJS project.
       if (!data || !Array.isArray(data.pages) || !data.pages.length) return;
 
+      // A push mid-show must not throw whoever is driving back to page one.
+      var wasOn = oscarPages.currentPageId(editor.Pages);
+
+      // The load tears every view down, exactly as a page turn does: a
+      // button held through a push must send its release first.
+      oscarPages.releaseHeld(heldWindows());
+
       editor.loadProjectData(data);
+      oscarPages.reselect(editor.Pages, wasOn);
+
+      // Locked here as well as on page:select: a project that opens on the
+      // page it was already on selects nothing.
       lockDown();
+      tabs.show();
+      // The load replaced every component; the widgets of the pages not
+      // showing are the new project's from here on.
+      offstage.start();
     })
     .catch(function (err) {
       console.log("Could not load the preview", err);
@@ -12710,6 +17979,9 @@ function showLatest() {
  *
  * Safe to set on the components here, unlike in the editor: this page never
  * saves anything (storageManager is off), so none of it can reach a file.
+ *
+ * Only the page on the canvas is reached: getWrapper() is that page's, and
+ * the components of the others are locked as each is switched to.
  */
 function lockDown() {
   editor.getWrapper().onAll(function (component) {
@@ -12727,28 +17999,281 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"./oscar_button":12,"./oscar_slider":15,"./oscar_xypad":16,"jquery":10}],15:[function(require,module,exports){
+},{"./adapters/grapesjs":29,"./pages":33,"jquery":28}],33:[function(require,module,exports){
 /**
- * OSC slider, wired to GrapesJS.
+ * Multiple pages: what the editor and the control surface have in common.
  *
- * The slider itself lives in lib/widgets/slider.js and knows nothing about the
- * editor; this is only the wiring.
+ * A surface can hold more than one page -- a page per fixture group, or per
+ * scene. The designer manages them in the editor; whoever drives the show
+ * switches between them with a row of tabs. Both entry points require this
+ * file, so the tabs the designer sees while previewing are the ones the
+ * tablet draws.
+ *
+ * Nothing here touches `window` or GrapesJS when it is loaded: every function
+ * is handed what it works on, which is what lets test/pages.test.js run it
+ * under plain Node.
  */
-var { register } = require("./adapters/grapesjs");
-var { slider } = require("../../lib/widgets/slider");
 
-module.exports = register(slider);
+var projectFormat = require("../../lib/project-format");
 
-},{"../../lib/widgets/slider":6,"./adapters/grapesjs":11}],16:[function(require,module,exports){
 /**
- * OSC XY pad, wired to GrapesJS.
+ * The pages as a list of { id, label, current }.
  *
- * The pad itself lives in lib/widgets/xypad.js and knows nothing about the
- * editor; this is only the wiring.
+ * The label comes from lib/project-format.js, the same function that names
+ * pages in a file: GrapesJS drops an empty page name when it saves, so page
+ * one routinely has none, and a tab has to print something.
  */
-var { register } = require("./adapters/grapesjs");
-var { xypad } = require("../../lib/widgets/xypad");
+function pageEntries(pages) {
+  var selected = pages.getSelected();
+  var selectedId = selected ? selected.getId() : null;
+  return pages.getAll().map(function (page, index) {
+    return {
+      id: page.getId(),
+      label: projectFormat.pageLabel(page.getName(), index),
+      current: page.getId() === selectedId,
+    };
+  });
+}
 
-module.exports = register(xypad);
+/**
+ * Is `name` already the label of a page other than the one at `except`?
+ *
+ * Compared as the tabs print them, so "Page 2" typed by hand meets the
+ * "Page 2" an unnamed second page is shown as.
+ */
+function nameTaken(labels, name, except) {
+  var wanted = String(name).trim();
+  return labels.some(function (label, index) {
+    return index !== except && label === wanted;
+  });
+}
 
-},{"../../lib/widgets/xypad":7,"./adapters/grapesjs":11}]},{},[14,13]);
+/**
+ * The name for a page added without one: the first "Page N", counting up
+ * from its position, that no tab already carries. By position alone, deleting
+ * "Page 1" of two and adding a page made a second "Page 2".
+ */
+function freePageName(labels) {
+  var index = labels.length;
+  while (nameTaken(labels, projectFormat.defaultPageName(index))) index++;
+  return projectFormat.defaultPageName(index);
+}
+
+/** The id of the page on the canvas, or null before there is one. */
+function currentPageId(pages) {
+  var selected = pages.getSelected();
+  return selected ? selected.getId() : null;
+}
+
+/**
+ * Go back to the page someone was on, if the project still has it.
+ *
+ * A push mid-show reloads the whole project, and GrapesJS opens a loaded
+ * project on its first page. Whoever is driving page three must not be thrown
+ * back to page one with a cue coming. Page ids are saved in the project, so
+ * the same page carries the same id across pushes; one that was deleted in
+ * the meantime is simply not there, and the first page is the honest answer.
+ *
+ * @returns true when the page was found and is now selected
+ */
+function reselect(pages, id) {
+  if (!id) return false;
+  var page = pages.get(id);
+  if (!page) return false;
+  if (currentPageId(pages) !== id) pages.select(page);
+  return true;
+}
+
+/**
+ * A lock that can be taken page by page and undone in one go.
+ *
+ * GrapesJS only builds the components of the page on the canvas, and
+ * Pages.select brings the next page in untouched: whatever locked the first
+ * page has not locked this one. So the lock is applied again on every switch.
+ * Coming back to a page already locked must not record its locked values as
+ * "what it was before", or undoing the lock would restore the lock; each
+ * component is therefore remembered the first time it is touched and never
+ * again.
+ *
+ * `options` is passed to component.set -- the editor passes avoidStore, so
+ * locking never counts as an edit.
+ */
+function createLock(props, options) {
+  var keys = Object.keys(props);
+  // A Map, not a WeakMap: release() has to walk it.
+  var touched = new Map();
+
+  return {
+    /** Lock every component under `root` that is not locked already. */
+    lock: function (root) {
+      if (!root || typeof root.onAll !== "function") return;
+      root.onAll(function (component) {
+        if (!touched.has(component)) {
+          var previous = {};
+          keys.forEach(function (key) {
+            previous[key] = component.get(key);
+          });
+          touched.set(component, previous);
+        }
+        component.set(props, options);
+      });
+    },
+
+    /** Put every component this lock touched back as it was found. */
+    release: function () {
+      touched.forEach(function (previous, component) {
+        component.set(previous, options);
+      });
+      touched.clear();
+    },
+
+    get size() {
+      return touched.size;
+    },
+  };
+}
+
+/**
+ * Let go of every control a finger is on, before the page under it goes.
+ *
+ * Turning the page destroys the views of the page that was showing. A
+ * momentary button held with one finger while another taps a tab has sent
+ * its ON; its element is gone before the finger comes up, so the pointerup
+ * lands nowhere and OFF never reaches the rig -- the fixture stays on, and
+ * every tablet draws the button lit. The widgets already have a word for
+ * "the hand is gone": a drag that loses the window counts as released
+ * (the ctx contract in lib/widgets/index.js), which every widget that can be
+ * held listens for as `blur` on its window. So that is what is said here,
+ * while the widgets are still attached and can still send.
+ *
+ * `windows` is every window a widget may be listening on: the page's own
+ * and the canvas frame's. One that is missing, or cannot dispatch, is
+ * skipped -- a page turn must not fail on it.
+ */
+function releaseHeld(windows) {
+  (windows || []).forEach(function (win) {
+    if (!win || typeof win.dispatchEvent !== "function") return;
+    var EventType = win.Event || (typeof Event === "function" ? Event : null);
+    if (!EventType) return;
+    try {
+      win.dispatchEvent(new EventType("blur"));
+    } catch (err) {
+      console.warn("Could not release the controls being held:", err && err.message);
+    }
+  });
+}
+
+/** The windows a widget of this editor may be listening on. */
+function widgetWindows(editor, top) {
+  var windows = top ? [top] : [];
+  var frame = editor && editor.Canvas && typeof editor.Canvas.getWindow === "function" ? editor.Canvas.getWindow() : null;
+  if (frame && frame !== top) windows.push(frame);
+  return windows;
+}
+
+/**
+ * Draw the tabs into `bar`, and report whether there are any.
+ *
+ * The bar lives outside the GrapesJS canvas on purpose. Anything inside the
+ * canvas loses its events to the preview lock, and a tab drawn as a component
+ * is one the next person to edit the project can drag away or delete.
+ *
+ * A single page gets no bar at all: it would only take room from the
+ * controls, and there is nowhere to switch to.
+ */
+function renderTabs(doc, bar, entries, onPick) {
+  while (bar.firstChild) bar.removeChild(bar.firstChild);
+
+  if (entries.length < 2) {
+    bar.hidden = true;
+    return false;
+  }
+
+  entries.forEach(function (entry) {
+    var tab = doc.createElement("button");
+    tab.type = "button";
+    tab.className = "oscar-page-tab" + (entry.current ? " oscar-page-tab-current" : "");
+    // textContent, never innerHTML: a page name is whatever someone typed.
+    tab.textContent = entry.label;
+    tab.setAttribute("aria-pressed", entry.current ? "true" : "false");
+    tab.onclick = function () {
+      if (!entry.current) onPick(entry.id);
+    };
+    bar.appendChild(tab);
+  });
+
+  bar.hidden = false;
+  return true;
+}
+
+/**
+ * Keep a tab bar in step with the editor's pages.
+ *
+ *   var tabs = pageTabs(editor, { bar, body, onSwitch });
+ *   tabs.show() / tabs.hide() / tabs.render()
+ *
+ * `body` carries the oscar-has-pages class while the bar is up; the
+ * stylesheet shortens the editor by the bar's height on that class, rather
+ * than letting the bar float over the bottom row of someone's controls.
+ * `onSwitch` runs after every page change made through the tabs.
+ * `windows`, a function returning the windows the widgets listen on, is how
+ * a tab lets go of whatever is being held before the page goes (releaseHeld).
+ */
+function pageTabs(editor, options) {
+  var bar = options.bar;
+  var body = options.body;
+  var doc = options.document || bar.ownerDocument;
+  var showing = false;
+
+  function pick(id) {
+    var page = editor.Pages.get(id);
+    if (!page) return;
+    // Before the select, not after: by then the held widget is detached and
+    // has nothing left to send its release with.
+    if (options.windows) releaseHeld(options.windows());
+    editor.Pages.select(page);
+    // The page:select listener below redraws; onSwitch is for the caller's
+    // own follow-up (locking the page that came in).
+    if (options.onSwitch) options.onSwitch(page);
+  }
+
+  function render() {
+    var up = showing && renderTabs(doc, bar, pageEntries(editor.Pages), pick);
+    if (!showing) bar.hidden = true;
+    var had = body.classList.contains("oscar-has-pages");
+    body.classList.toggle("oscar-has-pages", !!up);
+    // The canvas measures itself once; tell it the room it has changed.
+    if (had !== !!up && typeof editor.refresh === "function") editor.refresh();
+  }
+
+  if (typeof editor.on === "function") {
+    editor.on("page:select page:add page:remove page:update", render);
+  }
+
+  return {
+    render: render,
+    show: function () {
+      showing = true;
+      render();
+    },
+    hide: function () {
+      showing = false;
+      render();
+    },
+  };
+}
+
+module.exports = {
+  pageEntries: pageEntries,
+  currentPageId: currentPageId,
+  reselect: reselect,
+  createLock: createLock,
+  nameTaken: nameTaken,
+  freePageName: freePageName,
+  releaseHeld: releaseHeld,
+  widgetWindows: widgetWindows,
+  renderTabs: renderTabs,
+  pageTabs: pageTabs,
+};
+
+},{"../../lib/project-format":7}]},{},[32,31]);
