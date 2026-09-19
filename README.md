@@ -540,3 +540,51 @@ This is a chooser, not a media library. It does not upload files, there is
 no asset picker (you type the path or URL), and it shows still images only --
 no video or animated previews, and it does not fetch thumbnails from
 Resolume or any other software.
+
+## Arduino and other boards
+
+**A board with Wi-Fi or Ethernet already works, and always has.** OSCAR
+sends OSC over UDP to whatever IP and port a widget names, and an ESP32 on
+your network is one more thing with an IP and a port, exactly like Resolume.
+There is nothing to switch on: flash `tools/arduino/oscar_wifi`, read the
+address it prints, and type it into the widget's **Ip** and **Port**.
+
+**A board on a USB cable** (Uno, Nano, Mega, Leonardo, Pico) has no address,
+so OSCAR opens the serial port for you:
+
+1. Flash `tools/arduino/oscar_serial`.
+2. In the editor, open the **Serial** panel (the USB icon in the toolbar),
+   pick the board's port and the baud rate in your sketch's `Serial.begin()`
+   (115200 in ours), and press **Connect**.
+3. Set a widget's **Ip** to the word `serial`. Its **Port** is not used and
+   may be left empty.
+
+Every widget that sends can be pointed at the cable, and the message is the
+same OSC message it would have sent to the network, framed with SLIP -- the
+standard way OSC travels over a serial line. `serial` goes in **Ip** rather
+than under **Output** because it changes where the message goes, not what it
+is: a slider can send OSC to the board and DMX to a dimmer at once. A board
+that talks back is heard like any other OSC in, so a meter with **Listen** on
+can show a potentiometer.
+
+The port is opened by the computer running OSCAR, not by the tablet showing
+the surface, and it is remembered in `oscar-settings.json`: an installation
+that reboots overnight reconnects on its own. So does a cable pulled out and
+pushed back in, or a board that vanishes for a few seconds while a sketch
+uploads -- OSCAR retries every two seconds until told to disconnect. Nothing
+is queued while the cable is out: a level arriving seconds after the gesture
+is a light changing with nobody touching it. Choosing the port is editing,
+so a locked OSCAR refuses it from other devices; their widgets still reach
+the board.
+
+Both sketches parse OSC in about forty lines with no libraries, and
+`tools/arduino/README.md` covers what usually goes wrong: the Arduino IDE's
+Serial Monitor holding the port, CH340 drivers for clone boards, and the
+`dialout` group on Linux.
+
+Two limits. The Windows on ARM build has no serial driver (the `serialport`
+release OSCAR uses ships no binary for it): the panel says "No serial support
+in this build", and everything else, Wi-Fi boards included, works as usual.
+And OSCAR does not use the browser's Web Serial: that opens a port on the
+device showing the page -- the tablet, which has no board plugged into it --
+and Safari and Firefox do not have it at all.
