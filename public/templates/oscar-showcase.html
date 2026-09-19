@@ -39,8 +39,17 @@
   controls: the fader sets how lively the particles are and the colour
   picker tints them.
 
-  The pictures are in images/showcase. Yours go in through the editor's
-  image manager, and work the same way.
+  The photographs are in images/showcase, all public domain (CC0); CREDITS.md
+  in that folder names each one. Yours go in through the editor's image
+  manager, and work the same way.
+
+  The type is Gotham where the device has it. Gotham is a commercial font
+  and cannot be shipped, so the page falls back to Montserrat, fetched from
+  the web, and then to Inter, which comes with OSCAR.
+
+  The hero opens at the full height of the screen and then draws itself in,
+  so the controls are in view without scrolling. Its resting size is the
+  plain CSS; the opening size is the first keyframe of osh-settle-*.
 
   The layout rearranges at 992px and 480px, the widths of the editor's Tablet
   and Mobile views, so edits made in those views land in the same media
@@ -53,6 +62,13 @@
     in   /oscar/meter   (a number from 0 to 1)
 -->
 <style>
+@font-face {
+  font-family: "Montserrat";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/montserrat:vf@latest/latin-wght-normal.woff2") format("woff2");
+}
 [data-osc-style] {
   --osc-background: #0e0e11;
   --osc-foreground: #f4f4f6;
@@ -66,7 +82,7 @@
   --osc-primary-foreground: #ffffff;
   --osc-ring: #ff623a;
   --osc-radius: 12px;
-  --osc-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --osc-font: "Gotham", "Gotham Book", "Gotham SSm A", "Montserrat", "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .osh {
   position: relative;
@@ -118,37 +134,34 @@
 .osh-hero {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  min-height: 100vh;
-  padding: 64px 24px;
   text-align: center;
   animation: osh-leave linear both;
   animation-timeline: view();
   animation-range: exit 0% exit 80%;
 }
-.osh-logo-layer {
-  animation: osh-lag linear both;
-  animation-timeline: scroll(root);
-  animation-range: 0px 900px;
-}
-.osh-copy-layer {
+.osh-hero-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  animation: osh-lead linear both;
-  animation-timeline: scroll(root);
-  animation-range: 0px 900px;
+  justify-content: center;
+  gap: 18px;
+  min-height: 0vh;
+  padding: 44px 24px 36px;
+  animation: osh-settle-hero 1.2s cubic-bezier(0.7, 0, 0.2, 1) 1.5s backwards;
+}
+.osh-logo-layer {
+  width: clamp(92px, 12vw, 132px);
+  animation: osh-settle-logo 1.2s cubic-bezier(0.7, 0, 0.2, 1) 1.5s backwards;
+}
+.osh-title-layer {
+  font-size: clamp(46px, 8vw, 88px);
+  animation: osh-settle-title 1.2s cubic-bezier(0.7, 0, 0.2, 1) 1.5s backwards;
 }
 .osh-logo-wrap {
   position: relative;
   display: grid;
   place-items: center;
-  width: clamp(150px, 26vw, 230px);
+  width: 100%;
   aspect-ratio: 1 / 1;
   animation: osh-float 6s ease-in-out infinite;
 }
@@ -172,10 +185,10 @@
   animation-delay: 1.8s;
 }
 .osh-title {
-  margin: 8px 0 0;
-  font-size: clamp(56px, 12vw, 132px);
-  font-weight: 800;
-  letter-spacing: -0.04em;
+  margin: 0;
+  font-size: 1em;
+  font-weight: 900;
+  letter-spacing: -0.02em;
   line-height: 0.95;
   color: transparent;
   background: linear-gradient(90deg, #ff623a, #ff3663, #ff8a5c, #ff3663, #ff623a);
@@ -226,6 +239,8 @@
   opacity: 0.55;
 }
 .osh-scroll {
+  opacity: 0;
+  animation: osh-settle-hint 1.2s ease 1.5s backwards;
   position: absolute;
   bottom: 28px;
   left: 50%;
@@ -250,6 +265,9 @@
   max-width: 1120px;
   margin: 0 auto;
   padding: 72px 24px;
+}
+#osh-controls {
+  padding-top: 28px;
 }
 .osh-eyebrow {
   margin: 0 0 8px;
@@ -526,13 +544,17 @@
   from { opacity: 0; transform: translateY(48px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes osh-lag {
-  from { transform: translateY(0); }
-  to { transform: translateY(160px); }
+@keyframes osh-settle-hero {
+  from { min-height: 100vh; padding-top: 64px; padding-bottom: 64px; }
 }
-@keyframes osh-lead {
-  from { transform: translateY(0); }
-  to { transform: translateY(-120px); }
+@keyframes osh-settle-logo {
+  from { width: clamp(150px, 26vw, 230px); }
+}
+@keyframes osh-settle-title {
+  from { font-size: clamp(56px, 12vw, 132px); }
+}
+@keyframes osh-settle-hint {
+  from { opacity: 1; }
 }
 @keyframes osh-light {
   from { opacity: 0; transform: translateY(32px); background-position: 100% 50%; }
@@ -611,6 +633,10 @@
   .osh-gallery {
     gap: 10px;
   }
+  .osh-frame-mid,
+  .osh-frame-fast {
+    animation-name: osh-pace-slow;
+  }
   .osh-frame-caption {
     bottom: 8px;
     left: 8px;
@@ -627,8 +653,8 @@
   .osh-section {
     padding: 44px 16px;
   }
-  .osh-hero {
-    padding: 48px 16px;
+  .osh-hero-inner {
+    padding: 36px 16px 28px;
   }
   .osh-footer-inner {
     padding: 28px 16px 36px;
@@ -638,8 +664,10 @@
 @media (prefers-reduced-motion: reduce) {
   .osh-progress,
   .osh-hero,
+  .osh-hero-inner,
   .osh-logo-layer,
-  .osh-copy-layer,
+  .osh-title-layer,
+  .osh-scroll,
   .osh-heading,
   .osh-card-tilt,
   .osh-frame,
@@ -671,6 +699,7 @@
   <div id="osh-progress" class="osh-progress" data-gjs-dmode="flow"></div>
 
   <header id="osh-hero" class="osh-hero" data-gjs-dmode="flow">
+    <div id="osh-hero-inner" class="osh-hero-inner" data-gjs-dmode="flow">
     <div id="osh-logo-layer" class="osh-logo-layer" data-gjs-dmode="flow">
       <div id="osh-logo-wrap" class="osh-logo-wrap" data-gjs-dmode="flow">
         <span id="osh-halo-1" class="osh-halo" data-gjs-dmode="flow"></span>
@@ -678,8 +707,7 @@
         <img id="osh-logo" class="osh-logo" data-gjs-dmode="flow" src="images/oscar-circle.png" alt="OSCAR">
       </div>
     </div>
-    <div id="osh-copy-layer" class="osh-copy-layer" data-gjs-dmode="flow">
-    <h1 id="osh-title" class="osh-title" data-gjs-dmode="flow">OSCAR</h1>
+    <div id="osh-title-layer" class="osh-title-layer" data-gjs-dmode="flow"><h1 id="osh-title" class="osh-title" data-gjs-dmode="flow">OSCAR</h1></div>
     <p id="osh-tagline" class="osh-tagline" data-gjs-dmode="flow">Create beautiful interfaces to control interactive installations.</p>
     <p id="osh-sub" class="osh-sub" data-gjs-dmode="flow">Video, lighting and sound, from any screen in the room. Design it in the browser, open it on a tablet, and drive the show over OSC and DMX.</p>
     <div id="osh-hero-try" class="osh-hero-try" data-gjs-dmode="flow">
@@ -728,7 +756,7 @@
       <article id="osh-card-media" class="osh-card osh-card-tilt" data-gjs-dmode="flow">
         <h3 id="osh-card-media-title" class="osh-card-title" data-gjs-dmode="flow">Media browser</h3>
         <p id="osh-card-media-text" class="osh-card-text" data-gjs-dmode="flow">A wall of clips with your own thumbnails. One tap launches, and the highlight follows what is playing.</p>
-        <div id="osh-media-demo" class="osh-demo" data-gjs-dmode="flow"><div id="osh-media" class="oscar-media-browser" data-gjs-dmode="flow" data-gjs-message="/oscar/clip" data-gjs-columns="3" data-gjs-show-labels="true" data-gjs-arg-type="i" data-gjs-items="Aurora|1|images/showcase/aurora.jpg; Tunnel|2|images/showcase/tunnel.jpg; Waves|3|images/showcase/waves.jpg; Fire|4|images/showcase/fire.jpg; City|5|images/showcase/city.jpg; Bloom|6|images/showcase/bloom.jpg"></div></div>
+        <div id="osh-media-demo" class="osh-demo" data-gjs-dmode="flow"><div id="osh-media" class="oscar-media-browser" data-gjs-dmode="flow" data-gjs-message="/oscar/clip" data-gjs-columns="3" data-gjs-show-labels="true" data-gjs-arg-type="i" data-gjs-items="Beams|1|images/showcase/beams.jpg; Smoke|2|images/showcase/smoke.jpg; Festival|3|images/showcase/festival.jpg; Decks|4|images/showcase/decks.jpg; Installation|5|images/showcase/installation.jpg; Lasers|6|images/showcase/lasers.jpg"></div></div>
       </article>
     </div>
   </section>
@@ -736,19 +764,19 @@
   <section id="osh-images" class="osh-section" data-gjs-dmode="flow">
     <p id="osh-images-eyebrow" class="osh-eyebrow osh-reveal" data-gjs-dmode="flow">Make it yours</p>
     <h2 id="osh-images-heading" class="osh-heading" data-gjs-dmode="flow">Bring your own images</h2>
-    <p id="osh-images-lead" class="osh-lead osh-reveal" data-gjs-dmode="flow">Upload pictures and textures and use them anywhere: behind a page, on a button, as the thumbnails of a media browser. The grain over this page is one small image. So are these.</p>
+    <p id="osh-images-lead" class="osh-lead osh-reveal" data-gjs-dmode="flow">Upload photographs and textures and use them anywhere: behind a page, on a button, as the thumbnails of a media browser. The grain over this page is one small image. So are these.</p>
     <div id="osh-gallery" class="osh-gallery" data-gjs-dmode="flow">
-      <figure id="osh-frame-aurora" class="osh-frame osh-frame-slow" data-gjs-dmode="flow">
-        <img id="osh-frame-aurora-image" class="osh-frame-image" data-gjs-dmode="flow" src="images/showcase/aurora.jpg" alt="">
-        <figcaption id="osh-frame-aurora-caption" class="osh-frame-caption" data-gjs-dmode="flow">Backgrounds</figcaption>
+      <figure id="osh-frame-lasers" class="osh-frame osh-frame-slow" data-gjs-dmode="flow">
+        <img id="osh-frame-lasers-image" class="osh-frame-image" data-gjs-dmode="flow" src="images/showcase/lasers.jpg" alt="">
+        <figcaption id="osh-frame-lasers-caption" class="osh-frame-caption" data-gjs-dmode="flow">Backgrounds</figcaption>
       </figure>
-      <figure id="osh-frame-tunnel" class="osh-frame osh-frame-fast" data-gjs-dmode="flow">
-        <img id="osh-frame-tunnel-image" class="osh-frame-image" data-gjs-dmode="flow" src="images/showcase/tunnel.jpg" alt="">
-        <figcaption id="osh-frame-tunnel-caption" class="osh-frame-caption" data-gjs-dmode="flow">Buttons</figcaption>
+      <figure id="osh-frame-installation" class="osh-frame osh-frame-fast" data-gjs-dmode="flow">
+        <img id="osh-frame-installation-image" class="osh-frame-image" data-gjs-dmode="flow" src="images/showcase/installation.jpg" alt="">
+        <figcaption id="osh-frame-installation-caption" class="osh-frame-caption" data-gjs-dmode="flow">Buttons</figcaption>
       </figure>
-      <figure id="osh-frame-fire" class="osh-frame osh-frame-mid" data-gjs-dmode="flow">
-        <img id="osh-frame-fire-image" class="osh-frame-image" data-gjs-dmode="flow" src="images/showcase/fire.jpg" alt="">
-        <figcaption id="osh-frame-fire-caption" class="osh-frame-caption" data-gjs-dmode="flow">Thumbnails</figcaption>
+      <figure id="osh-frame-crowd" class="osh-frame osh-frame-mid" data-gjs-dmode="flow">
+        <img id="osh-frame-crowd-image" class="osh-frame-image" data-gjs-dmode="flow" src="images/showcase/crowd.jpg" alt="">
+        <figcaption id="osh-frame-crowd-caption" class="osh-frame-caption" data-gjs-dmode="flow">Thumbnails</figcaption>
       </figure>
     </div>
   </section>
@@ -944,14 +972,14 @@ if (stage) {
   pen.fillRect(0, 0, 64, 64);
   const sprite = new THREE.CanvasTexture(dot);
   const material = new THREE.PointsMaterial({
-    map: sprite, size: 0.06, vertexColors: true, transparent: true, opacity: 0.3,
+    map: sprite, size: 0.06, vertexColors: true, transparent: true, opacity: 0.2,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   group.add(new THREE.Points(geometry, material));
 
   const shape = new THREE.LineSegments(
     new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(3.6, 1)),
-    new THREE.LineBasicMaterial({ color: 0xff3663, transparent: true, opacity: 0.1 })
+    new THREE.LineBasicMaterial({ color: 0xff3663, transparent: true, opacity: 0.05 })
   );
   scene.add(shape);
 
@@ -977,6 +1005,8 @@ if (stage) {
   let time = 0;
   let last = 0;
   let frame = 0;
+  // How much to scale the wireframe so it fills the screen from edge to edge.
+  let fill = 1;
 
   function fit() {
     const w = window.innerWidth;
@@ -984,6 +1014,8 @@ if (stage) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    const tall = 2 * 14 * Math.tan((camera.fov * Math.PI) / 360);
+    fill = (Math.max(tall, tall * camera.aspect * 0.75) / 2 / 3.6) * 1.05;
   }
 
   function draw(now) {
@@ -998,10 +1030,10 @@ if (stage) {
     group.rotation.z = time * 0.08 + scrolled * 1.2;
     material.size = 0.06 + shown * 0.07;
 
-    // The wireframe sits behind the logo, then falls away as the page moves on.
-    shape.position.set(0, 0.4 + scrolled * 9, camera.position.z - 8);
-    shape.rotation.set(time * 0.3 + pointer.y * 0.15, time * 0.2 + pointer.x * 0.15, 0);
-    shape.scale.setScalar(0.9 + shown * 0.2);
+    // The wireframe fills the screen and turns a little with the page.
+    shape.position.set(0, 0, camera.position.z - 14);
+    shape.rotation.set(time * 0.25 + scrolled * 1.5 + pointer.y * 0.1, time * 0.18 + pointer.x * 0.1, 0);
+    shape.scale.setScalar(fill * (0.96 + shown * 0.08));
 
     renderer.render(scene, camera);
     frame = still ? 0 : requestAnimationFrame(draw);
