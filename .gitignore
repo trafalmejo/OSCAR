@@ -18,3 +18,7 @@ oscar-settings.json
 
 # Agent worktrees and local Claude Code state -- never part of the project.
 .claude/
+
+# The exported page's runtime: build output (npm run build), inlined into every
+# export by POST /export.
+public/src/runtime.bundle.js

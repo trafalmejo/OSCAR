@@ -4,6 +4,10 @@ const express = require("express");
 
 const { openProject, stripEditorState } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
+const { buildExport } = require("../lib/export");
+
+// Where an export finds its runtime, and the only folder it may inline from.
+const PUBLIC_DIR = require("path").join(__dirname, "..", "public");
 
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
@@ -108,6 +112,32 @@ module.exports = function createRouter({
   });
 
   router.get("/show/preview", (req, res) => res.json(preview || {}));
+
+  // ---- Export ------------------------------------------------------------
+  // The editor sends the first page's markup, each widget's settings written
+  // into it, and the stylesheet; lib/export wraps them around the standalone
+  // runtime and answers with one file that works on its own. Editor-only: a
+  // locked OSCAR hands its layout to nobody but the machine it runs on.
+  router.post("/export", editorOnly, (req, res) => {
+    let result;
+    try {
+      result = buildExport(req.body, {
+        publicDir: PUBLIC_DIR,
+        oscarVersion: diagnostics ? diagnostics().oscar : undefined,
+      });
+    } catch (err) {
+      console.error("Could not build the export:", err.message);
+      return res.status(500).json({ error: "Your interface could not be exported." });
+    }
+    if (result.error) return res.status(result.status).json({ error: result.error });
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="' + result.filename + '"');
+    // For the dialog: which files were too large to embed. Encoded, because
+    // a header carries ASCII and a filename need not be.
+    res.setHeader("X-Oscar-Linked-Assets", encodeURIComponent(JSON.stringify(result.linked.slice(0, 20))));
+    res.send(result.page);
+  });
 
   // ---- Local project library --------------------------------------------
   router.get("/projects", editorOnly, async (req, res) => {
