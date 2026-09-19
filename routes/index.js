@@ -18,6 +18,8 @@ const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
  * @param {import('../lib/projects').ProjectStore} deps.store
  * @param {() => string} deps.serverIP
  * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
+ * @param {{ runtime?: string, socketio?: string, widgetCss?: string }} [deps.exportFiles] -
+ *        where POST /export reads its pieces from, for a test that has no build output
  */
 module.exports = function createRouter({
   store,
@@ -27,6 +29,7 @@ module.exports = function createRouter({
   diagnostics,
   onPreviewPush,
   lock,
+  exportFiles,
 }) {
   const router = express.Router();
 
@@ -123,6 +126,7 @@ module.exports = function createRouter({
     try {
       result = buildExport(req.body, {
         publicDir: PUBLIC_DIR,
+        files: exportFiles,
         oscarVersion: diagnostics ? diagnostics().oscar : undefined,
       });
     } catch (err) {

@@ -516,7 +516,12 @@ function exportSnapshot(editor) {
       });
       if (!settings) return attributes;
       widgets++;
-      return Object.assign({}, attributes, settings);
+      // The id is the widget's name on the wire: its claim on DMX channels
+      // and the key the devices share its state under. pinId writes it into
+      // every widget that has been through init; this covers one that has
+      // not, in the output only.
+      var id = attributes && attributes.id ? null : typeof model.getId === "function" && model.getId();
+      return Object.assign({}, attributes, id ? { id: id } : null, settings);
     },
   });
 
