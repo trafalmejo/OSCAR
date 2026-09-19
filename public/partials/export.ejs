@@ -1,75 +1,45 @@
 <div id="export-panel" style="display: none;">
   <div class="oscar-export">
     <p class="oscar-export-lead">
-      This turns your interface into one self-contained page, separate from the
-      editor, that keeps working while you carry on editing.
-      <strong>Publish</strong> it and OSCAR serves it at an address any phone,
-      tablet or computer on the network can open.
-      <strong>Download</strong> it to keep the file, host it on a web server,
-      or open it on another computer.
+      Publishing turns your interface into a page of its own, separate from
+      the editor, that OSCAR serves at an address any phone, tablet or
+      computer on the network can open. It stays as it is while you carry on
+      editing, until you publish it again.
     </p>
 
-    <!-- The misunderstanding behind every "my exported page does nothing"
-         report, stated before the button rather than after it. -->
+    <!-- The misunderstanding behind every "my page does nothing" report,
+         stated before the button rather than after it. -->
     <div class="oscar-export-warning">
-      <strong>OSCAR has to be running somewhere the page can reach.</strong>
-      A browser cannot send OSC or DMX on its own, so the exported page hands
-      everything to OSCAR, which puts it on the network. Keep OSCAR running at
-      the address below, on the same network as the device showing the page.
+      <strong>OSCAR has to keep running.</strong>
+      A browser cannot send OSC or DMX on its own, so the page hands
+      everything to OSCAR, which puts it on the network. The device showing
+      the page has to be on the same network as this computer.
     </div>
 
     <div id="export-pages" class="oscar-export-warning" style="display: none;">
-      <strong>Only the first page is exported.</strong>
-      This project has <span id="export-page-count"></span> pages, and an
-      exported file is a single surface.
+      <strong>Only the first page is published.</strong>
+      This project has <span id="export-page-count"></span> pages, and a
+      published page is a single surface.
     </div>
 
     <div class="oscar-export-field">
-      <label for="export-name">File name</label>
+      <label for="export-name">Name</label>
       <input id="export-name" class="o-input" type="text" placeholder="my-interface" />
     </div>
-
-    <div class="oscar-export-row">
-      <div class="oscar-export-field">
-        <label for="export-host">OSCAR is reachable at</label>
-        <input id="export-host" class="o-input" type="text" spellcheck="false" />
-      </div>
-      <div class="oscar-export-field">
-        <label for="export-port">Bridge port</label>
-        <input id="export-port" class="o-input" type="number" min="1" max="65535" />
-      </div>
-    </div>
-
-    <p class="oscar-export-hint">
-      Both are filled in with what this OSCAR reports for itself. Use the
-      address other devices see, not <code>localhost</code>, unless the page
-      will only ever be opened on this computer. If OSCAR moves later there is
-      no need to export again: add
-      <code>?oscar-host=ADDRESS&amp;oscar-port=PORT</code> to the page's
-      address.
-    </p>
 
     <div id="export-error" class="oscar-export-error" style="display: none;"></div>
     <div id="export-note" class="oscar-export-note" style="display: none;"></div>
 
-    <div class="oscar-export-actions">
-      <button id="publish-button" class="o-btn o-btn-primary" type="button">Publish on this OSCAR</button>
-      <button id="export-button" class="o-btn" type="button">Download the file</button>
-    </div>
-    <!-- A downloaded page does not work when opened from a phone's storage:
-         the phone sandboxes it and it never reaches OSCAR. Said next to the
-         button, where the choice is made. -->
-    <p class="oscar-export-hint">
-      On a phone or tablet, use Publish. A downloaded file only works opened
-      on a computer, or from a web server.
-    </p>
+    <button id="publish-button" class="o-btn o-btn-primary oscar-export-go" type="button">
+      Publish on this OSCAR
+    </button>
 
     <div id="publish-result" class="oscar-publish-result" style="display: none;">
       <div id="publish-qr" class="oscar-publish-qr" role="img" aria-label="QR code for the address"></div>
       <div class="oscar-publish-where">
         <span id="publish-status" class="oscar-publish-status"></span>
         <a id="publish-link" class="o-link oscar-publish-link" target="_blank" rel="noopener"></a>
-        <span class="oscar-export-hint">Scan it with the phone's camera, or type the address. The device has to be on the same network.</span>
+        <span class="oscar-export-hint">Scan it with the phone's camera, or type the address.</span>
       </div>
     </div>
 
@@ -77,5 +47,42 @@
       <div class="oscar-published-title">Published on this OSCAR</div>
       <ul id="published-list" class="oscar-published-list"></ul>
     </div>
+
+    <!-- Closed by default. Publishing needs none of this: a published page
+         finds OSCAR by the address it was opened at. Only a file that leaves
+         OSCAR has to be told where OSCAR is, so the two fields live here,
+         with the one button that uses them. -->
+    <details id="export-advanced" class="oscar-export-advanced">
+      <summary>Advanced: download the page as a file</summary>
+
+      <p class="oscar-export-hint">
+        The same page as an <code>.html</code> file, to host on a web server
+        or open on another computer. It does not work opened from a phone's
+        or tablet's own storage; publish for those.
+      </p>
+
+      <div class="oscar-export-row">
+        <div class="oscar-export-field">
+          <label for="export-host">OSCAR is reachable at</label>
+          <input id="export-host" class="o-input" type="text" spellcheck="false" />
+        </div>
+        <div class="oscar-export-field">
+          <label for="export-port">Bridge port</label>
+          <input id="export-port" class="o-input" type="number" min="1" max="65535" />
+        </div>
+      </div>
+
+      <p class="oscar-export-hint">
+        A file cannot ask where OSCAR is, so it is told here. Both are filled
+        in with what this OSCAR reports for itself. Use the address other
+        devices see, not <code>localhost</code>, unless the file will only
+        ever be opened on this computer. If OSCAR moves later there is no need
+        to download again: add
+        <code>?oscar-host=ADDRESS&amp;oscar-port=PORT</code> to the page's
+        address.
+      </p>
+
+      <button id="export-button" class="o-btn oscar-export-go" type="button">Download the file</button>
+    </details>
   </div>
 </div>

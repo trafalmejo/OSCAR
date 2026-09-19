@@ -1270,7 +1270,7 @@ function initGrape(ipServer, socketPort) {
     command: function () {
       editor.runCommand("oscar-export");
     },
-    attributes: { title: "Export a working interface", "data-tooltip-pos": "bottom" },
+    attributes: { title: "Publish your interface", "data-tooltip-pos": "bottom" },
   });
 
   // ---- locked mode -------------------------------------------------------
@@ -1427,7 +1427,7 @@ function initGrape(ipServer, socketPort) {
     "open-save": "Save project",
     "open-load": "Load project",
     "open-pages": "Pages",
-    "oscar-export": "Export a working interface",
+    "oscar-export": "Publish your interface",
     "open-info": "About",
   });
 

@@ -188,3 +188,35 @@
   padding: 0 10px;
   font-size: var(--o-text-xs);
 }
+
+/* ---- advanced: the file download --------------------------------------------
+   Folded away. Publishing needs none of it, and two address fields in front
+   of the one button most people want read as something that has to be got
+   right first. */
+.oscar-export-advanced {
+  margin-top: 20px;
+  border-top: 1px solid var(--o-border);
+  padding-top: 12px;
+}
+
+.oscar-export-advanced > summary {
+  cursor: pointer;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+  list-style-position: inside;
+}
+
+.oscar-export-advanced > summary:hover,
+.oscar-export-advanced[open] > summary {
+  color: var(--o-text);
+}
+
+.oscar-export-advanced > summary:focus-visible {
+  outline: none;
+  box-shadow: var(--o-ring);
+  border-radius: var(--o-radius-sm);
+}
+
+.oscar-export-advanced[open] > summary {
+  margin-bottom: 12px;
+}

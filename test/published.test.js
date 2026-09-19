@@ -166,13 +166,39 @@ test("publish, open, list, publish again, unpublish", async () => {
   });
 });
 
+test("publishing asks for no address: OSCAR's own is what goes into the stored page", async () => {
+  await withServer(async (base, store) => {
+    // The dialog sends no connection at all when publishing.
+    const bare = Object.assign({}, REQUEST);
+    delete bare.connection;
+    const res = await post(base, "/publish", bare);
+    assert.strictEqual(res.status, 200, "nothing about where OSCAR is has to be supplied");
+    assert.ok((await store.read("main-stage")).includes('window.OSCAR_EXPORT = {"host":"192.168.0.5","port":18301'));
+
+    // And one that is sent cannot matter: a typo there must not end up in a
+    // page that would otherwise work.
+    await post(base, "/publish", Object.assign({}, REQUEST, { connection: { host: "10.9.9.9", port: "1" } }));
+    const kept = await store.read("main-stage");
+    assert.ok(kept.includes('"host":"192.168.0.5","port":18301'));
+    assert.ok(!kept.includes("10.9.9.9"));
+  });
+});
+
+test("a download still has to be told where OSCAR is, since a file cannot ask", async () => {
+  await withServer(async (base) => {
+    const bare = Object.assign({}, REQUEST);
+    delete bare.connection;
+    const res = await post(base, "/export", bare);
+    assert.strictEqual(res.status, 400);
+    assert.match((await res.json()).error, /where OSCAR/);
+    assert.strictEqual((await post(base, "/export", REQUEST)).status, 200);
+  });
+});
+
 test("what cannot be exported cannot be published, and the reason comes back", async () => {
   await withServer(async (base) => {
     const empty = await post(base, "/publish", Object.assign({}, REQUEST, { html: "  " }));
     assert.strictEqual(empty.status, 400);
-    const nowhere = await post(base, "/publish", Object.assign({}, REQUEST, { connection: { host: "", port: "" } }));
-    assert.strictEqual(nowhere.status, 400);
-    assert.match((await nowhere.json()).error, /where OSCAR/);
     const taken = await post(base, "/publish", Object.assign({}, REQUEST, { fileName: "preview" }));
     assert.strictEqual(taken.status, 400);
     assert.match((await taken.json()).error, /OSCAR uses itself/);

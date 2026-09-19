@@ -639,25 +639,28 @@ refuses such a file and asks to be updated instead of opening part of a
 show. A project with a single page is still saved as format 2, which older
 versions open as before.
 
-## Exporting a working interface
+## Publishing a working interface
 
-The download button in the top bar (**Export a working interface**) turns the
-canvas into **one self-contained page**, and offers two ways to use it.
+The download button in the top bar (**Publish your interface**) turns the
+canvas into **one self-contained page**, separate from the editor.
 
 **Publish on this OSCAR** keeps the page inside OSCAR and serves it at an
 address such as `http://192.168.1.20:8080/show/main-stage`, shown with a QR
-code to scan. This is the way onto a **phone or tablet**. Publishing under the
-same name again replaces the page and keeps its address, the dialog lists what
-is published and unpublishes it, and a published page stays reachable while
-OSCAR is locked. It finds OSCAR by the address it was opened at, so it keeps
-working if the computer's IP address changes. Unlike `/preview`, which always
-shows the last push from the editor, a published page stays as it was until
-you publish it again.
+code to scan. It asks for a name and nothing else. This is the way onto a
+**phone or tablet**, and the way to use unless you have a reason not to.
+Publishing under the same name again replaces the page and keeps its address,
+the dialog lists what is published and unpublishes it, and a published page
+stays reachable while OSCAR is locked. It finds OSCAR by the address it was
+opened at, so it keeps working if the computer's IP address changes. Unlike
+`/preview`, which always shows the last push from the editor, a published
+page stays as it was until you publish it again.
 
-**Download the file** saves the same page as an `.html` file. Open it on
-another **computer** by double-clicking it, or drop it on any web server. It
-does not work opened from a phone's own storage: Android and iOS sandbox a
-downloaded page and it never reaches OSCAR.
+**Advanced: download the page as a file**, folded away at the bottom of the
+dialog, saves the same page as an `.html` file to host on a web server or
+open on another **computer**. A file cannot ask where OSCAR is, so this is
+where you say: the address and bridge port are filled in with what OSCAR
+reports for itself. It does not work opened from a phone's own storage:
+Android and iOS sandbox a downloaded page and it never reaches OSCAR.
 
 Either way there is nothing to unzip and nothing else to copy. The widgets' settings, OSCAR's runtime, the
 socket.io client, the widget styles and your images are all inside it. A file

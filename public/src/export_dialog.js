@@ -202,22 +202,31 @@ function install(editor, options) {
 
     container.style.display = "block";
     editor.Modal.open({
-      title: "Export a working interface",
+      title: "Publish your interface",
       content: container,
       attributes: { class: "modal-login" },
     });
   }
 
-  /** What both buttons send: the same surface, built the same way. Null if something is missing. */
-  function request() {
+  /**
+   * What both buttons send: the same surface, built the same way. Null if
+   * something is missing.
+   *
+   * Only a downloaded file has to be told where OSCAR is. A published page is
+   * served by OSCAR and finds it by the address it was opened at, so
+   * publishing asks for nothing and the server bakes in its own address.
+   */
+  function request(needsAddress) {
     var host = (hostField.value || "").trim();
     var port = (portField.value || "").trim();
 
     say(errorBox, "");
     say(noteBox, "");
-    // The server checks both properly; this only saves a round trip.
-    if (!host) return say(errorBox, "Say where OSCAR can be reached."), null;
-    if (!port) return say(errorBox, "Say which port OSCAR's bridge is on."), null;
+    if (needsAddress) {
+      // The server checks both properly; this only saves a round trip.
+      if (!host) return say(errorBox, "Say where OSCAR can be reached."), null;
+      if (!port) return say(errorBox, "Say which port OSCAR's bridge is on."), null;
+    }
 
     var snapshot = exportSnapshot(editor);
     return {
@@ -228,13 +237,13 @@ function install(editor, options) {
         fileName: fileStem(nameField.value),
         html: snapshot.html,
         css: snapshot.css,
-        connection: { host: host, port: port },
+        connection: needsAddress ? { host: host, port: port } : undefined,
       }),
     };
   }
 
   publishButton.onclick = function () {
-    var body = request();
+    var body = request(false);
     if (!body) return;
     publishButton.disabled = true;
 
@@ -262,7 +271,7 @@ function install(editor, options) {
 
   button.onclick = function () {
     var stem = fileStem(nameField.value);
-    var body = request();
+    var body = request(true);
     if (!body) return;
     button.disabled = true;
 

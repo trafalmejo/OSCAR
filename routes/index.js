@@ -218,8 +218,8 @@ module.exports = function createRouter({
   // cannot open a downloaded page (lib/published.js says why); it can open an
   // address. Publishing and unpublishing are editing. Opening one is driving
   // the show, so it stays reachable while OSCAR is locked, as /preview does.
-  function buildPage(req) {
-    return buildExport(req.body, {
+  function buildPage(req, body) {
+    return buildExport(body || req.body, {
       publicDir: PUBLIC_DIR,
       files: exportFiles,
       oscarVersion: diagnostics ? diagnostics().oscar : undefined,
@@ -228,9 +228,18 @@ module.exports = function createRouter({
 
   router.post("/publish", editorOnly, async (req, res) => {
     if (!published) return res.status(503).json({ error: "This OSCAR cannot publish surfaces." });
+    // Nobody is asked where OSCAR is when publishing: the page is served by
+    // OSCAR and finds it by the address it was opened at. What is baked into
+    // the stored file is OSCAR's own address, which is the honest answer if
+    // the file is ever copied off and opened somewhere else. A caller that
+    // does name one is ignored for the same reason a typo there must not
+    // matter. Only an OSCAR that cannot say where it is falls back on it.
+    const own = { host: serverIP ? serverIP() : "", port: socketPort ? socketPort() : "" };
+    const body = Object.assign({}, req.body, own.host && own.port ? { connection: own } : null);
+
     let result;
     try {
-      result = buildPage(req);
+      result = buildPage(req, body);
     } catch (err) {
       console.error("Could not build the surface to publish:", err.message);
       return res.status(500).json({ error: "Your interface could not be published." });
