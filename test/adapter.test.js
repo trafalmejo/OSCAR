@@ -832,3 +832,73 @@ test("a host that cannot receive keeps nothing running off stage", () => {
   offstage.start();
   assert.strictEqual(offstage.size, 0);
 });
+
+// --- the settings panel's status lights --------------------------------------------
+
+test("each protocol section carries what it is, and a setting's hint travels with its trait", () => {
+  const type = registered(slider);
+  const traits = type.model.defaults.traits;
+  const section = (name) => traits.find((t) => t.name === name).category;
+  assert.deepStrictEqual(section("ip").attributes, { "data-oscar-section": "osc" });
+  assert.deepStrictEqual(section("dmxChannel").attributes, { "data-oscar-section": "dmx" });
+  assert.strictEqual(section("enabled").attributes, undefined, "the widget's own section has no light");
+
+  const master = traits.find((t) => t.name === "enabled");
+  assert.strictEqual(master.label, "Master comms");
+  assert.match(master.attributes.title, /Master switch/);
+  assert.strictEqual(traits.find((t) => t.name === "ip").attributes, undefined, "a setting with no hint gets no title");
+});
+
+test("the lights follow the selected widget: green for a protocol in use, grey otherwise", () => {
+  const { sectionLights } = require("../public/src/adapters/grapesjs");
+
+  // Just enough of a document: two section titles, and a hinted row.
+  function node(attrs) {
+    const el = { attrs: Object.assign({}, attrs), children: [], className: "" };
+    el.getAttribute = (k) => (k in el.attrs ? el.attrs[k] : null);
+    el.setAttribute = (k, v) => { el.attrs[k] = String(v); };
+    el.appendChild = (child) => { el.children.push(child); return child; };
+    el.querySelector = (sel) => {
+      if (sel === "[data-title]") return el.title || null;
+      if (sel === ".oscar-section-light") return el.children.find((c) => c.className === "oscar-section-light") || null;
+      if (sel === ".gjs-label") return el.label || null;
+      return null;
+    };
+    return el;
+  }
+  const osc = node({ "data-oscar-section": "osc" });
+  const dmx = node({ "data-oscar-section": "dmx" });
+  osc.title = node({});
+  dmx.title = node({});
+  const row = node({ title: "Master switch for..." });
+  row.label = node({ title: "Master comms" });
+  const root = {
+    querySelectorAll: (sel) => (sel.indexOf("data-oscar-section") !== -1 ? [osc, dmx] : [row]),
+  };
+  const doc = { createElement: () => node({}) };
+
+  const handlers = {};
+  const model = fakeModel(Object.assign({}, slider.defaults, { type: "oscar-slider" }));
+  const editor = {
+    getSelected: () => model,
+    on: (events, fn) => events.split(" ").forEach((e) => (handlers[e] = fn)),
+  };
+
+  const paint = sectionLights(editor, { document: doc, root });
+  paint();
+  const light = (section) => section.title.children[0];
+  assert.strictEqual(light(osc).attrs["data-on"], "true");
+  assert.strictEqual(light(dmx).attrs["data-on"], "false");
+  assert.strictEqual(light(dmx).attrs.title, "Not in use", "said in words as well as in colour");
+  assert.strictEqual(row.label.attrs.title, "Master switch for...", "the hint replaces the label's own title");
+
+  // Ticking DMX's Enable repaints without a reselect, and adds no second light.
+  handlers["component:selected"]();
+  model.edit("dmxEnabled", true);
+  assert.strictEqual(light(dmx).attrs["data-on"], "true");
+  assert.strictEqual(dmx.title.children.length, 1);
+
+  // The master switch takes both down.
+  model.edit("enabled", false);
+  assert.deepStrictEqual([light(osc).attrs["data-on"], light(dmx).attrs["data-on"]], ["false", "false"]);
+});

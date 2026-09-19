@@ -229,7 +229,7 @@ var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
 var htmlDocument = require("../../lib/html-document");
-var { followSurfaceStyle } = require("./adapters/grapesjs");
+var { followSurfaceStyle, sectionLights } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
@@ -418,6 +418,11 @@ function initGrape(ipServer, socketPort) {
 
   // The chosen style is saved on the wrapper; the canvas body follows it.
   followSurfaceStyle(editor, widgetStyles.copyToBody);
+
+  // A light on each protocol section of the settings panel, so a collapsed
+  // section still says whether the widget uses it. Watches the views column,
+  // which is where GrapesJS draws and redraws the panel.
+  sectionLights(editor, { root: document.querySelector(".gjs-pn-views-container") || document.body });
 
   var pn = editor.Panels;
   var modal = editor.Modal;

@@ -225,3 +225,32 @@ test("the DMX defaults name a universe both protocols accept, and a block as wid
   assert.strictEqual(dmxChecks(3).dmxProtocol("sacn", defaults), null);
   assert.strictEqual(dmxChecks(3).dmxProtocol("artnet", defaults), null);
 });
+
+// --- the panel's status lights -------------------------------------------------
+
+test("a section's light is on only when that protocol would really go out", () => {
+  const { sectionStatus, enabled } = require("../../lib/widgets/fields");
+  const { slider } = require("../../lib/widgets/slider");
+  const { meter } = require("../../lib/widgets/meter");
+  const { textInput } = require("../../lib/widgets/text-input");
+  const of = (overrides) => sectionStatus(slider.fields, Object.assign({}, slider.defaults, overrides));
+
+  assert.deepStrictEqual(of({}), { osc: true, dmx: false }, "a new slider: OSC, no DMX");
+  assert.deepStrictEqual(of({ dmxEnabled: true }), { osc: true, dmx: true });
+  assert.deepStrictEqual(of({ oscEnabled: false, dmxEnabled: true }), { osc: false, dmx: true });
+  // Green over a widget the master has silenced would be a lie, and the
+  // collapsed section is the one that gets trusted at a glance.
+  assert.deepStrictEqual(of({ dmxEnabled: true, enabled: false }), { osc: false, dmx: false });
+  assert.deepStrictEqual(of({ transport: "dmx" }), { osc: false, dmx: true }, "an old project's Output word counts");
+
+  // A widget with no such section has no such light.
+  assert.deepStrictEqual(sectionStatus(meter.fields, meter.defaults), { osc: true });
+  assert.deepStrictEqual(sectionStatus(textInput.fields, Object.assign({}, textInput.defaults, { enabled: false })), { osc: false });
+  assert.deepStrictEqual(sectionStatus(null, null), {});
+
+  // The master switch says what it is over, in the label and on hover.
+  assert.strictEqual(enabled().key, "enabled", "the stored setting keeps its name, so no project changes");
+  assert.strictEqual(enabled().label, "Master comms");
+  assert.match(enabled().hint, /sends nothing on any protocol/);
+  assert.match(enabled().hint, /ignores incoming/);
+});

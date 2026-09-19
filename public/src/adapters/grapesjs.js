@@ -8,7 +8,7 @@
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx, upgradeRouting, SECTIONS } = require("../../../lib/widgets/fields");
+var { sendsDmx, upgradeRouting, sectionStatus, SECTIONS } = require("../../../lib/widgets/fields");
 var { exportAttributes } = require("../../../lib/export/config");
 
 /**
@@ -22,6 +22,7 @@ var { exportAttributes } = require("../../../lib/export/config");
  * as short as it was before DMX existed.
  */
 var WIDGET_SECTION = { id: "widget", label: "Widget" };
+var SECTION_ATTRIBUTE = "data-oscar-section";
 
 function categoryOf(field, config) {
   var section = null;
@@ -30,7 +31,11 @@ function categoryOf(field, config) {
   });
   if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
   var open = section.id === "dmx" ? sendsDmx(config || {}) : true;
-  return { id: section.id, label: section.label, open: open };
+  // The attribute lands on the section's element, which is how the status
+  // light finds it: by what it is, not by what its title happens to say.
+  var attributes = {};
+  attributes[SECTION_ATTRIBUTE] = section.id;
+  return { id: section.id, label: section.label, open: open, attributes: attributes };
 }
 
 /** Neutral field descriptor -> GrapesJS trait. `config` decides which sections start open. */
@@ -51,6 +56,9 @@ function toTrait(field, config) {
     trait.options = field.options;
   }
   if (field.placeholder) trait.placeholder = field.placeholder;
+  // Shown by the browser on hover. decoratePanel() copies it onto the label
+  // too, which GrapesJS titles with the label's own text.
+  if (field.hint) trait.attributes = { title: field.hint };
   if (field.min !== undefined) trait.min = field.min;
   if (field.max !== undefined) trait.max = field.max;
   if (field.step !== undefined) trait.step = field.step;
@@ -811,7 +819,94 @@ function followSurfaceStyle(editor, copy) {
   sync();
 }
 
+/**
+ * What the settings panel shows beyond what GrapesJS draws: a light on each
+ * protocol section's title, green while that protocol is live on the selected
+ * widget and grey while it is not, so a collapsed section still says whether
+ * it is in use; and the hint of any setting that has one, on its label.
+ *
+ * GrapesJS rebuilds the panel whenever the selection or a widget's trait list
+ * changes and has no hook for after it has, so the panel is watched and
+ * decorated again when its contents change. Only child elements are watched,
+ * and a repaint changes attributes, so decorating cannot set itself off.
+ */
+function sectionLights(editor, options) {
+  var doc = (options && options.document) || document;
+  var root = (options && options.root) || doc;
+  var watched = null;
+  var unwatch = null;
+
+  function paint() {
+    var model = editor.getSelected();
+    var definition = model && byType(model.get("type"));
+    var status = definition ? sectionStatus(definition.fields, configOf(model, definition)) : {};
+
+    var sections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + "]");
+    Array.prototype.forEach.call(sections, function (section) {
+      var title = section.querySelector("[data-title]");
+      if (!title) return;
+      var light = title.querySelector(".oscar-section-light");
+      if (!light) {
+        light = doc.createElement("span");
+        light.className = "oscar-section-light";
+        title.appendChild(light);
+      }
+      var on = status[section.getAttribute(SECTION_ATTRIBUTE)] === true;
+      light.setAttribute("data-on", String(on));
+      // For someone who cannot tell the two colours apart, and for a reader.
+      light.setAttribute("title", on ? "In use" : "Not in use");
+      light.setAttribute("role", "img");
+      light.setAttribute("aria-label", on ? "in use" : "not in use");
+    });
+
+    // GrapesJS puts a trait's attributes on the wrapper around its row.
+    var hinted = root.querySelectorAll(".gjs-trt-trait__wrp[title]");
+    Array.prototype.forEach.call(hinted, function (row) {
+      var label = row.querySelector(".gjs-label");
+      if (label) label.setAttribute("title", row.getAttribute("title"));
+    });
+  }
+
+  function watch(model) {
+    if (unwatch) unwatch();
+    unwatch = null;
+    watched = model || null;
+    if (!watched || typeof watched.on !== "function") return;
+    var events = "change:enabled change:oscEnabled change:dmxEnabled";
+    watched.on(events, paint);
+    unwatch = function () {
+      watched.off(events, paint);
+    };
+  }
+
+  editor.on("component:selected component:deselected", function () {
+    watch(editor.getSelected());
+    // The panel is drawn after the selection is announced.
+    setTimeout(paint, 0);
+  });
+
+  if (typeof MutationObserver === "function" && root.nodeType) {
+    var pending = false;
+    new MutationObserver(function () {
+      if (pending) return;
+      pending = true;
+      setTimeout(function () {
+        pending = false;
+        paint();
+      }, 0);
+    }).observe(root, { childList: true, subtree: true });
+  }
+
+  return paint;
+}
+
+function byType(type) {
+  for (var i = 0; i < WIDGETS.length; i++) if (WIDGETS[i].name === type) return WIDGETS[i];
+  return null;
+}
+
 module.exports = {
+  sectionLights: sectionLights,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,
   exportSnapshot: exportSnapshot,

@@ -197,7 +197,7 @@ the next press sends the opposite edge. A momentary button only lights up,
 because its state is your finger's.
 
 Listen is off by default, so nothing starts moving on its own, and a widget
-with **Enabled** off is deaf as well as silent, so you can lay a surface out
+with **Master comms** off is deaf as well as silent, so you can lay a surface out
 while the rig is live. A hand on a control outranks the network: while you
 are dragging a slider or a pad, or holding a button, what arrives is ignored
 until you let go. A widget never sends in answer to what it hears, so software
@@ -361,7 +361,7 @@ meter fed nothing keeps showing its last reading.
 
 A meter never drops to zero on its own. A value that cannot be read as a
 number holds the last reading, because an empty bar reports silence on a
-channel that may be at full, and a meter with **Enabled** off freezes where
+channel that may be at full, and a meter with **Master comms** off freezes where
 it is rather than emptying.
 
 ## Colour picker
