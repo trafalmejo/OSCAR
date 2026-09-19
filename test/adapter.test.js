@@ -114,12 +114,18 @@ test("a widget's connection starts pointed at this machine, and only a connected
   for (const widget of WIDGETS) {
     const type = registered(widget, "10.0.0.5");
     const defaults = type.model.defaults;
-    if (widget.sends || widget.receives) {
+    const hasIpField = widget.fields.some((f) => f.key === "ip");
+    if (widget.sends) assert.ok(hasIpField, widget.name + " sends but has no Ip setting");
+    if (hasIpField) {
       assert.strictEqual(defaults.ip, "10.0.0.5", widget.name);
     } else {
       assert.ok(!("ip" in defaults), widget.name + " carries a hidden ip");
     }
   }
+  // The meter listens and never sends. It has no Ip setting, so an ip on its
+  // model would be a value nothing shows, checks or uses.
+  const meter = WIDGETS.find((w) => w.name === "oscar-meter");
+  assert.ok(!("ip" in registered(meter, "10.0.0.5").model.defaults), "the meter carries a hidden ip");
   // A display-only widget has no ip field, so it must not hold an ip value
   // either -- the two would disagree the moment anything read it.
   assert.ok(!("ip" in registered(display, "10.0.0.5").model.defaults));

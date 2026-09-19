@@ -77,3 +77,79 @@ button {
   background: AccentColor;
   pointer-events: none;
 }
+/* --- oscar-meter --- */
+/* Level meter. Same family as the slider and the pad: a light grey ground
+   that brightens on hover, and the browser's own control colour on the bar.
+
+   The bar (::before) and the peak marker (::after) are pseudo-elements driven
+   by two custom properties the widget writes; a child element would be
+   selectable and draggable out of the component in the editor. Pointer
+   events are left on so the designer can still select and move it. */
+.oscar-meter {
+  position: relative;
+  width: 220px;
+  height: 24px;
+  background: #d3d3d3;
+  outline: none;
+  opacity: 0.8;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  --oscar-level: 0%;
+  --oscar-peak: 0%;
+}
+
+.oscar-meter:hover {
+  opacity: 1;
+}
+
+.oscar-meter[orient=vertical] {
+  width: 24px;
+  height: 160px;
+}
+
+.oscar-meter::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--oscar-level);
+  background: #1a73e8;
+  background: AccentColor;
+  pointer-events: none;
+}
+
+/* A vertical meter fills from the bottom, the way a fader reads. */
+.oscar-meter[orient=vertical]::before {
+  top: auto;
+  right: 0;
+  width: auto;
+  height: var(--oscar-level);
+}
+
+/* The marker is only drawn while the widget says a peak is held, and is dark
+   rather than accent-coloured so it stays visible at the end of the bar. */
+.oscar-meter.oscar-peak::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--oscar-peak);
+  width: 2px;
+  margin-left: -2px;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.oscar-meter[orient=vertical].oscar-peak::after {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: var(--oscar-peak);
+  width: auto;
+  height: 2px;
+  margin: 0 0 -2px 0;
+}

@@ -242,12 +242,15 @@ function register(definition) {
     var ipserver = (options && options.ipserver) || "localhost";
     var deletions = definition.dmx ? deletionsOf(editor) : null;
 
-    // A widget that talks to the network starts pointed at this machine. One
-    // that does not has no ip setting, and must not carry a hidden one.
+    // A widget with an Ip setting starts pointed at this machine. One without
+    // -- a label, or a meter, which listens and never sends -- has nowhere to
+    // point, and must not carry a hidden ip that nothing shows or checks. The
+    // test is the setting itself rather than the sends flag, so the hidden
+    // value and the visible field cannot come apart.
     var defaults = Object.assign(
       {},
       definition.defaults,
-      definition.sends || definition.receives ? { ip: ipserver } : {}
+      "ip" in (definition.defaults || {}) ? { ip: ipserver } : {}
     );
 
     editor.DomComponents.addType(definition.name, {
