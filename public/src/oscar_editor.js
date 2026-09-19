@@ -238,6 +238,7 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 var oscarPages = require("./pages");
 
 var oscarExport = require("./export_dialog");
+var toolbarOrder = require("../../lib/toolbar-order");
 
 var isProjectData = projectFormat.isGrapesProject;
 
@@ -1350,6 +1351,39 @@ function initGrape(ipServer, socketPort) {
   // button does not re-render when its attributes change afterwards. Setting
   // the model alone is silently ignored, so the text is written onto the
   // elements as well. Buttons render in the order the panel holds them.
+  // ---- toolbar order -----------------------------------------------------
+  // Every button exists by now. GrapesJS can only append, so the ones that
+  // belong elsewhere are moved: in the panel's own list and on the page
+  // together, because retitle() below pairs the two by position.
+  (function arrangeToolbar() {
+    var panel = pn.getPanel("options");
+    var row = document.querySelector(".gjs-pn-options .gjs-pn-buttons");
+    if (!panel || !row) return;
+
+    var buttons = panel.get("buttons");
+    var models = buttons.models.slice();
+    var els = Array.prototype.slice.call(row.querySelectorAll(".gjs-pn-btn"));
+    // If the two ever disagree, moving either would mislabel the rest.
+    if (models.length !== els.length) return;
+
+    var ids = models.map(function (model) {
+      return model.get("id");
+    });
+    var wanted = toolbarOrder.arrange(ids);
+
+    wanted.forEach(function (id) {
+      row.appendChild(els[ids.indexOf(id)]);
+    });
+    // Silent: the panel's view answers a reset by drawing every button again,
+    // which would throw away the elements just moved.
+    buttons.reset(
+      wanted.map(function (id) {
+        return models[ids.indexOf(id)];
+      }),
+      { silent: true }
+    );
+  })();
+
   function retitle(panelId, labels) {
     var panel = pn.getPanel(panelId);
     var els = document.querySelectorAll(".gjs-pn-" + panelId + " .gjs-pn-btn");
