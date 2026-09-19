@@ -1466,11 +1466,9 @@ module.exports = {
 
 const {
   field,
+  oscFields,
   enabled,
-  listen,
-  connection,
   connectionChecks,
-  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -1539,10 +1537,9 @@ const button = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), field("label", "Label", "text"), oscToggle()]
-    .concat(connection())
+  fields: [enabled(), field("label", "Label", "text")]
+    .concat(oscFields())
     .concat([
-      listen(),
       field("mode", "Mode", "select", { options: MODES }),
       field("valueOn", "Value ON", "text"),
       field("valueOff", "Value OFF", "text"),
@@ -1761,11 +1758,9 @@ module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 
 const {
   field,
+  oscFields,
   enabled,
-  listen,
-  connection,
   connectionChecks,
-  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -1911,10 +1906,9 @@ const colour = {
     dmxDefaults(3)
   ),
 
-  fields: [enabled(), oscToggle()]
-    .concat(connection())
+  fields: [enabled()]
+    .concat(oscFields())
     .concat([
-      listen(),
       field("value", "Colour", "text", { placeholder: "#rrggbb" }),
       field("format", "Send as", "select", { options: FORMATS }),
       field("scale", "Range", "select", { options: SCALES }),
@@ -2215,11 +2209,9 @@ module.exports = { colour, FORMATS, SCALES, parseHex, normaliseHex, fromWire };
 
 const {
   field,
+  oscFields,
   enabled,
-  listen,
-  connection,
   connectionChecks,
-  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -2320,10 +2312,9 @@ const dropdown = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), oscToggle()]
-    .concat(connection())
+  fields: [enabled()]
+    .concat(oscFields())
     .concat([
-      listen(),
       field("options", "Options", "text", { placeholder: "Red=1, Green=2, Blue=3" }),
       field("value", "Selected", "text"),
       field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
@@ -2607,21 +2598,29 @@ const MASTER_HINT =
   "Use it to lay out and try a control without firing cues at the rig.";
 
 /**
- * Whether each protocol section of a widget is live, for the light the panel
- * draws on the section's title so it can be read while collapsed.
+ * Which directions of each protocol section are live on a widget, for the
+ * lights the panel draws on the section's title so it can be read collapsed.
  *
- * Live means a value would really go out (or, for a widget that only follows
- * the rig, really be heard): the section's own Enable AND the master switch.
- * A green light over a widget the master has silenced would be a lie, and it
- * is the collapsed section that gets trusted at a glance. A section the
- * widget does not have is absent from the answer.
+ *   { osc: { in: true, out: false }, dmx: { out: true } }
+ *
+ * A direction the widget does not have is absent: a meter has no `out`, DMX
+ * never has an `in`, and a section the widget lacks is not there at all.
+ * Live means it would really happen: the direction's own checkbox AND the
+ * master switch. A green light over a widget the master has silenced would
+ * be a lie, and it is the collapsed section that gets trusted at a glance.
  */
 function sectionStatus(fields, config) {
-  const has = (id) => (fields || []).some((spec) => spec.section === id);
+  const has = (key) => (fields || []).some((spec) => spec.key === key);
   const master = !!(config && config.enabled);
   const status = {};
-  if (has("osc")) status.osc = master && sendsOsc(config);
-  if (has("dmx")) status.dmx = master && sendsDmx(config);
+
+  const osc = {};
+  if (has("listen")) osc.in = master && isOn(config && config.listen);
+  // Ip is what makes a widget a sender; one without it only follows.
+  if (has("ip")) osc.out = master && sendsOsc(config);
+  if (Object.keys(osc).length) status.osc = osc;
+
+  if (has("dmxEnabled")) status.dmx = { out: master && sendsDmx(config) };
   return status;
 }
 
@@ -2652,14 +2651,46 @@ const ORIENTATIONS = [
 ];
 
 /**
- * Follow the rig: reflect OSC arriving at the widget's own Message address.
+ * Data in: follow the rig, by reflecting OSC that arrives at the widget's own
+ * Message address. (The setting is stored as `listen`, its first name.)
  *
- * Off by default. A surface must not start moving on its own the moment it
- * is opened, and a control built before this existed must behave exactly as
- * it always did. Sits right after Message, which is the address it follows.
+ * Off by default on a widget that also sends. A surface must not start moving
+ * on its own the moment it is opened, and a control built before this existed
+ * must behave exactly as it always did.
  */
 function listen() {
-  return field("listen", "Listen", "checkbox", { section: "osc" });
+  return field("listen", "Data in", "checkbox", { section: "osc", hint: DATA_IN_HINT });
+}
+
+const DATA_IN_HINT =
+  "Follow the rig: an OSC message arriving at this widget's Message address moves it. " +
+  "What comes in is never sent back out.";
+
+const DATA_OUT_HINT = "Send this widget's value over this protocol when it is used.";
+
+/**
+ * The OSC section of a panel, in the one order every widget shares.
+ *
+ * OSC runs both ways, so the section opens with a checkbox per direction --
+ * Data in where the widget can follow the rig, Data out where it sends --
+ * and then says where: Ip and Port for a widget that sends, Message for both,
+ * since it is the address sent to and the address followed.
+ *
+ * Built here rather than listed by each widget so the directions lead every
+ * OSC section the same way, and a widget cannot offer a direction it has not
+ * got: `sends` and `receives` are the definition's own flags.
+ *
+ * The stored keys are `listen` (in) and `oscEnabled` (out). They keep those
+ * names because projects already hold them; the panel calls them what they do.
+ */
+function oscFields(options) {
+  const sends = !options || options.sends !== false;
+  const receives = !options || options.receives !== false;
+  const fields = [];
+  if (receives) fields.push(listen());
+  if (sends) fields.push(oscToggle());
+  if (sends) return fields.concat(connection());
+  return fields.concat([field("message", "Message", "text", { section: "osc", placeholder: "/address" })]);
 }
 
 /**
@@ -2672,21 +2703,24 @@ function listen() {
  * default, so every project made before DMX existed behaves as it did. Both
  * off is allowed and silent.
  *
- * Only a widget that can drive DMX carries the OSC checkbox. On one that
- * speaks OSC alone it would be a second Enabled.
+ * Every widget that sends carries OSC's Data out, not only those that can
+ * also drive DMX: the master switch stops both directions, so this is the
+ * only way to keep a control following the rig while it sends nothing.
  *
- * Both are labelled Enable: the section's title already says which protocol,
- * and a label that repeats it wraps onto a second line in the narrow panel.
- * For the same reason the DMX fields are Protocol, Node and so on, not "DMX
- * protocol"; the complaints a check raises still name DMX in full, because a
- * message is read away from the section it is about.
+ * The labels say the direction and leave the protocol to the section's
+ * title; a label that repeats it wraps onto a second line in the narrow
+ * panel. For the same reason the DMX fields are Protocol, Node and so on, not
+ * "DMX protocol"; the complaints a check raises still name DMX in full,
+ * because a message is read away from the section it is about.
  */
 function oscToggle() {
-  return field("oscEnabled", "Enable", "checkbox", { section: "osc" });
+  return field("oscEnabled", "Data out", "checkbox", { section: "osc", hint: DATA_OUT_HINT });
 }
 
+// DMX only runs one way, from the desk to the fixture, so its section has the
+// one direction. Named as OSC's is, so the two sections read alike.
 function dmxToggle() {
-  return field("dmxEnabled", "Enable", "checkbox", { section: "dmx" });
+  return field("dmxEnabled", "Data out", "checkbox", { section: "dmx", hint: DATA_OUT_HINT });
 }
 
 /** A checkbox as it may be stored: the boolean, or its text in a file edited by hand. */
@@ -2909,6 +2943,7 @@ module.exports = {
   field: field,
   enabled: enabled,
   listen: listen,
+  oscFields: oscFields,
   connection: connection,
   connectionChecks: connectionChecks,
   SECTIONS: SECTIONS,
@@ -3249,7 +3284,7 @@ module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
 },{"./outgoing":22,"./registry":23}],19:[function(require,module,exports){
 "use strict";
 
-const { field, enabled, listen, connection, connectionChecks } = require("./fields");
+const { field, enabled, oscFields, connectionChecks } = require("./fields");
 const { outgoing, routing } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -3434,6 +3469,7 @@ const mediaBrowser = {
 
   defaults: {
     enabled: true,
+    oscEnabled: true,
     ip: "localhost",
     port: 7000,
     message: "/clip",
@@ -3444,8 +3480,9 @@ const mediaBrowser = {
     argType: "i",
   },
 
-  fields: [enabled()].concat(connection()).concat([
-    listen(),
+  fields: [enabled()]
+    .concat(oscFields())
+    .concat([
     field("items", "Items", "text", { placeholder: "Forest|7|thumbs/forest.jpg; Waves|12" }),
     field("columns", "Columns", "number", { min: 1, max: MAX_COLUMNS, step: 1 }),
     field("showLabels", "Show labels", "checkbox"),
@@ -3702,7 +3739,7 @@ module.exports = {
 },{"../osc-args":6,"./fields":16,"./incoming":17,"./outgoing":22,"./shared":24,"./typed":27}],20:[function(require,module,exports){
 "use strict";
 
-const { field, enabled, listen, checkMessage, checkNumber, ORIENTATIONS } = require("./fields");
+const { field, enabled, oscFields, checkMessage, checkNumber, ORIENTATIONS } = require("./fields");
 const { follow } = require("./incoming");
 const { toNumber } = require("../osc-args");
 const { unitOf } = require("../dmx/levels");
@@ -3781,8 +3818,8 @@ const meter = {
 
   fields: [
     enabled(),
-    field("message", "Message", "text", { section: "osc", placeholder: "/address" }),
-    listen(),
+    // It follows the rig and never sends: Data in and the address, no more.
+    ...oscFields({ sends: false }),
     field("min", "Min", "number", { step: "any" }),
     field("max", "Max", "number", { step: "any" }),
     field("value", "Value", "number", { step: "any" }),
@@ -3951,11 +3988,9 @@ module.exports = { meter, PEAK_CLASS };
 
 const {
   field,
+  oscFields,
   enabled,
-  listen,
-  connection,
   connectionChecks,
-  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -4029,10 +4064,9 @@ const numberInput = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), oscToggle()]
-    .concat(connection())
+  fields: [enabled()]
+    .concat(oscFields())
     .concat([
-      listen(),
       field("value", "Value", "number", { step: "any" }),
       field("min", "Min", "number", { step: "any", placeholder: "no limit" }),
       field("max", "Max", "number", { step: "any", placeholder: "no limit" }),
@@ -4537,13 +4571,11 @@ module.exports = { share, onShared };
 
 const {
   field,
+  oscFields,
   enabled,
-  listen,
-  connection,
   connectionChecks,
   checkNumber,
   ORIENTATIONS,
-  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -4602,10 +4634,9 @@ const slider = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), oscToggle()]
-    .concat(connection())
+  fields: [enabled()]
+    .concat(oscFields())
     .concat([
-      listen(),
       field("min", "Min", "number", { step: "any" }),
       field("max", "Max", "number", { step: "any" }),
       field("value", "Value", "number", { step: "any" }),
@@ -4802,7 +4833,7 @@ module.exports = { slider, ORIENTATIONS };
 },{"../dmx/levels":1,"../osc-args":6,"./fields":16,"./incoming":17,"./outgoing":22,"./shared":24}],26:[function(require,module,exports){
 "use strict";
 
-const { field, enabled, listen, connection, connectionChecks } = require("./fields");
+const { field, enabled, oscFields, connectionChecks } = require("./fields");
 const { outgoing, routing } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -4848,6 +4879,7 @@ const textInput = {
 
   defaults: {
     enabled: true,
+    oscEnabled: true,
     ip: "localhost",
     port: 7000,
     message: "/text1",
@@ -4857,8 +4889,9 @@ const textInput = {
     argType: "s",
   },
 
-  fields: [enabled()].concat(connection()).concat([
-    listen(),
+  fields: [enabled()]
+    .concat(oscFields())
+    .concat([
     field("value", "Value", "text"),
     field("placeholder", "Placeholder", "text"),
     field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
@@ -5182,12 +5215,10 @@ module.exports = { commitOn, refusal, checkArgType, levelOf, dmxRange };
 
 const {
   field,
+  oscFields,
   enabled,
-  listen,
-  connection,
   connectionChecks,
   checkNumber,
-  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -5264,10 +5295,9 @@ const xypad = {
     dmxDefaults(2)
   ),
 
-  fields: [enabled(), oscToggle()]
-    .concat(connection())
+  fields: [enabled()]
+    .concat(oscFields())
     .concat([
-      listen(),
       field("sendMode", "Send", "select", { options: SEND_MODES }),
       field("minX", "Min X", "number", { step: "any" }),
       field("maxX", "Max X", "number", { step: "any" }),
@@ -17264,16 +17294,23 @@ function followSurfaceStyle(editor, copy) {
 }
 
 /**
- * What the settings panel shows beyond what GrapesJS draws: a light on each
- * protocol section's title, green while that protocol is live on the selected
- * widget and grey while it is not, so a collapsed section still says whether
- * it is in use; and the hint of any setting that has one, on its label.
+ * What the settings panel shows beyond what GrapesJS draws: lights on each
+ * protocol section's title, one per direction the widget has (IN and OUT for
+ * OSC, OUT alone for DMX, IN alone for a meter), green while that direction
+ * is live on the selected widget and grey while it is not, so a collapsed
+ * section still says what it is doing; and the hint of any setting that has
+ * one, on its label.
  *
  * GrapesJS rebuilds the panel whenever the selection or a widget's trait list
  * changes and has no hook for after it has, so the panel is watched and
  * decorated again when its contents change. Only child elements are watched,
  * and a repaint changes attributes, so decorating cannot set itself off.
  */
+var DIRECTIONS = [
+  { id: "in", tag: "IN", label: "Data in" },
+  { id: "out", tag: "OUT", label: "Data out" },
+];
+
 function sectionLights(editor, options) {
   var doc = (options && options.document) || document;
   var root = (options && options.root) || doc;
@@ -17289,18 +17326,40 @@ function sectionLights(editor, options) {
     Array.prototype.forEach.call(sections, function (section) {
       var title = section.querySelector("[data-title]");
       if (!title) return;
-      var light = title.querySelector(".oscar-section-light");
-      if (!light) {
-        light = doc.createElement("span");
-        light.className = "oscar-section-light";
-        title.appendChild(light);
+      var directions = status[section.getAttribute(SECTION_ATTRIBUTE)] || {};
+
+      // One holder per title, made once; the lights in it are redrawn, since
+      // which directions exist changes with the widget selected.
+      var holder = title.querySelector(".oscar-section-lights");
+      if (!holder) {
+        holder = doc.createElement("span");
+        holder.className = "oscar-section-lights";
+        title.appendChild(holder);
       }
-      var on = status[section.getAttribute(SECTION_ATTRIBUTE)] === true;
-      light.setAttribute("data-on", String(on));
-      // For someone who cannot tell the two colours apart, and for a reader.
-      light.setAttribute("title", on ? "In use" : "Not in use");
-      light.setAttribute("role", "img");
-      light.setAttribute("aria-label", on ? "in use" : "not in use");
+      DIRECTIONS.forEach(function (direction) {
+        var light = holder.querySelector('[data-direction="' + direction.id + '"]');
+        if (!(direction.id in directions)) {
+          // The widget has no such direction: a meter never sends, DMX never listens.
+          if (light) holder.removeChild(light);
+          return;
+        }
+        if (!light) {
+          light = doc.createElement("span");
+          light.className = "oscar-section-light";
+          light.setAttribute("data-direction", direction.id);
+          // Two unlabelled dots would be a guess; the tag says which is which.
+          light.textContent = direction.tag;
+          holder.appendChild(light);
+        }
+        var on = directions[direction.id] === true;
+        var words = direction.label + (on ? ": on" : ": off");
+        light.setAttribute("data-on", String(on));
+        // In words as well as colour, for a reader and for anyone who cannot
+        // tell the two colours apart.
+        light.setAttribute("title", words);
+        light.setAttribute("role", "img");
+        light.setAttribute("aria-label", words);
+      });
     });
 
     // GrapesJS puts a trait's attributes on the wrapper around its row.
@@ -17316,7 +17375,7 @@ function sectionLights(editor, options) {
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:oscEnabled change:dmxEnabled";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);

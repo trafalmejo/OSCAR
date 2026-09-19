@@ -788,24 +788,53 @@ a {
   font-weight: 600;
 }
 
-/* ---- protocol status light ------------------------------------------------
-   On the title of each protocol section in a widget's settings, so a
-   collapsed section still says whether the widget uses it. Green is Radix
-   grass 9; grey is the theme's own, so an unused section recedes. The glow is
-   a second cue for anyone who cannot tell the two colours apart, along with
-   the title text the adapter gives it. */
+/* The label column of a widget's settings. GrapesJS gives it 30%, which wraps
+   "Data out" and "Master comms" onto two lines and makes the panel read as a
+   ragged list; the inputs have room to give. */
+.gjs-trt-trait .gjs-label-wrp {
+  width: 42%;
+  min-width: 42%;
+}
+
+/* ---- protocol status lights ----------------------------------------------
+   On the title of each protocol section in a widget's settings, one per
+   direction the widget has, so a collapsed section still says what it is
+   doing. Each is a dot with its direction beside it: two bare dots would be a
+   guess. Green is Radix grass 9; grey is the theme's own, so an unused
+   direction recedes. The glow is a second cue for anyone who cannot tell the
+   two colours apart, along with the words the adapter puts in the title. */
+.oscar-section-lights {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
 .oscar-section-light {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--o-text-faint);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.oscar-section-light::before {
+  content: "";
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--gray-8);
-  vertical-align: middle;
   transition: background-color 0.15s, box-shadow 0.15s;
 }
 
 .oscar-section-light[data-on="true"] {
+  color: var(--o-text-muted);
+}
+
+.oscar-section-light[data-on="true"]::before {
   background: #46a758;
   box-shadow: 0 0 0 3px color-mix(in srgb, #46a758 25%, transparent);
 }

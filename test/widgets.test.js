@@ -125,8 +125,7 @@ test("a widget that can drive DMX has a section per protocol, each switched on b
     const keys = widget.fields.map((f) => f.key);
     assert.ok(!keys.includes("transport"), widget.name + ": there is no Output list; the checkboxes say it");
     if (!widget.dmx) {
-      // On a widget that only speaks OSC, OSC's Enable would be a second Enabled.
-      for (const key of ["oscEnabled", "dmxEnabled"].concat(DMX_KEYS)) {
+      for (const key of ["dmxEnabled"].concat(DMX_KEYS)) {
         assert.ok(!keys.includes(key), widget.name + " cannot drive DMX but has " + key);
       }
       continue;
@@ -135,7 +134,8 @@ test("a widget that can drive DMX has a section per protocol, each switched on b
     assert.strictEqual(widget.defaults.dmxEnabled, false, widget.name + " sends no DMX until asked");
 
     const section = (id) => widget.fields.filter((f) => f.section === id).map((f) => f.key);
-    assert.strictEqual(section("osc")[0], "oscEnabled", widget.name + ": the OSC section opens with its checkbox");
+    assert.ok(section("osc").includes("oscEnabled"), widget.name + ": OSC can be switched off on its own");
+    assert.strictEqual(widget.fields.find((f) => f.key === "dmxEnabled").label, "Data out", widget.name + ": DMX only runs one way");
     assert.deepStrictEqual(section("dmx"), ["dmxEnabled"].concat(DMX_KEYS), widget.name + ": the DMX section, checkbox first");
     for (const key of DMX_KEYS) {
       const field = widget.fields.find((f) => f.key === key);
@@ -198,12 +198,28 @@ test("on DMX, every such widget puts a level on the wire that a channel can carr
 
 const receivers = WIDGETS.filter((w) => w.receives);
 
-test("a widget that receives has a Listen switch right after Message", () => {
+test("the OSC section opens with a checkbox per direction the widget has, in before out", () => {
   assert.ok(receivers.length >= 3, "button, slider and pad all follow the rig");
-  for (const widget of receivers) {
-    const keys = widget.fields.map((f) => f.key);
-    assert.ok(keys.includes("message"), widget.name + " has an address to follow");
-    assert.strictEqual(keys[keys.indexOf("message") + 1], "listen", widget.name);
+  for (const widget of WIDGETS) {
+    const osc = widget.fields.filter((f) => f.section === "osc");
+    if (!osc.length) continue;
+    const wanted = [];
+    if (widget.receives) wanted.push("listen");
+    if (widget.sends) wanted.push("oscEnabled");
+    assert.deepStrictEqual(osc.slice(0, wanted.length).map((f) => f.key), wanted, widget.name);
+    // Named for the direction; the section's title names the protocol.
+    const labels = { listen: "Data in", oscEnabled: "Data out" };
+    for (const key of wanted) assert.strictEqual(osc.find((f) => f.key === key).label, labels[key], widget.name + "." + key);
+    assert.ok(osc.some((f) => f.key === "message"), widget.name + " has an address");
+    // A widget cannot offer a direction it has not got.
+    if (!widget.sends) assert.ok(!osc.some((f) => f.key === "oscEnabled" || f.key === "ip"), widget.name + " does not send");
+    if (!widget.receives) assert.ok(!osc.some((f) => f.key === "listen"), widget.name + " does not follow");
+  }
+});
+
+test("every widget that sends has OSC's Data out, on by default, so the master switch is not the only way to go quiet", () => {
+  for (const widget of senders) {
+    assert.strictEqual(widget.defaults.oscEnabled, true, widget.name);
   }
 });
 

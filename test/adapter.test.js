@@ -437,7 +437,10 @@ test("the panel is one collapsible section per protocol, under the widget's own 
   const inSection = (id) => names(traits.filter((t) => t.category.id === id));
 
   assert.ok(!names(traits).includes("transport"), "no Output list: the checkboxes say it");
-  assert.deepStrictEqual(inSection("osc"), ["oscEnabled", "ip", "port", "message", "listen", "argType"]);
+  // The directions lead: Data in, Data out, then where and how.
+  assert.deepStrictEqual(inSection("osc"), ["listen", "oscEnabled", "ip", "port", "message", "argType"]);
+  const label = (name) => traits.find((t) => t.name === name).label;
+  assert.deepStrictEqual([label("listen"), label("oscEnabled"), label("dmxEnabled")], ["Data in", "Data out", "Data out"]);
   assert.deepStrictEqual(inSection("dmx"), ["dmxEnabled", "dmxProtocol", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"]);
   // GrapesJS draws categorised traits above uncategorised ones, so the
   // widget's own settings need a section to stay on top. Sections appear in
@@ -849,19 +852,22 @@ test("each protocol section carries what it is, and a setting's hint travels wit
   assert.strictEqual(traits.find((t) => t.name === "ip").attributes, undefined, "a setting with no hint gets no title");
 });
 
-test("the lights follow the selected widget: green for a protocol in use, grey otherwise", () => {
+test("the lights follow the selected widget: one per direction it has, green while that direction is live", () => {
   const { sectionLights } = require("../public/src/adapters/grapesjs");
 
   // Just enough of a document: two section titles, and a hinted row.
   function node(attrs) {
-    const el = { attrs: Object.assign({}, attrs), children: [], className: "" };
+    const el = { attrs: Object.assign({}, attrs), children: [], className: "", textContent: "" };
     el.getAttribute = (k) => (k in el.attrs ? el.attrs[k] : null);
     el.setAttribute = (k, v) => { el.attrs[k] = String(v); };
     el.appendChild = (child) => { el.children.push(child); return child; };
+    el.removeChild = (child) => { el.children = el.children.filter((c) => c !== child); return child; };
     el.querySelector = (sel) => {
       if (sel === "[data-title]") return el.title || null;
-      if (sel === ".oscar-section-light") return el.children.find((c) => c.className === "oscar-section-light") || null;
+      if (sel === ".oscar-section-lights") return el.children.find((c) => c.className === "oscar-section-lights") || null;
       if (sel === ".gjs-label") return el.label || null;
+      const dir = /data-direction="(\w+)"/.exec(sel);
+      if (dir) return el.children.find((c) => c.attrs["data-direction"] === dir[1]) || null;
       return null;
     };
     return el;
@@ -878,27 +884,41 @@ test("the lights follow the selected widget: green for a protocol in use, grey o
   const doc = { createElement: () => node({}) };
 
   const handlers = {};
-  const model = fakeModel(Object.assign({}, slider.defaults, { type: "oscar-slider" }));
+  let selected = fakeModel(Object.assign({}, slider.defaults, { type: "oscar-slider" }));
   const editor = {
-    getSelected: () => model,
+    getSelected: () => selected,
     on: (events, fn) => events.split(" ").forEach((e) => (handlers[e] = fn)),
   };
 
   const paint = sectionLights(editor, { document: doc, root });
   paint();
-  const light = (section) => section.title.children[0];
-  assert.strictEqual(light(osc).attrs["data-on"], "true");
-  assert.strictEqual(light(dmx).attrs["data-on"], "false");
-  assert.strictEqual(light(dmx).attrs.title, "Not in use", "said in words as well as in colour");
+  // [tag, on] for each light on a section's title, in the order drawn.
+  const lights = (section) => section.title.children[0].children.map((l) => [l.textContent, l.attrs["data-on"]]);
+  assert.deepStrictEqual(lights(osc), [["IN", "false"], ["OUT", "true"]], "a new slider sends and does not follow");
+  assert.deepStrictEqual(lights(dmx), [["OUT", "false"]], "DMX only runs one way, so it has the one light");
+  assert.strictEqual(osc.title.children[0].children[0].attrs.title, "Data in: off", "said in words as well as in colour");
   assert.strictEqual(row.label.attrs.title, "Master switch for...", "the hint replaces the label's own title");
 
-  // Ticking DMX's Enable repaints without a reselect, and adds no second light.
+  // Ticking a box repaints without a reselect, and adds no second set of lights.
   handlers["component:selected"]();
-  model.edit("dmxEnabled", true);
-  assert.strictEqual(light(dmx).attrs["data-on"], "true");
-  assert.strictEqual(dmx.title.children.length, 1);
+  selected.edit("listen", true);
+  selected.edit("dmxEnabled", true);
+  assert.deepStrictEqual(lights(osc), [["IN", "true"], ["OUT", "true"]]);
+  assert.deepStrictEqual(lights(dmx), [["OUT", "true"]]);
+  assert.strictEqual(osc.title.children.length, 1);
 
-  // The master switch takes both down.
-  model.edit("enabled", false);
-  assert.deepStrictEqual([light(osc).attrs["data-on"], light(dmx).attrs["data-on"]], ["false", "false"]);
+  // Following the rig while sending nothing is its own state, and reads as one.
+  selected.edit("oscEnabled", false);
+  assert.deepStrictEqual(lights(osc), [["IN", "true"], ["OUT", "false"]]);
+
+  // The master switch takes every direction down.
+  selected.edit("enabled", false);
+  assert.deepStrictEqual(lights(osc), [["IN", "false"], ["OUT", "false"]]);
+  assert.deepStrictEqual(lights(dmx), [["OUT", "false"]]);
+
+  // A meter only follows: its OUT light goes, rather than sitting there grey for good.
+  const { meter } = require("../lib/widgets/meter");
+  selected = fakeModel(Object.assign({}, meter.defaults, { type: "oscar-meter" }));
+  paint();
+  assert.deepStrictEqual(lights(osc), [["IN", "true"]]);
 });

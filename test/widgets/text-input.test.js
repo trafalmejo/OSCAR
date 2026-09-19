@@ -96,8 +96,9 @@ test("a disabled box takes text but sends nothing", () => {
 test("the text box never drives DMX, and carries none of its settings", () => {
   assert.strictEqual(textInput.dmx, false);
   const keys = textInput.fields.map((f) => f.key);
-  for (const key of ["oscEnabled", "dmxEnabled", "dmxProtocol", "dmxChannel"]) assert.ok(!keys.includes(key), key);
-  assert.ok(!("dmxEnabled" in textInput.defaults) && !("oscEnabled" in textInput.defaults));
+  for (const key of ["dmxEnabled", "dmxProtocol", "dmxChannel"]) assert.ok(!keys.includes(key), key);
+  assert.ok(!("dmxEnabled" in textInput.defaults));
+  assert.strictEqual(textInput.defaults.oscEnabled, true, "but it has OSC's Data out, like everything that sends");
 });
 
 // --- the element -------------------------------------------------------------
@@ -198,9 +199,9 @@ test("a value put in the box by the network is not resent when the box is left",
   assert.deepStrictEqual(ctx.sent, []);
 });
 
-test("Listen sits right after Message, and is off by default", () => {
+test("Data in leads the OSC section, and is off by default", () => {
   const keys = textInput.fields.map((f) => f.key);
-  assert.strictEqual(keys[keys.indexOf("message") + 1], "listen");
+  assert.strictEqual(keys.filter((k) => k === "listen" || k === "oscEnabled" || k === "ip" || k === "message")[0], "listen", "Data in comes before anything else about OSC");
   assert.strictEqual(textInput.defaults.listen, false);
 });
 

@@ -154,9 +154,9 @@ test("a value no option sends leaves the dropdown where it was", () => {
   }
 });
 
-test("Listen sits right after Message, and is off by default", () => {
+test("Data in leads the OSC section, and is off by default", () => {
   const keys = dropdown.fields.map((f) => f.key);
-  assert.strictEqual(keys[keys.indexOf("message") + 1], "listen");
+  assert.strictEqual(keys.filter((k) => k === "listen" || k === "oscEnabled" || k === "ip" || k === "message")[0], "listen", "Data in comes before anything else about OSC");
   assert.strictEqual(dropdown.defaults.listen, false);
 });
 

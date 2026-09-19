@@ -377,9 +377,9 @@ test("a picker with Listen off ignores the network", () => {
   assert.strictEqual(el.value, "#123456");
 });
 
-test("Listen sits right after Message and is off by default; Alpha shows only for r, g, b, a", () => {
+test("Data in leads the OSC section and is off by default; Alpha shows only for r, g, b, a", () => {
   const keys = colour.fields.map((f) => f.key);
-  assert.strictEqual(keys[keys.indexOf("message") + 1], "listen");
+  assert.strictEqual(keys.filter((k) => k === "listen" || k === "oscEnabled" || k === "ip" || k === "message")[0], "listen", "Data in comes before anything else about OSC");
   assert.strictEqual(colour.defaults.listen, false);
   const alpha = colour.fields.find((f) => f.key === "alpha");
   assert.deepStrictEqual(alpha.showIf, { key: "format", in: ["rgba"] });

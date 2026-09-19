@@ -189,15 +189,19 @@ resize afterwards, or clear the width and height in the Style Manager.
 
 OSCAR also receives. It listens for OSC on UDP port `9000`
 (`OSCAR_OSC_IN_PORT`), the port TouchOSC and Lemur offer first; point your
-software's OSC output at OSCAR's IP and that port. Tick **Listen** on a
-widget and it follows whatever arrives at its own Message address: a slider's
+software's OSC output at OSCAR's IP and that port. OSC runs both ways, so a
+widget's **OSC** section opens with a checkbox per direction: **Data in** and
+**Data out**. Tick **Data in** on a widget and it follows whatever arrives at
+its own Message address: a slider's
 thumb moves, an XY pad's handle jumps (`/pad 30 70`, or `/pad/x` and `/pad/y`
 in two-message mode), and a toggle button lights up and adopts the state, so
 the next press sends the opposite edge. A momentary button only lights up,
 because its state is your finger's.
 
-Listen is off by default, so nothing starts moving on its own, and a widget
-with **Master comms** off is deaf as well as silent, so you can lay a surface out
+Data in is off by default, so nothing starts moving on its own. Untick **Data
+out** and a widget keeps following the rig while sending nothing. **Master
+comms**, at the top of every widget, is over all of it: a widget with it off
+is deaf as well as silent on every protocol, so you can lay a surface out
 while the rig is live. A hand on a control outranks the network: while you
 are dragging a slider or a pad, or holding a button, what arrives is ignored
 until you let go. A widget never sends in answer to what it hears, so software
@@ -217,10 +221,13 @@ OSCAR starts, it says so and carries on: sending is unaffected.
 
 A button, slider or XY pad can drive lighting fixtures directly, with no
 lighting software in between. A widget's settings are grouped in collapsible
-sections, one per protocol, each switched on by the **Enable** checkbox at its
-top. Open the **DMX** section and tick **Enable**; leave the **OSC** section
-enabled to keep driving software at the same time, or untick it to drive the
-fixture alone. The DMX section holds:
+sections, one per protocol. DMX only runs one way, from the desk to the
+fixture, so its section has the one direction: open **DMX** and tick **Data
+out**. Leave OSC's **Data out** ticked to keep driving software at the same
+time, or untick it to drive the fixture alone. Each section's title carries a
+small light per direction, **IN** and **OUT**, green while that direction is
+live, so a collapsed section still says what it is doing. The DMX section
+holds:
 
 | Setting | Meaning |
 | --- | --- |
@@ -237,7 +244,7 @@ OSC. An XY pad puts X on the first channel and Y on the next: pan and tilt on
 a moving head. Values fill the block in order and the last one repeats, so a
 slider over three channels dims an RGB fixture as a whole. A block that would
 run past channel 512, or is too narrow for the widget's values, is refused in
-the panel and never sent. OSC is enabled and DMX is not on every widget
+the panel and never sent. OSC's Data out is on and DMX's is off on every widget
 until you change them, so a project made before this existed behaves exactly
 as it did, and one saved while this was a single **Output** list opens with
 the matching boxes ticked.
@@ -347,7 +354,7 @@ BSD 3-clause
 
 A **Meter** shows a level instead of sending one: an audio level, a fixture's
 intensity, a playhead, whatever the rig reports at the address in its Message
-setting. It sends nothing, so it has no IP or port, and Listen is on from the
+setting. It sends nothing, so it has no IP or port, and Data in is on from the
 start. Min and Max are the scale, the bar is horizontal or vertical from its
 Orientation setting, and Value is where it sits until the first reading
 arrives, so you can see the layout before anything is feeding it.
@@ -387,11 +394,11 @@ message rather than going out as `0`, which is fully transparent. The
 **Colour** setting is the swatch's value as a hex code, so a colour can be
 typed as well as picked; `#f80` and `f80` both mean `#ff8800`.
 
-With the **DMX** section enabled, red, green and blue land on three consecutive
+With DMX's **Data out** ticked, red, green and blue land on three consecutive
 channels, whatever Send as and Range say, so the block is three channels
 wide by default and drives an RGB fixture as it stands; over a wider block
 the blue repeats, and a narrower one is refused. Alpha never reaches the
-fixture. With **Listen** on, a colour arriving at Message fills the swatch
+fixture. With **Data in** on, a colour arriving at Message fills the swatch
 in either shape OSCAR sends -- the hex string, or three channels on the
 configured Range, with a fourth ignored. Channels may arrive as numbers or
 as numbers spelled as text; three readable numbers are always channels, even
@@ -443,20 +450,20 @@ as a float -- and checks the other way round too: switching a box that holds
 `GO` to float, or a dropdown whose options say `Red, Green` to int, is
 refused rather than leaving a widget that looks live and sends nothing.
 
-The number box and the dropdown can drive DMX like the slider (enable its **DMX** section).
+The number box and the dropdown can drive DMX like the slider (tick **Data out** in its **DMX** section).
 The number is the level: `0`-`255` as typed, or, when Min and Max are both
 set, scaled within them, so a box that takes `0`-`100` puts `50` at half. A
 dropdown of `Off=0, Half=128, Full=255` is a three-step dimmer. All three
-follow the rig with **Listen** on: a value arriving at Message fills the box
+follow the rig with **Data in** on: a value arriving at Message fills the box
 or selects the option that sends it, and goes no further. A box you are in
 the middle of typing into is left alone until you commit or leave it, and a
 value no option sends leaves the dropdown where it was.
 
 A typed DMX level is refused, not pinned, when it is out of range: without
 both Min and Max the box's limits are `0`-`255`, so a slipped `-1` is not a
-blackout and `300` is not full. While the **DMX** section is enabled the panel
+blackout and `300` is not full. While DMX's **Data out** is ticked the panel
 likewise refuses a dropdown option that is not a number from `0` to `255`.
-The settings are checked against each other: a Min, Max, Step, DMX Enable or
+The settings are checked against each other: a Min, Max, Step, DMX Data out or
 Argument type that the current Value could not be sent under is refused until
 the Value is changed, and a value arriving from the rig is brought inside the
 limits and onto the Step, so Enter on what the box shows always sends.
@@ -475,7 +482,7 @@ on one tablet and it lights up on the others, so the next press anywhere
 sends the opposite edge rather than the one that has already gone out; move a
 slider or an XY pad and the thumb or handle moves on every other device. A
 tablet that connects mid-show is caught up the moment it loads the surface,
-and a widget following the rig with **Listen** on passes what it hears along
+and a widget following the rig with **Data in** on passes what it hears along
 too, so a device joining later starts where the rig left things. Nothing
 needs switching on: two tablets agreeing is not a setting.
 
@@ -529,10 +536,10 @@ a height and the grid scrolls inside it.
 A tile is picked when the tap ends on it, not when the finger lands, so
 scrolling the grid never launches the clip you happened to touch. Tapping the
 tile that is already selected sends again, because relaunching a clip is a
-real instruction. With **Listen** on, a value arriving at Message moves the
+real instruction. With **Data in** on, a value arriving at Message moves the
 highlight to the tile that sends it and nothing goes back out; a value no
 tile sends, or one OSCAR cannot read, changes nothing. Several tablets on one
-surface agree on the highlight without Listen. The highlight is never saved
+surface agree on the highlight without Data in. The highlight is never saved
 in the project: what is playing is the software's to say.
 
 The labels and URLs you type are put on the page as text, never as markup,
@@ -568,7 +575,7 @@ same OSC message it would have sent to the network, framed with SLIP -- the
 standard way OSC travels over a serial line. `serial` goes in **Ip** rather
 than being a section of its own because it changes where the message goes, not what it
 is: a slider can send OSC to the board and DMX to a dimmer at once. A board
-that talks back is heard like any other OSC in, so a meter with **Listen** on
+that talks back is heard like any other OSC in, so a meter with **Data in** on
 can show a potentiometer.
 
 The port is opened by the computer running OSCAR, not by the tablet showing
@@ -620,7 +627,7 @@ with one finger while another taps a tab sends its Value OFF before the page
 changes, exactly as if the finger had come up, so nothing is left on because
 its button went out of sight. A push does the same.
 
-A widget with Listen on keeps following the rig while its page is not
+A widget with Data in on keeps following the rig while its page is not
 showing, on a single tablet as much as on several, so a fader opens where
 the rig left it rather than where it was last seen, and the next touch does
 not jump. What the other tablets do to a widget on a hidden page is
@@ -690,7 +697,7 @@ Things worth knowing:
   70000 -- that widget is dimmed and does nothing, and its tooltip says which
   setting. It never falls back to default settings, because the defaults are
   a live control aimed at somebody's port 7000.
-- Widgets with **Listen** on follow the rig on an exported page, DMX output
+- Widgets with **Data in** on follow the rig on an exported page, DMX output
   works, and several copies of the page -- and `/preview` -- agree on what each
   control shows, all through the same bridge.
 - **Only the first page is exported** if the project has several; the dialog

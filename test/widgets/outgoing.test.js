@@ -172,7 +172,7 @@ test("a field names its protocol's section, and an unknown section is refused wh
   assert.throws(() => field("a", "A", "text", { section: "midi" }), /unknown section/);
   const dmx = dmxFields();
   assert.strictEqual(dmx[0].key, "dmxEnabled", "the checkbox leads its section");
-  assert.strictEqual(dmx[0].label, "Enable", "the section title says which protocol");
+  assert.strictEqual(dmx[0].label, "Data out", "the direction; the section title says which protocol");
   assert.deepStrictEqual(dmx.slice(1).map((f) => f.label), ["Protocol", "Node", "Universe", "Channel", "Channels"]);
   for (const f of dmx) assert.strictEqual(f.section, "dmx", f.key);
 });
@@ -228,24 +228,27 @@ test("the DMX defaults name a universe both protocols accept, and a block as wid
 
 // --- the panel's status lights -------------------------------------------------
 
-test("a section's light is on only when that protocol would really go out", () => {
+test("each direction of a section has its own light, on only when it would really happen", () => {
   const { sectionStatus, enabled } = require("../../lib/widgets/fields");
   const { slider } = require("../../lib/widgets/slider");
   const { meter } = require("../../lib/widgets/meter");
   const { textInput } = require("../../lib/widgets/text-input");
   const of = (overrides) => sectionStatus(slider.fields, Object.assign({}, slider.defaults, overrides));
 
-  assert.deepStrictEqual(of({}), { osc: true, dmx: false }, "a new slider: OSC, no DMX");
-  assert.deepStrictEqual(of({ dmxEnabled: true }), { osc: true, dmx: true });
-  assert.deepStrictEqual(of({ oscEnabled: false, dmxEnabled: true }), { osc: false, dmx: true });
-  // Green over a widget the master has silenced would be a lie, and the
-  // collapsed section is the one that gets trusted at a glance.
-  assert.deepStrictEqual(of({ dmxEnabled: true, enabled: false }), { osc: false, dmx: false });
-  assert.deepStrictEqual(of({ transport: "dmx" }), { osc: false, dmx: true }, "an old project's Output word counts");
+  assert.deepStrictEqual(of({}), { osc: { in: false, out: true }, dmx: { out: false } }, "a new slider sends OSC and nothing else");
+  assert.deepStrictEqual(of({ listen: true }), { osc: { in: true, out: true }, dmx: { out: false } });
+  assert.deepStrictEqual(of({ listen: true, oscEnabled: false }), { osc: { in: true, out: false }, dmx: { out: false } }, "following the rig while sending nothing");
+  assert.deepStrictEqual(of({ oscEnabled: false, dmxEnabled: true }), { osc: { in: false, out: false }, dmx: { out: true } });
+  // The master switch stops every direction of every protocol. Green over a
+  // widget it has silenced would be a lie, and the collapsed section is the
+  // one that gets trusted at a glance.
+  assert.deepStrictEqual(of({ listen: true, dmxEnabled: true, enabled: false }), { osc: { in: false, out: false }, dmx: { out: false } });
+  assert.deepStrictEqual(of({ transport: "dmx" }).dmx, { out: true }, "an old project's Output word counts");
 
-  // A widget with no such section has no such light.
-  assert.deepStrictEqual(sectionStatus(meter.fields, meter.defaults), { osc: true });
-  assert.deepStrictEqual(sectionStatus(textInput.fields, Object.assign({}, textInput.defaults, { enabled: false })), { osc: false });
+  // A direction the widget does not have has no light: DMX never listens,
+  // a meter never sends, a text box has no DMX section at all.
+  assert.deepStrictEqual(sectionStatus(meter.fields, meter.defaults), { osc: { in: true } });
+  assert.deepStrictEqual(sectionStatus(textInput.fields, textInput.defaults), { osc: { in: false, out: true } });
   assert.deepStrictEqual(sectionStatus(null, null), {});
 
   // The master switch says what it is over, in the label and on hover.
@@ -253,4 +256,14 @@ test("a section's light is on only when that protocol would really go out", () =
   assert.strictEqual(enabled().label, "Master comms");
   assert.match(enabled().hint, /sends nothing on any protocol/);
   assert.match(enabled().hint, /ignores incoming/);
+});
+
+test("the OSC section is built in one place, for the directions a widget has", () => {
+  const { oscFields } = require("../../lib/widgets/fields");
+  const keys = (options) => oscFields(options).map((f) => f.key);
+  assert.deepStrictEqual(keys(), ["listen", "oscEnabled", "ip", "port", "message"]);
+  assert.deepStrictEqual(keys({ sends: false }), ["listen", "message"], "a widget that only follows has nowhere to send");
+  assert.deepStrictEqual(keys({ receives: false }), ["oscEnabled", "ip", "port", "message"]);
+  for (const f of oscFields()) assert.strictEqual(f.section, "osc", f.key);
+  assert.match(oscFields()[0].hint, /never sent back out/);
 });

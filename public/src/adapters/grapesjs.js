@@ -820,16 +820,23 @@ function followSurfaceStyle(editor, copy) {
 }
 
 /**
- * What the settings panel shows beyond what GrapesJS draws: a light on each
- * protocol section's title, green while that protocol is live on the selected
- * widget and grey while it is not, so a collapsed section still says whether
- * it is in use; and the hint of any setting that has one, on its label.
+ * What the settings panel shows beyond what GrapesJS draws: lights on each
+ * protocol section's title, one per direction the widget has (IN and OUT for
+ * OSC, OUT alone for DMX, IN alone for a meter), green while that direction
+ * is live on the selected widget and grey while it is not, so a collapsed
+ * section still says what it is doing; and the hint of any setting that has
+ * one, on its label.
  *
  * GrapesJS rebuilds the panel whenever the selection or a widget's trait list
  * changes and has no hook for after it has, so the panel is watched and
  * decorated again when its contents change. Only child elements are watched,
  * and a repaint changes attributes, so decorating cannot set itself off.
  */
+var DIRECTIONS = [
+  { id: "in", tag: "IN", label: "Data in" },
+  { id: "out", tag: "OUT", label: "Data out" },
+];
+
 function sectionLights(editor, options) {
   var doc = (options && options.document) || document;
   var root = (options && options.root) || doc;
@@ -845,18 +852,40 @@ function sectionLights(editor, options) {
     Array.prototype.forEach.call(sections, function (section) {
       var title = section.querySelector("[data-title]");
       if (!title) return;
-      var light = title.querySelector(".oscar-section-light");
-      if (!light) {
-        light = doc.createElement("span");
-        light.className = "oscar-section-light";
-        title.appendChild(light);
+      var directions = status[section.getAttribute(SECTION_ATTRIBUTE)] || {};
+
+      // One holder per title, made once; the lights in it are redrawn, since
+      // which directions exist changes with the widget selected.
+      var holder = title.querySelector(".oscar-section-lights");
+      if (!holder) {
+        holder = doc.createElement("span");
+        holder.className = "oscar-section-lights";
+        title.appendChild(holder);
       }
-      var on = status[section.getAttribute(SECTION_ATTRIBUTE)] === true;
-      light.setAttribute("data-on", String(on));
-      // For someone who cannot tell the two colours apart, and for a reader.
-      light.setAttribute("title", on ? "In use" : "Not in use");
-      light.setAttribute("role", "img");
-      light.setAttribute("aria-label", on ? "in use" : "not in use");
+      DIRECTIONS.forEach(function (direction) {
+        var light = holder.querySelector('[data-direction="' + direction.id + '"]');
+        if (!(direction.id in directions)) {
+          // The widget has no such direction: a meter never sends, DMX never listens.
+          if (light) holder.removeChild(light);
+          return;
+        }
+        if (!light) {
+          light = doc.createElement("span");
+          light.className = "oscar-section-light";
+          light.setAttribute("data-direction", direction.id);
+          // Two unlabelled dots would be a guess; the tag says which is which.
+          light.textContent = direction.tag;
+          holder.appendChild(light);
+        }
+        var on = directions[direction.id] === true;
+        var words = direction.label + (on ? ": on" : ": off");
+        light.setAttribute("data-on", String(on));
+        // In words as well as colour, for a reader and for anyone who cannot
+        // tell the two colours apart.
+        light.setAttribute("title", words);
+        light.setAttribute("role", "img");
+        light.setAttribute("aria-label", words);
+      });
     });
 
     // GrapesJS puts a trait's attributes on the wrapper around its row.
@@ -872,7 +901,7 @@ function sectionLights(editor, options) {
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:oscEnabled change:dmxEnabled";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);
