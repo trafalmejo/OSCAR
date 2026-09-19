@@ -359,3 +359,50 @@ A meter never drops to zero on its own. A value that cannot be read as a
 number holds the last reading, because an empty bar reports silence on a
 channel that may be at full, and a meter with **Enabled** off freezes where
 it is rather than emptying.
+
+## Colour picker
+
+The **Colour** widget is the tablet's own colour picker: tap the swatch and
+the operating system's picker opens. Dragging inside it sends at most one
+message per frame, and closing it sends the exact colour chosen. **Send as**
+chooses the shape on the wire and **Range** the scale, because software
+disagrees on both:
+
+| Send as | On the wire |
+| --- | --- |
+| **3 values (r, g, b)** | `/colour 1.0 0.533 0.0` |
+| **4 values (r, g, b, a)** | the same with the **Alpha** setting appended |
+| **hex string (#rrggbb)** | `/colour "#ff8800"` |
+
+**Range** is `0 to 1` for software that reads a colour parameter as floats
+(Resolume) or `0 to 255` for software that reads pixel values (TouchDesigner
+and most pixel-minded tools). Alpha is a setting rather than part of the
+picker, because no native picker has an alpha channel; it is always typed as
+`0`-`1`, whatever Range says, and a blank or unreadable Alpha stops the
+message rather than going out as `0`, which is fully transparent. The
+**Colour** setting is the swatch's value as a hex code, so a colour can be
+typed as well as picked; `#f80` and `f80` both mean `#ff8800`.
+
+With **Output** set to DMX, red, green and blue land on three consecutive
+channels, whatever Send as and Range say, so the block is three channels
+wide by default and drives an RGB fixture as it stands; over a wider block
+the blue repeats, and a narrower one is refused. Alpha never reaches the
+fixture. With **Listen** on, a colour arriving at Message fills the swatch
+in either shape OSCAR sends -- the hex string, or three channels on the
+configured Range, with a fourth ignored. Channels may arrive as numbers or
+as numbers spelled as text; three readable numbers are always channels, even
+when the first (`"255"`, `"000"`) would also pass for a short hex code. A
+colour that cannot be read leaves the swatch as it was: the native control
+turns anything it does not understand into black, and a rig sending nonsense
+must not black a colour out.
+
+While a colour is being dragged inside the picker the rig is not heard, so
+the swatch is not snatched from under the hand. That holds on pickers that
+report the colour as it moves (macOS, iOS). A picker that reports only when
+it is closed (the Windows dialog, Android) gives the page no sign that it is
+open, so a colour arriving meanwhile repaints the swatch behind it; pressing
+OK still sends the colour that was picked.
+
+**Argument type** int needs **Range** `0 to 255`. Whole numbers on `0 to 1`
+would round every channel to 0 or 1 -- eight colours in all, and a middling
+Alpha going out as 0 -- so the panel refuses the combination.

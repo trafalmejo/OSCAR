@@ -153,3 +153,42 @@ button {
   height: 2px;
   margin: 0 0 -2px 0;
 }
+
+/* --- Colour picker --- */
+/* A native colour input. Same family as the slider: a light grey ground that
+   brightens on hover. The box is set explicitly because a colour input's
+   default is a 50x27 chip, too small to read as a colour from across a room,
+   and the browser's own border and inner padding are stripped so the swatch
+   fills it. The two swatch pseudo-elements are the engine-specific names for
+   the same thing; a browser ignores the one it does not know. */
+input[type=color] {
+  width: 120px;
+  height: 80px;
+  padding: 6px;
+  border: none;
+  border-radius: 4px;
+  background: #d3d3d3;
+  outline: none;
+  opacity: 0.8;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+  cursor: pointer;
+}
+
+input[type=color]:hover {
+  opacity: 1;
+}
+
+input[type=color]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type=color]::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+input[type=color]::-moz-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
