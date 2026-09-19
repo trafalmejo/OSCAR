@@ -33,6 +33,30 @@ function pageEntries(pages) {
   });
 }
 
+/**
+ * Is `name` already the label of a page other than the one at `except`?
+ *
+ * Compared as the tabs print them, so "Page 2" typed by hand meets the
+ * "Page 2" an unnamed second page is shown as.
+ */
+function nameTaken(labels, name, except) {
+  var wanted = String(name).trim();
+  return labels.some(function (label, index) {
+    return index !== except && label === wanted;
+  });
+}
+
+/**
+ * The name for a page added without one: the first "Page N", counting up
+ * from its position, that no tab already carries. By position alone, deleting
+ * "Page 1" of two and adding a page made a second "Page 2".
+ */
+function freePageName(labels) {
+  var index = labels.length;
+  while (nameTaken(labels, projectFormat.defaultPageName(index))) index++;
+  return projectFormat.defaultPageName(index);
+}
+
 /** The id of the page on the canvas, or null before there is one. */
 function currentPageId(pages) {
   var selected = pages.getSelected();
@@ -108,6 +132,44 @@ function createLock(props, options) {
 }
 
 /**
+ * Let go of every control a finger is on, before the page under it goes.
+ *
+ * Turning the page destroys the views of the page that was showing. A
+ * momentary button held with one finger while another taps a tab has sent
+ * its ON; its element is gone before the finger comes up, so the pointerup
+ * lands nowhere and OFF never reaches the rig -- the fixture stays on, and
+ * every tablet draws the button lit. The widgets already have a word for
+ * "the hand is gone": a drag that loses the window counts as released
+ * (the ctx contract in lib/widgets/index.js), which every widget that can be
+ * held listens for as `blur` on its window. So that is what is said here,
+ * while the widgets are still attached and can still send.
+ *
+ * `windows` is every window a widget may be listening on: the page's own
+ * and the canvas frame's. One that is missing, or cannot dispatch, is
+ * skipped -- a page turn must not fail on it.
+ */
+function releaseHeld(windows) {
+  (windows || []).forEach(function (win) {
+    if (!win || typeof win.dispatchEvent !== "function") return;
+    var EventType = win.Event || (typeof Event === "function" ? Event : null);
+    if (!EventType) return;
+    try {
+      win.dispatchEvent(new EventType("blur"));
+    } catch (err) {
+      console.warn("Could not release the controls being held:", err && err.message);
+    }
+  });
+}
+
+/** The windows a widget of this editor may be listening on. */
+function widgetWindows(editor, top) {
+  var windows = top ? [top] : [];
+  var frame = editor && editor.Canvas && typeof editor.Canvas.getWindow === "function" ? editor.Canvas.getWindow() : null;
+  if (frame && frame !== top) windows.push(frame);
+  return windows;
+}
+
+/**
  * Draw the tabs into `bar`, and report whether there are any.
  *
  * The bar lives outside the GrapesJS canvas on purpose. Anything inside the
@@ -152,6 +214,8 @@ function renderTabs(doc, bar, entries, onPick) {
  * stylesheet shortens the editor by the bar's height on that class, rather
  * than letting the bar float over the bottom row of someone's controls.
  * `onSwitch` runs after every page change made through the tabs.
+ * `windows`, a function returning the windows the widgets listen on, is how
+ * a tab lets go of whatever is being held before the page goes (releaseHeld).
  */
 function pageTabs(editor, options) {
   var bar = options.bar;
@@ -162,6 +226,9 @@ function pageTabs(editor, options) {
   function pick(id) {
     var page = editor.Pages.get(id);
     if (!page) return;
+    // Before the select, not after: by then the held widget is detached and
+    // has nothing left to send its release with.
+    if (options.windows) releaseHeld(options.windows());
     editor.Pages.select(page);
     // The page:select listener below redraws; onSwitch is for the caller's
     // own follow-up (locking the page that came in).
@@ -199,6 +266,10 @@ module.exports = {
   currentPageId: currentPageId,
   reselect: reselect,
   createLock: createLock,
+  nameTaken: nameTaken,
+  freePageName: freePageName,
+  releaseHeld: releaseHeld,
+  widgetWindows: widgetWindows,
   renderTabs: renderTabs,
   pageTabs: pageTabs,
 };

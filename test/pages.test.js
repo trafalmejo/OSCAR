@@ -293,3 +293,87 @@ test("the bar is drawn only while shown, shortens the canvas through a body clas
   tabs.hide();
   assert.strictEqual(bar.hidden, true);
 });
+
+// ---- a control held through a page turn --------------------------------------
+const { button } = require("../lib/widgets/button");
+const { mount, withWindow } = require("./helpers/widgets");
+
+test("a tab lets go of a momentary button being held, while it can still send, before the page goes", () => {
+  withWindow((win) => {
+    // The fake window fires by type; a browser's dispatches an Event.
+    win.dispatchEvent = (event) => win.fire(event.type);
+
+    const held = mount(button, { message: "/p1/flash", argType: "i" });
+    held.el.fire("pointerdown");
+    assert.deepStrictEqual(held.ctx.sent.map((m) => m.args[0].value), [1]);
+
+    const editor = fakeEditor(["A", "B"]);
+    const sentBySelect = [];
+    const select = editor.Pages.select;
+    editor.Pages.select = (page) => {
+      // What GrapesJS does to the page going out: the view, and the widget
+      // with it, is gone before the finger comes up.
+      sentBySelect.push(held.ctx.sent.map((m) => m.args[0].value));
+      held.detach();
+      select(page);
+    };
+
+    const bar = fakeBar();
+    const tabs = pages.pageTabs(editor, { bar, body: fakeBody(), document: fakeDocument(), windows: () => [win] });
+    tabs.show();
+    bar.children[1].onclick();
+
+    assert.deepStrictEqual(sentBySelect, [[1, 0]], "OFF was on the wire before the page was turned");
+    assert.deepStrictEqual(held.ctx.shared[held.ctx.shared.length - 1], { on: false }, "and the other tablets were told");
+    assert.strictEqual(editor.Pages.getSelected().getId(), "p2");
+
+    // The pointerup that lands nowhere afterwards changes nothing.
+    held.el.fire("pointerup");
+    assert.strictEqual(held.ctx.sent.length, 2);
+  });
+});
+
+test("letting go skips a window that is missing or cannot dispatch, and never throws", () => {
+  const fired = [];
+  const good = { Event: function (type) { this.type = type; }, dispatchEvent: (event) => fired.push(event.type) };
+  const broken = {
+    dispatchEvent() {
+      throw new Error("detached frame");
+    },
+  };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.doesNotThrow(() => pages.releaseHeld([null, {}, broken, good]));
+    assert.doesNotThrow(() => pages.releaseHeld(undefined));
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepStrictEqual(fired, ["blur"]);
+});
+
+test("the windows widgets listen on are the page's own and the canvas frame's, each once", () => {
+  const top = {};
+  const frame = {};
+  assert.deepStrictEqual(pages.widgetWindows({ Canvas: { getWindow: () => frame } }, top), [top, frame]);
+  assert.deepStrictEqual(pages.widgetWindows({ Canvas: { getWindow: () => top } }, top), [top]);
+  assert.deepStrictEqual(pages.widgetWindows({ Canvas: { getWindow: () => null } }, top), [top]);
+  assert.deepStrictEqual(pages.widgetWindows({}, top), [top]);
+});
+
+// ---- names --------------------------------------------------------------------
+test("a page added without a name never takes a name another tab carries", () => {
+  assert.strictEqual(pages.freePageName(["Page 1"]), "Page 2");
+  // "Page 1" of two was deleted: the one left is still called "Page 2".
+  assert.strictEqual(pages.freePageName(["Page 2"]), "Page 3");
+  assert.strictEqual(pages.freePageName(["Wash", "Page 2", "Page 4"]), "Page 5");
+  assert.strictEqual(pages.freePageName([]), "Page 1");
+});
+
+test("a name is taken when another page is shown under it, and a page may keep its own", () => {
+  assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "Spots"), true);
+  assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "  Spots "), true, "as the tab would print it");
+  assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "Spots", 1), false, "renaming a page to its own name");
+  assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "Spots", 0), true);
+  assert.strictEqual(pages.nameTaken(["Wash", "Spots"], "spots"), false, "a different tab to the eye");
+});

@@ -27,7 +27,8 @@ function fakeEditor() {
     blocks,
     sendOSC: null,
     on(event, fn) {
-      (handlers[event] = handlers[event] || []).push(fn);
+      // GrapesJS takes several event names in one string.
+      event.split(" ").forEach((name) => (handlers[name] = handlers[name] || []).push(fn));
     },
     trigger(event, ...args) {
       for (const fn of handlers[event] || []) fn(...args);
@@ -658,4 +659,123 @@ test("a widget sharing a tag is told apart by its attributes when a project is p
   const text = { tagName: "INPUT", getAttribute: (n) => (n === "type" ? "text" : null) };
   assert.strictEqual(matches(slider, range), true);
   assert.strictEqual(matches(slider, text), false);
+});
+
+// ---- pages that are not showing ------------------------------------------------
+const { runOffstage } = require("../public/src/adapters/grapesjs");
+
+/** A receiving editor with two pages of fake components; page one is showing. */
+function pagedEditor(pageModels) {
+  const editor = sharingEditor();
+  let oscListeners = [];
+  editor.onOscIn = (fn) => {
+    oscListeners.push(fn);
+    return () => {
+      oscListeners = oscListeners.filter((f) => f !== fn);
+    };
+  };
+  editor.hears = (address, args) => oscListeners.slice().forEach((fn) => fn({ address, args }));
+  editor.listening = () => oscListeners.length;
+
+  const all = pageModels.map((models, index) => {
+    const wrapper = fakeModel({ type: "wrapper" }, "wrap" + index);
+    wrapper.children = models;
+    return { getMainComponent: () => wrapper };
+  });
+  editor.Pages = {
+    selected: all[0],
+    getAll: () => all.slice(),
+    getSelected: () => editor.Pages.selected,
+  };
+  editor.turnTo = (index) => {
+    editor.Pages.selected = all[index];
+    editor.trigger("page:select");
+  };
+  return editor;
+}
+
+const offstageDocument = { createElement: () => fakeElement() };
+
+test("a Listen fader on a page that is not showing still follows the rig, and its view starts from there", () => {
+  const onPageOne = fakeModel(Object.assign({ type: slider.name }, slider.defaults, { message: "/p1/fader", listen: true, value: 10 }), "f1");
+  const onPageTwo = fakeModel(Object.assign({ type: slider.name }, slider.defaults, { message: "/p2/fader", listen: true, value: 25 }), "f2");
+  const editor = pagedEditor([[onPageOne], [onPageTwo, fakeModel({ type: "text" }, "label")]]);
+  register(slider)(editor, {});
+  const type = editor.types[slider.name];
+
+  const offstage = runOffstage(editor, { document: offstageDocument });
+  offstage.start();
+  assert.strictEqual(offstage.size, 1, "the fader of the hidden page, and nothing that cannot receive");
+
+  // One tablet, on page one; the rig moves the fader on page two.
+  editor.hears("/p2/fader", [40]);
+  assert.strictEqual(onPageTwo.get("value"), 40, "stored, so the view opens there");
+  assert.deepStrictEqual(editor.shared, [{ id: "f2", state: { value: 40 } }]);
+  assert.strictEqual(editor.how[0].heard, true, "recorded as heard: nobody else is told");
+  assert.ok(!editor.osc, "and nothing went back out");
+
+  // The rule that matters most holds off stage too.
+  editor.hears("/p2/fader", [""]);
+  editor.hears("/p2/fader", []);
+  assert.strictEqual(onPageTwo.get("value"), 40);
+
+  // Turn to page two: the view takes over, page one goes off stage.
+  editor.turnTo(1);
+  const el = fakeElement();
+  type.view.onRender.call({ el, model: onPageTwo });
+  assert.strictEqual(el.value, "40", "the thumb is where the rig left it, not at 25");
+  assert.strictEqual(offstage.size, 1);
+  editor.hears("/p1/fader", [7]);
+  assert.strictEqual(onPageOne.get("value"), 7);
+
+  offstage.stop();
+  assert.strictEqual(offstage.size, 0);
+  assert.strictEqual(editor.listening(), 1, "only the view is left listening");
+});
+
+test("the view stops the copy that listened in its place, so a value is never shared twice", () => {
+  const fader = fakeModel(Object.assign({ type: slider.name }, slider.defaults, { message: "/p2/fader", listen: true }), "f2");
+  const editor = pagedEditor([[], [fader]]);
+  register(slider)(editor, {});
+  const offstage = runOffstage(editor, { document: offstageDocument });
+  offstage.start();
+
+  // The view renders before anyone announces the page change.
+  editor.Pages.selected = editor.Pages.getAll()[1];
+  editor.types[slider.name].view.onRender.call({ el: fakeElement(), model: fader });
+  assert.strictEqual(offstage.size, 0);
+
+  editor.hears("/p2/fader", [12]);
+  assert.strictEqual(editor.shared.length, 1);
+});
+
+test("a load replaces every component: the old project's widgets stop listening", () => {
+  const old = fakeModel(Object.assign({ type: slider.name }, slider.defaults, { message: "/old", listen: true, value: 1 }), "old");
+  const editor = pagedEditor([[], [old]]);
+  register(slider)(editor, {});
+  const offstage = runOffstage(editor, { document: offstageDocument });
+  offstage.start();
+
+  const fresh = fakeModel(Object.assign({ type: slider.name }, slider.defaults, { message: "/old", listen: true, value: 2 }), "fresh");
+  const wrapper = fakeModel({ type: "wrapper" }, "w");
+  wrapper.children = [fresh];
+  const pagesNow = [{ getMainComponent: () => fakeModel({ type: "wrapper" }, "w0") }, { getMainComponent: () => wrapper }];
+  editor.Pages.getAll = () => pagesNow.slice();
+  editor.Pages.selected = pagesNow[0];
+  offstage.start();
+
+  editor.hears("/old", [50]);
+  assert.strictEqual(old.get("value"), 1, "the component that is gone hears nothing");
+  assert.strictEqual(fresh.get("value"), 50);
+  assert.strictEqual(editor.listening(), 1);
+});
+
+test("a host that cannot receive keeps nothing running off stage", () => {
+  const fader = fakeModel(Object.assign({ type: slider.name }, slider.defaults, { listen: true }), "f2");
+  const editor = pagedEditor([[], [fader]]);
+  delete editor.onOscIn;
+  register(slider)(editor, {});
+  const offstage = runOffstage(editor, { document: offstageDocument });
+  offstage.start();
+  assert.strictEqual(offstage.size, 0);
 });

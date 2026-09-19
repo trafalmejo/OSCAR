@@ -8,7 +8,7 @@ const path = require("node:path");
 const express = require("express");
 
 const { ProjectStore } = require("../lib/projects");
-const { CURRENT_FORMAT } = require("../lib/project-format");
+const { CURRENT_FORMAT, formatFor } = require("../lib/project-format");
 const createRouter = require("../routes/index");
 
 // Spin the real router up on an ephemeral port so the tests exercise the same
@@ -226,7 +226,7 @@ test("saved files carry the format and the versions that wrote them", async () =
       );
 
       const record = await store.read("stamped");
-      assert.strictEqual(record.format, CURRENT_FORMAT);
+      assert.strictEqual(record.format, formatFor(project), "one page: the format an older OSCAR still opens");
       assert.strictEqual(record.oscar, "2.0.0");
       assert.strictEqual(record.grapesjs, "0.23.6");
       assert.deepStrictEqual(record.data, project, "the version fields stay out of the project");

@@ -299,6 +299,121 @@ function contextFor(view, editor) {
   return ctx;
 }
 
+// The widget types that follow the rig, by component type name.
+var RECEIVERS = {};
+WIDGETS.forEach(function (definition) {
+  if (definition.receives) RECEIVERS[definition.name] = definition;
+});
+
+// editor -> Map(component model -> detach), for the widgets kept running
+// without a view. Per editor, like the deletions above.
+var offstageByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
+
+/** Stop the viewless copy of one widget, if there is one: its view has arrived. */
+function stopOffstage(editor, model) {
+  var running = offstageByEditor && offstageByEditor.get(editor);
+  var detach = running && running.get(model);
+  if (!detach) return;
+  running.delete(model);
+  detach();
+}
+
+/**
+ * Keep the widgets of the pages that are not showing listening to the rig.
+ *
+ * GrapesJS only builds views for the page on the canvas, and a widget only
+ * runs while it has a view. So on a surface with several pages, what the rig
+ * said to a fader on page two while page one was up reached nobody: with a
+ * single tablet -- the usual rig -- no device anywhere was running that
+ * fader, the value was never stored or recorded, and the fader came back
+ * where it had been left, disagreeing with the rig. The next touch then sent
+ * from the stale position, which is a jump on the rig.
+ *
+ * The components of every page exist whether or not they are showing; only
+ * their views do not. So each widget that can receive is attached to an
+ * element that is never put on screen, against the same ctx a view would
+ * get. It does what it always does with what it hears -- stores it with
+ * set(), shares it as heard -- and because nothing can touch an element that
+ * is not in any document, it never sends. When its page is turned to, the
+ * view's own attach takes over (onRender stops this copy first) and starts
+ * from the stored value and, on a sharing device, the shared state.
+ *
+ * Widgets that only send are left alone: they have nothing to hear, and what
+ * other devices do to them is cached by the socket plugin without them.
+ *
+ *   var offstage = runOffstage(editor, { document: document });
+ *   offstage.start() / offstage.refresh() / offstage.stop()
+ *
+ * start() doubles as the refresh after a project load, which replaces every
+ * component without necessarily announcing a page change.
+ */
+function runOffstage(editor, options) {
+  var doc = (options && options.document) || (typeof document === "undefined" ? null : document);
+  var running = new Map();
+  var started = false;
+  if (offstageByEditor) offstageByEditor.set(editor, running);
+
+  function attach(model, definition) {
+    var el = doc.createElement(definition.tag);
+    var attributes = definition.attributes || {};
+    Object.keys(attributes).forEach(function (name) {
+      el.setAttribute(name, attributes[name]);
+    });
+    try {
+      running.set(model, definition.attach(el, contextFor({ model: model, el: el }, editor)) || function () {});
+    } catch (err) {
+      // One widget that cannot run without a view must not stop the page
+      // from turning, or the rest from listening.
+      console.warn("OSCAR: a widget could not be kept listening off its page:", err && err.message);
+    }
+  }
+
+  function refresh() {
+    var wanted = new Map();
+    if (started && doc && editor.Pages) {
+      var selected = editor.Pages.getSelected();
+      editor.Pages.getAll().forEach(function (page) {
+        if (page === selected || typeof page.getMainComponent !== "function") return;
+        var main = page.getMainComponent();
+        if (!main || typeof main.onAll !== "function") return;
+        main.onAll(function (model) {
+          var definition = RECEIVERS[model.get("type")];
+          if (definition) wanted.set(model, definition);
+        });
+      });
+    }
+
+    // Whatever is no longer off stage goes first: the page turned to, and
+    // after a load every component of the project that was replaced.
+    Array.from(running.keys()).forEach(function (model) {
+      if (!wanted.has(model)) stopOffstage(editor, model);
+    });
+    wanted.forEach(function (definition, model) {
+      if (!running.has(model)) attach(model, definition);
+    });
+  }
+
+  // A host that cannot receive has nothing for these widgets to hear.
+  if (typeof editor.on === "function" && editor.onOscIn) {
+    editor.on("page:select page:add page:remove", refresh);
+  }
+
+  return {
+    refresh: refresh,
+    start: function () {
+      started = !!editor.onOscIn;
+      refresh();
+    },
+    stop: function () {
+      started = false;
+      refresh();
+    },
+    get size() {
+      return running.size;
+    },
+  };
+}
+
 /**
  * Write the component's id into the project.
  *
@@ -440,6 +555,9 @@ function register(definition) {
         },
 
         onRender: function () {
+          // The view takes over from the copy that listened while this page
+          // was not showing (runOffstage); two of them would share twice.
+          stopOffstage(editor, this.model);
           if (this.oscarDetach) this.oscarDetach();
           this.oscarDetach = definition.attach(this.el, contextFor(this, editor));
         },
@@ -508,6 +626,7 @@ function matches(definition, el) {
 module.exports = {
   register: register,
   widgetPlugins: widgetPlugins,
+  runOffstage: runOffstage,
   toTrait: toTrait,
   matches: matches,
   visibleFields: visibleFields,

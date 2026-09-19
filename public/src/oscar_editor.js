@@ -213,7 +213,7 @@ function checkForUpdate() {
 var projectFormat = require("../../lib/project-format");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
-var { widgetPlugins } = require("./adapters/grapesjs");
+var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
@@ -262,8 +262,10 @@ function initGrape(ipServer, socketPort) {
       // Stamp the autosave the same way saved files are stamped, and never
       // let editor state into it.
       onStore: function (data) {
+        // formatFor, as for a saved file: a single page stays readable by
+        // an older OSCAR sharing this browser's storage.
         return Object.assign(
-          { oscarFormat: projectFormat.CURRENT_FORMAT },
+          { oscarFormat: projectFormat.formatFor(data) },
           projectFormat.namePages(projectFormat.stripEditorState(data))
         );
       },
@@ -560,6 +562,12 @@ function initGrape(ipServer, socketPort) {
   // pages array in every project); what it lacks is any way to reach it.
   var pages = editor.Pages;
 
+  function pageLabels() {
+    return oscarPages.pageEntries(pages).map(function (entry) {
+      return entry.label;
+    });
+  }
+
   function labelOf(page) {
     return projectFormat.pageLabel(page.getName(), pages.getAll().indexOf(page));
   }
@@ -569,7 +577,7 @@ function initGrape(ipServer, socketPort) {
    * does not implement it, so in the desktop app it would silently return
    * nothing and the page could never be renamed.
    */
-  function askPageName(title, current, onName) {
+  function askPageName(title, current, except, onName) {
     $.confirm({
       title: title,
       content:
@@ -593,6 +601,11 @@ function initGrape(ipServer, socketPort) {
           var name = (this.$content.find(".oscar-page-name-input").val() || "").trim();
           if (!name) {
             $.alert("Give the page a name");
+            return false;
+          }
+          // Two tabs reading the same cannot be told apart on a tablet.
+          if (oscarPages.nameTaken(pageLabels(), name, except)) {
+            $.alert('There is already a page called "' + name + '"');
             return false;
           }
           onName(name);
@@ -663,7 +676,7 @@ function initGrape(ipServer, socketPort) {
 
       row.appendChild(
         pageAction("Rename", "Rename " + entry.label, function () {
-          askPageName("Rename page", entry.label, function (name) {
+          askPageName("Rename page", entry.label, index, function (name) {
             page.setName(name);
           });
         })
@@ -685,12 +698,15 @@ function initGrape(ipServer, socketPort) {
     var input = document.getElementById("new-page-name");
     var name = ((input && input.value) || "").trim();
 
-    // Naming it is optional; a page left unnamed is given the name it would
-    // be shown under anyway, because GrapesJS would drop an empty one.
-    var page = pages.add(
-      { name: name || projectFormat.defaultPageName(pages.getAll().length) },
-      { select: true }
-    );
+    if (name && oscarPages.nameTaken(pageLabels(), name)) {
+      $.alert('There is already a page called "' + name + '"');
+      return;
+    }
+
+    // Naming it is optional; a page left unnamed is given a name, because
+    // GrapesJS would drop an empty one. Not simply "Page <count + 1>": after
+    // a deletion that name may still be on another tab.
+    var page = pages.add({ name: name || oscarPages.freePageName(pageLabels()) }, { select: true });
     if (!page) {
       $.alert("That page could not be added");
       return;
@@ -745,7 +761,14 @@ function initGrape(ipServer, socketPort) {
   var previewTabs = oscarPages.pageTabs(editor, {
     bar: document.getElementById("oscar-page-bar"),
     body: document.body,
+    windows: function () {
+      return oscarPages.widgetWindows(editor, window);
+    },
   });
+
+  // Only while previewing: a project being edited changes under a widget in
+  // ways a viewless copy is never told about.
+  var offstage = runOffstage(editor, { document: document });
 
   editor.on("page:select", function () {
     if (!previewing) return;
@@ -767,6 +790,9 @@ function initGrape(ipServer, socketPort) {
     previewing = true;
     previewLock.lock(editor.getWrapper());
     previewTabs.show();
+    // As on the tablet: a fader on a page that is not showing still follows
+    // the rig, or trying a surface out here would not show what it does.
+    offstage.start();
 
     // The selection toolbar, badges and resize handles live outside the canvas
     // and would otherwise float over the control surface, delete button and
@@ -776,6 +802,7 @@ function initGrape(ipServer, socketPort) {
 
   editor.on("command:stop:preview", function () {
     previewing = false;
+    offstage.stop();
     previewLock.release();
     previewTabs.hide();
     editor.getEl().classList.remove("oscar-previewing");

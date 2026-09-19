@@ -1,7 +1,7 @@
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
-var { widgetPlugins } = require("./adapters/grapesjs");
+var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 
 // Tabs, and the rule for staying on a page across a push; shared with the
 // editor so its preview draws the same thing the tablet does.
@@ -9,6 +9,7 @@ var oscarPages = require("./pages");
 
 var editor;
 var tabs = null;
+var offstage = null;
 
 // One browserify bundle serves both the editor and the preview page, so each
 // entry point only boots when its own container is on the page.
@@ -53,7 +54,12 @@ function initGrape(ipServer, socketPort) {
   tabs = oscarPages.pageTabs(editor, {
     bar: document.getElementById("oscar-page-bar"),
     body: document.body,
+    windows: heldWindows,
   });
+
+  // A page that is not showing still has to hear the rig, or its faders come
+  // back where they were left rather than where the rig put them.
+  offstage = runOffstage(editor, { document: document });
 
   // Pages.select brings the next page in with its components unlocked: the
   // lock was set on the components of the page that was showing, and these
@@ -81,6 +87,10 @@ function initGrape(ipServer, socketPort) {
   });
 }
 
+function heldWindows() {
+  return oscarPages.widgetWindows(editor, window);
+}
+
 /** Fetch whatever was last pushed and display it, ready to drive a show. */
 function showLatest() {
   return fetch("/show/preview")
@@ -95,6 +105,10 @@ function showLatest() {
       // A push mid-show must not throw whoever is driving back to page one.
       var wasOn = oscarPages.currentPageId(editor.Pages);
 
+      // The load tears every view down, exactly as a page turn does: a
+      // button held through a push must send its release first.
+      oscarPages.releaseHeld(heldWindows());
+
       editor.loadProjectData(data);
       oscarPages.reselect(editor.Pages, wasOn);
 
@@ -102,6 +116,9 @@ function showLatest() {
       // page it was already on selects nothing.
       lockDown();
       tabs.show();
+      // The load replaced every component; the widgets of the pages not
+      // showing are the new project's from here on.
+      offstage.start();
     })
     .catch(function (err) {
       console.log("Could not load the preview", err);

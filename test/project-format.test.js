@@ -5,6 +5,7 @@ const assert = require("node:assert");
 
 const {
   CURRENT_FORMAT,
+  formatFor,
   stripEditorState,
   MIGRATIONS,
   isGrapesProject,
@@ -32,7 +33,7 @@ test("a saved file records the format and what wrote it", () => {
     grapesjs: "0.23.6",
   });
 
-  assert.strictEqual(record.format, CURRENT_FORMAT);
+  assert.strictEqual(record.format, formatFor(project()));
   assert.strictEqual(record.oscar, "2.1.0");
   assert.strictEqual(record.grapesjs, "0.23.6");
   assert.strictEqual(record.name, "My Show");
@@ -276,4 +277,29 @@ test("multi-page projects carry a format an older OSCAR refuses", () => {
   // format above its own and says to update instead.
   const record = stampProject({ name: "Show", data: { pages: [{ name: "A" }, { name: "B" }] } });
   assert.ok(record.format >= 3);
+});
+
+test("a single-page project keeps the format an older OSCAR can open; a second page is what earns format 3", () => {
+  const page = () => ({ name: "Page 1", frames: [{ component: { type: "wrapper" } }] });
+  const single = stampProject({ name: "One", data: { pages: [page()] } });
+  const several = stampProject({ name: "Two", data: { pages: [page(), page()] } });
+
+  // Format 2 is what the build before pages wrote and reads. Nothing in a
+  // single-page file is beyond it, so it must not be refused there.
+  assert.strictEqual(single.format, 2);
+  assert.strictEqual(several.format, 3);
+  assert.strictEqual(several.format, CURRENT_FORMAT);
+
+  // Both open here, and a single-page file stamped 2 is current, not migrated.
+  const opened = openProject(single);
+  assert.strictEqual(opened.status, "ok");
+  assert.strictEqual(opened.migrated, false);
+  assert.strictEqual(openProject(several).migrated, false);
+
+  // A multi-page file from before format 3 is still brought up to it.
+  const legacy = openProject({ format: 2, name: "Old", data: { pages: [page(), page()] } });
+  assert.strictEqual(legacy.migrated, true);
+
+  assert.strictEqual(formatFor(null), 2);
+  assert.strictEqual(formatFor({ pages: "no" }), 2);
 });
