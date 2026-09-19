@@ -88,3 +88,103 @@
 .oscar-export-go {
   width: 100%;
 }
+
+/* ---- publish ---------------------------------------------------------------- */
+.oscar-export-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.oscar-publish-result {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius);
+  background: var(--o-surface);
+}
+
+/* White behind the code whatever the theme: a phone's camera needs the
+   contrast, and the quiet margin is part of the code. */
+.oscar-publish-qr {
+  flex: none;
+  padding: 6px;
+  border-radius: var(--o-radius-sm);
+  background: #ffffff;
+  line-height: 0;
+}
+
+.oscar-publish-qr svg {
+  display: block;
+  width: 132px;
+  height: 132px;
+}
+
+.oscar-publish-where {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.oscar-publish-status {
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+}
+
+.oscar-publish-link {
+  font-family: var(--o-font-mono);
+  font-size: var(--o-text-base);
+  overflow-wrap: anywhere;
+}
+
+.oscar-published {
+  margin-top: 16px;
+}
+
+.oscar-published-title {
+  margin-bottom: 6px;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.oscar-published-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+}
+
+.oscar-published-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--o-border);
+}
+
+.oscar-published-list li:last-child {
+  border-bottom: 0;
+}
+
+.oscar-published-list a {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oscar-published-list .o-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--o-text-xs);
+}

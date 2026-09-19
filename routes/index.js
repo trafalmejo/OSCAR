@@ -5,6 +5,7 @@ const express = require("express");
 const { openProject, stripEditorState } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
 const { buildExport } = require("../lib/export");
+const { markServed } = require("../lib/published");
 
 // Where an export finds its runtime, and the only folder it may inline from.
 const PUBLIC_DIR = require("path").join(__dirname, "..", "public");
@@ -18,6 +19,7 @@ const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
  * @param {object} deps
  * @param {import('../lib/projects').ProjectStore} deps.store
  * @param {() => string} deps.serverIP
+ * @param {import('../lib/published').PublishedStore} [deps.published] - surfaces OSCAR serves itself
  * @param {string} [deps.templatesDir] - where the templates in the Load list live
  * @param {{ check: () => Promise<object> }} [deps.updates] - update checker
  * @param {object} [deps.serial] - serialControl() from lib/serial.js
@@ -34,6 +36,7 @@ module.exports = function createRouter({
   lock,
   serial,
   exportFiles,
+  published,
   templatesDir,
 }) {
   const router = express.Router();
@@ -208,6 +211,70 @@ module.exports = function createRouter({
     // a header carries ASCII and a filename need not be.
     res.setHeader("X-Oscar-Linked-Assets", encodeURIComponent(JSON.stringify(result.linked.slice(0, 20))));
     res.send(result.page);
+  });
+
+  // ---- Published surfaces -------------------------------------------------
+  // The same file an export downloads, kept where OSCAR can serve it. A phone
+  // cannot open a downloaded page (lib/published.js says why); it can open an
+  // address. Publishing and unpublishing are editing. Opening one is driving
+  // the show, so it stays reachable while OSCAR is locked, as /preview does.
+  function buildPage(req) {
+    return buildExport(req.body, {
+      publicDir: PUBLIC_DIR,
+      files: exportFiles,
+      oscarVersion: diagnostics ? diagnostics().oscar : undefined,
+    });
+  }
+
+  router.post("/publish", editorOnly, async (req, res) => {
+    if (!published) return res.status(503).json({ error: "This OSCAR cannot publish surfaces." });
+    let result;
+    try {
+      result = buildPage(req);
+    } catch (err) {
+      console.error("Could not build the surface to publish:", err.message);
+      return res.status(500).json({ error: "Your interface could not be published." });
+    }
+    if (result.error) return res.status(result.status).json({ error: result.error });
+
+    const name = (req.body && (req.body.fileName || req.body.title)) || "";
+    if (!published.idFor(name)) {
+      return res.status(400).json({ error: '"' + name + '" is a name OSCAR uses itself. Pick another.' });
+    }
+    try {
+      const saved = await published.save(name, result.page);
+      res.json({ id: saved.id, path: "/show/" + saved.id, replaced: saved.replaced, linked: result.linked.slice(0, 20) });
+    } catch (err) {
+      console.error("Could not publish:", err.message);
+      res.status(500).json({ error: "The surface could not be saved." });
+    }
+  });
+
+  router.get("/published", editorOnly, async (req, res) => {
+    try {
+      const pages = published ? await published.list() : [];
+      res.json(pages.map((page) => Object.assign({ path: "/show/" + page.id }, page)));
+    } catch (err) {
+      console.error("Could not list published surfaces:", err.message);
+      res.status(500).json({ error: "Could not read the published surfaces" });
+    }
+  });
+
+  router.delete("/published/:id", editorOnly, async (req, res) => {
+    const removed = published ? await published.remove(req.params.id) : false;
+    if (!removed) return res.status(404).json({ error: "That surface is no longer published" });
+    res.json({ msg: "Unpublished" });
+  });
+
+  // After /show/preview above, which is the editor's hand-off and not a page.
+  router.get("/show/:id", async (req, res) => {
+    const page = published ? await published.read(req.params.id) : null;
+    if (page === null) return res.status(404).type("text/plain").send("There is no surface published here.");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    // Publishing again has to show at once on a tablet that reloads.
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(markServed(page, socketPort ? socketPort() : undefined));
   });
 
   // ---- Local project library --------------------------------------------

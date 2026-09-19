@@ -8,6 +8,7 @@ const { Server } = require("socket.io");
 
 const { lanAddress } = require("./lib/net");
 const { ProjectStore } = require("./lib/projects");
+const { PublishedStore } = require("./lib/published");
 const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
 const { CURRENT_FORMAT } = require("./lib/project-format");
 const { Settings } = require("./lib/settings");
@@ -48,6 +49,9 @@ const app = express();
 // The OSCAR version is recorded in every saved project, so a file can always
 // say what wrote it.
 const store = new ProjectStore(PROJECTS_DIR, { oscarVersion: pkg.version });
+// Beside the projects rather than inside the app: the packaged app's own
+// folder is read-only, and a published surface should survive an update.
+const published = new PublishedStore(path.join(PROJECTS_DIR, "published"));
 
 // Locked mode is remembered across restarts, so an installation that reboots
 // overnight comes back locked rather than open. OSCAR_LOCKED forces it on at
@@ -162,6 +166,7 @@ app.use(
     },
     lock,
     serial,
+    published,
     templatesDir: path.join(__dirname, "public", "templates"),
   })
 );

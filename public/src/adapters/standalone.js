@@ -34,15 +34,34 @@ var { readHost, readPort } = require("../../../lib/export/connection");
  * An override that cannot be read is refused rather than skipped for the
  * same reason: whoever typed it meant the page to go somewhere else.
  *
+ * A page OSCAR serves itself (a published surface, /show/<name>) is told so
+ * as it is served, and then OSCAR is wherever the page came from: the host in
+ * its own address, and the bridge port it was handed. That outranks what was
+ * baked in, which may name an address the computer no longer has. It is not
+ * a guess, and so not a third source in the sense above: the page was handed
+ * to this browser by the very OSCAR it is about to talk to.
+ *
  * @param {object} baked window.OSCAR_EXPORT
  * @param {string} search window.location.search
+ * @param {{ port: number, hostname: string }} [served] window.OSCAR_SERVED, with
+ *        the hostname of the page's own address
  */
-function resolveEndpoint(baked, search) {
+function resolveEndpoint(baked, search, served) {
   var params = new URLSearchParams(search || "");
   var source = baked && typeof baked === "object" ? baked : {};
 
   var host = readHost(source.host);
   var port = readPort(source.port);
+
+  if (served && typeof served === "object") {
+    var servedHost = readHost(served.hostname);
+    var servedPort = readPort(served.port);
+    // Both or neither: half of one address and half of another is nowhere.
+    if (servedHost && servedPort !== null) {
+      host = servedHost;
+      port = servedPort;
+    }
+  }
 
   if (params.has("oscar-host")) {
     host = readHost(params.get("oscar-host"));
@@ -339,7 +358,7 @@ function statusBanner(doc) {
 function start(env) {
   var doc = env.document;
   var show = statusBanner(doc);
-  var where = resolveEndpoint(env.baked, env.search);
+  var where = resolveEndpoint(env.baked, env.search, env.served);
 
   // With nowhere to send, nothing is attached: every control stays inert
   // rather than looking alive, and the banner stays up saying why.

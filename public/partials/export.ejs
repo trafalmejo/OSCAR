@@ -1,9 +1,12 @@
 <div id="export-panel" style="display: none;">
   <div class="oscar-export">
     <p class="oscar-export-lead">
-      This saves your interface as one HTML file. Open it on a tablet, a phone
-      or another computer: there is nothing else to install and nothing to
-      unzip.
+      This turns your interface into one self-contained page, separate from the
+      editor, that keeps working while you carry on editing.
+      <strong>Publish</strong> it and OSCAR serves it at an address any phone,
+      tablet or computer on the network can open.
+      <strong>Download</strong> it to keep the file, host it on a web server,
+      or open it on another computer.
     </p>
 
     <!-- The misunderstanding behind every "my exported page does nothing"
@@ -49,8 +52,30 @@
     <div id="export-error" class="oscar-export-error" style="display: none;"></div>
     <div id="export-note" class="oscar-export-note" style="display: none;"></div>
 
-    <button id="export-button" class="o-btn o-btn-primary oscar-export-go" type="button">
-      Download the interface
-    </button>
+    <div class="oscar-export-actions">
+      <button id="publish-button" class="o-btn o-btn-primary" type="button">Publish on this OSCAR</button>
+      <button id="export-button" class="o-btn" type="button">Download the file</button>
+    </div>
+    <!-- A downloaded page does not work when opened from a phone's storage:
+         the phone sandboxes it and it never reaches OSCAR. Said next to the
+         button, where the choice is made. -->
+    <p class="oscar-export-hint">
+      On a phone or tablet, use Publish. A downloaded file only works opened
+      on a computer, or from a web server.
+    </p>
+
+    <div id="publish-result" class="oscar-publish-result" style="display: none;">
+      <div id="publish-qr" class="oscar-publish-qr" role="img" aria-label="QR code for the address"></div>
+      <div class="oscar-publish-where">
+        <span id="publish-status" class="oscar-publish-status"></span>
+        <a id="publish-link" class="o-link oscar-publish-link" target="_blank" rel="noopener"></a>
+        <span class="oscar-export-hint">Scan it with the phone's camera, or type the address. The device has to be on the same network.</span>
+      </div>
+    </div>
+
+    <div id="published-box" class="oscar-published" style="display: none;">
+      <div class="oscar-published-title">Published on this OSCAR</div>
+      <ul id="published-list" class="oscar-published-list"></ul>
+    </div>
   </div>
 </div>

@@ -19,6 +19,7 @@
     "grapesjs-touch": "^0.1.1",
     "jquery": "^3.7.1",
     "jquery-confirm": "^3.3.4",
+    "qrcode-generator": "^1.4.4",
     "socket.io-client": "^4.8.3"
   }
 }

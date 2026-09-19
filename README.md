@@ -641,10 +641,25 @@ versions open as before.
 
 ## Exporting a working interface
 
-The download button in the top bar (**Export a working interface**) saves the
-canvas as **one HTML file**. Open it on a tablet, a phone or another computer
-by double-clicking it, or drop it on any web server: there is nothing to
-unzip and nothing else to copy. The widgets' settings, OSCAR's runtime, the
+The download button in the top bar (**Export a working interface**) turns the
+canvas into **one self-contained page**, and offers two ways to use it.
+
+**Publish on this OSCAR** keeps the page inside OSCAR and serves it at an
+address such as `http://192.168.1.20:8080/show/main-stage`, shown with a QR
+code to scan. This is the way onto a **phone or tablet**. Publishing under the
+same name again replaces the page and keeps its address, the dialog lists what
+is published and unpublishes it, and a published page stays reachable while
+OSCAR is locked. It finds OSCAR by the address it was opened at, so it keeps
+working if the computer's IP address changes. Unlike `/preview`, which always
+shows the last push from the editor, a published page stays as it was until
+you publish it again.
+
+**Download the file** saves the same page as an `.html` file. Open it on
+another **computer** by double-clicking it, or drop it on any web server. It
+does not work opened from a phone's own storage: Android and iOS sandbox a
+downloaded page and it never reaches OSCAR.
+
+Either way there is nothing to unzip and nothing else to copy. The widgets' settings, OSCAR's runtime, the
 socket.io client, the widget styles and your images are all inside it. A file
 over about 2MB (a video, usually) stays a link instead, and the dialog names
 it so you know it has to travel next to the page.

@@ -15,6 +15,10 @@ function boot() {
     document: document,
     baked: window.OSCAR_EXPORT,
     search: window.location.search,
+    // Set only on a page OSCAR is serving itself; see resolveEndpoint.
+    served: window.OSCAR_SERVED
+      ? { port: window.OSCAR_SERVED.port, hostname: window.location.hostname }
+      : null,
     // `surface`: an exported page is a device showing the layout, exactly as
     // /preview is, so it agrees with the others on what each widget shows.
     connect:

@@ -16,6 +16,10 @@
  */
 
 var { exportSnapshot } = require("./adapters/grapesjs");
+var { surfaceAddress } = require("../../lib/published-address");
+// Draws the code for a published surface's address. Bundled, like everything
+// else here: OSCAR runs at venues with no internet.
+var qrcode = require("qrcode-generator");
 
 var DEFAULT_NAME = "my-interface";
 
@@ -70,6 +74,85 @@ function install(editor, options) {
   var container = document.getElementById("export-panel");
   if (!container) return;
 
+  var publishButton = document.getElementById("publish-button");
+  var resultBox = document.getElementById("publish-result");
+  var qrBox = document.getElementById("publish-qr");
+  var statusLine = document.getElementById("publish-status");
+  var link = document.getElementById("publish-link");
+  var publishedBox = document.getElementById("published-box");
+  var publishedList = document.getElementById("published-list");
+  // The address other devices reach OSCAR on, as GET /connection last said.
+  var lanHost = "";
+
+  /** Where a published surface is opened from another device. */
+  function addressOf(path) {
+    return surfaceAddress(lanHost || window.location.hostname, window.location.port || 80, path);
+  }
+
+  function showPublished(path, replaced) {
+    var address = addressOf(path);
+    statusLine.textContent = replaced ? "Published again, at the same address:" : "Published. Open it at:";
+    link.textContent = address;
+    link.href = address;
+    // Drawn by the library from an address OSCAR built; nothing a person typed
+    // reaches it except the name, which has been reduced to a-z, 0-9 and "-".
+    var code = qrcode(0, "M");
+    code.addData(address);
+    code.make();
+    qrBox.innerHTML = code.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    resultBox.style.display = "flex";
+  }
+
+  function refreshPublished() {
+    return fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : [];
+      })
+      .then(function (pages) {
+        publishedList.textContent = "";
+        (Array.isArray(pages) ? pages : []).forEach(function (page) {
+          var row = document.createElement("li");
+          var open = document.createElement("a");
+          open.className = "o-link";
+          open.target = "_blank";
+          open.rel = "noopener";
+          open.href = addressOf(page.path);
+          open.textContent = addressOf(page.path);
+          row.appendChild(open);
+
+          var qr = document.createElement("button");
+          qr.type = "button";
+          qr.className = "o-btn";
+          qr.textContent = "QR";
+          qr.setAttribute("aria-label", "Show the QR code for " + page.id);
+          qr.onclick = function () {
+            showPublished(page.path, false);
+            statusLine.textContent = "Open it at:";
+          };
+          row.appendChild(qr);
+
+          var remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "o-btn";
+          remove.textContent = "Unpublish";
+          remove.setAttribute("aria-label", "Unpublish " + page.id);
+          remove.onclick = function () {
+            remove.disabled = true;
+            fetch("/published/" + encodeURIComponent(page.id), { method: "DELETE" }).then(function () {
+              if (link.href === addressOf(page.path)) resultBox.style.display = "none";
+              refreshPublished();
+            });
+          };
+          row.appendChild(remove);
+          publishedList.appendChild(row);
+        });
+        publishedBox.style.display = publishedList.children.length ? "block" : "none";
+      })
+      .catch(function () {
+        publishedBox.style.display = "none";
+      });
+  }
+
   var nameField = document.getElementById("export-name");
   var hostField = document.getElementById("export-host");
   var portField = document.getElementById("export-port");
@@ -105,12 +188,17 @@ function install(editor, options) {
         return res.json();
       })
       .then(function (conn) {
-        if (conn && conn.address) hostField.value = conn.address;
+        if (conn && conn.address) {
+          hostField.value = conn.address;
+          lanHost = conn.address;
+        }
         if (conn && conn.socketPort) portField.value = conn.socketPort;
       })
       .catch(function () {
         /* the values from startup stand */
-      });
+      })
+      .then(refreshPublished);
+    resultBox.style.display = "none";
 
     container.style.display = "block";
     editor.Modal.open({
@@ -120,31 +208,65 @@ function install(editor, options) {
     });
   }
 
-  button.onclick = function () {
+  /** What both buttons send: the same surface, built the same way. Null if something is missing. */
+  function request() {
     var host = (hostField.value || "").trim();
     var port = (portField.value || "").trim();
-    var stem = fileStem(nameField.value);
 
     say(errorBox, "");
     say(noteBox, "");
     // The server checks both properly; this only saves a round trip.
-    if (!host) return say(errorBox, "Say where OSCAR can be reached.");
-    if (!port) return say(errorBox, "Say which port OSCAR's bridge is on.");
+    if (!host) return say(errorBox, "Say where OSCAR can be reached."), null;
+    if (!port) return say(errorBox, "Say which port OSCAR's bridge is on."), null;
 
     var snapshot = exportSnapshot(editor);
-    button.disabled = true;
-
-    fetch("/export", {
+    return {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: (nameField.value || "").trim() || DEFAULT_NAME,
-        fileName: stem,
+        fileName: fileStem(nameField.value),
         html: snapshot.html,
         css: snapshot.css,
         connection: { host: host, port: port },
       }),
-    })
+    };
+  }
+
+  publishButton.onclick = function () {
+    var body = request();
+    if (!body) return;
+    publishButton.disabled = true;
+
+    fetch("/publish", body)
+      .then(function (res) {
+        return res.json().then(function (answer) {
+          if (!res.ok) throw new Error((answer && answer.error) || "The surface could not be published.");
+          return answer;
+        });
+      })
+      .then(function (answer) {
+        showPublished(answer.path, answer.replaced);
+        if (answer.linked && answer.linked.length) {
+          say(noteBox, "Too large to embed, so these are loaded from OSCAR as the page opens: " + answer.linked.join(", "));
+        }
+        return refreshPublished();
+      })
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
+      })
+      .then(function () {
+        publishButton.disabled = false;
+      });
+  };
+
+  button.onclick = function () {
+    var stem = fileStem(nameField.value);
+    var body = request();
+    if (!body) return;
+    button.disabled = true;
+
+    fetch("/export", body)
       .then(function (res) {
         if (res.ok) {
           return res.blob().then(function (blob) {

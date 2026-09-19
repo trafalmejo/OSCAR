@@ -30,3 +30,18 @@ To set a widget's OSC settings in the code, use `data-gjs-*` attributes:
 ```
 
 The templates in the Load list are files in this format, so open one to see a full example.
+
+## Why does my exported page do nothing on a phone?
+
+Because the phone opened it from its own storage. Android hands a downloaded
+page to Chrome through a sandbox (the address starts with `content://`), and
+iOS will not run one at all, so the page never reaches OSCAR. The same file
+works on a computer, where it opens as an ordinary `file://` page.
+
+On a phone or tablet, use **Publish on this OSCAR** in the Export dialog
+instead of Download. OSCAR then serves the very same page at an address, shown
+with a QR code, and any browser on the network can open it.
+
+The phone has to be on the same network as the computer running OSCAR, and
+that computer's firewall has to let it in. If `/preview` opens on the phone,
+a published page will too.
