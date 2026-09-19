@@ -259,3 +259,24 @@ test("an export carries every widget style and the surface rule, so the page loo
   assert.ok(result.page.includes('data-osc-style="cyberpunk"'), "and the body still says which style it uses");
   assert.ok(!/@fontsource|woff2/.test(result.page), "fonts are left to the system fallback");
 });
+
+test("a media browser's thumbnails given as paths travel inside the page", () => {
+  const uri = "data:image/png;base64,AAAA";
+  const read = (ref) => (ref === "thumbs/a.png" ? uri : null);
+  const config = { items: "Forest|7|thumbs/a.png; Waves; Web|9|https://example.com/w.jpg", columns: 3 };
+  const attr = JSON.stringify(config).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const tag = '<div class="oscar-media-browser" data-oscar="oscar-media-browser" data-oscar-config="' + attr + '">';
+  const out = inlineHtmlAssets(tag, read);
+  const written = JSON.parse(/data-oscar-config="([^"]*)"/.exec(out)[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+  // The file is embedded; the omitted value is written out as the position
+  // it stood for; an address on the web is left to the web.
+  assert.strictEqual(written.items, "Forest|7|" + uri + "; Waves|2; Web|9|https://example.com/w.jpg");
+  assert.strictEqual(written.columns, 3);
+  // The rewritten line still reads as the same three tiles.
+  const { parseItems } = require("../../lib/widgets/media-browser");
+  assert.deepStrictEqual(parseItems(written.items).map((i) => i.image), [uri, "", "https://example.com/w.jpg"]);
+  // Nothing to embed, nothing touched; and a widget with no files is never asked.
+  assert.strictEqual(inlineHtmlAssets(tag, () => null), tag);
+  const slider = '<input data-oscar="oscar-slider" data-oscar-config="{&quot;min&quot;:0}">';
+  assert.strictEqual(inlineHtmlAssets(slider, read), slider);
+});
