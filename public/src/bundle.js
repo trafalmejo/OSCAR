@@ -20505,7 +20505,8 @@ function initGrape(ipServer, socketPort) {
         // preset's theme.
         useCustomTheme: false,
         showStylesOnChange: true,
-        modalImportTitle: "Import Template",
+        // Not "Import Template": a template is now something in the Load list.
+        modalImportTitle: "Import HTML/CSS",
         modalImportLabel:
           '<div style="margin-bottom: 10px; font-size: 13px;">Paste here your HTML/CSS and click Import</div>',
         modalImportContent: function (editor) {
@@ -21519,7 +21520,10 @@ function initGrape(ipServer, socketPort) {
     "export-template": "See code",
     undo: "Undo",
     redo: "Redo",
-    "gjs-open-import-webpage": "Import",
+    // Says what goes in. "Import" alone sat beside Load, which also brings
+    // something in, and templates -- the other thing one might import -- are
+    // opened from Load.
+    "gjs-open-import-webpage": "Import HTML/CSS",
     "canvas-clear": "Clear canvas",
     "toggle-lock": null,
     "open-styles": "Widget style",
