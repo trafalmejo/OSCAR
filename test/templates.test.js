@@ -167,6 +167,20 @@ for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith(".html"))) {
   });
 }
 
+test("the Showcase follows a picked widget style: outside its own tokens, no colour is fixed", () => {
+  const html = fs.readFileSync(path.join(DIR, "oscar-showcase.html"), "utf8");
+  assert.match(html, /<body data-osc-style="own"/, "starts on Page's own");
+  const css = /<style>([\s\S]*?)<\/style>/.exec(html)[1];
+  // Its tokens are written for "own" only, so any other choice takes over.
+  assert.ok(css.includes('[data-osc-style="own"] {'));
+  assert.ok(!/\[data-osc-style\]\s*\{/.test(css), "a rule for every style would pin the look again");
+  const fixed = css
+    .split("\n")
+    .filter((line) => !/^\s*--osc-/.test(line))
+    .filter((line) => /#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(line));
+  assert.deepStrictEqual(fixed, [], "colours that would not change with the style");
+});
+
 // ---- reading a template in the editor -----------------------------------------
 
 function element(tagName, text, attrs) {

@@ -19,8 +19,10 @@
   a near-black ground. The widgets take them too: the body asks for the
   "Page's own" widget style (data-osc-style="own"), and the first rule sets
   the colour tokens for it. Pick another widget style in the editor and that
-  rule stops applying, so the widgets take the style you picked; the page
-  around them keeps its own colours.
+  rule stops applying, and the whole page follows the style you picked:
+  every colour here is one of the style's tokens (the gradient runs from
+  --osc-ring to --osc-primary), the corners use its radius, the type is its
+  font, and the particles are tinted from it too, light styles included.
 
   One thing to keep if you restyle it: the page wrapper hides sideways
   overflow with overflow-x: clip, not hidden. "hidden" would make the wrapper
@@ -88,12 +90,14 @@
   --osc-font: "Gotham", "Gotham Book", "Gotham SSm A", "Montserrat", "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .osh {
+  --osh-a: var(--osc-ring);
+  --osh-b: var(--osc-primary);
   position: relative;
   overflow-x: clip;
   background:
-    radial-gradient(900px 620px at 50% -60px, rgba(255, 54, 99, 0.26), rgba(255, 54, 99, 0) 70%),
-    radial-gradient(700px 520px at 100% 1500px, rgba(255, 98, 58, 0.12), rgba(255, 98, 58, 0) 70%),
-    #0e0e11;
+    radial-gradient(900px 620px at 50% -60px, color-mix(in srgb, var(--osh-b) 26%, transparent), transparent 70%),
+    radial-gradient(700px 520px at 100% 1500px, color-mix(in srgb, var(--osh-a) 12%, transparent), transparent 70%),
+    var(--osc-background);
 }
 .osh-progress {
   position: fixed;
@@ -102,7 +106,7 @@
   left: 0;
   width: 100%;
   height: 3px;
-  background: linear-gradient(90deg, #ff623a, #ff3663);
+  background: linear-gradient(90deg, var(--osh-a), var(--osh-b));
   transform-origin: 0 50%;
   animation: osh-grow linear both;
   animation-timeline: scroll(root);
@@ -174,12 +178,12 @@
   display: block;
   width: 100%;
   height: auto;
-  filter: drop-shadow(0 22px 44px rgba(255, 54, 99, 0.45));
+  filter: drop-shadow(0 22px 44px color-mix(in srgb, var(--osh-b) 45%, transparent));
 }
 .osh-halo {
   position: absolute;
   inset: 0;
-  border: 2px solid #ff3663;
+  border: 2px solid var(--osh-b);
   border-radius: 50%;
   opacity: 0;
   animation: osh-halo 3.6s ease-out infinite;
@@ -194,7 +198,7 @@
   letter-spacing: -0.02em;
   line-height: 0.95;
   color: transparent;
-  background: linear-gradient(90deg, #ff623a, #ff3663, #ff8a5c, #ff3663, #ff623a);
+  background: linear-gradient(90deg, var(--osh-a), var(--osh-b), var(--osh-a), var(--osh-b), var(--osh-a));
   background-size: 300% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -227,15 +231,15 @@
   padding: 0 32px;
   border: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, #ff623a, #ff3663);
-  color: #ffffff;
+  background: linear-gradient(90deg, var(--osh-a), var(--osh-b));
+  color: var(--osc-primary-foreground);
   font-size: 16px;
   font-weight: 600;
-  box-shadow: 0 12px 32px -10px rgba(255, 54, 99, 0.7);
+  box-shadow: 0 12px 32px -10px color-mix(in srgb, var(--osh-b) 70%, transparent);
 }
 #osh-hello.toggle {
-  background: #ffffff;
-  color: #ff3663;
+  background: var(--osc-primary-foreground);
+  color: var(--osh-b);
 }
 .osh-hero-note {
   font-size: 12px;
@@ -250,7 +254,7 @@
   width: 22px;
   height: 36px;
   margin-left: -11px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  border: 2px solid color-mix(in srgb, var(--osc-foreground) 35%, transparent);
   border-radius: 12px;
 }
 .osh-scroll-dot {
@@ -261,7 +265,7 @@
   height: 8px;
   margin-left: -2px;
   border-radius: 2px;
-  background: #ff3663;
+  background: var(--osh-b);
   animation: osh-wheel 1.8s ease-in-out infinite;
 }
 .osh-section {
@@ -274,7 +278,7 @@
 }
 .osh-eyebrow {
   margin: 0 0 8px;
-  color: #ff623a;
+  color: var(--osh-a);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -288,7 +292,7 @@
   letter-spacing: -0.02em;
   line-height: 1.1;
   color: transparent;
-  background: linear-gradient(90deg, #f4f4f6 0%, #f4f4f6 45%, #ff623a 50%, rgba(244, 244, 246, 0.18) 55%, rgba(244, 244, 246, 0.18) 100%);
+  background: linear-gradient(90deg, var(--osc-foreground) 0%, var(--osc-foreground) 45%, var(--osh-a) 50%, color-mix(in srgb, var(--osc-foreground) 18%, transparent) 55%, color-mix(in srgb, var(--osc-foreground) 18%, transparent) 100%);
   background-size: 220% 100%;
   background-position: 0% 50%;
   -webkit-background-clip: text;
@@ -325,14 +329,14 @@
   gap: 8px;
   min-width: 0;
   padding: 24px;
-  border: 1px solid #2c2c35;
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 54, 99, 0.07), rgba(255, 54, 99, 0) 45%), rgba(23, 23, 28, 0.86);
+  border: 1px solid var(--osc-border);
+  border-radius: calc(var(--osc-radius) + 4px);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--osh-b) 7%, transparent), transparent 45%), color-mix(in srgb, var(--osc-card) 86%, transparent);
   backdrop-filter: blur(6px);
   transition: border-color 0.2s, translate 0.2s;
 }
 .osh-card:hover {
-  border-color: #ff3663;
+  border-color: var(--osh-b);
   translate: 0 -3px;
 }
 .osh-card-title {
@@ -402,7 +406,7 @@
   width: 28px;
   height: 4px;
   border-radius: 2px;
-  background: linear-gradient(90deg, #ff623a, #ff3663);
+  background: linear-gradient(90deg, var(--osh-a), var(--osh-b));
 }
 .osh-feature-title {
   margin: 14px 0 6px;
@@ -434,15 +438,15 @@
 .osh-chip {
   flex: none;
   padding: 10px 20px;
-  border: 1px solid #2c2c35;
+  border: 1px solid var(--osc-border);
   border-radius: 999px;
-  background: rgba(23, 23, 28, 0.86);
+  background: color-mix(in srgb, var(--osc-card) 86%, transparent);
   font-size: 15px;
   white-space: nowrap;
 }
 .osh-chip-light {
-  border-color: rgba(255, 98, 58, 0.5);
-  color: #ffb39e;
+  border-color: color-mix(in srgb, var(--osh-a) 50%, transparent);
+  color: color-mix(in srgb, var(--osh-a) 55%, var(--osc-foreground));
 }
 .osh-gallery {
   display: grid;
@@ -455,9 +459,9 @@
   margin: 0;
   overflow: clip;
   aspect-ratio: 4 / 5;
-  border: 1px solid #2c2c35;
-  border-radius: 16px;
-  background: #17171c;
+  border: 1px solid var(--osc-border);
+  border-radius: calc(var(--osc-radius) + 4px);
+  background: var(--osc-card);
   animation: osh-pace-slow linear both;
   animation-timeline: view();
 }
@@ -484,15 +488,15 @@
   left: 14px;
   padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(14, 14, 17, 0.72);
+  background: color-mix(in srgb, var(--osc-background) 72%, transparent);
   backdrop-filter: blur(8px);
   font-size: 13px;
   font-weight: 600;
 }
 
 .osh-footer {
-  border-top: 1px solid #2c2c35;
-  background: rgba(14, 14, 17, 0.82);
+  border-top: 1px solid var(--osc-border);
+  background: color-mix(in srgb, var(--osc-background) 82%, transparent);
   backdrop-filter: blur(8px);
   font-size: 14px;
 }
@@ -531,7 +535,7 @@
   opacity: 0.6;
 }
 .osh-link {
-  color: #ff623a;
+  color: var(--osh-a);
   text-decoration: none;
 }
 
@@ -986,9 +990,31 @@ if (stage) {
   );
   scene.add(shape);
 
-  function tint(hex) {
-    const from = new THREE.Color(hex);
-    const to = new THREE.Color(0xff623a);
+  // A colour as the style wrote it, oklch() included, through the browser's own parser.
+  const probe = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  function token(name, fallback) {
+    const value = getComputedStyle(document.body).getPropertyValue(name).trim();
+    probe.clearRect(0, 0, 1, 1);
+    probe.fillStyle = fallback;
+    if (value) probe.fillStyle = value;
+    probe.fillRect(0, 0, 1, 1);
+    const px = probe.getImageData(0, 0, 1, 1).data;
+    return new THREE.Color().setRGB(px[0] / 255, px[1] / 255, px[2] / 255, THREE.SRGBColorSpace);
+  }
+
+  // What the Colour card last picked, or null to follow the widget style.
+  let picked = null;
+  function tint() {
+    const from = picked ? new THREE.Color(picked) : token("--osc-primary", "#ff3663");
+    const to = token("--osc-ring", "#ff623a");
+    // Light adds up to nothing on a white page, so there the dots are painted instead.
+    const hsl = { h: 0, s: 0, l: 0 };
+    token("--osc-background", "#0e0e11").getHSL(hsl);
+    const light = hsl.l > 0.5;
+    material.blending = light ? THREE.NormalBlending : THREE.AdditiveBlending;
+    material.opacity = light ? 0.4 : 0.2;
+    material.needsUpdate = true;
+    shape.material.opacity = light ? 0.14 : 0.05;
     const colour = geometry.attributes.color;
     const c = new THREE.Color();
     const soft = new THREE.Color(0x8a7f86);
@@ -1000,7 +1026,14 @@ if (stage) {
     colour.needsUpdate = true;
     shape.material.color.copy(from).lerp(soft, 0.4);
   }
-  tint("#ff3663");
+  tint();
+  // The editor's widget style picker changes these two attributes on the body.
+  const watcher = new MutationObserver(function () {
+    picked = null;
+    tint();
+    if (still) requestAnimationFrame(draw);
+  });
+  watcher.observe(document.body, { attributes: true, attributeFilter: ["data-osc-style", "data-osc-appearance"] });
 
   let energy = 0.7;
   let shown = energy;
@@ -1050,7 +1083,10 @@ if (stage) {
   // them like any other input.
   function onInput(event) {
     if (event.target.id === "osh-fader") energy = Number(event.target.value);
-    if (event.target.id === "osh-colour") tint(event.target.value);
+    if (event.target.id === "osh-colour") {
+      picked = event.target.value;
+      tint();
+    }
     if (still) requestAnimationFrame(draw);
   }
   function onScroll() {
@@ -1065,6 +1101,7 @@ if (stage) {
   frame = requestAnimationFrame(draw);
 
   window.oshStop = function () {
+    watcher.disconnect();
     cancelAnimationFrame(frame);
     window.removeEventListener("resize", fit);
     window.removeEventListener("pointermove", onPointer);
