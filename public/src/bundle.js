@@ -376,6 +376,48 @@ const BODY_OPEN = /<body\b([^>]*)>/i;
 const BODY_CLOSE = /<\/body\s*>/i;
 const ATTRIBUTE = /([^\s"'=<>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 
+/**
+ * CSS with its comments taken out, strings left alone.
+ *
+ * The editor's CSS parser reads a comment INSIDE a rule as a declaration and
+ * stores it as `undefined: undefined`, which is then saved with the project
+ * and written into every export. Comments between rules are harmless but go
+ * the same way, since nothing downstream keeps them anyway.
+ */
+function stripCssComments(css) {
+  const text = String(css == null ? "" : css);
+  let out = "";
+  let quote = null;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      out += ch;
+      // An escaped character cannot close the string.
+      if (ch === "\\" && i + 1 < text.length) out += text[++i];
+      else if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      out += ch;
+    } else if (ch === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      // An unclosed comment swallows the rest, as it does in a browser.
+      i = end === -1 ? text.length : end + 1;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+/** The same markup with the comments removed from every <style> block. */
+function cleanStyleBlocks(html) {
+  return String(html == null ? "" : html).replace(STYLE_BLOCK, function (block, css) {
+    return block.replace(css, function () {
+      return stripCssComments(css);
+    });
+  });
+}
+
 function attributesOf(source) {
   const attributes = {};
   for (const match of String(source).matchAll(ATTRIBUTE)) {
@@ -402,13 +444,13 @@ function readDocument(input) {
   const close = text.slice(start).search(BODY_CLOSE);
   const body = close === -1 ? text.slice(start) : text.slice(start, start + close);
 
-  const css = [...text.matchAll(STYLE_BLOCK)].map((m) => m[1].trim()).filter(Boolean);
+  const css = [...text.matchAll(STYLE_BLOCK)].map((m) => stripCssComments(m[1]).trim()).filter(Boolean);
   const html = (css.length ? "<style>\n" + css.join("\n") + "\n</style>\n" : "") + body.replace(STYLE_BLOCK, "").trim();
 
   return { html, bodyAttributes: attributesOf(open[1]) };
 }
 
-module.exports = { readDocument, attributesOf };
+module.exports = { readDocument, attributesOf, stripCssComments, cleanStyleBlocks };
 
 },{}],5:[function(require,module,exports){
 "use strict";
@@ -17497,7 +17539,9 @@ function initGrape(ipServer, socketPort) {
       optionsHtml: {
         preParser: function (input, context) {
           var doc = htmlDocument.readDocument(input);
-          if (!doc) return input;
+          // A snippet keeps its shape; only the comments inside its <style>
+          // blocks go, for the reason given at stripCssComments.
+          if (!doc) return htmlDocument.cleanStyleBlocks(input);
           var wrapper = context && context.editor && context.editor.getWrapper();
           if (wrapper) {
             wrapper.setAttributes(widgetStyles.withSurfaceStyle(wrapper.getAttributes(), doc.bodyAttributes));

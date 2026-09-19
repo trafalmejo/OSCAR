@@ -279,7 +279,9 @@ function initGrape(ipServer, socketPort) {
       optionsHtml: {
         preParser: function (input, context) {
           var doc = htmlDocument.readDocument(input);
-          if (!doc) return input;
+          // A snippet keeps its shape; only the comments inside its <style>
+          // blocks go, for the reason given at stripCssComments.
+          if (!doc) return htmlDocument.cleanStyleBlocks(input);
           var wrapper = context && context.editor && context.editor.getWrapper();
           if (wrapper) {
             wrapper.setAttributes(widgetStyles.withSurfaceStyle(wrapper.getAttributes(), doc.bodyAttributes));

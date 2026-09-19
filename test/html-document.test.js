@@ -55,7 +55,31 @@ test("the shipped template reads as its widgets and CSS, with its style", () => 
   const html = fs.readFileSync(path.join(__dirname, "..", "public", "templates", "live-visuals-controller.html"), "utf8");
   const doc = readDocument(html);
   assert.deepStrictEqual(doc.bodyAttributes, { "data-osc-style": "default", "data-osc-appearance": "dark" });
-  assert.match(doc.html, /^<style>\n\/\* ---- desktop/);
+  assert.match(doc.html, /^<style>\n\.lvc \{/, "the CSS leads, with its comments already taken out");
   assert.match(doc.html, /<div id="lvc" class="lvc"/);
   assert.doesNotMatch(doc.html, /<title>|<head>|<body/);
+});
+
+test("comments are taken out of imported CSS, because the editor stores one inside a rule as a declaration", () => {
+  const { stripCssComments, cleanStyleBlocks } = require("../lib/html-document");
+  // Saved as `undefined: undefined` in the project, then written into exports.
+  assert.strictEqual(stripCssComments(".a { /* why */ color: red; } /* between */ .b { margin: 0; }"), ".a {  color: red; }  .b { margin: 0; }");
+  // What looks like a comment inside a string is content, not a comment.
+  assert.strictEqual(stripCssComments('.a::after { content: "/* not one */"; }'), '.a::after { content: "/* not one */"; }');
+  // An escaped quote does not end the string it sits in.
+  const escaped = ".a { content: 'it" + String.fromCharCode(92) + "'s /* fine */'; }";
+  assert.strictEqual(stripCssComments(escaped), escaped);
+  assert.strictEqual(stripCssComments(".a { color: red; } /* never closed"), ".a { color: red; } ");
+  assert.strictEqual(stripCssComments(null), "");
+
+  const doc = readDocument("<body><style>.a { /* x */ color: red; }</style><p>hi</p></body>");
+  assert.doesNotMatch(doc.html, /\/\*/);
+  assert.strictEqual(cleanStyleBlocks("<p>/* text stays */</p><style>.a { /* x */ top: 0; }</style>"), "<p>/* text stays */</p><style>.a {  top: 0; }</style>");
+});
+
+test("no shipped template reaches the editor with a CSS comment in it", () => {
+  const dir = path.join(__dirname, "..", "public", "templates");
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".html"))) {
+    assert.doesNotMatch(readDocument(fs.readFileSync(path.join(dir, file), "utf8")).html, /\/\*/, file);
+  }
 });
