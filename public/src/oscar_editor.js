@@ -214,7 +214,7 @@ var projectFormat = require("../../lib/project-format");
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins } = require("./adapters/grapesjs");
 
-var oscarExport = require("./oscar_export");
+var oscarExport = require("./export_dialog");
 
 var isProjectData = projectFormat.isGrapesProject;
 

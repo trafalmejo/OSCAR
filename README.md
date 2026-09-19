@@ -496,3 +496,64 @@ up when you lift your finger with whatever another device did while you were
 resting on it; a momentary button held on a tablet that drops off the
 network is let go on the others; and if the server restarts, the tablets
 tell it again what they show when they reconnect.
+
+## Exporting a working interface
+
+The download button in the top bar (**Export a working interface**) saves the
+canvas as **one HTML file**. Open it on a tablet, a phone or another computer
+by double-clicking it, or drop it on any web server: there is nothing to
+unzip and nothing else to copy. The widgets' settings, OSCAR's runtime, the
+socket.io client, the widget styles and your images are all inside it. A file
+over about 2MB (a video, usually) stays a link instead, and the dialog names
+it so you know it has to travel next to the page.
+
+This is not **See code**, the button beside it. That one shows the markup and
+nothing more: a page pasted together from it looks right and sends nothing.
+
+**OSCAR has to be running somewhere the page can reach.** A browser cannot
+send OSC or DMX -- it has no UDP -- so the exported page hands everything to
+OSCAR's bridge, exactly as the editor and `/preview` do, and OSCAR puts it on
+the network. The exported page is a remote for OSCAR, not a replacement for
+it. The page says so itself: while it cannot reach OSCAR a banner across the
+top says where it is trying and that the controls send nothing, and the same
+is written in a comment at the top of the file for whoever opens it in a
+text editor. The banner never takes a press meant for the control under it,
+and it fades once the bridge answers.
+
+Where OSCAR is gets written into the file when you export. The dialog fills
+in the address and **bridge port** this OSCAR reports for itself (the bridge
+port is the socket port, 8081 unless you moved it -- not the 8080 the editor
+opens on), and you can change both before downloading: use the address other
+devices see, not `localhost`, unless the page will only be opened on the same
+computer. If OSCAR moves later you do not need to export again. Add the new
+address to the page's own:
+
+```
+my-interface.html?oscar-host=192.168.0.20&oscar-port=8081
+```
+
+Things worth knowing:
+
+- **Moves made while disconnected are dropped**, not queued. A tablet that
+  walked out of Wi-Fi range would otherwise replay every fader position it
+  passed through, in one burst, the moment it came back.
+- **A control whose settings cannot be read stays switched off.** If the file
+  was edited by hand and a widget's `data-oscar-config` no longer parses, that
+  widget is dimmed and does nothing. It never falls back to default settings,
+  because the defaults are a live control aimed at somebody's port 7000.
+- Widgets with **Listen** on follow the rig on an exported page, DMX output
+  works, and several copies of the page -- and `/preview` -- agree on what each
+  control shows, all through the same bridge.
+- **Only the first page is exported** if the project has several; the dialog
+  says so when that applies.
+- A page served over `https://` cannot reach the bridge, which is plain
+  `http`: browsers block the mix. Open the file directly or serve it over
+  `http`.
+- A locked OSCAR exports only on the computer it runs on, like every other
+  editing action.
+- Running from source, the export needs `npm run build` to have produced
+  `public/src/runtime.bundle.js`; OSCAR refuses to export without it rather
+  than hand you a page that cannot send.
+
+The settings are written into the markup only in the exported file. The
+project you save never carries a second copy of them.

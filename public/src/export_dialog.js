@@ -9,6 +9,10 @@
  *
  * This asks the adapter for markup with those settings written in, and the
  * OSCAR server to wrap it around the standalone runtime (POST /export).
+ *
+ * Not named oscar_*.js: requiring "./oscar_<name>" is how an entry point used
+ * to pull in one widget's file, and test/widgets.test.js refuses that pattern
+ * in the entry points so nobody wires a widget by hand again.
  */
 
 var { exportSnapshot } = require("./adapters/grapesjs");
