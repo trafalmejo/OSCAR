@@ -1,0 +1,165 @@
+/* Multiple pages: the tabs whoever drives the show taps to switch, and the
+   designer's page list in the editor. Loaded by both pages, because the
+   editor's preview draws the same tabs the tablet does. */
+
+:root {
+  /* One number for the bar and for the room taken off the canvas, so the two
+     cannot drift apart. 56px is a comfortable finger target. */
+  --oscar-page-bar: 56px;
+}
+
+/* ---- the tabs ------------------------------------------------------------ */
+
+/* Fixed to the bottom edge and outside the GrapesJS container altogether, so
+   a tab can never be dragged, styled or deleted along with the widgets. */
+.oscar-page-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  box-sizing: content-box;
+  height: var(--oscar-page-bar);
+  /* A tablet with a home indicator keeps the tabs clear of it. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  background: #3d3d3d;
+  /* A shadow, not a border: a border would make the bar a pixel taller than
+     the room taken off the canvas for it. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  /* A finger swiping along the tabs must not bounce the whole page. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+
+/* display:flex above would otherwise beat the hidden attribute. */
+.oscar-page-bar[hidden] {
+  display: none;
+}
+
+.oscar-page-tab {
+  /* Share the width while they fit, and stop shrinking at a size a finger
+     can still hit; past that the bar scrolls sideways instead. */
+  flex: 1 0 auto;
+  min-width: 96px;
+  max-width: 40vw;
+  padding: 0 16px;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 3px solid transparent;
+  background: none;
+  color: rgba(255, 255, 255, 0.7);
+  font: 600 15px/1 Helvetica, Arial, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  /* No 300ms wait and no double-tap zoom on a control used mid-show. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oscar-page-tab:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.oscar-page-tab-current {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border-top-color: #ff3663;
+}
+
+/* The canvas is shortened by the bar rather than covered by it: a bar floating
+   over the bottom row of a surface hides controls mid-show. GrapesJS writes
+   the container's height inline, hence the !important. */
+body.oscar-has-pages #gjs-oscar-preview,
+body.oscar-has-pages #gjs {
+  height: calc(100% - var(--oscar-page-bar) - env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* ---- editor: the Pages modal --------------------------------------------- */
+
+.oscar-pages {
+  padding: 10px 14px 16px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+}
+
+.oscar-pages-hint {
+  line-height: 1.5;
+  opacity: 0.75;
+  margin-bottom: 12px;
+}
+
+.oscar-page-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.oscar-page {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.oscar-page-current {
+  background: rgba(255, 54, 99, 0.22);
+}
+
+/* The name is the button that opens the page: the whole row's width, so
+   there is no small target to miss. */
+.oscar-page-open {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.oscar-page-action {
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.oscar-page-open:hover,
+.oscar-page-action:hover {
+  opacity: 1;
+  color: #ff3663;
+}
+
+.oscar-pages-add {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.oscar-pages-add .form-control {
+  flex: 1;
+}
+
+.oscar-page-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+}

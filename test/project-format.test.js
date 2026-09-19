@@ -5,16 +5,22 @@ const assert = require("node:assert");
 
 const {
   CURRENT_FORMAT,
+  formatFor,
   stripEditorState,
   MIGRATIONS,
   isGrapesProject,
   detectFormat,
   openProject,
   stampProject,
+  namePages,
+  defaultPageName,
+  pageLabel,
 } = require("../lib/project-format");
 
+// The page is named, as every page is once it has been through openProject;
+// the tests about unnamed pages build their own.
 const project = () => ({
-  pages: [{ frames: [{ component: { type: "wrapper", components: [] } }] }],
+  pages: [{ name: "Main", frames: [{ component: { type: "wrapper", components: [] } }] }],
   styles: [],
   assets: [],
 });
@@ -27,7 +33,7 @@ test("a saved file records the format and what wrote it", () => {
     grapesjs: "0.23.6",
   });
 
-  assert.strictEqual(record.format, CURRENT_FORMAT);
+  assert.strictEqual(record.format, formatFor(project()));
   assert.strictEqual(record.oscar, "2.1.0");
   assert.strictEqual(record.grapesjs, "0.23.6");
   assert.strictEqual(record.name, "My Show");
@@ -211,4 +217,89 @@ test("a round trip through stamp and open preserves the project exactly", () => 
 
   assert.strictEqual(opened.status, "ok");
   assert.deepStrictEqual(opened.data, original);
+});
+
+// ---- format 3: pages have names -------------------------------------------
+
+const frames = () => [{ component: { type: "wrapper", components: [] } }];
+
+test("an unnamed page is called by its position, counting from one", () => {
+  assert.strictEqual(defaultPageName(0), "Page 1");
+  assert.strictEqual(defaultPageName(2), "Page 3");
+  assert.strictEqual(pageLabel("", 0), "Page 1");
+  assert.strictEqual(pageLabel(undefined, 1), "Page 2");
+  assert.strictEqual(pageLabel("   ", 1), "Page 2", "a name of spaces would print a blank tab");
+  assert.strictEqual(pageLabel(" Wash ", 4), "Wash");
+});
+
+test("format 3 names the pages of an older project and leaves given names alone", () => {
+  const record = {
+    format: 2,
+    name: "Two pages",
+    data: { pages: [{ frames: frames() }, { name: "Movers", frames: frames() }, { name: "", frames: frames() }] },
+  };
+
+  const opened = openProject(record);
+  assert.strictEqual(opened.status, "ok");
+  assert.strictEqual(opened.migrated, true);
+  assert.deepStrictEqual(
+    opened.data.pages.map((page) => page.name),
+    ["Page 1", "Movers", "Page 3"]
+  );
+});
+
+test("a CURRENT-format file with an unnamed page is still named", () => {
+  // Not a rare case but the usual one: GrapesJS drops an empty page name when
+  // it saves, so page one of a project written by this very version comes
+  // back unnamed, carrying a stamp that skips every migration.
+  const record = { format: CURRENT_FORMAT, name: "Fresh", data: { pages: [{ frames: frames() }] } };
+
+  const opened = openProject(record);
+  assert.strictEqual(opened.status, "ok");
+  assert.strictEqual(opened.migrated, false);
+  assert.strictEqual(opened.data.pages[0].name, "Page 1");
+});
+
+test("naming pages twice changes nothing, and survives data that is not a project", () => {
+  const once = namePages({ pages: [{ frames: frames() }, null, { name: "Keys" }] });
+  const twice = namePages(JSON.parse(JSON.stringify(once)));
+  assert.deepStrictEqual(twice, once);
+  assert.strictEqual(once.pages[1], null, "a hole is left alone, not thrown on");
+
+  assert.strictEqual(namePages(null), null);
+  assert.deepStrictEqual(namePages({ pages: "nope" }), { pages: "nope" });
+});
+
+test("multi-page projects carry a format an older OSCAR refuses", () => {
+  // Why the bump is deliberate. An OSCAR that stops at format 2 has no page
+  // switcher: it would open a multi-page show, draw page one and offer no way
+  // to the rest, which reads as a damaged project. Its openProject sees a
+  // format above its own and says to update instead.
+  const record = stampProject({ name: "Show", data: { pages: [{ name: "A" }, { name: "B" }] } });
+  assert.ok(record.format >= 3);
+});
+
+test("a single-page project keeps the format an older OSCAR can open; a second page is what earns format 3", () => {
+  const page = () => ({ name: "Page 1", frames: [{ component: { type: "wrapper" } }] });
+  const single = stampProject({ name: "One", data: { pages: [page()] } });
+  const several = stampProject({ name: "Two", data: { pages: [page(), page()] } });
+
+  // Format 2 is what the build before pages wrote and reads. Nothing in a
+  // single-page file is beyond it, so it must not be refused there.
+  assert.strictEqual(single.format, 2);
+  assert.strictEqual(several.format, 3);
+  assert.strictEqual(several.format, CURRENT_FORMAT);
+
+  // Both open here, and a single-page file stamped 2 is current, not migrated.
+  const opened = openProject(single);
+  assert.strictEqual(opened.status, "ok");
+  assert.strictEqual(opened.migrated, false);
+  assert.strictEqual(openProject(several).migrated, false);
+
+  // A multi-page file from before format 3 is still brought up to it.
+  const legacy = openProject({ format: 2, name: "Old", data: { pages: [page(), page()] } });
+  assert.strictEqual(legacy.migrated, true);
+
+  assert.strictEqual(formatFor(null), 2);
+  assert.strictEqual(formatFor({ pages: "no" }), 2);
 });

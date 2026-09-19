@@ -588,3 +588,42 @@ in this build", and everything else, Wi-Fi boards included, works as usual.
 And OSCAR does not use the browser's Web Serial: that opens a port on the
 device showing the page -- the tablet, which has no board plugged into it --
 and Safari and Firefox do not have it at all.
+
+## Multiple pages
+
+A surface can hold more than one page: a page per fixture group, per scene,
+or per operator. In the editor, the **Pages** button in the top bar lists
+them. Click a name to open that page, **Rename** or **Delete** it from its
+row, and add one with the box underneath (leave the name empty and it is
+called "Page N"). Two pages cannot share a name, since their tabs could not
+be told apart. The last page cannot be deleted. Deleting a page releases
+the DMX channels of every widget on it.
+
+On the tablet (`/preview`) the pages appear as a row of finger-sized tabs
+along the bottom edge. The surface is made shorter by the height of the bar
+rather than covered by it, so nothing on the bottom row of a page sits under
+a tab. A surface with a single page has no bar and keeps the whole screen.
+The editor's own preview shows the same tabs, so a surface can be tried out
+before it is pushed.
+
+Pushing a new layout while a show is running leaves each tablet on the page
+it was showing, as long as that page still exists. Every page is locked the
+same way: nothing can be dragged, selected or edited from a tablet, whichever
+page it is on.
+
+Turning the page lets go of whatever is being held. A momentary button held
+with one finger while another taps a tab sends its Value OFF before the page
+changes, exactly as if the finger had come up, so nothing is left on because
+its button went out of sight. A push does the same.
+
+A widget with Listen on keeps following the rig while its page is not
+showing, on a single tablet as much as on several, so a fader opens where
+the rig left it rather than where it was last seen, and the next touch does
+not jump. What the other tablets do to a widget on a hidden page is
+remembered in the same way.
+
+A project with more than one page is saved as project format 3. An older
+OSCAR has no way to switch pages and would show only the first, so it
+refuses such a file and asks to be updated instead of opening part of a
+show. A project with a single page is still saved as format 2, which older
+versions open as before.
