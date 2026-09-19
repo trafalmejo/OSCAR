@@ -11,8 +11,8 @@ const styles = require("../lib/widget-styles");
 const { checkMessage } = require("../lib/widgets/fields");
 const { button } = require("../lib/widgets/button");
 const { slider } = require("../lib/widgets/slider");
-const { xypad } = require("../lib/widgets/xypad");
-const { parsed } = require("../public/src/adapters/grapesjs");
+const { WIDGETS } = require("../lib/widgets");
+const { parsed, matches } = require("../public/src/adapters/grapesjs");
 
 const DIR = path.join(__dirname, "..", "public", "templates");
 const PUBLIC = path.join(__dirname, "..", "public");
@@ -74,11 +74,19 @@ function settingsOf(attrs) {
   return out;
 }
 
+/**
+ * The widget a tag becomes, decided the way the editor decides it: by the
+ * adapter's own matches(), over every registered widget. A widget added
+ * later is recognised here with no change to this file.
+ */
 function widgetFor(part) {
-  if (part.tag === "button") return button;
-  if (part.tag === "input" && part.attrs.type === "range") return slider;
-  if (/\boscar-xypad\b/.test(part.attrs.class || "")) return xypad;
-  return null;
+  const classes = (part.attrs.class || "").split(" ");
+  const el = {
+    tagName: part.tag.toUpperCase(),
+    getAttribute: (name) => (name in part.attrs ? part.attrs[name] : null),
+    classList: { contains: (name) => classes.includes(name) },
+  };
+  return WIDGETS.find((widget) => matches(widget, el)) || null;
 }
 
 for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith(".html"))) {
@@ -117,6 +125,12 @@ for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith(".html"))) {
         assert.ok(key in widget.defaults, part.attrs.id + ": " + key + " is not a " + widget.name + " setting");
       }
       assert.strictEqual(checkMessage(settings.message), null, part.attrs.id + " has an OSC address");
+      // A setting the widget's own panel would refuse must not ship in a template.
+      const config = Object.assign({}, widget.defaults, settings);
+      for (const [key, value] of Object.entries(settings)) {
+        const check = widget.checks && widget.checks[key];
+        if (check) assert.strictEqual(check(value, config), null, part.attrs.id + ": " + key + "=" + JSON.stringify(value));
+      }
       if (widget === slider) {
         const value = Number(settings.value);
         assert.ok(value >= Number(settings.min) && value <= Number(settings.max), part.attrs.id + " starts in range");
