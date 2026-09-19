@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { textInput } = require("../../lib/widgets/text-input");
-const { mount, lastArgs } = require("../helpers/widgets");
+const { mount, lastArgs, withWindow } = require("../helpers/widgets");
 
 /** Type into the box the way a browser reports it: one input event per key. */
 function type(el, text) {
@@ -214,4 +214,59 @@ test("detaching lets go of everything", () => {
   assert.strictEqual(el.value, "go");
   assert.strictEqual(ctx.listening(), 0);
   for (const type of ["keydown", "change", "input", "blur"]) assert.strictEqual(el.listenerCount(type), 0, type);
+});
+
+// --- review fixes -------------------------------------------------------------
+
+test("a press released outside the box does not turn later typing into cues", () => {
+  withWindow((win) => {
+    const { el, ctx } = mount(textInput);
+    el.fire("pointerdown");
+    win.fire("pointerup");
+    for (const text of ["G", "GO"]) {
+      el.value = text;
+      el.fire("input");
+    }
+    assert.deepStrictEqual(ctx.sent, []);
+    el.fire("keydown", { key: "Enter" });
+    assert.deepStrictEqual(lastArgs(ctx), [{ type: "s", value: "GO" }]);
+  });
+});
+
+test("Enter on an empty box sends nothing under any argument type", () => {
+  for (const argType of ["s", "bool", "none", "i", "f"]) {
+    const { el, ctx } = mount(textInput, { argType, value: "" });
+    for (const empty of ["", "   "]) {
+      el.value = empty;
+      el.fire("keydown", { key: "Enter" });
+    }
+    assert.deepStrictEqual(ctx.sent, [], argType + ": an empty box is not F, not \"\" and not a bare address");
+  }
+});
+
+test("clearing the box is kept, so a reload does not bring the old text back", () => {
+  const { el, ctx } = mount(textInput, { value: "GO" });
+  el.value = "";
+  el.fire("input");
+  el.fire("change");
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.strictEqual(ctx.config.value, "");
+});
+
+test("the Enter that confirms an IME composition does not send", () => {
+  const { el, ctx } = mount(textInput);
+  el.value = "\u30af\u30ea\u30c3\u30d7";
+  el.fire("keydown", { key: "Enter", isComposing: true });
+  el.fire("keydown", { key: "Enter", keyCode: 229 });
+  assert.deepStrictEqual(ctx.sent, []);
+  el.fire("keydown", { key: "Enter" });
+  assert.strictEqual(ctx.sent.length, 1);
+});
+
+test("text the argument type cannot carry is not stored either", () => {
+  const { el, ctx } = mount(textInput, { argType: "f", value: "1.5" });
+  el.value = "GO";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.strictEqual(ctx.config.value, "1.5");
 });

@@ -379,3 +379,19 @@ follow the rig with **Listen** on: a value arriving at Message fills the box
 or selects the option that sends it, and goes no further. A box you are in
 the middle of typing into is left alone until you commit or leave it, and a
 value no option sends leaves the dropdown where it was.
+
+A typed DMX level is refused, not pinned, when it is out of range: without
+both Min and Max the box's limits are `0`-`255`, so a slipped `-1` is not a
+blackout and `300` is not full. While **Output** includes DMX the panel
+likewise refuses a dropdown option that is not a number from `0` to `255`.
+The settings are checked against each other: a Min, Max, Step, Output or
+Argument type that the current Value could not be sent under is refused until
+the Value is changed, and a value arriving from the rig is brought inside the
+limits and onto the Step, so Enter on what the box shows always sends.
+
+An empty text box sends nothing under any argument type, and the Enter that
+confirms an IME composition is not a send. Two dropdown options may not send
+the same value -- the value is all that is stored, so the second could never
+be shown again -- and a label may contain `=`: the value is what follows the
+last one. Walking a dropdown with the arrow keys sends only the row you stop
+on, when you press Enter or leave the list; a click or a tap sends at once.

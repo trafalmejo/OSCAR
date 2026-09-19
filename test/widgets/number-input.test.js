@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { numberInput } = require("../../lib/widgets/number-input");
-const { mount, lastArgs } = require("../helpers/widgets");
+const { mount, lastArgs, withWindow } = require("../helpers/widgets");
 
 /** Type into the box the way a browser reports it: one input event per key. */
 function type(el, text) {
@@ -223,9 +223,45 @@ test("with no range, the number typed is the DMX level", () => {
   el.value = "128";
   el.fire("keydown", { key: "Enter" });
   assert.deepStrictEqual(ctx.sent, [{ dmx: { protocol: "artnet", host: "", universe: 1, channel: 3, levels: [128] } }]);
-  el.value = "1000";
+});
+
+test("on DMX with no range, a number that is not a level is refused, never pinned", () => {
+  for (const transport of ["dmx", "both"]) {
+    const { el, ctx } = mount(numberInput, { transport, value: 10 });
+    for (const typed of ["-1", "300", "255.5"]) {
+      el.value = typed;
+      el.fire("keydown", { key: "Enter" });
+    }
+    assert.deepStrictEqual(ctx.sent, [], transport + ": -1 is not a blackout and 300 is not full");
+    assert.strictEqual(ctx.config.value, 10);
+    assert.strictEqual(el.min, "0", "the browser marks it, as it does for Min and Max");
+    assert.strictEqual(el.max, "255");
+  }
+
+  // One limit alone does not make a range, so 0-255 still binds.
+  const { el, ctx } = mount(numberInput, { transport: "dmx", min: 10, value: 10 });
+  assert.strictEqual(el.min, "10");
+  assert.strictEqual(el.max, "255");
+  el.value = "300";
   el.fire("keydown", { key: "Enter" });
-  assert.deepStrictEqual(ctx.sent[1].dmx.levels, [255], "past the top pins at full");
+  assert.deepStrictEqual(ctx.sent, []);
+
+  // On OSC alone there is no such limit.
+  const osc = mount(numberInput);
+  osc.el.value = "300";
+  osc.el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(lastArgs(osc.ctx), [{ type: "f", value: 300 }]);
+});
+
+test("the panel refuses what would leave a DMX box holding a number that is not a level", () => {
+  const { checks } = numberInput;
+  assert.match(checks.value(300, { transport: "dmx", argType: "f" }), /DMX level is 0-255/);
+  assert.match(checks.value(-1, { transport: "both", argType: "f" }), /at least 0/);
+  assert.strictEqual(checks.value(300, { transport: "dmx", min: 0, max: 1000, argType: "f" }), null);
+  assert.match(checks.transport("dmx", { transport: "dmx", value: 300, argType: "f" }), /change the value first/);
+  assert.strictEqual(checks.transport("osc", { transport: "osc", value: 300, argType: "f" }), null);
+  // Clearing Max takes the range away and brings 0-255 back.
+  assert.match(checks.max("", { transport: "dmx", min: 0, max: "", value: 300, argType: "f" }), /change the value first/);
 });
 
 test("with Min and Max set, the level is where the number sits between them", () => {
@@ -303,4 +339,94 @@ test("detaching lets go of everything", () => {
   for (const type of ["keydown", "change", "input", "pointerdown", "pointerup"]) {
     assert.strictEqual(el.listenerCount(type), 0, type);
   }
+});
+
+// --- review fixes -------------------------------------------------------------
+
+test("a press released outside the box does not turn later typing into cues", () => {
+  withWindow((win) => {
+    const { el, ctx, detach } = mount(numberInput, { transport: "both", min: 0, max: 100 });
+    // Dragging to select the text: down on the box, up somewhere else, so
+    // the box itself never hears the release.
+    el.fire("pointerdown");
+    win.fire("pointerup");
+    type(el, "50");
+    assert.deepStrictEqual(ctx.sent, [], "the half-typed 5 stayed off the wire");
+
+    el.fire("keydown", { key: "Enter" });
+    assert.strictEqual(ctx.sent.length, 1);
+    assert.deepStrictEqual(ctx.sent[0].dmx.levels, [128]);
+
+    detach();
+    for (const kind of ["pointerup", "pointercancel", "blur"]) assert.strictEqual(win.listenerCount(kind), 0, kind);
+  });
+});
+
+test("typing is never a step, even with the pointer still down", () => {
+  const { el, ctx } = mount(numberInput);
+  el.fire("pointerdown");
+  for (const text of ["1", "12", "12.5"]) {
+    el.value = text;
+    el.fire("input", { inputType: "insertText" });
+  }
+  el.value = "12.";
+  el.fire("input", { inputType: "deleteContentBackward" });
+  assert.deepStrictEqual(ctx.sent, []);
+
+  // A real step, which says nothing about insertion, still goes at once.
+  el.value = "13";
+  el.fire("input");
+  assert.strictEqual(ctx.sent.length, 1);
+});
+
+test("leaving the box ends a hold the box never saw released", () => {
+  const { el, ctx } = mount(numberInput);
+  el.fire("pointerdown");
+  el.fire("blur");
+  type(el, "12");
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("a number the argument type cannot carry is not stored either", () => {
+  const { el, ctx } = mount(numberInput, { argType: "i", value: 5 });
+  el.value = "3000000000";
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.strictEqual(ctx.config.value, 5, "the project never holds what its own panel would refuse");
+  assert.notStrictEqual(numberInput.checks.value(3000000000, { argType: "i" }), null);
+});
+
+test("an incoming value is brought onto the step, so Enter can send it back", () => {
+  const { el, ctx } = mount(numberInput, { listen: true, min: 0, max: 100, step: 5 });
+  ctx.receive("/number1", [7]);
+  assert.strictEqual(ctx.config.value, 5);
+  assert.strictEqual(el.value, "5");
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(lastArgs(ctx), [{ type: "f", value: 5 }]);
+
+  // Rounding up must not leave the range: 99 is nearer 100, 100 is off a
+  // step of 30 from 0, and the last step inside is 90.
+  const coarse = mount(numberInput, { listen: true, min: 0, max: 100, step: 30 });
+  coarse.ctx.receive("/number1", [99]);
+  assert.strictEqual(coarse.ctx.config.value, 90);
+
+  const fine = mount(numberInput, { listen: true, step: 0.1 });
+  fine.ctx.receive("/number1", [0.31]);
+  assert.strictEqual(fine.ctx.config.value, 0.3, "not 0.30000000000000004");
+});
+
+test("an incoming value no step can rescue is ignored", () => {
+  const { ctx } = mount(numberInput, { listen: true, argType: "i", value: 42 });
+  ctx.receive("/number1", [3000000000]);
+  assert.strictEqual(ctx.config.value, 42);
+});
+
+test("a limit or a step that would strand the current Value is refused", () => {
+  const { checks } = numberInput;
+  assert.match(checks.min(10, { min: 10, max: "", step: "", value: 0, argType: "f" }), /at least 10; change the value first/);
+  assert.match(checks.max(5, { min: "", max: 5, step: "", value: 9, argType: "f" }), /at most 5; change the value first/);
+  assert.match(checks.step(5, { min: "", max: "", step: 5, value: 7, argType: "f" }), /steps from 0; change the value first/);
+  assert.match(checks.min(1, { min: 1, max: "", step: 5, value: 5, argType: "f" }), /steps from 1/, "Min moves the base the step counts from");
+  assert.strictEqual(checks.min(0, { min: 0, max: 100, step: 5, value: 10, argType: "f" }), null);
+  assert.strictEqual(checks.step("", { min: "", max: "", step: "", value: 7, argType: "f" }), null);
 });

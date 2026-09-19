@@ -168,3 +168,91 @@ test("detaching lets go of everything", () => {
   assert.strictEqual(ctx.listening(), 0);
   assert.strictEqual(el.listenerCount("input"), 0);
 });
+
+// --- review fixes -------------------------------------------------------------
+
+test("on DMX every option has to be a level, and Output is judged from both sides", () => {
+  const { checks } = dropdown;
+  for (const transport of ["dmx", "both"]) {
+    assert.match(checks.options("A=abc", { argType: "s", transport }), /not a DMX level/);
+    assert.match(checks.options("A=300", { argType: "i", transport }), /0 to 255/);
+    assert.match(checks.options("A=-5", { argType: "i", transport }), /0 to 255/);
+    assert.match(checks.transport(transport, { options: "A=abc", argType: "s", transport }), /not a DMX level/);
+    assert.strictEqual(checks.options("Off=0, Full=255", { argType: "i", transport }), null);
+  }
+  assert.strictEqual(checks.options("A=abc", { argType: "s", transport: "osc" }), null);
+  assert.strictEqual(checks.transport("osc", { options: "A=abc", argType: "s", transport: "osc" }), null);
+});
+
+test("an option that is not a level puts nothing on DMX, never the nearest end", () => {
+  // A project file edited by hand gets past the panel; the send path holds.
+  const { el, ctx } = mount(dropdown, { options: "A=300, B=-5, C=7", value: "7", transport: "dmx" });
+  for (const value of ["300", "-5"]) {
+    el.value = value;
+    el.fire("input");
+  }
+  assert.deepStrictEqual(ctx.sent, [], "300 is not full and -5 is not a blackout");
+});
+
+test("two options may not send the same value", () => {
+  assert.match(dropdown.checks.options("a=1, b=1, c=3", { argType: "i" }), /Two options send "1"/);
+});
+
+test("a label may hold an equals sign; the value is what follows the last one", () => {
+  assert.deepStrictEqual(parseOptions("EQ=flat=1, Gain=+3=2"), [
+    { label: "EQ=flat", value: "1" },
+    { label: "Gain=+3", value: "2" },
+  ]);
+});
+
+test("arrowing through a closed list sends only the row it stops on", () => {
+  const { el, ctx } = mount(dropdown, { options: "a=1, b=2, c=3", value: "1" });
+  for (const value of ["2", "3"]) {
+    el.fire("keydown", { key: "ArrowDown" });
+    el.value = value;
+    el.fire("input");
+  }
+  assert.deepStrictEqual(ctx.sent, [], "b was passed, not chosen");
+  assert.strictEqual(ctx.config.value, "1");
+
+  el.fire("keydown", { key: "Enter" });
+  assert.deepStrictEqual(ctx.sent.map((m) => m.args), [[{ type: "i", value: 3 }]]);
+  assert.strictEqual(ctx.config.value, "3");
+  el.fire("blur");
+  assert.strictEqual(ctx.sent.length, 1, "already sent; leaving adds nothing");
+});
+
+test("leaving the list sends the row the keyboard stopped on", () => {
+  const { el, ctx } = mount(dropdown, { options: "a=1, b=2, c=3", value: "1" });
+  el.fire("keydown", { key: "ArrowDown" });
+  el.value = "2";
+  el.fire("input");
+  el.fire("blur");
+  assert.deepStrictEqual(lastArgs(ctx), [{ type: "i", value: 2 }]);
+});
+
+test("a pointer pick after keyboard use goes out at once, as does one made with Enter in an open list", () => {
+  const { el, ctx } = mount(dropdown, { options: "a=1, b=2, c=3", value: "1" });
+  el.fire("keydown", { key: "ArrowDown" });
+  el.fire("pointerdown");
+  el.value = "3";
+  el.fire("input");
+  assert.strictEqual(ctx.sent.length, 1);
+
+  el.fire("keydown", { key: "ArrowUp" });
+  el.fire("keydown", { key: "Enter" });
+  el.value = "2";
+  el.fire("input");
+  assert.strictEqual(ctx.sent.length, 2);
+});
+
+test("a row passed by keyboard is dropped once the rig has spoken", () => {
+  const { el, ctx } = mount(dropdown, { options: "a=1, b=2, c=3", value: "1", listen: true });
+  el.fire("keydown", { key: "ArrowDown" });
+  el.value = "2";
+  el.fire("input");
+  ctx.receive("/dropdown1", [3]);
+  el.fire("blur");
+  assert.deepStrictEqual(ctx.sent, []);
+  assert.strictEqual(ctx.config.value, "3");
+});
