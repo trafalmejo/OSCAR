@@ -192,3 +192,55 @@ input[type=color]::-moz-color-swatch {
   border: none;
   border-radius: 2px;
 }
+
+/* --- text input, number input, dropdown --- */
+/* The typed controls. Same family as the slider: a light grey ground that
+   brightens on hover, the browser's own control colour where it draws
+   something (the focus edge, the dropdown's arrow), and a box tall enough to
+   be a target for a thumb. A value the number box will not send -- outside
+   its limits, off its step, or not a number -- is painted with a red edge by
+   the browser's own validity rules, so the operator sees why nothing went
+   out without the widget having to say so. */
+.oscar-text-input,
+.oscar-number-input,
+.oscar-dropdown {
+  box-sizing: border-box;
+  min-width: 8em;
+  padding: 0.4em 0.6em;
+  font: inherit;
+  font-size: 1.1em;
+  color: #222;
+  background: #d3d3d3;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  outline: none;
+  opacity: 0.8;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+}
+
+.oscar-text-input:hover,
+.oscar-number-input:hover,
+.oscar-dropdown:hover,
+.oscar-text-input:focus,
+.oscar-number-input:focus,
+.oscar-dropdown:focus {
+  opacity: 1;
+}
+
+.oscar-text-input:focus,
+.oscar-number-input:focus,
+.oscar-dropdown:focus {
+  border-color: #1a73e8;
+  border-color: AccentColor;
+}
+
+.oscar-dropdown {
+  cursor: pointer;
+  accent-color: AccentColor;
+}
+
+.oscar-number-input:invalid,
+.oscar-number-input:out-of-range {
+  border-color: #c62828;
+}

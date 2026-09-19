@@ -406,3 +406,60 @@ OK still sends the colour that was picked.
 **Argument type** int needs **Range** `0 to 255`. Whole numbers on `0 to 1`
 would round every channel to 0 or 1 -- eight colours in all, and a middling
 Alpha going out as 0 -- so the panel refuses the combination.
+
+## Typing a value (text, number and dropdown widgets)
+
+Three widgets take a value directly instead of from a gesture, for the cues
+you already know: a clip name, cue 12, exactly 127.
+
+| Widget | Sends |
+| --- | --- |
+| **Text Input** | whatever you type, as a string by default, or as any other argument type |
+| **Number Input** | the number you type, as a float or an int, with optional **Min**, **Max** and **Step** |
+| **Dropdown** | the value of the option you pick |
+
+The text and number boxes send when you press **Enter** or leave the box,
+never while you type: `12.5` would otherwise go out as `1`, then `12`, then
+`12.5`, and the first two are real cues a rig will act on. Enter sends even
+when the value has not changed, because re-sending a cue on purpose is a
+normal thing to do. A click on the number box's stepper arrows is one
+finished value and goes out at once. An empty or half-typed box sends
+nothing, and neither does a number outside Min-Max or off the Step: the box
+keeps what you typed and shows a red edge, rather than the rig going to a
+value nobody typed.
+
+A dropdown's options are typed on one line in its **Options** setting, as
+`Label=value` pairs separated by commas or semicolons -- `Red=1, Green=2,
+Blue=3` -- or bare values, `1, 2, 3`, which are their own labels. The list is
+built from that setting every time the widget is drawn and is never stored
+in the markup, so it cannot drift from what the panel says.
+
+The panel refuses a value the chosen **Argument type** cannot carry -- `abc`
+as a float -- and checks the other way round too: switching a box that holds
+`GO` to float, or a dropdown whose options say `Red, Green` to int, is
+refused rather than leaving a widget that looks live and sends nothing.
+
+The number box and the dropdown can drive DMX like the slider (**Output**).
+The number is the level: `0`-`255` as typed, or, when Min and Max are both
+set, scaled within them, so a box that takes `0`-`100` puts `50` at half. A
+dropdown of `Off=0, Half=128, Full=255` is a three-step dimmer. All three
+follow the rig with **Listen** on: a value arriving at Message fills the box
+or selects the option that sends it, and goes no further. A box you are in
+the middle of typing into is left alone until you commit or leave it, and a
+value no option sends leaves the dropdown where it was.
+
+A typed DMX level is refused, not pinned, when it is out of range: without
+both Min and Max the box's limits are `0`-`255`, so a slipped `-1` is not a
+blackout and `300` is not full. While **Output** includes DMX the panel
+likewise refuses a dropdown option that is not a number from `0` to `255`.
+The settings are checked against each other: a Min, Max, Step, Output or
+Argument type that the current Value could not be sent under is refused until
+the Value is changed, and a value arriving from the rig is brought inside the
+limits and onto the Step, so Enter on what the box shows always sends.
+
+An empty text box sends nothing under any argument type, and the Enter that
+confirms an IME composition is not a send. Two dropdown options may not send
+the same value -- the value is all that is stored, so the second could never
+be shown again -- and a label may contain `=`: the value is what follows the
+last one. Walking a dropdown with the arrow keys sends only the row you stop
+on, when you press Enter or leave the list; a click or a tap sends at once.
