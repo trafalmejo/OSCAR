@@ -17408,7 +17408,33 @@ function byType(type) {
   return null;
 }
 
+/**
+ * Keep GrapesJS's select tool off for as long as the surface is being
+ * previewed.
+ *
+ * Preview mode stops the tool, but GrapesJS starts its default command again
+ * whenever a frame loads -- a page turn, a project load -- without asking
+ * whether a preview is on. While it runs it cancels every click in the
+ * canvas, so that a click selects instead of doing what clicking does. The
+ * one control that depends on a click's default action is the colour picker,
+ * whose dialog then never opens.
+ *
+ * Stopped through the editor's own stopDefault(), not by stopping the command:
+ * that also clears the flag GrapesJS checks when the preview ends, so leaving
+ * preview brings the select tool back as it should.
+ */
+function noSelectingWhile(editor, isPreviewing) {
+  editor.on("command:run:select-comp", function () {
+    if (!isPreviewing()) return;
+    // After the run that announced itself has finished.
+    setTimeout(function () {
+      if (isPreviewing()) editor.getModel().stopDefault();
+    }, 0);
+  });
+}
+
 module.exports = {
+  noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,
@@ -17841,7 +17867,7 @@ var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
 var htmlDocument = require("../../lib/html-document");
-var { followSurfaceStyle, sectionLights } = require("./adapters/grapesjs");
+var { followSurfaceStyle, sectionLights, noSelectingWhile } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
@@ -18030,6 +18056,11 @@ function initGrape(ipServer, socketPort) {
 
   // The chosen style is saved on the wrapper; the canvas body follows it.
   followSurfaceStyle(editor, widgetStyles.copyToBody);
+
+  // While previewing, a click has to do what clicking does; see the adapter.
+  noSelectingWhile(editor, function () {
+    return editor.Commands.isActive("preview");
+  });
 
   // A light on each protocol section of the settings panel, so a collapsed
   // section still says whether the widget uses it. Watches the views column,
@@ -19097,6 +19128,13 @@ function initGrape(ipServer, socketPort) {
     container: "#gjs-oscar-preview",
     allowScripts: 1,
     panels: { defaults: [] },
+    // No select tool on this page, ever. GrapesJS restarts its default command
+    // whenever a page or project loads, preview mode or not, and that command
+    // cancels every click in the canvas so it can select what was clicked.
+    // A colour picker opens as the default action of a click, so with the tool
+    // running it never opened on a tablet; buttons, sliders and text boxes
+    // work by other means, which is why it went unnoticed.
+    defaultCommand: "",
     // The same fonts, styles and widgets as the editor, so a tablet shows the
     // surface in the style it was designed in.
     canvas: { styles: widgetStyles.canvasStylesheets() },

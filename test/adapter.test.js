@@ -922,3 +922,39 @@ test("the lights follow the selected widget: one per direction it has, green whi
   paint();
   assert.deepStrictEqual(lights(osc), [["IN", "true"]]);
 });
+
+// --- a click has to stay a click while previewing ---------------------------------
+
+test("the select tool is stopped again whenever GrapesJS restarts it during a preview", async () => {
+  // GrapesJS runs its default command on every frame load, preview or not,
+  // and that command cancels every click in the canvas. A colour picker opens
+  // as the default action of a click, so it never opened on a tablet.
+  const { noSelectingWhile } = require("../public/src/adapters/grapesjs");
+  const handlers = {};
+  let previewing = false;
+  let stopped = 0;
+  const editor = {
+    on: (event, fn) => (handlers[event] = fn),
+    getModel: () => ({ stopDefault: () => stopped++ }),
+  };
+  noSelectingWhile(editor, () => previewing);
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+  handlers["command:run:select-comp"]();
+  await tick();
+  assert.strictEqual(stopped, 0, "while editing, selecting is the point");
+
+  previewing = true;
+  handlers["command:run:select-comp"]();
+  await tick();
+  assert.strictEqual(stopped, 1, "restarted by a page turn mid-preview: stopped again");
+
+  // Stopped through stopDefault(), which also clears the flag GrapesJS checks
+  // when the preview ends; stopping the command alone would leave the editor
+  // unable to select afterwards. And if the preview ended in the meantime,
+  // the tool is left alone.
+  handlers["command:run:select-comp"]();
+  previewing = false;
+  await tick();
+  assert.strictEqual(stopped, 1);
+});

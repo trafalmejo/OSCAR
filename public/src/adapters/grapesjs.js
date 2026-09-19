@@ -934,7 +934,33 @@ function byType(type) {
   return null;
 }
 
+/**
+ * Keep GrapesJS's select tool off for as long as the surface is being
+ * previewed.
+ *
+ * Preview mode stops the tool, but GrapesJS starts its default command again
+ * whenever a frame loads -- a page turn, a project load -- without asking
+ * whether a preview is on. While it runs it cancels every click in the
+ * canvas, so that a click selects instead of doing what clicking does. The
+ * one control that depends on a click's default action is the colour picker,
+ * whose dialog then never opens.
+ *
+ * Stopped through the editor's own stopDefault(), not by stopping the command:
+ * that also clears the flag GrapesJS checks when the preview ends, so leaving
+ * preview brings the select tool back as it should.
+ */
+function noSelectingWhile(editor, isPreviewing) {
+  editor.on("command:run:select-comp", function () {
+    if (!isPreviewing()) return;
+    // After the run that announced itself has finished.
+    setTimeout(function () {
+      if (isPreviewing()) editor.getModel().stopDefault();
+    }, 0);
+  });
+}
+
 module.exports = {
+  noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,

@@ -175,3 +175,11 @@ for (const template of Object.keys(PAGES)) {
     assert.doesNotMatch(refs, /bootstrap|popper/i);
   });
 }
+
+// The page a tablet opens is for driving a show, never for editing it. With a
+// select tool there, GrapesJS cancels every click in the canvas, and a colour
+// picker -- which opens as the default action of a click -- never opens.
+test("preview.ejs: the page has no select tool to cancel an operator's clicks", () => {
+  assert.match(read("src/oscar_preview.js"), /defaultCommand:\s*""/);
+  assert.doesNotMatch(read("src/oscar_editor.js"), /defaultCommand:\s*""/, "the editor keeps its select tool");
+});

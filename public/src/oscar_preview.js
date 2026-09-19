@@ -38,6 +38,13 @@ function initGrape(ipServer, socketPort) {
     container: "#gjs-oscar-preview",
     allowScripts: 1,
     panels: { defaults: [] },
+    // No select tool on this page, ever. GrapesJS restarts its default command
+    // whenever a page or project loads, preview mode or not, and that command
+    // cancels every click in the canvas so it can select what was clicked.
+    // A colour picker opens as the default action of a click, so with the tool
+    // running it never opened on a tablet; buttons, sliders and text boxes
+    // work by other means, which is why it went unnoticed.
+    defaultCommand: "",
     // The same fonts, styles and widgets as the editor, so a tablet shows the
     // surface in the style it was designed in.
     canvas: { styles: widgetStyles.canvasStylesheets() },
