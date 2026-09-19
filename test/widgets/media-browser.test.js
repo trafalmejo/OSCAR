@@ -454,3 +454,54 @@ test("columns has to be a whole number from 1 to 12", () => {
   for (const ok of [1, 3, "4", 12]) assert.strictEqual(check(ok), null, String(ok));
   for (const bad of [0, 13, 2.5, "", null, "abc", -1]) assert.match(check(bad), /whole number/, JSON.stringify(bad));
 });
+
+// --- found in review ---------------------------------------------------------
+
+test("two items are duplicates when they send the same value, however each was typed", () => {
+  const check = mediaBrowser.checks.items;
+  assert.match(check("A|07; B|7", { argType: "i" }), /Two items send "7"/);
+  assert.match(check("A|1.4; B|1", { argType: "i" }), /Two items send "1"/, "an int is rounded on its way out");
+  assert.match(check("A|1.0; B|1", { argType: "f" }), /Two items send "1"/);
+  assert.match(check("A; B|1.2", { argType: "i" }), /Two items send "1"/, "a position is a value too");
+  // As strings these are different messages, and as floats so are 1.4 and 1.
+  assert.strictEqual(check("A|07; B|7", { argType: "s" }), null);
+  assert.strictEqual(check("A|1.4; B|1", { argType: "f" }), null);
+});
+
+test("the rig echoing what an int tile really sent finds that tile", () => {
+  const { el, ctx } = mount({ items: "A|1.4; B|5", listen: true });
+  ctx.receive("/clip", [1]);
+  assert.deepStrictEqual(selectedValues(el), ["A"]);
+  assert.deepStrictEqual(ctx.sent, []);
+});
+
+test("a data: URL with no comma does not swallow the items after it, and the panel names it", () => {
+  assert.deepStrictEqual(parseItems("A|1|data:image/png;base64; B|2; C"), [
+    { label: "A", value: "1", image: "data:image/png" },
+    { label: "base64", value: "2", image: "" },
+    { label: "B", value: "2", image: "" },
+    { label: "C", value: "4", image: "" },
+  ]);
+  assert.deepStrictEqual(
+    parseItems("A|1|data:image/png; B; C|3|thumbs/a,b.jpg").map((item) => item.label),
+    ["A", "B", "C"],
+    "a comma in a later item does not finish the URL either"
+  );
+  assert.strictEqual(safeImageUrl("data:image/png;base64"), "");
+  assert.strictEqual(safeImageUrl("data:image/png"), "");
+  assert.match(mediaBrowser.checks.items("A|1|data:image/png;base64; B|5", { argType: "i" }), /image for "A"/);
+
+  const { el } = mount({ items: "A|1|data:image/png; B|2" });
+  assert.strictEqual(el.children.length, 2);
+  assert.strictEqual(child(el.children[0], "img"), undefined);
+});
+
+test("a tap that sends nothing highlights nothing and tells no other device", () => {
+  // The panel refuses this; a project file edited by hand reaches here.
+  const { el, ctx } = mount({ items: "Forest|forest; Waves|2", argType: "i" });
+  el.children[1].fire("click");
+  el.children[0].fire("click");
+  assert.strictEqual(ctx.sent.length, 1);
+  assert.deepStrictEqual(selectedValues(el), ["Waves"], "the clip that did go out is still the one playing");
+  assert.deepStrictEqual(ctx.shared, [{ value: "2" }]);
+});
