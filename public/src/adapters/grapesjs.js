@@ -463,6 +463,7 @@ function register(definition) {
   return function (editor, options) {
     var ipserver = (options && options.ipserver) || "localhost";
     var deletions = definition.dmx ? deletionsOf(editor) : null;
+    var ownClass = definition.attributes && definition.attributes.class;
 
     // A widget with an Ip setting starts pointed at this machine. One without
     // -- a label, or a meter, which listens and never sends -- has nowhere to
@@ -477,16 +478,7 @@ function register(definition) {
 
     editor.DomComponents.addType(definition.name, {
       isComponent: function (el) {
-        if (!matches(definition, el)) return;
-        // A widget that builds its own children (ownsChildren, lib/widgets/
-        // index.js) has none as far as the project goes. Markup pasted in or
-        // imported -- a page saved from a browser, with the tiles the widget
-        // drew still inside it -- would otherwise have them parsed into
-        // components: stored, selectable, draggable out, and drawn a second
-        // time next to the ones the widget builds. The parser only descends
-        // into an element whose components are not already given.
-        if (definition.ownsChildren) return { type: definition.name, components: [] };
-        return { type: definition.name };
+        return parsed(definition, el);
       },
 
       model: {
@@ -510,6 +502,28 @@ function register(definition) {
           // The id is what the other devices know this widget by; it has to
           // reach the project file, or it never reaches them.
           pinId(model);
+
+          // A widget's own class is how its stylesheet finds it and how a
+          // project's HTML is recognised, not something to style through.
+          // GrapesJS styles a component through its classes whenever it has
+          // any, so every edit to one XY pad -- a resize, a move, a colour --
+          // went to the rule all pads share, and they changed together.
+          // Private keeps the class on the element but out of styling, so
+          // edits land on this one component; protected stops it being
+          // removed from the Classes list by accident.
+          //
+          // Flagged here, per component, rather than once when the plugin
+          // loads: loading a project creates the selector afresh, and a flag
+          // set on the earlier one is lost with it.
+          // A host that keeps no class list has nothing to flag.
+          var classes = ownClass ? model.get("classes") : null;
+          if (classes && typeof classes.forEach === "function") {
+            classes.forEach(function (selector) {
+              if (selector.get("name") === ownClass) {
+                selector.set({ private: true, protected: true });
+              }
+            });
+          }
 
           if (definition.ownsChildren) disown(model);
 
@@ -699,7 +713,55 @@ function exportSnapshot(editor) {
   };
 }
 
+/**
+ * What an element parsed from HTML becomes: this widget, or nothing.
+ *
+ * A widget whose label is its text takes the label from the element too, so
+ * pasted or templated code such as <button>Strobe</button> is a button called
+ * Strobe in its settings, not one showing Strobe while its Label field says
+ * something else.
+ *
+ * A widget that builds its own children (ownsChildren, lib/widgets/index.js)
+ * has none as far as the project goes. Markup pasted in or imported -- a page
+ * saved from a browser, with the tiles the widget drew still inside it --
+ * would otherwise have them parsed into components: stored, selectable,
+ * draggable out, and drawn a second time next to the ones the widget builds.
+ * The parser only descends into an element whose components are already given.
+ */
+function parsed(definition, el) {
+  if (!matches(definition, el)) return undefined;
+  var result = { type: definition.name };
+  if (definition.ownsChildren) result.components = [];
+  if (definition.text) {
+    var label = String(el.textContent || "").trim();
+    if (label) result[definition.text] = label;
+  }
+  return result;
+}
+
+/**
+ * Keep the canvas body in the surface's style. The style is saved on the
+ * wrapper component, but the body is outside anything GrapesJS stores, so it
+ * is brought back in line on every canvas load, project load, page turn (each
+ * page has its own wrapper, and so its own style) and attribute change.
+ * `copy(attributes, body)` does the copying.
+ */
+function followSurfaceStyle(editor, copy) {
+  function sync() {
+    var doc = editor.Canvas.getDocument();
+    var wrapper = editor.getWrapper();
+    if (doc && doc.body && wrapper) copy(wrapper.getAttributes(), doc.body);
+  }
+  editor.on("load canvas:frame:load project:load page:select", sync);
+  editor.on("component:update:attributes", function (component) {
+    if (component === editor.getWrapper()) sync();
+  });
+  sync();
+}
+
 module.exports = {
+  parsed: parsed,
+  followSurfaceStyle: followSurfaceStyle,
   exportSnapshot: exportSnapshot,
   register: register,
   widgetPlugins: widgetPlugins,

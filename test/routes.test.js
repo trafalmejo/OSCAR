@@ -64,6 +64,24 @@ test("GET /projects starts empty and reflects saves", async () => {
   });
 });
 
+test("GET /projects lists the templates first, and they survive having no projects", async () => {
+  const templatesDir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-route-templates-"));
+  fs.writeFileSync(path.join(templatesDir, "starter.html"), "<!doctype html><title>Starter</title>");
+
+  await withServer(
+    async (base) => {
+      let list = await (await fetch(base + "/projects")).json();
+      assert.deepStrictEqual(list.map((r) => [r._id, r.template]), [["starter", true]]);
+
+      await postJSON(base, "/save", { name: "Show A", "gjs-components": "[]" });
+      list = await (await fetch(base + "/projects")).json();
+      assert.deepStrictEqual(list.map((r) => r.name), ["Starter", "Show A"]);
+      assert.strictEqual(list[1].template, undefined, "a saved project is not a template");
+    },
+    { templatesDir }
+  );
+});
+
 test("POST /save refuses an unnamed project", async () => {
   await withServer(async (base) => {
     const body = await (await postJSON(base, "/save", { "gjs-components": "[]" })).json();

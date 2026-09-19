@@ -366,3 +366,40 @@ test("detaching stops the slider following the other devices", () => {
   assert.strictEqual(el.value, "10");
   assert.strictEqual(ctx.listening(), 0);
 });
+
+// --- slider fill -------------------------------------------------------------
+// toggle.css draws the filled part of the track from --oscar-fill, because a
+// native range input cannot style "the part before the thumb" in Chromium.
+
+const fill = (el) => el.style.properties["--oscar-fill"];
+
+test("the fill starts where the saved value puts the thumb", () => {
+  assert.strictEqual(fill(mount(slider, { min: 0, max: 100, value: 40 }).el), "40.00%");
+  assert.strictEqual(fill(mount(slider, { min: -50, max: 50, value: 0 }).el), "50.00%");
+});
+
+test("the fill follows the thumb as it is dragged", () => {
+  const { el } = mount(slider, { min: 0, max: 200, value: 0 });
+  el.value = "150";
+  el.fire("input");
+  assert.strictEqual(fill(el), "75.00%");
+});
+
+test("the fill follows the thumb, not the inverted value that is sent", () => {
+  // With Invert on, 25 on the track sends 75; the fill belongs under the finger.
+  const { el, ctx } = mount(slider, { min: 0, max: 100, invert: true, argType: "f" });
+  el.value = "25";
+  el.fire("input");
+  assert.strictEqual(fill(el), "25.00%");
+  assert.deepStrictEqual(ctx.sent[0].args, [{ type: "f", value: 75 }]);
+});
+
+test("a range with no width shows an empty track rather than breaking", () => {
+  assert.strictEqual(fill(mount(slider, { min: 10, max: 10, value: 10 }).el), "0.00%");
+});
+
+test("editing the range repaints the fill", () => {
+  const { el, ctx } = mount(slider, { min: 0, max: 100, value: 50 });
+  ctx.edit("max", 200);
+  assert.strictEqual(fill(el), "25.00%");
+});

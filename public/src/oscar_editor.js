@@ -1,18 +1,29 @@
 window.$ = $ = window.jQuery = require("jquery");
 
-// These plugins attach themselves to whichever jQuery they are handed. The
-// bundle carries its own copy of jQuery, so they must be required here rather
-// than loaded as separate <script> tags -- otherwise they extend the page's
-// jQuery and $.alert/$.confirm/.bootstrapTable go missing on this one.
-require("bootstrap-table");
-// jquery-confirm's CommonJS build exports an initialiser instead of running
-// itself, so it has to be invoked with the jQuery it should extend.
+// jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
+// carries its own copy of jQuery, so it must be required here rather than
+// loaded as a separate <script> tag -- otherwise it extends the page's jQuery
+// and $.alert/$.confirm go missing on this one. Its CommonJS build exports an
+// initialiser instead of running itself.
 require("jquery-confirm")(window, $);
+// Every $.alert and $.confirm draws with OSCAR's theme (css/oscar_theme.css)
+// without each call site having to ask for it. jquery-confirm sizes its box
+// with Bootstrap grid classes unless told otherwise, and with Bootstrap gone
+// those classes have no width, so a prompt stretched across the whole screen.
+window.jconfirm.defaults = { theme: "oscar", useBootstrap: false, boxWidth: "420px" };
 
 // GrapesJS 0.21+ no longer ships Font Awesome, so OSCAR's icons are inline SVG.
 var ICONS = {
-  save: "M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z",
-  open: "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
+  // Save and Load are a pair of folders, arrow up to send a project, arrow
+  // down to bring one back. mdi-folder-upload and mdi-folder-download,
+  // @mdi/svg 7.4.47 (Apache-2.0), copied from the package.
+  save: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4H10L12,6H20M10.75,13H14V17H16V13H19.25L15,8.75",
+  open: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H20M19.25,13H16V9H14V13H10.75L15,17.25",
+  // mdi-palette and mdi-restore, @mdi/svg 7.4.47 (Apache-2.0): the widget
+  // style gallery, and putting a widget back on its surface's style.
+  palette: "M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 17.5,12M14.5,8A1.5,1.5 0 0,1 13,6.5A1.5,1.5 0 0,1 14.5,5A1.5,1.5 0 0,1 16,6.5A1.5,1.5 0 0,1 14.5,8M9.5,8A1.5,1.5 0 0,1 8,6.5A1.5,1.5 0 0,1 9.5,5A1.5,1.5 0 0,1 11,6.5A1.5,1.5 0 0,1 9.5,8M6.5,12A1.5,1.5 0 0,1 5,10.5A1.5,1.5 0 0,1 6.5,9A1.5,1.5 0 0,1 8,10.5A1.5,1.5 0 0,1 6.5,12M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A1.5,1.5 0 0,0 13.5,19.5C13.5,19.11 13.35,18.76 13.11,18.5C12.88,18.23 12.73,17.88 12.73,17.5A1.5,1.5 0 0,1 14.23,16H16A5,5 0 0,0 21,11C21,6.58 16.97,3 12,3Z",
+  restore: "M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z",
+  // mdi-download: Export, which hands over a file.
   download: "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
   pages:
@@ -215,6 +226,10 @@ function checkForUpdate() {
 // The same module the server uses to stamp and check project files, so the
 // format number and the "is this a project?" rule can never drift apart.
 var projectFormat = require("../../lib/project-format");
+var projectsTable = require("../../lib/projects-table");
+var widgetStyles = require("../../lib/widget-styles");
+var htmlDocument = require("../../lib/html-document");
+var { followSurfaceStyle } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
@@ -238,12 +253,58 @@ function postJSON(url, body) {
 
 function initGrape(ipServer, socketPort) {
   editor = grapesjs.init({
+    // GrapesJS fetches Font Awesome from a CDN by default, which fails without
+    // a word at a venue with no internet. The few icons it still draws that
+    // way are supplied by css/oscar_theme.css instead.
+    cssIcons: "",
+    // The outline on a selected component is drawn inside the canvas, which
+    // cannot see the editor's theme variables, so GrapesJS's own light blue
+    // stayed while the handles and toolbar turned pink. canvasCss is added
+    // after GrapesJS's rule and is editor-only: it never reaches a saved or
+    // exported project. The colour is read from the theme, not repeated here.
+    canvasCss:
+      ".gjs-selected { outline: 2px solid " +
+      (getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#ff3663") +
+      " !important; }",
     dragMode: "absolute",
+    // Code pasted into Import, and templates, are read with these.
+    //
+    // A whole document is reduced to its CSS and its body first (see
+    // lib/html-document.js for why GrapesJS must not read it as a document),
+    // and the style named on its <body> is put on the surface. data-gjs-min-x
+    // becomes the minX setting, since HTML attribute names cannot hold
+    // capitals. The rest are GrapesJS's own defaults, restated because this
+    // option replaces them.
+    parser: {
+      optionsHtml: {
+        preParser: function (input, context) {
+          var doc = htmlDocument.readDocument(input);
+          if (!doc) return input;
+          var wrapper = context && context.editor && context.editor.getWrapper();
+          if (wrapper) {
+            wrapper.setAttributes(widgetStyles.withSurfaceStyle(wrapper.getAttributes(), doc.bodyAttributes));
+          }
+          return doc.html;
+        },
+        htmlType: "text/html",
+        allowScripts: false,
+        allowUnsafeAttr: false,
+        allowUnsafeAttrValue: false,
+        keepEmptyTextNodes: false,
+        convertDataGjsAttributesHyphens: true,
+        convertAttributeValues: false,
+      },
+    },
     height: "100%",
     container: "#gjs",
     fromElement: true,
     allowScripts: 1,
-    canvas: { styles: ["assets/css/toggle.css"] },
+    // The canvas is its own document and loads nothing from the editor page:
+    // fonts, every style's tokens and the widgets all come in here.
+    canvas: { styles: widgetStyles.canvasStylesheets() },
+    // The surface follows its style too; see SURFACE_CSS for why this one
+    // rule cannot sit in a layer.
+    protectedCss: widgetStyles.SURFACE_CSS,
     assetManager: {
       assets: [
         "images/fruits/emoji-apple.png",
@@ -338,7 +399,7 @@ function initGrape(ipServer, socketPort) {
       "gjs-blocks-basic": { flexGrid: true },
       "grapesjs-preset-webpage": {
         blocks: [],
-        // Keep OSCAR's own palette (css/oscar_colors.css) rather than the
+        // Keep OSCAR's own palette (css/oscar_theme.css) rather than the
         // preset's theme.
         useCustomTheme: false,
         showStylesOnChange: true,
@@ -351,6 +412,9 @@ function initGrape(ipServer, socketPort) {
       },
     },
   });
+
+  // The chosen style is saved on the wrapper; the canvas body follows it.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
 
   var pn = editor.Panels;
   var modal = editor.Modal;
@@ -372,19 +436,19 @@ function initGrape(ipServer, socketPort) {
     $("#loader-table").hide();
   }
 
-  var tableReady = false;
-
   function openProjects(mode) {
+    projectsMode = mode;
+    // Save leaves templates out of the list, so one picked in Load must not
+    // linger as the name a project is saved under.
+    if (mode === "Save" && selectedTemplate) {
+      selectedTemplate = null;
+      templateUrl = null;
+      $("#project-name").val("");
+    }
     setModal(mode, "table-panel");
     $("#save-button").toggle(mode === "Save");
     $("#load-button").toggle(mode === "Load");
-
-    if (!tableReady) {
-      initTable();
-      tableReady = true;
-    } else {
-      $("#projects-table").bootstrapTable("refresh");
-    }
+    refreshProjects();
   }
 
   editor.Commands.add("open-projects", function (ed, sender, options) {
@@ -392,67 +456,163 @@ function initGrape(ipServer, socketPort) {
   });
 
   // ---- project table -----------------------------------------------------
-  function initTable() {
-    $("#projects-table").bootstrapTable({
-      url: "/projects",
-      height: 300,
-      columns: [
-        { title: "Name", field: "name", sortable: true },
-        { title: "Size", field: "size", sortable: true, formatter: sizeFormatter },
-        { title: "Saved", field: "date", sortable: true },
-        {
-          title: "",
-          field: "action",
-          clickToSelect: false,
-          events: window.operateEvents,
-          formatter: operateFormatter,
-        },
-      ],
-      pagination: false,
-      search: false,
-      sortable: true,
-      clickToSelect: true,
-      singleSelect: true,
-      onClickRow: function (row) {
-        $("#project-name").val(row.name).attr("id-project", row._id);
-      },
-      onLoadError: function (status, jqXHR) {
-        console.log("Could not load projects", jqXHR);
-      },
+  // A plain table rather than a plugin: it is one list with four columns.
+  // Every cell is filled with textContent, because a project's name is text a
+  // person typed. Sorting and formatting live in lib/projects-table.js.
+  var projectRows = [];
+  var projectsMode = "Save";
+  // The template picked in the list, if any. Kept apart from the project id
+  // because a template and a saved project can share a name.
+  var selectedTemplate = null;
+  var projectsProblem = null;
+  var projectSort = projectsTable.DEFAULT_SORT;
+  var projectsBody = document.querySelector("#projects-table tbody");
+
+  function refreshProjects() {
+    return fetch("/projects")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (rows) {
+        projectRows = Array.isArray(rows) ? rows : [];
+        projectsProblem = null;
+        renderProjects();
+      })
+      .catch(function (err) {
+        console.log("Could not load projects", err);
+        projectRows = [];
+        projectsProblem = "Could not load projects";
+        renderProjects();
+      });
+  }
+
+  function projectCell(text, className) {
+    var td = document.createElement("td");
+    if (className) td.className = className;
+    td.textContent = text === null || text === undefined ? "" : String(text);
+    return td;
+  }
+
+  function renderProjects() {
+    var selectedId = document.getElementById("project-name").getAttribute("id-project");
+
+    document.querySelectorAll("#projects-table th[data-sort]").forEach(function (th) {
+      if (th.getAttribute("data-sort") === projectSort.key) {
+        th.setAttribute("aria-sort", projectSort.direction);
+      } else {
+        th.removeAttribute("aria-sort");
+      }
+    });
+
+    projectsBody.textContent = "";
+
+    var rows = projectsTable.orderProjects(
+      projectRows,
+      projectSort.key,
+      projectSort.direction,
+      projectsMode === "Load"
+    );
+
+    if (projectsProblem || !rows.length) {
+      var empty = document.createElement("tr");
+      empty.className = "o-empty";
+      var message = projectCell(projectsProblem || "No saved projects yet");
+      message.colSpan = 4;
+      empty.appendChild(message);
+      projectsBody.appendChild(empty);
+      return;
+    }
+
+    rows.forEach(function (row) {
+        var tr = document.createElement("tr");
+        tr.tabIndex = 0;
+        tr.setAttribute(
+          "aria-selected",
+          String(row.template ? row._id === selectedTemplate : !selectedTemplate && row._id === selectedId)
+        );
+        var name = projectCell(row.name);
+        if (row.template) {
+          var badge = document.createElement("span");
+          badge.className = "o-badge";
+          badge.textContent = "Template";
+          name.appendChild(badge);
+        }
+        tr.appendChild(name);
+        tr.appendChild(projectCell(projectsTable.formatSize(row.size), "o-num"));
+        tr.appendChild(projectCell(row.date, "o-date"));
+
+        var actions = document.createElement("td");
+        actions.className = "o-actions";
+        tr.appendChild(actions);
+        tr.onclick = function () {
+          selectProject(row, tr);
+        };
+        tr.onkeydown = function (e) {
+          // Enter on the delete button belongs to the button.
+          if (e.target !== tr) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            selectProject(row, tr);
+          }
+        };
+        projectsBody.appendChild(tr);
+
+        // Templates ship with OSCAR and cannot be deleted.
+        if (row.template) return;
+
+        var remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "o-icon-btn";
+        remove.title = "Delete " + row.name;
+        remove.setAttribute("aria-label", "Delete " + row.name);
+        // A fixed SVG from ICONS, never anything a person typed.
+        remove.innerHTML = icon("remove", 16);
+        remove.onclick = function (e) {
+          e.stopPropagation();
+          confirmRemove(row);
+        };
+        actions.appendChild(remove);
+      });
+  }
+
+  // Marks the row in place rather than re-rendering, so a keyboard user's
+  // focus stays on the row they just chose.
+  function selectProject(row, tr) {
+    selectedTemplate = row.template ? row._id : null;
+    $("#project-name").val(row.name).attr("id-project", row.template ? "" : row._id);
+    templateUrl = row.template ? row.url : null;
+    projectsBody.querySelectorAll("tr[aria-selected]").forEach(function (other) {
+      other.setAttribute("aria-selected", String(other === tr));
     });
   }
 
-  function sizeFormatter(value) {
-    if (value !== 0 && !value) return "";
-    return value < 1024 ? value + " B" : Math.round(value / 1024) + " KB";
-  }
+  document.querySelectorAll("#projects-table th[data-sort] .o-sort").forEach(function (button) {
+    button.onclick = function () {
+      projectSort = projectsTable.nextSort(projectSort, button.parentNode.getAttribute("data-sort"));
+      renderProjects();
+    };
+  });
 
-  function operateFormatter() {
-    return '<a class="remove icon" href="javascript:void(0)" title="Remove">' + icon("remove") + "</a>";
-  }
-
-  window.operateEvents = {
-    "click .remove": function (e, value, row) {
-      $.confirm({
-        title: "Delete Project",
-        content:
-          "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
-        buttons: {
-          confirm: function () {
-            $.ajax({ type: "DELETE", url: "/remove/" + row._id })
-              .done(function (data) {
-                $("#projects-table").bootstrapTable("refresh");
-                $.alert(data.error || data.msg);
-              })
-              .fail(function () {
-                $.alert("Could not delete that project");
-              });
-          },
-          cancel: function () {},
+  function confirmRemove(row) {
+    $.confirm({
+      title: "Delete Project",
+      content:
+        "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
+      buttons: {
+        confirm: function () {
+          $.ajax({ type: "DELETE", url: "/remove/" + row._id })
+            .done(function (data) {
+              refreshProjects();
+              $.alert(data.error || data.msg);
+            })
+            .fail(function () {
+              $.alert("Could not delete that project");
+            });
         },
-      });
-    },
-  };
+        cancel: function () {},
+      },
+    });
+  }
 
   // ---- save --------------------------------------------------------------
   var projectName = document.getElementById("project-name");
@@ -499,7 +659,7 @@ function initGrape(ipServer, socketPort) {
           return;
         }
 
-        $("#projects-table").bootstrapTable("refresh");
+        refreshProjects();
         $.alert(res.msg);
         modal.close();
       })
@@ -510,8 +670,14 @@ function initGrape(ipServer, socketPort) {
   }
 
   // ---- load --------------------------------------------------------------
+  var templateUrl = null;
+
   document.getElementById("load-button").onclick = function () {
     var id = projectName.getAttribute("id-project");
+    if (templateUrl) {
+      confirmLoadTemplate(templateUrl);
+      return;
+    }
     if (!id) {
       $.alert("Pick a project from the list first");
       return;
@@ -735,6 +901,55 @@ function initGrape(ipServer, socketPort) {
   // storage manager the project changed.
   editor.on("page:add page:remove page:select page:update", renderPages);
 
+  /**
+   * Open a template: an HTML file with its CSS, read exactly the way Import
+   * reads pasted code. Everything in the current surface is replaced, and the
+   * name is cleared so the first save asks for a new one rather than
+   * suggesting the template's.
+   */
+  function confirmLoadTemplate(url) {
+    $.confirm({
+      title: "Load",
+      content:
+        "If you load this template, you will lose all unsaved changes in the current project.",
+      buttons: {
+        confirm: function () {
+          showLoader();
+
+          fetch(url)
+            .then(function (res) {
+              if (!res.ok) throw new Error("status " + res.status);
+              return res.text();
+            })
+            .then(function (html) {
+              hideLoader();
+              loadTemplate(html);
+              selectedTemplate = null;
+              templateUrl = null;
+              $("#project-name").val("").attr("id-project", "");
+              $.alert("Loaded successfully");
+              modal.close();
+            })
+            .catch(function () {
+              hideLoader();
+              $.alert("That template could not be opened");
+            });
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function loadTemplate(html) {
+    editor.select();
+    editor.Css.clear();
+    // Nothing from the surface being replaced carries over; the template's
+    // own style is put back while it is read.
+    editor.getWrapper().setAttributes({});
+    editor.setComponents(html);
+    editor.UndoManager.clear();
+  }
+
   // ---- preview mode ------------------------------------------------------
   // GrapesJS's preview hides the panels but leaves components draggable in
   // absolute mode, so dragging a button in preview pulls it apart.
@@ -815,6 +1030,189 @@ function initGrape(ipServer, socketPort) {
   });
 
   // ---- panel buttons -----------------------------------------------------
+  // ---- widget styles -----------------------------------------------------
+  // A style is chosen for the whole surface and recorded as two attributes on
+  // its body, so it is saved with the project and reaches the preview and
+  // every tablet with nothing else to set. lib/widget-styles.js lists the
+  // styles; assets/css/styles/ holds their values.
+
+  function surfaceStyle() {
+    var attrs = editor.getWrapper().getAttributes();
+    var style = attrs[widgetStyles.STYLE_ATTRIBUTE];
+    var appearance = attrs[widgetStyles.APPEARANCE_ATTRIBUTE];
+    return {
+      style: widgetStyles.isStyle(style) ? style : widgetStyles.DEFAULT_STYLE,
+      appearance: widgetStyles.isAppearance(appearance) ? appearance : widgetStyles.DEFAULT_APPEARANCE,
+    };
+  }
+
+  function applySurfaceStyle(style, appearance) {
+    var attrs = {};
+    attrs[widgetStyles.STYLE_ATTRIBUTE] = style;
+    attrs[widgetStyles.APPEARANCE_ATTRIBUTE] = appearance;
+    editor.getWrapper().addAttributes(attrs);
+  }
+
+  /**
+   * A small document showing the real widgets in one style: the same fonts,
+   * tokens and widget rules the canvas loads, so a card looks exactly like the
+   * surface will. Everything in it comes from the style registry, never from
+   * anything a person typed.
+   */
+  function stylePreviewDocument(style, appearance) {
+    var links = widgetStyles
+      .canvasStylesheets()
+      .map(function (href) {
+        return '<link rel="stylesheet" href="' + href + '">';
+      })
+      .join("");
+
+    return (
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      links +
+      "<style>" +
+      widgetStyles.SURFACE_CSS +
+      " body { height: 100vh; display: flex; align-items: center; justify-content: center;" +
+      " gap: 10px; padding: 8px; overflow: hidden; }" +
+      " .col { display: flex; flex-direction: column; gap: 8px; }" +
+      " button { min-height: 28px; padding: 0 10px; font-size: 12px; }" +
+      " input[type=range] { width: 64px; height: 22px; }" +
+      " .oscar-xypad { width: 56px; height: 56px; flex-shrink: 0; }" +
+      "</style></head>" +
+      "<body " +
+      widgetStyles.STYLE_ATTRIBUTE + '="' + style + '" ' +
+      widgetStyles.APPEARANCE_ATTRIBUTE + '="' + appearance + '">' +
+      '<div class="col"><button type="button">Off</button>' +
+      '<button type="button" class="toggle">On</button>' +
+      '<input type="range" min="0" max="100" value="60" style="--oscar-fill: 60%"></div>' +
+      '<div class="oscar-xypad" style="--oscar-x: 65%; --oscar-y: 35%"></div>' +
+      "</body></html>"
+    );
+  }
+
+  var stylePanel = null;
+
+  function buildStylePanel() {
+    var panel = document.createElement("div");
+    panel.className = "o-style-panel";
+
+    var segmented = document.createElement("div");
+    segmented.className = "o-segmented";
+    segmented.setAttribute("role", "group");
+    segmented.setAttribute("aria-label", "Appearance");
+    widgetStyles.APPEARANCES.forEach(function (appearance) {
+      var segment = document.createElement("button");
+      segment.type = "button";
+      segment.className = "o-segment";
+      segment.setAttribute("data-appearance", appearance);
+      segment.textContent = appearance === "dark" ? "Dark" : "Light";
+      segment.onclick = function () {
+        applySurfaceStyle(surfaceStyle().style, appearance);
+        refreshStylePanel();
+      };
+      segmented.appendChild(segment);
+    });
+
+    var grid = document.createElement("div");
+    grid.className = "o-style-grid";
+    widgetStyles.STYLES.forEach(function (entry) {
+      var card = document.createElement("button");
+      card.type = "button";
+      card.className = "o-style-card";
+      card.setAttribute("data-style", entry.id);
+
+      // The preview is only a picture: the card is what gets clicked.
+      var preview = document.createElement("iframe");
+      preview.className = "o-style-preview";
+      preview.tabIndex = -1;
+      preview.setAttribute("aria-hidden", "true");
+      card.appendChild(preview);
+
+      var name = document.createElement("span");
+      name.className = "o-style-name";
+      name.textContent = entry.label;
+      card.appendChild(name);
+
+      card.onclick = function () {
+        applySurfaceStyle(entry.id, surfaceStyle().appearance);
+        refreshStylePanel();
+      };
+      grid.appendChild(card);
+    });
+
+    panel.appendChild(segmented);
+    panel.appendChild(grid);
+    return panel;
+  }
+
+  function refreshStylePanel() {
+    var current = surfaceStyle();
+
+    stylePanel.querySelectorAll(".o-segment").forEach(function (segment) {
+      segment.setAttribute("aria-pressed", String(segment.getAttribute("data-appearance") === current.appearance));
+    });
+
+    stylePanel.querySelectorAll(".o-style-card").forEach(function (card) {
+      var style = card.getAttribute("data-style");
+      card.setAttribute("aria-pressed", String(style === current.style));
+      var preview = card.querySelector("iframe");
+      // Rewriting the document restarts it; only do that when the picture
+      // would actually change.
+      var wanted = style + "/" + current.appearance;
+      if (preview.getAttribute("data-showing") !== wanted) {
+        preview.setAttribute("data-showing", wanted);
+        preview.srcdoc = stylePreviewDocument(style, current.appearance);
+      }
+    });
+  }
+
+  editor.Commands.add("open-styles", function () {
+    if (!stylePanel) stylePanel = buildStylePanel();
+    refreshStylePanel();
+    modal.open({ title: "Widget style", content: stylePanel, attributes: { class: "modal-login" } });
+  });
+
+  pn.addButton("options", {
+    id: "open-styles",
+    label: icon("palette"),
+    command: function () {
+      editor.runCommand("open-styles");
+    },
+    attributes: { title: "Widget style", "data-tooltip-pos": "bottom" },
+  });
+
+  // Reset to style: a widget someone recoloured by hand keeps that colour when
+  // the surface changes style, which reads as switching "not working". This
+  // takes its own appearance edits away so it follows the style again, and
+  // leaves where it is and how big it is alone.
+  editor.Commands.add("oscar-reset-style", function (ed) {
+    var component = ed.getSelected();
+    if (!component) return;
+    component.setStyle(widgetStyles.withoutAppearance(component.getStyle()));
+  });
+
+  // Offered on OSCAR's own widgets and on the body, in the toolbar over a
+  // selection. GrapesJS never saves a component's toolbar into the project,
+  // so this editor-only button cannot leak into a saved file.
+  editor.on("component:selected", function (component) {
+    if (!widgetStyles.offersReset(component.get("type"))) return;
+    var toolbar = component.get("toolbar") || [];
+    var present = toolbar.some(function (item) {
+      return item.command === "oscar-reset-style";
+    });
+    if (present) return;
+    component.set(
+      "toolbar",
+      toolbar.concat([
+        {
+          label: icon("restore", 16),
+          command: "oscar-reset-style",
+          attributes: { title: "Reset to style" },
+        },
+      ])
+    );
+  });
+
   pn.addButton("options", {
     id: "open-save",
     label: icon("save"),
@@ -979,6 +1377,7 @@ function initGrape(ipServer, socketPort) {
     "gjs-open-import-webpage": "Import",
     "canvas-clear": "Clear canvas",
     "toggle-lock": null,
+    "open-styles": "Widget style",
     "open-save": "Save project",
     "open-load": "Load project",
     "open-pages": "Pages",

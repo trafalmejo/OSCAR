@@ -1,341 +1,456 @@
-/* A vertical slider. The two old declarations are kept as fallbacks for old
-   engines: bt-lr was IE only, and Chromium dropped slider-vertical in 121.
-   Every current engine turns a range input with writing-mode: vertical-lr,
-   and direction: rtl puts the minimum at the bottom, so the value climbs the
-   way a fader does. The box is set explicitly because a range input keeps its
-   wide, short default otherwise, and would draw the track sideways inside it. */
-input[type=range][orient=vertical] {
-  writing-mode: bt-lr;
-  -webkit-appearance: slider-vertical;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 2em;
-  height: 160px;
-}
-input {
-  background: #d3d3d3;
-  outline: none;
-  opacity: 0.8;
-  -webkit-transition: .2s;
-  transition: opacity .2s;
-}
-input:hover {
-  opacity: 1;
+/*
+ * OSCAR's widgets, as they look on the canvas and on every tablet.
+ *
+ * What the widgets look like is decided by a style: a set of token values in
+ * assets/css/styles/, chosen per surface (lib/widget-styles.js). This file
+ * only says how a widget draws with those tokens, following shadcn/ui's
+ * components -- the outline button, the filled button, the slider and the
+ * card -- so any style converted from tweakcn looks the way tweakcn shows it.
+ *
+ * Every rule lives inside a cascade layer, and that is what keeps widgets
+ * overridable. GrapesJS writes whatever someone sets in the Style Manager as
+ * ordinary, unlayered CSS, and unlayered CSS beats layered CSS whatever its
+ * specificity. So a colour or corner changed in the editor always wins, and
+ * anything left alone follows the style.
+ *
+ * The file keeps its old name, toggle.css, because the editor and the preview
+ * both load it by that name.
+ */
+
+@layer oscar.tokens, oscar.widgets;
+
+@layer oscar.tokens {
+  /* Sizes are OSCAR's, not a style's: they are set for fingers on a tablet,
+     and changing style must not make a control harder to hit. Buttons use
+     shadcn's large height, and the thumb is a little bigger than its 16px. */
+  :root {
+    --osc-control-height: 40px;
+    --osc-thumb: 20px;
+    --osc-track-size: 6px;
+    --osc-font-size: 14px;
+  }
 }
 
-.toggle {
-  background: rgba(187, 187, 187, 0.5);
-  border-top: solid 2px #777;
-  border-left: solid 2px #777;
-  border-bottom: solid 2px #eaeaea;
-  border-right: solid 2px #eaeaea;
-}
-button:hover {
-  opacity: 1;
-}
+@layer oscar.widgets {
+  /* ---- button ------------------------------------------------------------ */
+  /* Off is shadcn's outline button; on is its default, filled button. */
 
-button {
-  opacity: 0.8;
-}
-/* XY pad. Same family as the slider: a light grey ground that brightens on
-   hover, and the browser's own control colour on the handle, so a layout
-   mixing the two looks like one instrument.
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: var(--osc-control-height);
+    padding: 0 24px;
+    border: 1px solid var(--osc-input);
+    border-radius: var(--osc-radius);
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-xs);
+    color: var(--osc-foreground);
+    font-family: var(--osc-font);
+    font-size: var(--osc-font-size);
+    font-weight: 500;
+    letter-spacing: var(--osc-letter-spacing);
+    line-height: 1.25;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    /* Removes the tap delay without giving up scrolling past the button. */
+    touch-action: manipulation;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  }
 
-   The handle is a pseudo-element, not a child: a child element would swallow
-   the drag the way a button's label once did. */
-.oscar-xypad {
-  position: relative;
-  width: 220px;
-  height: 220px;
-  background: #d3d3d3;
-  outline: none;
-  opacity: 0.8;
-  -webkit-transition: .2s;
-  transition: opacity .2s;
-  /* Without this a finger drag scrolls the page instead of moving the handle. */
-  touch-action: none;
-  --oscar-x: 0%;
-  --oscar-y: 100%;
-}
+  button:hover {
+    background-color: var(--osc-accent);
+    color: var(--osc-accent-foreground);
+  }
 
-.oscar-xypad:hover {
-  opacity: 1;
-}
+  button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--osc-ring) 50%, transparent);
+  }
 
-.oscar-xypad::after {
-  content: "";
-  position: absolute;
-  left: var(--oscar-x);
-  top: var(--oscar-y);
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
-  border-radius: 50%;
-  /* AccentColor is the colour the browser paints its own slider thumb, so the
-     two widgets match without guessing at a hex. */
-  background: #1a73e8;
-  background: AccentColor;
-  pointer-events: none;
-}
-/* --- oscar-meter --- */
-/* Level meter. Same family as the slider and the pad: a light grey ground
-   that brightens on hover, and the browser's own control colour on the bar.
+  /* On: a toggle that is on, or a momentary button while it is held. The
+     widget sets this class. */
+  button.toggle {
+    border-color: var(--osc-primary);
+    background-color: var(--osc-primary);
+    color: var(--osc-primary-foreground);
+  }
 
-   The bar (::before) and the peak marker (::after) are pseudo-elements driven
-   by two custom properties the widget writes; a child element would be
-   selectable and draggable out of the component in the editor. Pointer
-   events are left on so the designer can still select and move it. */
-.oscar-meter {
-  position: relative;
-  width: 220px;
-  height: 24px;
-  background: #d3d3d3;
-  outline: none;
-  opacity: 0.8;
-  -webkit-transition: .2s;
-  transition: opacity .2s;
-  overflow: hidden;
-  -webkit-user-select: none;
-  user-select: none;
-  --oscar-level: 0%;
-  --oscar-peak: 0%;
-}
+  button.toggle:hover {
+    background-color: color-mix(in srgb, var(--osc-primary) 90%, transparent);
+    color: var(--osc-primary-foreground);
+  }
 
-.oscar-meter:hover {
-  opacity: 1;
-}
+  /* ---- slider ------------------------------------------------------------ */
+  /* shadcn's slider: a thin muted track, the covered part in primary, a thumb
+     in the background colour with a primary edge. The covered part follows
+     --oscar-fill, which the slider widget keeps up to date: a native range
+     input has no way to style "the part before the thumb" in Chromium or
+     WebKit. */
 
-.oscar-meter[orient=vertical] {
-  width: 24px;
-  height: 160px;
-}
+  input[type="range"] {
+    --oscar-fill: 0%;
+    width: 220px;
+    height: var(--osc-control-height);
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
 
-.oscar-meter::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: var(--oscar-level);
-  background: #1a73e8;
-  background: AccentColor;
-  pointer-events: none;
-}
+  input[type="range"]:focus-visible {
+    outline: none;
+  }
 
-/* A vertical meter fills from the bottom, the way a fader reads. */
-.oscar-meter[orient=vertical]::before {
-  top: auto;
-  right: 0;
-  width: auto;
-  height: var(--oscar-level);
-}
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: var(--osc-track-size);
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--osc-primary) var(--oscar-fill),
+      var(--osc-muted) var(--oscar-fill)
+    );
+  }
 
-/* The marker is only drawn while the widget says a peak is held, and is dark
-   rather than accent-coloured so it stays visible at the end of the bar. */
-.oscar-meter.oscar-peak::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--oscar-peak);
-  width: 2px;
-  margin-left: -2px;
-  background: rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-}
+  input[type="range"]::-webkit-slider-thumb {
+    width: var(--osc-thumb);
+    height: var(--osc-thumb);
+    margin-top: calc((var(--osc-track-size) - var(--osc-thumb)) / 2);
+    border: 1px solid var(--osc-primary);
+    border-radius: 50%;
+    background: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+    transition: box-shadow 0.15s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
 
-.oscar-meter[orient=vertical].oscar-peak::after {
-  top: auto;
-  left: 0;
-  right: 0;
-  bottom: var(--oscar-peak);
-  width: auto;
-  height: 2px;
-  margin: 0 0 -2px 0;
-}
+  input[type="range"]:hover::-webkit-slider-thumb,
+  input[type="range"]:focus-visible::-webkit-slider-thumb {
+    box-shadow: var(--osc-shadow-sm), 0 0 0 4px color-mix(in srgb, var(--osc-ring) 50%, transparent);
+  }
 
-/* --- Colour picker --- */
-/* A native colour input. Same family as the slider: a light grey ground that
-   brightens on hover. The box is set explicitly because a colour input's
-   default is a 50x27 chip, too small to read as a colour from across a room,
-   and the browser's own border and inner padding are stripped so the swatch
-   fills it. The two swatch pseudo-elements are the engine-specific names for
-   the same thing; a browser ignores the one it does not know. */
-input[type=color] {
-  width: 120px;
-  height: 80px;
-  padding: 6px;
-  border: none;
-  border-radius: 4px;
-  background: #d3d3d3;
-  outline: none;
-  opacity: 0.8;
-  -webkit-transition: .2s;
-  transition: opacity .2s;
-  cursor: pointer;
-}
+  /* Firefox has a real progress element, so it needs no --oscar-fill. */
+  input[type="range"]::-moz-range-track {
+    height: var(--osc-track-size);
+    border-radius: 999px;
+    background: var(--osc-muted);
+  }
 
-input[type=color]:hover {
-  opacity: 1;
-}
+  input[type="range"]::-moz-range-progress {
+    height: var(--osc-track-size);
+    border-radius: 999px;
+    background: var(--osc-primary);
+  }
 
-input[type=color]::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
+  input[type="range"]::-moz-range-thumb {
+    width: var(--osc-thumb);
+    height: var(--osc-thumb);
+    border: 1px solid var(--osc-primary);
+    border-radius: 50%;
+    background: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+  }
 
-input[type=color]::-webkit-color-swatch {
-  border: none;
-  border-radius: 2px;
-}
+  /* Vertical: the standard writing-mode, with direction: rtl so the value
+     climbs upward -- the only direction a fader reads correctly. The orient
+     attribute is what the slider widget sets. */
+  input[type="range"][orient="vertical"] {
+    width: var(--osc-control-height);
+    height: 220px;
+    writing-mode: vertical-lr;
+    direction: rtl;
+  }
 
-input[type=color]::-moz-color-swatch {
-  border: none;
-  border-radius: 2px;
-}
+  input[type="range"][orient="vertical"]::-webkit-slider-runnable-track {
+    width: var(--osc-track-size);
+    height: 100%;
+    background: linear-gradient(
+      to top,
+      var(--osc-primary) var(--oscar-fill),
+      var(--osc-muted) var(--oscar-fill)
+    );
+  }
 
-/* --- text input, number input, dropdown --- */
-/* The typed controls. Same family as the slider: a light grey ground that
-   brightens on hover, the browser's own control colour where it draws
-   something (the focus edge, the dropdown's arrow), and a box tall enough to
-   be a target for a thumb. A value the number box will not send -- outside
-   its limits, off its step, or not a number -- is painted with a red edge by
-   the browser's own validity rules, so the operator sees why nothing went
-   out without the widget having to say so. */
-.oscar-text-input,
-.oscar-number-input,
-.oscar-dropdown {
-  box-sizing: border-box;
-  min-width: 8em;
-  padding: 0.4em 0.6em;
-  font: inherit;
-  font-size: 1.1em;
-  color: #222;
-  background: #d3d3d3;
-  border: 2px solid transparent;
-  border-radius: 4px;
-  outline: none;
-  opacity: 0.8;
-  -webkit-transition: .2s;
-  transition: opacity .2s;
-}
+  input[type="range"][orient="vertical"]::-webkit-slider-thumb {
+    margin-top: 0;
+    margin-left: calc((var(--osc-track-size) - var(--osc-thumb)) / 2);
+  }
 
-.oscar-text-input:hover,
-.oscar-number-input:hover,
-.oscar-dropdown:hover,
-.oscar-text-input:focus,
-.oscar-number-input:focus,
-.oscar-dropdown:focus {
-  opacity: 1;
-}
+  input[type="range"][orient="vertical"]::-moz-range-track,
+  input[type="range"][orient="vertical"]::-moz-range-progress {
+    width: var(--osc-track-size);
+  }
 
-.oscar-text-input:focus,
-.oscar-number-input:focus,
-.oscar-dropdown:focus {
-  border-color: #1a73e8;
-  border-color: AccentColor;
-}
+  /* ---- XY pad ------------------------------------------------------------ */
+  /* shadcn's card, with the same corner as the button so the two read as a
+     set, and a handle drawn exactly like the slider thumb. The handle is a
+     pseudo-element, not a child: a child would swallow the drag the way a
+     button's label once did. */
 
-.oscar-dropdown {
-  cursor: pointer;
-  accent-color: AccentColor;
-}
+  .oscar-xypad {
+    --oscar-x: 0%;
+    --oscar-y: 100%;
+    position: relative;
+    width: 220px;
+    height: 220px;
+    border: 1px solid var(--osc-border);
+    border-radius: var(--osc-radius);
+    background-color: var(--osc-card);
+    box-shadow: var(--osc-shadow-xs);
+    cursor: crosshair;
+    /* Without this a finger drag scrolls the page instead of moving the handle. */
+    touch-action: none;
+  }
 
-.oscar-number-input:invalid,
-.oscar-number-input:out-of-range {
-  border-color: #c62828;
-}
+  .oscar-xypad::after {
+    content: "";
+    position: absolute;
+    top: var(--oscar-y);
+    left: var(--oscar-x);
+    width: var(--osc-thumb);
+    height: var(--osc-thumb);
+    margin: calc(var(--osc-thumb) / -2) 0 0 calc(var(--osc-thumb) / -2);
+    border: 1px solid var(--osc-primary);
+    border-radius: 50%;
+    background: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+    pointer-events: none;
+  }
 
-/* --- media browser --- */
+  /* --- oscar-meter ------------------------------------------------------- */
+  /* Level meter: the slider's track, read-only. The bar (::before) and the
+     peak marker (::after) are pseudo-elements driven by two custom properties
+     the widget writes; a child element would be selectable and draggable out
+     of the component in the editor. Pointer events are left on so the
+     designer can still select and move it. */
+  .oscar-meter {
+    --oscar-level: 0%;
+    --oscar-peak: 0%;
+    position: relative;
+    width: 220px;
+    height: 24px;
+    border: 1px solid var(--osc-border);
+    border-radius: var(--osc-radius);
+    background-color: var(--osc-muted);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
 
-/* A grid of tiles the widget builds from its Items setting. The column count
-   comes from the widget as a custom property, because the editor rewrites
-   the element's own style attribute and a property is what gets put back. */
-.oscar-media-browser {
-  display: grid;
-  grid-template-columns: repeat(var(--oscar-media-columns, 3), minmax(44px, 1fr));
-  gap: 6px;
-  box-sizing: border-box;
-  width: 320px;
-  max-width: 100%;
-  padding: 4px;
-  /* A grid given a height scrolls inside it, which is what "browse" means
-     once there are more clips than fit. */
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  /* No double-tap zoom, so a tap is a click at once; scrolling still works. */
-  touch-action: manipulation;
-  -webkit-user-select: none;
-  user-select: none;
-}
+  .oscar-meter[orient="vertical"] {
+    width: 24px;
+    height: 160px;
+  }
 
-.oscar-media-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  box-sizing: border-box;
-  /* 44px is the smallest target a thumb hits reliably. */
-  min-width: 44px;
-  min-height: 44px;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  font: inherit;
-  color: #222;
-  background: #d3d3d3;
-  border: 0;
-  border-radius: 4px;
-  outline: 3px solid transparent;
-  outline-offset: -3px;
-  opacity: 0.8;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  -webkit-transition: .2s;
-  transition: opacity .2s;
-}
+  .oscar-meter::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--oscar-level);
+    background: var(--osc-primary);
+    pointer-events: none;
+  }
 
-.oscar-media-tile:hover,
-.oscar-media-tile:focus-visible,
-.oscar-media-tile.oscar-media-selected {
-  opacity: 1;
-}
+  /* A vertical meter fills from the bottom, the way a fader reads. */
+  .oscar-meter[orient="vertical"]::before {
+    top: auto;
+    right: 0;
+    width: auto;
+    height: var(--oscar-level);
+  }
 
-.oscar-media-tile:focus-visible {
-  outline-color: #222;
-}
+  /* Only drawn while the widget says a peak is held. The foreground colour,
+     not the primary, so it stays visible where it sits on the end of the bar. */
+  .oscar-meter.oscar-peak::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--oscar-peak);
+    width: 2px;
+    margin-left: -2px;
+    background: var(--osc-foreground);
+    pointer-events: none;
+  }
 
-/* Drawn inside the tile, over the picture, so it shows on any thumbnail and
-   costs the grid no space. */
-.oscar-media-tile.oscar-media-selected {
-  outline-color: #1a73e8;
-  outline-color: AccentColor;
-}
+  .oscar-meter[orient="vertical"].oscar-peak::after {
+    top: auto;
+    right: 0;
+    bottom: var(--oscar-peak);
+    left: 0;
+    width: auto;
+    height: 2px;
+    margin: 0 0 -2px 0;
+  }
 
-.oscar-media-tile.oscar-media-selected .oscar-media-label {
-  color: #fff;
-  background: #1a73e8;
-  background: AccentColor;
-  color: AccentColorText;
-}
+  /* --- colour picker ------------------------------------------------------ */
+  /* A native colour input. The box is set explicitly because its default is
+     a 50x27 chip, too small to read as a colour from across a room, and the
+     browser's own inner padding is stripped so the swatch fills it. The two
+     swatch pseudo-elements are the engine-specific names for the same thing;
+     a browser ignores the one it does not know. */
+  input[type="color"] {
+    width: 120px;
+    height: 80px;
+    padding: 4px;
+    border: 1px solid var(--osc-input);
+    border-radius: var(--osc-radius);
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-xs);
+    cursor: pointer;
+  }
 
-.oscar-media-thumb {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  /* The tile is the target; a picture that took the touch would also offer
-     the browser's own save-image menu on a long press. */
-  pointer-events: none;
-  -webkit-touch-callout: none;
-}
+  input[type="color"]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--osc-ring) 50%, transparent);
+  }
 
-.oscar-media-label {
-  display: block;
-  padding: 0.35em 0.4em;
-  overflow: hidden;
-  font-size: 0.85em;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: calc(var(--osc-radius) / 2);
+  }
+
+  input[type="color"]::-moz-color-swatch {
+    border: none;
+    border-radius: calc(var(--osc-radius) / 2);
+  }
+
+  /* --- text input, number input, dropdown ------------------------------- */
+  /* The typed controls, as tall as a button so they are a target for a
+     thumb. A value the number box will not send -- outside its limits, off
+     its step, or not a number -- is given a red edge by the browser's own
+     validity rules, so the operator sees why nothing went out without the
+     widget having to say so. */
+  .oscar-text-input,
+  .oscar-number-input,
+  .oscar-dropdown {
+    min-width: 8em;
+    min-height: var(--osc-control-height);
+    padding: 0 12px;
+    border: 1px solid var(--osc-input);
+    border-radius: var(--osc-radius);
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-xs);
+    color: var(--osc-foreground);
+    font-family: var(--osc-font);
+    font-size: var(--osc-font-size);
+    letter-spacing: var(--osc-letter-spacing);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .oscar-text-input:focus,
+  .oscar-number-input:focus,
+  .oscar-dropdown:focus {
+    outline: none;
+    border-color: var(--osc-ring);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--osc-ring) 50%, transparent);
+  }
+
+  .oscar-dropdown {
+    cursor: pointer;
+  }
+
+  /* The list a dropdown opens is drawn by the browser; without this a dark
+     style gets dark text on the browser's white list, or the reverse. */
+  .oscar-dropdown option {
+    background-color: var(--osc-background);
+    color: var(--osc-foreground);
+  }
+
+  .oscar-number-input:invalid,
+  .oscar-number-input:out-of-range {
+    border-color: #e5484d;
+  }
+
+  /* --- media browser ------------------------------------------------------ */
+  /* A grid of tiles the widget builds from its Items setting. The column
+     count comes from the widget as a custom property, because the editor
+     rewrites the element's own style attribute and a property is what gets
+     put back. */
+  .oscar-media-browser {
+    display: grid;
+    grid-template-columns: repeat(var(--oscar-media-columns, 3), minmax(44px, 1fr));
+    gap: 8px;
+    width: 320px;
+    max-width: 100%;
+    padding: 4px;
+    /* A grid given a height scrolls inside it, which is what "browse" means
+       once there are more clips than fit. */
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    /* No double-tap zoom, so a tap is a click at once; scrolling still works. */
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* A tile is a button, so it starts from the button rule above; what follows
+     is only what makes it a tile. */
+  button.oscar-media-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0;
+    /* 44px is the smallest target a thumb hits reliably. */
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border-color: var(--osc-border);
+    background-color: var(--osc-card);
+    white-space: normal;
+    outline: 3px solid transparent;
+    outline-offset: -3px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button.oscar-media-tile:focus-visible {
+    outline-color: var(--osc-ring);
+  }
+
+  /* Drawn inside the tile, over the picture, so it shows on any thumbnail and
+     costs the grid no space. */
+  button.oscar-media-tile.oscar-media-selected {
+    border-color: var(--osc-primary);
+    outline-color: var(--osc-primary);
+  }
+
+  button.oscar-media-tile.oscar-media-selected .oscar-media-label {
+    background-color: var(--osc-primary);
+    color: var(--osc-primary-foreground);
+  }
+
+  .oscar-media-thumb {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    /* The tile is the target; a picture that took the touch would also offer
+       the browser's own save-image menu on a long press. */
+    pointer-events: none;
+    -webkit-touch-callout: none;
+  }
+
+  .oscar-media-label {
+    display: block;
+    padding: 6px;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

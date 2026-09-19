@@ -1,25 +1,29 @@
 <div id="table-panel" style="display: none;">
-  <div class="table-panel-label">
-    <div class="loader" id="loader-table" style="display: none;"></div>
-    <div id="table-container" class="container-fluid text-center">
-      <div class="bg-light rounded p-1">
-        <table
-          id="projects-table"
-          class="table table-borderless rounded"
-          style="width: 100%;"
-        ></table>
-      </div>
-      <div class="d-flex mt-2 mb-2">
-        <input
-          id="project-name"
-          class="form-control mr-1"
-          type="text"
-          placeholder="Name your project, or pick one from the list"
-          name="name"
-          required
-        />
-        <%- include('save') %> <%- include('load') %>
-      </div>
+  <div class="o-spinner" id="loader-table" role="status" aria-label="Working" style="display: none;"></div>
+  <div id="table-container">
+    <div class="o-table-wrap">
+      <table id="projects-table" class="o-table">
+        <thead>
+          <tr>
+            <th scope="col" data-sort="name"><button type="button" class="o-sort">Name</button></th>
+            <th scope="col" data-sort="size" class="o-num"><button type="button" class="o-sort">Size</button></th>
+            <th scope="col" data-sort="date"><button type="button" class="o-sort">Saved</button></th>
+            <th scope="col" class="o-actions"><span class="o-visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="o-projects-form">
+      <input
+        id="project-name"
+        class="o-input"
+        type="text"
+        placeholder="Name your project, or pick one from the list"
+        name="name"
+        required
+      />
+      <%- include('save') %> <%- include('load') %>
     </div>
   </div>
 </div>

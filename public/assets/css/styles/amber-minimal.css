@@ -1,0 +1,49 @@
+/*
+ * Amber Minimal: a widget style for OSCAR.
+ *
+ * Converted from tweakcn's "amber-minimal" preset (github.com/jnsahaj/tweakcn, Apache-2.0), including
+ * its light-to-dark inheritance and its shadow formula, so the values match
+ * what tweakcn shows. Only the variables OSCAR's widgets draw with are kept.
+ *
+ * Chosen for a surface by data-osc-style on its body.
+ * lib/widget-styles.js lists the styles that exist.
+ */
+
+@layer oscar.tokens, oscar.widgets;
+
+@layer oscar.tokens {
+  [data-osc-style="amber-minimal"] {
+    --osc-radius: 0.375rem;
+    --osc-font: "Inter Variable", Inter, sans-serif;
+    --osc-letter-spacing: 0em;
+    --osc-background: #ffffff;
+    --osc-foreground: #262626;
+    --osc-card: #ffffff;
+    --osc-muted: #f9fafb;
+    --osc-accent: #fffbeb;
+    --osc-accent-foreground: #92400e;
+    --osc-border: #e5e7eb;
+    --osc-input: #e5e7eb;
+    --osc-primary: #f59e0b;
+    --osc-primary-foreground: #000000;
+    --osc-ring: #f59e0b;
+    --osc-shadow-xs: 0px 4px 8px -1px color-mix(in srgb, hsl(0 0% 0%) 5%, transparent);
+    --osc-shadow-sm: 0px 4px 8px -1px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent), 0px 1px 2px -2px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent);
+  }
+
+  [data-osc-style="amber-minimal"][data-osc-appearance="dark"] {
+    --osc-background: #171717;
+    --osc-foreground: #e5e5e5;
+    --osc-card: #262626;
+    --osc-muted: #1f1f1f;
+    --osc-accent: #92400e;
+    --osc-accent-foreground: #fde68a;
+    --osc-border: #404040;
+    --osc-input: #404040;
+    --osc-primary: #f59e0b;
+    --osc-primary-foreground: #000000;
+    --osc-ring: #f59e0b;
+    --osc-shadow-xs: 0px 4px 8px -1px color-mix(in srgb, hsl(0 0% 0%) 5%, transparent);
+    --osc-shadow-sm: 0px 4px 8px -1px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent), 0px 1px 2px -2px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent);
+  }
+}

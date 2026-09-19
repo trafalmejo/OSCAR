@@ -6,13 +6,13 @@
 
 .oscar-export {
   padding: 4px 6px 8px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--o-text);
 }
 
 .oscar-export label {
   font-size: 13px;
   margin-bottom: 2px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--o-text-muted);
 }
 
 .oscar-export-lead {
@@ -27,21 +27,21 @@
   line-height: 1.45;
   padding: 10px 12px;
   margin-bottom: 14px;
-  color: #3d3d3d;
-  border-left: 4px solid #ff3663;
-  background: #fdf1f5;
+  color: var(--o-text);
+  border-left: 4px solid var(--o-accent);
+  background: var(--o-accent-subtle);
 }
 
 .oscar-export-hint {
   font-size: 12px;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--o-text-muted);
   margin-bottom: 14px;
 }
 
 .oscar-export-hint code {
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(0, 0, 0, 0.35);
+  color: var(--o-text);
+  background: var(--o-surface);
   padding: 1px 4px;
   border-radius: 2px;
 }
@@ -55,11 +55,36 @@
 }
 
 .oscar-export-error {
-  color: #8a1c13;
-  background: #fde8e6;
+  color: var(--o-danger);
+  background: var(--o-danger-subtle);
 }
 
 .oscar-export-note {
-  color: #3d3d3d;
-  background: #fff6d6;
+  color: var(--o-text);
+  background: var(--o-surface);
+}
+
+/* The form, laid out without a grid framework: the address takes two thirds
+   of the row and the port the rest. */
+.oscar-export-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+
+.oscar-export-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+
+.oscar-export-field label {
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+}
+
+.oscar-export-go {
+  width: 100%;
 }

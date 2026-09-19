@@ -240,3 +240,22 @@ test("a rewritten attribute keeps the quotes it came with, so a script string ho
   assert.strictEqual(out, "<script>var s=\"<img src='data:image/png;base64,AAAA'>\";</script>");
   assert.doesNotThrow(() => new Function(out.replace(/<\/?script>/g, "")));
 });
+
+test("an export carries every widget style and the surface rule, so the page looks as it was designed", () => {
+  // Widgets draw with tokens the style files define. With only the widget
+  // rules inlined, every control on an exported page came out unpainted.
+  const real = path.join(__dirname, "..", "..", "public");
+  const fake = publicDir(true);
+  const result = buildExport(
+    Object.assign({}, REQUEST, { html: '<body data-osc-style="cyberpunk" data-osc-appearance="dark"><button>Go</button></body>' }),
+    { publicDir: real, files: { runtime: path.join(fake, "src", "runtime.bundle.js"), socketio: path.join(fake, "node_modules", "socket.io-client", "dist", "socket.io.min.js") } }
+  );
+  assert.strictEqual(result.error, undefined);
+  for (const id of require("../../lib/widget-styles").STYLES.map((s) => s.id)) {
+    assert.ok(result.page.includes('[data-osc-style="' + id + '"]'), id + " tokens are in the file");
+  }
+  assert.ok(result.page.includes("@layer oscar.widgets"), "and the widget rules");
+  assert.ok(result.page.includes("background-color: var(--osc-background)"), "and the surface rule");
+  assert.ok(result.page.includes('data-osc-style="cyberpunk"'), "and the body still says which style it uses");
+  assert.ok(!/@fontsource|woff2/.test(result.page), "fonts are left to the system fallback");
+});

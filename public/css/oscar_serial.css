@@ -12,7 +12,7 @@
 .oscar-serial code {
   padding: 1px 5px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--o-surface);
   color: inherit;
 }
 
@@ -21,8 +21,8 @@
 .oscar-serial-status {
   margin: 14px 0;
   padding: 8px 12px;
-  border-left: 4px solid rgba(255, 255, 255, 0.35);
-  background: rgba(0, 0, 0, 0.2);
+  border-left: 4px solid var(--o-border-strong);
+  background: var(--o-surface);
   overflow-wrap: anywhere;
 }
 
@@ -37,7 +37,7 @@
 
 .oscar-serial-status[data-state="unsupported"],
 .oscar-serial-status[data-state="error"] {
-  border-left-color: #ec5858;
+  border-left-color: var(--o-danger);
 }
 
 .oscar-serial-controls {

@@ -1,0 +1,49 @@
+/*
+ * Cyberpunk: a widget style for OSCAR.
+ *
+ * Converted from tweakcn's "cyberpunk" preset (github.com/jnsahaj/tweakcn, Apache-2.0), including
+ * its light-to-dark inheritance and its shadow formula, so the values match
+ * what tweakcn shows. Only the variables OSCAR's widgets draw with are kept.
+ *
+ * Chosen for a surface by data-osc-style on its body.
+ * lib/widget-styles.js lists the styles that exist.
+ */
+
+@layer oscar.tokens, oscar.widgets;
+
+@layer oscar.tokens {
+  [data-osc-style="cyberpunk"] {
+    --osc-radius: 0.5rem;
+    --osc-font: "Outfit Variable", Outfit, sans-serif;
+    --osc-letter-spacing: 0em;
+    --osc-background: #f8f9fa;
+    --osc-foreground: #0c0c1d;
+    --osc-card: #ffffff;
+    --osc-muted: #f0f0ff;
+    --osc-accent: #00ffcc;
+    --osc-accent-foreground: #0c0c1d;
+    --osc-border: #dfe6e9;
+    --osc-input: #dfe6e9;
+    --osc-primary: #ff00c8;
+    --osc-primary-foreground: #ffffff;
+    --osc-ring: #ff00c8;
+    --osc-shadow-xs: 0px 4px 8px -2px color-mix(in srgb, hsl(0 0% 0%) 5%, transparent);
+    --osc-shadow-sm: 0px 4px 8px -2px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent), 0px 1px 2px -3px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent);
+  }
+
+  [data-osc-style="cyberpunk"][data-osc-appearance="dark"] {
+    --osc-background: #0c0c1d;
+    --osc-foreground: #eceff4;
+    --osc-card: #1e1e3f;
+    --osc-muted: #151530;
+    --osc-accent: #00ffcc;
+    --osc-accent-foreground: #0c0c1d;
+    --osc-border: #2e2e5e;
+    --osc-input: #2e2e5e;
+    --osc-primary: #ff00c8;
+    --osc-primary-foreground: #ffffff;
+    --osc-ring: #ff00c8;
+    --osc-shadow-xs: 0px 4px 8px -2px color-mix(in srgb, hsl(0 0% 0%) 5%, transparent);
+    --osc-shadow-sm: 0px 4px 8px -2px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent), 0px 1px 2px -3px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent);
+  }
+}

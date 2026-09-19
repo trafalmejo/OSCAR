@@ -1,0 +1,49 @@
+/*
+ * Supabase: a widget style for OSCAR.
+ *
+ * Converted from tweakcn's "supabase" preset (github.com/jnsahaj/tweakcn, Apache-2.0), including
+ * its light-to-dark inheritance and its shadow formula, so the values match
+ * what tweakcn shows. Only the variables OSCAR's widgets draw with are kept.
+ *
+ * Chosen for a surface by data-osc-style on its body.
+ * lib/widget-styles.js lists the styles that exist.
+ */
+
+@layer oscar.tokens, oscar.widgets;
+
+@layer oscar.tokens {
+  [data-osc-style="supabase"] {
+    --osc-radius: 0.5rem;
+    --osc-font: "Outfit Variable", Outfit, sans-serif;
+    --osc-letter-spacing: 0.025em;
+    --osc-background: #fcfcfc;
+    --osc-foreground: #171717;
+    --osc-card: #fcfcfc;
+    --osc-muted: #ededed;
+    --osc-accent: #ededed;
+    --osc-accent-foreground: #202020;
+    --osc-border: #dfdfdf;
+    --osc-input: #f6f6f6;
+    --osc-primary: #72e3ad;
+    --osc-primary-foreground: #1e2723;
+    --osc-ring: #72e3ad;
+    --osc-shadow-xs: 0px 1px 3px 0px color-mix(in srgb, #000000 9%, transparent);
+    --osc-shadow-sm: 0px 1px 3px 0px color-mix(in srgb, #000000 17%, transparent), 0px 1px 2px -1px color-mix(in srgb, #000000 17%, transparent);
+  }
+
+  [data-osc-style="supabase"][data-osc-appearance="dark"] {
+    --osc-background: #121212;
+    --osc-foreground: #e2e8f0;
+    --osc-card: #171717;
+    --osc-muted: #1f1f1f;
+    --osc-accent: #313131;
+    --osc-accent-foreground: #fafafa;
+    --osc-border: #292929;
+    --osc-input: #242424;
+    --osc-primary: #006239;
+    --osc-primary-foreground: #dde8e3;
+    --osc-ring: #4ade80;
+    --osc-shadow-xs: 0px 1px 3px 0px color-mix(in srgb, #000000 9%, transparent);
+    --osc-shadow-sm: 0px 1px 3px 0px color-mix(in srgb, #000000 17%, transparent), 0px 1px 2px -1px color-mix(in srgb, #000000 17%, transparent);
+  }
+}

@@ -54,8 +54,13 @@ jobs:
         run: npm run build && npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # OSCAR is not code signed. Without this, macOS builds stall looking
-          # for a signing identity that isn't there.
+          # OSCAR has no Apple certificate. Without this, macOS builds stall
+          # looking for a signing identity that isn't there. The Mac app is
+          # signed ad-hoc instead (see "identity": "-" in package.json), which
+          # takes no account and no certificate: macOS still warns that the
+          # developer is unidentified, but the app runs. Without any signature
+          # at all, an Apple Silicon Mac refuses to open it and says the app is
+          # damaged.
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       # Keeps the installers available from the run even if publishing is

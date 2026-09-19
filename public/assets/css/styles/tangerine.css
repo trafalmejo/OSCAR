@@ -1,0 +1,49 @@
+/*
+ * Tangerine: a widget style for OSCAR.
+ *
+ * Converted from tweakcn's "tangerine" preset (github.com/jnsahaj/tweakcn, Apache-2.0), including
+ * its light-to-dark inheritance and its shadow formula, so the values match
+ * what tweakcn shows. Only the variables OSCAR's widgets draw with are kept.
+ *
+ * Chosen for a surface by data-osc-style on its body.
+ * lib/widget-styles.js lists the styles that exist.
+ */
+
+@layer oscar.tokens, oscar.widgets;
+
+@layer oscar.tokens {
+  [data-osc-style="tangerine"] {
+    --osc-radius: 0.75rem;
+    --osc-font: "Inter Variable", Inter, sans-serif;
+    --osc-letter-spacing: 0em;
+    --osc-background: #e8ebed;
+    --osc-foreground: #333333;
+    --osc-card: #ffffff;
+    --osc-muted: #f9fafb;
+    --osc-accent: #d6e4f0;
+    --osc-accent-foreground: #1e3a8a;
+    --osc-border: #dcdfe2;
+    --osc-input: #f4f5f7;
+    --osc-primary: #e05d38;
+    --osc-primary-foreground: #ffffff;
+    --osc-ring: #e05d38;
+    --osc-shadow-xs: 0px 1px 3px 0px color-mix(in srgb, hsl(0 0% 0%) 5%, transparent);
+    --osc-shadow-sm: 0px 1px 3px 0px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent), 0px 1px 2px -1px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent);
+  }
+
+  [data-osc-style="tangerine"][data-osc-appearance="dark"] {
+    --osc-background: #1c2433;
+    --osc-foreground: #e5e5e5;
+    --osc-card: #2a3040;
+    --osc-muted: #2a303e;
+    --osc-accent: #2a3656;
+    --osc-accent-foreground: #bfdbfe;
+    --osc-border: #3d4354;
+    --osc-input: #3d4354;
+    --osc-primary: #e05d38;
+    --osc-primary-foreground: #ffffff;
+    --osc-ring: #e05d38;
+    --osc-shadow-xs: 0px 1px 3px 0px color-mix(in srgb, hsl(0 0% 0%) 5%, transparent);
+    --osc-shadow-sm: 0px 1px 3px 0px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent), 0px 1px 2px -1px color-mix(in srgb, hsl(0 0% 0%) 10%, transparent);
+  }
+}

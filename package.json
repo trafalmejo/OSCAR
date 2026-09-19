@@ -98,7 +98,9 @@
           ]
         }
       ],
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "identity": "-",
+      "hardenedRuntime": false
     },
     "linux": {
       "target": [

@@ -25,10 +25,10 @@
   display: flex;
   align-items: stretch;
   overflow-x: auto;
-  background: #3d3d3d;
+  background: var(--o-panel);
   /* A shadow, not a border: a border would make the bar a pixel taller than
      the room taken off the canvas for it. */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 var(--o-border);
   /* A finger swiping along the tabs must not bounce the whole page. */
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -48,10 +48,10 @@
   max-width: 40vw;
   padding: 0 16px;
   border: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--o-border);
   border-top: 3px solid transparent;
   background: none;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--o-text-muted);
   font: 600 15px/1 Helvetica, Arial, sans-serif;
   white-space: nowrap;
   overflow: hidden;
@@ -63,13 +63,13 @@
 }
 
 .oscar-page-tab:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--o-surface);
 }
 
 .oscar-page-tab-current {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-  border-top-color: #ff3663;
+  color: var(--o-text);
+  background: var(--o-surface);
+  border-top-color: var(--o-accent);
 }
 
 /* The canvas is shortened by the bar rather than covered by it: a bar floating
@@ -84,7 +84,7 @@ body.oscar-has-pages #gjs {
 
 .oscar-pages {
   padding: 10px 14px 16px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--o-text);
   font-size: 13px;
 }
 
@@ -108,11 +108,11 @@ body.oscar-has-pages #gjs {
   gap: 4px;
   margin-bottom: 4px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--o-surface);
 }
 
 .oscar-page-current {
-  background: rgba(255, 54, 99, 0.22);
+  background: var(--o-accent-subtle);
 }
 
 /* The name is the button that opens the page: the whole row's width, so
@@ -145,7 +145,7 @@ body.oscar-has-pages #gjs {
 .oscar-page-open:hover,
 .oscar-page-action:hover {
   opacity: 1;
-  color: #ff3663;
+  color: var(--o-accent-text);
 }
 
 .oscar-pages-add {

@@ -1,7 +1,8 @@
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
-var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
+var { widgetPlugins, runOffstage, followSurfaceStyle } = require("./adapters/grapesjs");
+var widgetStyles = require("../../lib/widget-styles");
 
 // Tabs, and the rule for staying on a page across a push; shared with the
 // editor so its preview draws the same thing the tablet does.
@@ -30,11 +31,17 @@ if (document.getElementById("gjs-oscar-preview")) {
 
 function initGrape(ipServer, socketPort) {
   editor = grapesjs.init({
+    // No Font Awesome from a CDN: every tablet would make a request that fails
+    // at a venue with no internet, and nothing on this page uses it.
+    cssIcons: "",
     height: "100%",
     container: "#gjs-oscar-preview",
     allowScripts: 1,
     panels: { defaults: [] },
-    canvas: { styles: ["assets/css/toggle.css"] },
+    // The same fonts, styles and widgets as the editor, so a tablet shows the
+    // surface in the style it was designed in.
+    canvas: { styles: widgetStyles.canvasStylesheets() },
+    protectedCss: widgetStyles.SURFACE_CSS,
     // The preview only displays whatever the editor handed over; it must never
     // write into the editor's autosave.
     storageManager: false,
@@ -74,6 +81,9 @@ function initGrape(ipServer, socketPort) {
     // what it has cached for the page coming in may be behind. Ask again.
     if (editor.syncSharedState) editor.syncSharedState();
   });
+
+  // The canvas body follows the style the surface was designed in.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
 
   editor.on("load", function () {
     showLatest();

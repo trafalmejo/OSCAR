@@ -162,6 +162,7 @@ app.use(
     },
     lock,
     serial,
+    templatesDir: path.join(__dirname, "public", "templates"),
   })
 );
 
