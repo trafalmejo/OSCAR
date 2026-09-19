@@ -1,0 +1,288 @@
+<!doctype html>
+<html>
+<head>
+<title>Audio Console</title>
+<!--
+  Audio Console: eight channel strips and a master, each a level meter beside
+  a fader, with Mute and Solo under it. For a sound desk driven from a tablet
+  (a digital mixer's OSC remote, Ableton, Reaper, QLab), or for watching
+  levels from the back of the room.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style and data-osc-appearance on <body> pick the widget style.
+
+  The layout is a CSS grid that rearranges at 992px and 480px, the widths of
+  the editor's Tablet and Mobile views, so edits made in those views land in
+  the same media queries.
+
+  The meters are coloured by level, green to amber to red, the way a desk's
+  are. The scale is painted on the whole meter and the unlit part is covered
+  from the top, so a colour always means the same level.
+
+  The meters only listen: point your software's OSC output at OSCAR and send
+  each one a number from 0 to 1. The faders send and do not follow; tick Data
+  in on a fader to have it follow the desk as well, the way a motorised fader
+  does.
+
+  OSC addresses:
+    out  /ch/<n>/fader   /ch/<n>/mute   /ch/<n>/solo
+         /master/fader   /master/mute   /master/dim
+    in   /ch/<n>/level   /master/level/left   /master/level/right
+-->
+<style>
+.acn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  min-height: 100vh;
+}
+.acn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.acn-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.acn-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+.acn-strips {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr)) minmax(0, 1.3fr);
+  gap: 10px;
+}
+.acn-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 8px;
+  border: 1px solid var(--osc-border);
+  border-radius: var(--osc-radius);
+  background-color: var(--osc-card);
+}
+.acn-master {
+  border-color: var(--osc-primary);
+}
+.acn-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acn-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  justify-items: center;
+  gap: 8px;
+  min-height: 240px;
+}
+.acn-body-master {
+  grid-template-columns: 14px 14px minmax(0, 1fr);
+}
+.acn-body > .oscar-meter {
+  width: 14px;
+  height: 100%;
+}
+.acn-body > .oscar-meter[orient="vertical"] {
+  background-image: linear-gradient(to top, #46a758 0%, #46a758 60%, #ffc53d 80%, #e5484d 100%);
+}
+.acn-body > .oscar-meter[orient="vertical"]::before {
+  top: 0;
+  bottom: auto;
+  height: calc(100% - var(--oscar-level));
+  background: var(--osc-muted);
+}
+.acn-body > input {
+  width: 40px;
+  height: 100%;
+}
+.acn-strip > button {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.acn-mute.toggle,
+.acn-mute.toggle:hover {
+  border-color: #e5484d;
+  background-color: #e5484d;
+  color: #ffffff;
+}
+.acn-solo.toggle,
+.acn-solo.toggle:hover {
+  border-color: #ffc53d;
+  background-color: #ffc53d;
+  color: #21201c;
+}
+
+@media (max-width: 992px) {
+  .acn {
+    min-height: 0;
+  }
+  .acn-strips {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .acn-master {
+    grid-column: span 2;
+  }
+  .acn-body {
+    min-height: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .acn {
+    gap: 12px;
+    padding: 12px;
+  }
+  .acn-title {
+    font-size: 16px;
+  }
+  .acn-hint {
+    display: none;
+  }
+  .acn-strips {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .acn-master {
+    grid-column: span 3;
+  }
+  .acn-body {
+    min-height: 170px;
+  }
+}
+</style>
+</head>
+<body data-osc-style="tangerine" data-osc-appearance="dark">
+<div id="acn" class="acn" data-gjs-dmode="flow">
+
+  <header id="acn-header" class="acn-header" data-gjs-dmode="flow">
+    <h1 id="acn-title" class="acn-title" data-gjs-dmode="flow">Audio Console</h1>
+    <span id="acn-hint" class="acn-hint" data-gjs-dmode="flow">Meters follow /ch/n/level, 0 to 1</span>
+  </header>
+
+  <div id="acn-strips" class="acn-strips" data-gjs-dmode="flow">
+    <section id="acn-ch1" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch1-name" class="acn-name" data-gjs-dmode="flow">Kick</span>
+      <div id="acn-ch1-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch1-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/1/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch1-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/1/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch1-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/1/mute">Mute</button>
+      <button id="acn-ch1-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/1/solo">Solo</button>
+    </section>
+    <section id="acn-ch2" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch2-name" class="acn-name" data-gjs-dmode="flow">Snare</span>
+      <div id="acn-ch2-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch2-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/2/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch2-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/2/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch2-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/2/mute">Mute</button>
+      <button id="acn-ch2-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/2/solo">Solo</button>
+    </section>
+    <section id="acn-ch3" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch3-name" class="acn-name" data-gjs-dmode="flow">Bass</span>
+      <div id="acn-ch3-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch3-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/3/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch3-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/3/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch3-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/3/mute">Mute</button>
+      <button id="acn-ch3-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/3/solo">Solo</button>
+    </section>
+    <section id="acn-ch4" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch4-name" class="acn-name" data-gjs-dmode="flow">Guitar</span>
+      <div id="acn-ch4-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch4-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/4/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch4-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/4/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch4-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/4/mute">Mute</button>
+      <button id="acn-ch4-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/4/solo">Solo</button>
+    </section>
+    <section id="acn-ch5" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch5-name" class="acn-name" data-gjs-dmode="flow">Keys</span>
+      <div id="acn-ch5-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch5-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/5/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch5-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/5/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch5-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/5/mute">Mute</button>
+      <button id="acn-ch5-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/5/solo">Solo</button>
+    </section>
+    <section id="acn-ch6" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch6-name" class="acn-name" data-gjs-dmode="flow">Vox 1</span>
+      <div id="acn-ch6-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch6-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/6/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch6-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/6/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch6-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/6/mute">Mute</button>
+      <button id="acn-ch6-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/6/solo">Solo</button>
+    </section>
+    <section id="acn-ch7" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch7-name" class="acn-name" data-gjs-dmode="flow">Vox 2</span>
+      <div id="acn-ch7-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch7-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/7/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch7-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/7/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch7-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/7/mute">Mute</button>
+      <button id="acn-ch7-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/7/solo">Solo</button>
+    </section>
+    <section id="acn-ch8" class="acn-strip" data-gjs-dmode="flow">
+      <span id="acn-ch8-name" class="acn-name" data-gjs-dmode="flow">FX</span>
+      <div id="acn-ch8-body" class="acn-body" data-gjs-dmode="flow">
+        <div id="acn-ch8-meter" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/ch/8/level"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-ch8-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/ch/8/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-ch8-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/8/mute">Mute</button>
+      <button id="acn-ch8-solo" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/ch/8/solo">Solo</button>
+    </section>
+    <section id="acn-master" class="acn-strip acn-master" data-gjs-dmode="flow">
+      <span id="acn-master-name" class="acn-name" data-gjs-dmode="flow">Master</span>
+      <div id="acn-master-body" class="acn-body acn-body-master" data-gjs-dmode="flow">
+        <div id="acn-master-left" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/master/level/left"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <div id="acn-master-right" class="oscar-meter" data-gjs-dmode="flow" data-gjs-message="/master/level/right"
+            data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-orientation="vertical" data-gjs-peak-hold="1.5"></div>
+        <input id="acn-master-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow"
+            data-gjs-message="/master/fader" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.8" data-gjs-orientation="vertical">
+      </div>
+      <button id="acn-master-mute" class="acn-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/master/mute">Mute</button>
+      <button id="acn-master-dim" class="acn-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/master/dim">Dim</button>
+    </section>
+  </div>
+
+</div>
+</body>
+</html>
