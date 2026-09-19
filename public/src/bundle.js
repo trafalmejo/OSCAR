@@ -1232,15 +1232,13 @@ module.exports = { formatSize, sortProjects, orderProjects, nextSort, DEFAULT_SO
  * has neither, so the word `serial` stands in the Ip field and the server
  * routes the message down the cable instead of onto the network.
  *
- * Why the Ip field and not one more entry under Output: Output (the
- * transport select) only exists on widgets that can drive DMX, and a
- * definition with dmx: false is not allowed to carry it -- so a text input
- * could never have reached a board. Ip is on every widget that sends at all.
- * It is also the honest place for it: Output chooses WHAT goes on the wire
- * (OSC, DMX levels), and serial changes none of that. It is the same OSC
+ * Why the Ip field and not a section of its own beside OSC and DMX: a
+ * section says WHAT goes on the wire (OSC, DMX levels), and serial changes
+ * none of that. Ip is on every widget that sends at all, so a text input can
+ * reach a board as easily as a fader can. It is the same OSC
  * message with a different destination, which is what Ip has always meant.
- * "OSC to the board and DMX to the dimmer" falls out for free, where a
- * transport entry would have needed a serial+dmx combination as well.
+ * "OSC to the board and DMX to the dimmer" falls out for free: tick both
+ * sections.
  *
  * Kept in its own file, away from lib/serial.js: the validators in
  * lib/widgets/ run inside the browser bundle, and lib/serial.js reaches for a
@@ -1472,7 +1470,7 @@ const {
   listen,
   connection,
   connectionChecks,
-  transport,
+  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -1541,14 +1539,14 @@ const button = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), field("label", "Label", "text"), transport()]
+  fields: [enabled(), field("label", "Label", "text"), oscToggle()]
     .concat(connection())
     .concat([
       listen(),
       field("mode", "Mode", "select", { options: MODES }),
       field("valueOn", "Value ON", "text"),
       field("valueOff", "Value OFF", "text"),
-      field("argType", "Argument type", "select", { options: ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
     ])
     .concat(dmxFields()),
 
@@ -1767,7 +1765,7 @@ const {
   listen,
   connection,
   connectionChecks,
-  transport,
+  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -1913,7 +1911,7 @@ const colour = {
     dmxDefaults(3)
   ),
 
-  fields: [enabled(), transport()]
+  fields: [enabled(), oscToggle()]
     .concat(connection())
     .concat([
       listen(),
@@ -1926,7 +1924,7 @@ const colour = {
       field("alpha", "Alpha", "number", { min: 0, max: 1, step: "any", showIf: { key: "format", in: ["rgba"] } }),
       // A hex string is a string by definition; the argument type only has
       // something to say about the numeric formats.
-      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES, showIf: { key: "format", in: ["rgb", "rgba"] } }),
+      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES, showIf: { key: "format", in: ["rgb", "rgba"] } }),
     ])
     .concat(dmxFields()),
 
@@ -2221,7 +2219,7 @@ const {
   listen,
   connection,
   connectionChecks,
-  transport,
+  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -2285,7 +2283,7 @@ function escapeHtml(text) {
  * than the 1 in 12.5 is a number: they wait for Enter, or for the list to be
  * left. On DMX the option's value is the level, 0-255, so "Off=0, Half=128,
  * Full=255" is a three-step dimmer; the panel refuses an option that is not
- * one while Output includes DMX.
+ * one while DMX's Enable is ticked.
  *
  * With Listen on, a value arriving at Message selects the option that sends
  * it; a value no option sends changes nothing.
@@ -2322,23 +2320,23 @@ const dropdown = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), transport()]
+  fields: [enabled(), oscToggle()]
     .concat(connection())
     .concat([
       listen(),
       field("options", "Options", "text", { placeholder: "Red=1, Green=2, Blue=3" }),
       field("value", "Selected", "text"),
-      field("argType", "Argument type", "select", { options: ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
     ])
     .concat(dmxFields()),
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
     options: checkOptions,
     value: checkValue,
-    // Output decides whether the options have to be levels, so switching it
-    // is judged like editing them: from either side, as argType is.
-    transport: function (value, config) {
-      const next = Object.assign({}, config, { transport: value });
+    // Sending DMX decides whether the options have to be levels, so switching
+    // it on is judged like editing them: from either side, as argType is.
+    dmxEnabled: function (value, config) {
+      const next = Object.assign({}, config, { dmxEnabled: value, transport: undefined });
       return checkOptions(next.options, next);
     },
     argType: checkArgType(function (config) {
@@ -2491,7 +2489,7 @@ function values(raw) {
 /**
  * Every option has to be sendable, and there has to be one.
  *
- * Sendable on every wire Output names: as the chosen type on OSC, and as a
+ * Sendable on every protocol switched on: as the chosen type on OSC, and as a
  * level, 0-255, on DMX. "A=abc" is a fine string and no level at all, and
  * "A=300" is no level either -- pinned to 255, or -5 to a blackout, it would
  * be a cue the designer never wrote. Without this the dropdown looks live
@@ -2540,12 +2538,15 @@ module.exports = { dropdown, parseOptions };
  * widget definition outlives the choice of one.
  *
  * Field shape:
- *   { key, label, type, options?, min?, max?, step?, placeholder?, showIf? }
+ *   { key, label, type, options?, min?, max?, step?, placeholder?, showIf?, section? }
  *   type: "text" | "number" | "select" | "checkbox"
  *   showIf: { key, in: [...] } -- the field is only shown while the setting
  *           named by `key` holds one of the listed values. Data rather than a
  *           function, so an adapter can see which setting to watch instead of
  *           being handed a closure it cannot look inside.
+ *   section: "osc" | "dmx" -- the protocol the setting belongs to. The panel
+ *           draws one collapsible section per protocol; a field with none sits
+ *           above them, with the settings that are about the widget itself.
  */
 
 const { toNumber } = require("../osc-args");
@@ -2556,6 +2557,18 @@ const { toWhole } = require("../dmx/levels");
 
 const TYPES = ["text", "number", "select", "checkbox"];
 
+/**
+ * The protocols a widget can speak, in the order the panel shows them. One
+ * section each, and each section that can be switched off carries its own
+ * checkbox -- so which protocols a widget uses is read off the panel at a
+ * glance, and adding a protocol later is adding a section, not another
+ * entry in a list of combinations.
+ */
+const SECTIONS = [
+  { id: "osc", label: "OSC" },
+  { id: "dmx", label: "DMX" },
+];
+
 function field(key, label, type, extra) {
   const spec = Object.assign({ key: key, label: label, type: type }, extra || {});
   if (TYPES.indexOf(spec.type) === -1) {
@@ -2564,6 +2577,9 @@ function field(key, label, type, extra) {
   const rule = spec.showIf;
   if (rule !== undefined && (!rule || typeof rule.key !== "string" || !Array.isArray(rule.in))) {
     throw new Error(key + ": showIf must be { key, in: [...] }");
+  }
+  if (spec.section !== undefined && !SECTIONS.some((section) => section.id === spec.section)) {
+    throw new Error(key + ": unknown section " + JSON.stringify(spec.section));
   }
   return spec;
 }
@@ -2590,9 +2606,9 @@ function enabled() {
  */
 function connection() {
   return [
-    field("ip", "Ip", "text", { placeholder: "localhost, an IP, or " + SERIAL_HOST }),
-    field("port", "Port", "number", { min: 1, max: 65535 }),
-    field("message", "Message", "text", { placeholder: "/address" }),
+    field("ip", "Ip", "text", { section: "osc", placeholder: "localhost, an IP, or " + SERIAL_HOST }),
+    field("port", "Port", "number", { section: "osc", min: 1, max: 65535 }),
+    field("message", "Message", "text", { section: "osc", placeholder: "/address" }),
   ];
 }
 
@@ -2615,65 +2631,106 @@ const ORIENTATIONS = [
  * it always did. Sits right after Message, which is the address it follows.
  */
 function listen() {
-  return field("listen", "Listen", "checkbox");
+  return field("listen", "Listen", "checkbox", { section: "osc" });
 }
 
 /**
  * Where a widget's value goes.
  *
- * OSC reaches software; DMX reaches fixtures. Putting the choice on every
- * widget that can drive DMX, rather than inventing a second family of
- * DMX-only controls, is what lets one fader ride a media server's opacity and
- * a house dimmer together. OSC is the default so every project made before
- * this existed behaves exactly as it did.
+ * OSC reaches software; DMX reaches fixtures. Each is switched on by the
+ * checkbox at the top of its own section, so one fader can ride a media
+ * server's opacity and a house dimmer together, and "which protocols does
+ * this use" is answered by looking at the panel. OSC is on and DMX off by
+ * default, so every project made before DMX existed behaves as it did. Both
+ * off is allowed and silent.
+ *
+ * Only a widget that can drive DMX carries the OSC checkbox. On one that
+ * speaks OSC alone it would be a second Enabled.
+ *
+ * Both are labelled Enable: the section's title already says which protocol,
+ * and a label that repeats it wraps onto a second line in the narrow panel.
+ * For the same reason the DMX fields are Protocol, Node and so on, not "DMX
+ * protocol"; the complaints a check raises still name DMX in full, because a
+ * message is read away from the section it is about.
  */
-const TRANSPORTS = [
-  { id: "osc", name: "OSC" },
-  { id: "dmx", name: "DMX (Art-Net / sACN)" },
-  { id: "both", name: "OSC and DMX" },
-];
-
-const DMX_TRANSPORTS = ["dmx", "both"];
-const OSC_TRANSPORTS = ["osc", "both"];
-
-function transport() {
-  return field("transport", "Output", "select", { options: TRANSPORTS });
+function oscToggle() {
+  return field("oscEnabled", "Enable", "checkbox", { section: "osc" });
 }
 
-/** Whether these settings put DMX on the wire. No transport at all means OSC only. */
-function sendsDmx(config) {
-  return DMX_TRANSPORTS.indexOf(config && config.transport) !== -1;
+function dmxToggle() {
+  return field("dmxEnabled", "Enable", "checkbox", { section: "dmx" });
 }
 
-/** Whether these settings put OSC on the wire. */
-function sendsOsc(config) {
+/** A checkbox as it may be stored: the boolean, or its text in a file edited by hand. */
+function isOn(value) {
+  return value === true || value === "true";
+}
+
+/**
+ * Projects saved while the choice was one Output setting (osc, dmx or both)
+ * still say it that way. Where that word is present it is what the person
+ * chose, so it is read in preference to the checkboxes, which on such a
+ * widget only hold their defaults. upgradeRouting() turns it into the
+ * checkboxes; the editor does so as it opens each widget.
+ */
+const LEGACY_DMX = ["dmx", "both"];
+const LEGACY_OSC = ["osc", "both"];
+
+function legacyTransport(config) {
   const transport = config && config.transport;
-  return transport === undefined || transport === null || OSC_TRANSPORTS.indexOf(transport) !== -1;
+  return typeof transport === "string" && transport ? transport : null;
+}
+
+/** Whether these settings put DMX on the wire. */
+function sendsDmx(config) {
+  const legacy = legacyTransport(config);
+  if (legacy) return LEGACY_DMX.indexOf(legacy) !== -1;
+  return isOn(config && config.dmxEnabled);
+}
+
+/** Whether these settings put OSC on the wire. No word either way means it does. */
+function sendsOsc(config) {
+  const legacy = legacyTransport(config);
+  if (legacy) return LEGACY_OSC.indexOf(legacy) !== -1;
+  const flag = config && config.oscEnabled;
+  return flag === undefined || flag === null ? true : isOn(flag);
+}
+
+/**
+ * The two checkboxes an old Output setting stands for, or null when the
+ * settings carry no such word and there is nothing to upgrade.
+ */
+function upgradeRouting(config) {
+  const legacy = legacyTransport(config);
+  if (!legacy) return null;
+  return { oscEnabled: LEGACY_OSC.indexOf(legacy) !== -1, dmxEnabled: LEGACY_DMX.indexOf(legacy) !== -1 };
 }
 
 /**
  * The DMX half of a widget's settings, for a widget with dmx: true.
  *
- * Hidden until Output asks for DMX, so the panel on a plain OSC button is the
- * panel OSCAR has always had. Where OSC needs an address and a port, DMX
+ * Its own section, led by the checkbox that switches it on. Nothing in it is
+ * hidden while it is off: a channel can be set up before the fixture is live.
+ * Where OSC needs an address and a port, DMX
  * needs a protocol, a node, a universe and a block of channels: the first
  * channel, and how many from there. A widget's values fill the block in
  * order and the last repeats, so a slider over three channels dims an RGB
  * fixture as a whole and a pad over two lands on pan and tilt.
  */
 function dmxFields() {
-  const only = { showIf: { key: "transport", in: DMX_TRANSPORTS } };
+  const only = { section: "dmx" };
   return [
-    field("dmxProtocol", "DMX protocol", "select", Object.assign({ options: PROTOCOL_OPTIONS }, only)),
-    field("dmxHost", "DMX node", "text", Object.assign({ placeholder: "broadcast" }, only)),
-    field("dmxUniverse", "DMX universe", "number", Object.assign({ min: 0, max: 63999 }, only)),
-    field("dmxChannel", "DMX channel", "number", Object.assign({ min: 1, max: SLOTS }, only)),
-    field("dmxCount", "DMX channels", "number", Object.assign({ min: 1, max: SLOTS }, only)),
+    dmxToggle(),
+    field("dmxProtocol", "Protocol", "select", Object.assign({ options: PROTOCOL_OPTIONS }, only)),
+    field("dmxHost", "Node", "text", Object.assign({ placeholder: "broadcast" }, only)),
+    field("dmxUniverse", "Universe", "number", Object.assign({ min: 0, max: 63999 }, only)),
+    field("dmxChannel", "Channel", "number", Object.assign({ min: 1, max: SLOTS }, only)),
+    field("dmxCount", "Channels", "number", Object.assign({ min: 1, max: SLOTS }, only)),
   ];
 }
 
 /**
- * The defaults that go with transport() and dmxFields().
+ * The defaults that go with oscToggle() and dmxFields().
  *
  * Universe 1 rather than 0: it is the one first universe both protocols
  * accept, so switching protocol never silently stops the output. `values` is
@@ -2682,7 +2739,8 @@ function dmxFields() {
  */
 function dmxDefaults(values) {
   return {
-    transport: "osc",
+    oscEnabled: true,
+    dmxEnabled: false,
     dmxProtocol: "artnet",
     dmxHost: "",
     dmxUniverse: 1,
@@ -2825,8 +2883,10 @@ module.exports = {
   listen: listen,
   connection: connection,
   connectionChecks: connectionChecks,
-  transport: transport,
-  TRANSPORTS: TRANSPORTS,
+  SECTIONS: SECTIONS,
+  oscToggle: oscToggle,
+  dmxToggle: dmxToggle,
+  upgradeRouting: upgradeRouting,
   ORIENTATIONS: ORIENTATIONS,
   sendsDmx: sendsDmx,
   sendsOsc: sendsOsc,
@@ -2970,13 +3030,15 @@ module.exports = { incoming, follow };
  *             follow() from incoming.js. On a widget that also sends, listen
  *             defaults to false: a surface must not start moving on its own.
  *   dmx       its values are numbers that a DMX channel could carry, so it
- *             offers DMX as an output: an Output setting (transport() from
- *             fields.js, one of osc | dmx | both, "osc" by default so every
- *             older project behaves as it did) and the DMX fields (dmxFields(),
- *             with defaults from dmxDefaults(n) and checks from dmxChecks(n),
- *             n being how many channels the widget naturally drives). Those
- *             fields carry showIf, so a panel shows them only while Output
- *             asks for DMX. The widget scales its gesture to 0..1 with unitOf()
+ *             offers DMX as well as OSC. Each protocol is a section of the
+ *             panel led by its own checkbox: oscToggle() from fields.js
+ *             (OSC's Enable, on by default so every older project behaves as it
+ *             did) ahead of connection(), and the DMX fields (dmxFields(),
+ *             which opens with DMX's Enable, off by default; defaults from
+ *             dmxDefaults(n) and checks from dmxChecks(n), n being how many
+ *             channels the widget naturally drives). A widget with dmx: false
+ *             carries neither checkbox: OSC's Enable on a widget that only speaks
+ *             OSC would be a second Enabled. The widget scales its gesture to 0..1 with unitOf()
  *             from lib/dmx/levels.js and passes that as outgoing()'s third
  *             argument; outgoing() builds the DMX half. A widget that sends
  *             text, or sends nothing, sets false. Implies sends.
@@ -2994,7 +3056,7 @@ module.exports = { incoming, follow };
  *                            the DMX half with the widget's identity. A widget
  *                            never releases DMX channels itself: the host
  *                            does that when the widget is deleted or its
- *                            Output leaves DMX, and the server when OSCAR quits.
+ *                            DMX's Enable is unticked, and the server when OSCAR quits.
  *                            Refused while an incoming message is being
  *                            delivered to this widget (see onOsc).
  *   setClass(name, on)       reflect state visually
@@ -3358,7 +3420,7 @@ const mediaBrowser = {
     field("items", "Items", "text", { placeholder: "Forest|7|thumbs/forest.jpg; Waves|12" }),
     field("columns", "Columns", "number", { min: 1, max: MAX_COLUMNS, step: 1 }),
     field("showLabels", "Show labels", "checkbox"),
-    field("argType", "Argument type", "select", { options: ITEM_ARG_TYPES }),
+    field("argType", "Argument type", "select", { section: "osc", options: ITEM_ARG_TYPES }),
   ]),
 
   checks: Object.assign({}, connectionChecks(), {
@@ -3690,7 +3752,7 @@ const meter = {
 
   fields: [
     enabled(),
-    field("message", "Message", "text", { placeholder: "/address" }),
+    field("message", "Message", "text", { section: "osc", placeholder: "/address" }),
     listen(),
     field("min", "Min", "number", { step: "any" }),
     field("max", "Max", "number", { step: "any" }),
@@ -3864,7 +3926,7 @@ const {
   listen,
   connection,
   connectionChecks,
-  transport,
+  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -3895,7 +3957,7 @@ const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
  * and onto the step so the box and its settings agree -- unless the box is
  * being typed into.
  *
- * The settings are judged together, not one by one. Min, Max, Step, Output
+ * The settings are judged together, not one by one. Min, Max, Step, DMX's Enable
  * and Argument type each decide whether the Value already in the box can be
  * sent, so each of them refuses an edit that would strand it: a box holding
  * a number it will itself refuse sends nothing on Enter, and looks fine.
@@ -3938,7 +4000,7 @@ const numberInput = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), transport()]
+  fields: [enabled(), oscToggle()]
     .concat(connection())
     .concat([
       listen(),
@@ -3946,7 +4008,7 @@ const numberInput = {
       field("min", "Min", "number", { step: "any", placeholder: "no limit" }),
       field("max", "Max", "number", { step: "any", placeholder: "no limit" }),
       field("step", "Step", "number", { step: "any", min: 0, placeholder: "any" }),
-      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
     .concat(dmxFields()),
 
@@ -3955,8 +4017,10 @@ const numberInput = {
     min: checkLimit("Min", "max"),
     max: checkLimit("Max", "min"),
     step: checkStep,
-    transport: function (value, config) {
-      return stranded(config, "transport", value);
+    // Switching DMX on changes which numbers can go out (a level is 0-255
+    // unless Min and Max say otherwise), so it is judged like editing a limit.
+    dmxEnabled: function (value, config) {
+      return stranded(config, "dmxEnabled", value);
     },
     argType: checkArgType(function (config) {
       return [config.value];
@@ -4029,7 +4093,7 @@ const numberInput = {
       return fitted;
     }
 
-    const stop = ctx.onChange(["value", "min", "max", "step", "transport"], apply);
+    const stop = ctx.onChange(["value", "min", "max", "step", "dmxEnabled", "transport"], apply);
     // The host rewriting the element strips min, max and step with the rest,
     // and a box with no max lets the stepper run past the range.
     const stopRewrite = ctx.onRewrite ? ctx.onRewrite(apply) : null;
@@ -4059,6 +4123,8 @@ function settings(ctx) {
     max: ctx.get("max"),
     step: ctx.get("step"),
     argType: ctx.get("argType"),
+    dmxEnabled: ctx.get("dmxEnabled"),
+    // Only ever set on a widget from a project saved before the checkboxes.
     transport: ctx.get("transport"),
   };
 }
@@ -4219,7 +4285,7 @@ const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
  *          button passes 1 or 0. Omitted by a widget that cannot drive DMX.
  *
  * The result is { ip, port, address, args } for OSC, { dmx: {...} } for DMX,
- * or both on one object when Output says both, and the host sends whichever
+ * or both on one object when both protocols are switched on, and the host sends whichever
  * halves are present. The halves are independent: a button whose Value ON
  * is "go" cannot send that as a float, but it can still put its dimmer to
  * full, and silence on one wire is no reason for silence on the other.
@@ -4305,11 +4371,17 @@ function dmxRequest(config, units) {
  * it. For a widget that sends its OSC in several messages but its DMX in one
  * -- the pad in two-message mode -- so each half goes out exactly once.
  */
-function only(config, transport) {
+function only(config, protocol) {
   if (!config) return null;
-  if (transport === "osc" && !sendsOsc(config)) return null;
-  if (transport === "dmx" && !sendsDmx(config)) return null;
-  return Object.assign({}, config, { transport: transport });
+  if (protocol === "osc" && !sendsOsc(config)) return null;
+  if (protocol === "dmx" && !sendsDmx(config)) return null;
+  // `transport` is the old one-setting form of the same choice (fields.js);
+  // cleared, so it cannot outvote the two checkboxes set here.
+  return Object.assign({}, config, {
+    transport: undefined,
+    oscEnabled: protocol === "osc",
+    dmxEnabled: protocol === "dmx",
+  });
 }
 
 /**
@@ -4322,6 +4394,9 @@ function only(config, transport) {
 function routing(ctx) {
   return {
     enabled: ctx.get("enabled"),
+    oscEnabled: ctx.get("oscEnabled"),
+    dmxEnabled: ctx.get("dmxEnabled"),
+    // Only ever set on a widget from a project saved before the checkboxes.
     transport: ctx.get("transport"),
     ip: ctx.get("ip"),
     port: ctx.get("port"),
@@ -4439,7 +4514,7 @@ const {
   connectionChecks,
   checkNumber,
   ORIENTATIONS,
-  transport,
+  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -4498,7 +4573,7 @@ const slider = {
     dmxDefaults(1)
   ),
 
-  fields: [enabled(), transport()]
+  fields: [enabled(), oscToggle()]
     .concat(connection())
     .concat([
       listen(),
@@ -4507,7 +4582,7 @@ const slider = {
       field("value", "Value", "number", { step: "any" }),
       field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
       field("invert", "Invert", "checkbox"),
-      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
     .concat(dmxFields()),
 
@@ -4757,7 +4832,7 @@ const textInput = {
     listen(),
     field("value", "Value", "text"),
     field("placeholder", "Placeholder", "text"),
-    field("argType", "Argument type", "select", { options: ARG_TYPES }),
+    field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
   ]),
 
   checks: Object.assign({}, connectionChecks(), {
@@ -5083,7 +5158,7 @@ const {
   connection,
   connectionChecks,
   checkNumber,
-  transport,
+  oscToggle,
   dmxFields,
   dmxDefaults,
   dmxChecks,
@@ -5160,7 +5235,7 @@ const xypad = {
     dmxDefaults(2)
   ),
 
-  fields: [enabled(), transport()]
+  fields: [enabled(), oscToggle()]
     .concat(connection())
     .concat([
       listen(),
@@ -5171,7 +5246,7 @@ const xypad = {
       field("maxY", "Max Y", "number", { step: "any" }),
       field("invertX", "Invert X", "checkbox"),
       field("invertY", "Invert Y", "checkbox"),
-      field("argType", "Argument type", "select", { options: NUMERIC_ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
     .concat(dmxFields()),
 
@@ -16348,11 +16423,33 @@ return jQuery;
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx } = require("../../../lib/widgets/fields");
+var { sendsDmx, upgradeRouting, SECTIONS } = require("../../../lib/widgets/fields");
 var { exportAttributes } = require("../../../lib/export/config");
 
-/** Neutral field descriptor -> GrapesJS trait. */
-function toTrait(field) {
+/**
+ * The collapsible section a field is drawn in. GrapesJS draws every trait
+ * that has a category above every trait that has none, so the widget's own
+ * settings get a section too -- first, because Enabled is the first field --
+ * rather than ending up underneath the protocols.
+ *
+ * A protocol's section starts open when the widget uses that protocol. The
+ * DMX section of a plain OSC button is one closed line, which keeps its panel
+ * as short as it was before DMX existed.
+ */
+var WIDGET_SECTION = { id: "widget", label: "Widget" };
+
+function categoryOf(field, config) {
+  var section = null;
+  SECTIONS.forEach(function (candidate) {
+    if (candidate.id === field.section) section = candidate;
+  });
+  if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
+  var open = section.id === "dmx" ? sendsDmx(config || {}) : true;
+  return { id: section.id, label: section.label, open: open };
+}
+
+/** Neutral field descriptor -> GrapesJS trait. `config` decides which sections start open. */
+function toTrait(field, config) {
   var trait = {
     // Every setting is a component property rather than an HTML attribute.
     // Attributes would end up in the exported markup, where they are noise at
@@ -16361,6 +16458,7 @@ function toTrait(field) {
     name: field.key,
     label: field.label,
     type: field.type,
+    category: categoryOf(field, config),
   };
 
   if (field.type === "select") {
@@ -16373,6 +16471,13 @@ function toTrait(field) {
   if (field.step !== undefined) trait.step = field.step;
 
   return trait;
+}
+
+/** The whole panel for a widget in a given state. */
+function traitsFor(definition, config) {
+  return visibleFields(definition, config).map(function (field) {
+    return toTrait(field, config);
+  });
 }
 
 /** The fields a trait list holds, in order, as one comparable string. */
@@ -16828,7 +16933,7 @@ function register(definition) {
             attributes: Object.assign({}, definition.attributes),
             droppable: false,
             resizable: true,
-            traits: visibleFields(definition, defaults).map(toTrait),
+            traits: traitsFor(definition, defaults),
           },
           defaults,
           // A widget whose label is its text content renders that text as its
@@ -16879,7 +16984,12 @@ function register(definition) {
             var refresh = function () {
               var wanted = visibleFields(definition, configOf(model, definition));
               if (traitKeys(model.get("traits")) === traitKeys(wanted)) return;
-              model.set("traits", wanted.map(toTrait));
+              model.set(
+                "traits",
+                wanted.map(function (field) {
+                  return toTrait(field, configOf(model, definition));
+                })
+              );
             };
             refresh();
             model.on(changeEvent(reveals), refresh);
@@ -16891,7 +17001,24 @@ function register(definition) {
           // its level the way a silent OSC fader leaves the software where it
           // was, and a blackout is not "no change".
           if (definition.dmx) {
-            model.on("change:transport", function () {
+            // A project saved while the choice was one Output setting says
+            // osc, dmx or both. Turn that into the two checkboxes the panel
+            // now shows, or they would sit at their defaults and lie about a
+            // widget that is driving DMX. Silent: opening a project is not
+            // an edit, and nothing has changed about what the widget does.
+            var upgraded = upgradeRouting({ transport: model.get("transport") });
+            if (upgraded) {
+              model.set(upgraded, { silent: true });
+              model.unset("transport", { silent: true });
+            }
+
+            // The type's panel was built with DMX off, so its DMX section
+            // starts closed. One that is driving DMX opens on it.
+            if (sendsDmx(configOf(model, definition))) {
+              model.set("traits", traitsFor(definition, configOf(model, definition)));
+            }
+
+            model.on("change:dmxEnabled", function () {
               if (!sendsDmx(configOf(model, definition)) && editor.stopDMX) editor.stopDMX(model.getId());
             });
           }

@@ -219,27 +219,27 @@ test("a step may be blank, and is otherwise a number above zero", () => {
 // --- DMX --------------------------------------------------------------------
 
 test("with no range, the number typed is the DMX level", () => {
-  const { el, ctx } = mount(numberInput, { transport: "dmx", dmxChannel: 3 });
+  const { el, ctx } = mount(numberInput, { oscEnabled: false, dmxEnabled: true, dmxChannel: 3 });
   el.value = "128";
   el.fire("keydown", { key: "Enter" });
   assert.deepStrictEqual(ctx.sent, [{ dmx: { protocol: "artnet", host: "", universe: 1, channel: 3, levels: [128] } }]);
 });
 
 test("on DMX with no range, a number that is not a level is refused, never pinned", () => {
-  for (const transport of ["dmx", "both"]) {
-    const { el, ctx } = mount(numberInput, { transport, value: 10 });
+  for (const oscEnabled of [false, true]) {
+    const { el, ctx } = mount(numberInput, { oscEnabled, dmxEnabled: true, value: 10 });
     for (const typed of ["-1", "300", "255.5"]) {
       el.value = typed;
       el.fire("keydown", { key: "Enter" });
     }
-    assert.deepStrictEqual(ctx.sent, [], transport + ": -1 is not a blackout and 300 is not full");
+    assert.deepStrictEqual(ctx.sent, [], "with OSC " + oscEnabled + ": -1 is not a blackout and 300 is not full");
     assert.strictEqual(ctx.config.value, 10);
     assert.strictEqual(el.min, "0", "the browser marks it, as it does for Min and Max");
     assert.strictEqual(el.max, "255");
   }
 
   // One limit alone does not make a range, so 0-255 still binds.
-  const { el, ctx } = mount(numberInput, { transport: "dmx", min: 10, value: 10 });
+  const { el, ctx } = mount(numberInput, { oscEnabled: false, dmxEnabled: true, min: 10, value: 10 });
   assert.strictEqual(el.min, "10");
   assert.strictEqual(el.max, "255");
   el.value = "300";
@@ -255,17 +255,19 @@ test("on DMX with no range, a number that is not a level is refused, never pinne
 
 test("the panel refuses what would leave a DMX box holding a number that is not a level", () => {
   const { checks } = numberInput;
-  assert.match(checks.value(300, { transport: "dmx", argType: "f" }), /DMX level is 0-255/);
-  assert.match(checks.value(-1, { transport: "both", argType: "f" }), /at least 0/);
-  assert.strictEqual(checks.value(300, { transport: "dmx", min: 0, max: 1000, argType: "f" }), null);
-  assert.match(checks.transport("dmx", { transport: "dmx", value: 300, argType: "f" }), /change the value first/);
-  assert.strictEqual(checks.transport("osc", { transport: "osc", value: 300, argType: "f" }), null);
+  assert.match(checks.value(300, { oscEnabled: false, dmxEnabled: true, argType: "f" }), /DMX level is 0-255/);
+  assert.match(checks.value(-1, { oscEnabled: true, dmxEnabled: true, argType: "f" }), /at least 0/);
+  assert.strictEqual(checks.value(300, { oscEnabled: false, dmxEnabled: true, min: 0, max: 1000, argType: "f" }), null);
+  // Ticking DMX's Enable is judged like editing a limit: it is what brings 0-255 in.
+  assert.match(checks.dmxEnabled(true, { oscEnabled: true, dmxEnabled: false, value: 300, argType: "f" }), /change the value first/);
+  assert.strictEqual(checks.dmxEnabled(false, { oscEnabled: true, dmxEnabled: true, value: 300, argType: "f" }), null);
+  assert.strictEqual(checks.dmxEnabled(true, { oscEnabled: true, dmxEnabled: false, value: 200, argType: "f" }), null);
   // Clearing Max takes the range away and brings 0-255 back.
-  assert.match(checks.max("", { transport: "dmx", min: 0, max: "", value: 300, argType: "f" }), /change the value first/);
+  assert.match(checks.max("", { oscEnabled: false, dmxEnabled: true, min: 0, max: "", value: 300, argType: "f" }), /change the value first/);
 });
 
 test("with Min and Max set, the level is where the number sits between them", () => {
-  const { el, ctx } = mount(numberInput, { transport: "both", min: 0, max: 100 });
+  const { el, ctx } = mount(numberInput, { oscEnabled: true, dmxEnabled: true, min: 0, max: 100 });
   el.value = "50";
   el.fire("keydown", { key: "Enter" });
   assert.deepStrictEqual(ctx.sent[0].args, [{ type: "f", value: 50 }]);
@@ -273,7 +275,8 @@ test("with Min and Max set, the level is where the number sits between them", ()
 });
 
 test("Output is OSC by default, so a number box sends no DMX until asked", () => {
-  assert.strictEqual(numberInput.defaults.transport, "osc");
+  assert.strictEqual(numberInput.defaults.oscEnabled, true);
+  assert.strictEqual(numberInput.defaults.dmxEnabled, false);
   const { el, ctx } = mount(numberInput);
   el.value = "1";
   el.fire("keydown", { key: "Enter" });
@@ -345,7 +348,7 @@ test("detaching lets go of everything", () => {
 
 test("a press released outside the box does not turn later typing into cues", () => {
   withWindow((win) => {
-    const { el, ctx, detach } = mount(numberInput, { transport: "both", min: 0, max: 100 });
+    const { el, ctx, detach } = mount(numberInput, { oscEnabled: true, dmxEnabled: true, min: 0, max: 100 });
     // Dragging to select the text: down on the box, up somewhere else, so
     // the box itself never hears the release.
     el.fire("pointerdown");

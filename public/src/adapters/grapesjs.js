@@ -8,11 +8,33 @@
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx } = require("../../../lib/widgets/fields");
+var { sendsDmx, upgradeRouting, SECTIONS } = require("../../../lib/widgets/fields");
 var { exportAttributes } = require("../../../lib/export/config");
 
-/** Neutral field descriptor -> GrapesJS trait. */
-function toTrait(field) {
+/**
+ * The collapsible section a field is drawn in. GrapesJS draws every trait
+ * that has a category above every trait that has none, so the widget's own
+ * settings get a section too -- first, because Enabled is the first field --
+ * rather than ending up underneath the protocols.
+ *
+ * A protocol's section starts open when the widget uses that protocol. The
+ * DMX section of a plain OSC button is one closed line, which keeps its panel
+ * as short as it was before DMX existed.
+ */
+var WIDGET_SECTION = { id: "widget", label: "Widget" };
+
+function categoryOf(field, config) {
+  var section = null;
+  SECTIONS.forEach(function (candidate) {
+    if (candidate.id === field.section) section = candidate;
+  });
+  if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
+  var open = section.id === "dmx" ? sendsDmx(config || {}) : true;
+  return { id: section.id, label: section.label, open: open };
+}
+
+/** Neutral field descriptor -> GrapesJS trait. `config` decides which sections start open. */
+function toTrait(field, config) {
   var trait = {
     // Every setting is a component property rather than an HTML attribute.
     // Attributes would end up in the exported markup, where they are noise at
@@ -21,6 +43,7 @@ function toTrait(field) {
     name: field.key,
     label: field.label,
     type: field.type,
+    category: categoryOf(field, config),
   };
 
   if (field.type === "select") {
@@ -33,6 +56,13 @@ function toTrait(field) {
   if (field.step !== undefined) trait.step = field.step;
 
   return trait;
+}
+
+/** The whole panel for a widget in a given state. */
+function traitsFor(definition, config) {
+  return visibleFields(definition, config).map(function (field) {
+    return toTrait(field, config);
+  });
 }
 
 /** The fields a trait list holds, in order, as one comparable string. */
@@ -488,7 +518,7 @@ function register(definition) {
             attributes: Object.assign({}, definition.attributes),
             droppable: false,
             resizable: true,
-            traits: visibleFields(definition, defaults).map(toTrait),
+            traits: traitsFor(definition, defaults),
           },
           defaults,
           // A widget whose label is its text content renders that text as its
@@ -539,7 +569,12 @@ function register(definition) {
             var refresh = function () {
               var wanted = visibleFields(definition, configOf(model, definition));
               if (traitKeys(model.get("traits")) === traitKeys(wanted)) return;
-              model.set("traits", wanted.map(toTrait));
+              model.set(
+                "traits",
+                wanted.map(function (field) {
+                  return toTrait(field, configOf(model, definition));
+                })
+              );
             };
             refresh();
             model.on(changeEvent(reveals), refresh);
@@ -551,7 +586,24 @@ function register(definition) {
           // its level the way a silent OSC fader leaves the software where it
           // was, and a blackout is not "no change".
           if (definition.dmx) {
-            model.on("change:transport", function () {
+            // A project saved while the choice was one Output setting says
+            // osc, dmx or both. Turn that into the two checkboxes the panel
+            // now shows, or they would sit at their defaults and lie about a
+            // widget that is driving DMX. Silent: opening a project is not
+            // an edit, and nothing has changed about what the widget does.
+            var upgraded = upgradeRouting({ transport: model.get("transport") });
+            if (upgraded) {
+              model.set(upgraded, { silent: true });
+              model.unset("transport", { silent: true });
+            }
+
+            // The type's panel was built with DMX off, so its DMX section
+            // starts closed. One that is driving DMX opens on it.
+            if (sendsDmx(configOf(model, definition))) {
+              model.set("traits", traitsFor(definition, configOf(model, definition)));
+            }
+
+            model.on("change:dmxEnabled", function () {
               if (!sendsDmx(configOf(model, definition)) && editor.stopDMX) editor.stopDMX(model.getId());
             });
           }

@@ -85,7 +85,7 @@ test("every sending widget aimed at the cable sends there, port or no port", () 
 
 test("serial and DMX are independent: Output both sends OSC to the cable and levels to the node", () => {
   const message = outgoing(
-    { enabled: true, transport: "both", ip: "serial", port: "", message: "/led", argType: "f",
+    { enabled: true, oscEnabled: true, dmxEnabled: true, ip: "serial", port: "", message: "/led", argType: "f",
       dmxProtocol: "artnet", dmxHost: "", dmxUniverse: 1, dmxChannel: 1, dmxCount: 1 },
     0.5,
     0.5

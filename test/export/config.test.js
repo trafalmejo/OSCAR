@@ -123,7 +123,7 @@ test("a complete config whose values are unusable is a problem, not a live contr
     ["oscar-button", { ip: null, port: null }],
     ["oscar-button", { port: 70000 }],
     ["oscar-button", { message: "no-slash" }],
-    ["oscar-slider", { transport: "dmx", dmxChannel: 0 }],
+    ["oscar-slider", { oscEnabled: false, dmxEnabled: true, dmxChannel: 0 }],
     // Not a value any validator was written for.
     ["oscar-dropdown", { options: { a: 1 } }],
   ];

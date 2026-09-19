@@ -228,7 +228,7 @@ test("the swatch keeps its colour after the host rewrites the element", () => {
 // --- DMX --------------------------------------------------------------------
 
 test("on DMX, red, green and blue land on three consecutive channels", () => {
-  const { el, ctx } = mount(colour, { transport: "dmx", dmxChannel: 10 });
+  const { el, ctx } = mount(colour, { oscEnabled: false, dmxEnabled: true, dmxChannel: 10 });
   pick(el, "#ff8800");
   assert.deepStrictEqual(ctx.sent, [
     { dmx: { protocol: "artnet", host: "", universe: 1, channel: 10, levels: [255, 136, 0] } },
@@ -237,14 +237,15 @@ test("on DMX, red, green and blue land on three consecutive channels", () => {
 
 test("the DMX block is three channels wide by default, blue repeats across a wider one, and a narrower one is refused", () => {
   assert.strictEqual(colour.defaults.dmxCount, 3);
-  assert.strictEqual(colour.defaults.transport, "osc", "and OSC is the output until someone says otherwise");
+  assert.strictEqual(colour.defaults.oscEnabled, true, "and OSC is the output until someone says otherwise");
+  assert.strictEqual(colour.defaults.dmxEnabled, false);
 
-  const wide = mount(colour, { transport: "dmx", dmxCount: 5 });
+  const wide = mount(colour, { oscEnabled: false, dmxEnabled: true, dmxCount: 5 });
   pick(wide.el, "#ff8800");
   assert.deepStrictEqual(lastArgs(wide.ctx), undefined, "a DMX-only message has no args");
   assert.deepStrictEqual(wide.ctx.sent[0].dmx.levels, [255, 136, 0, 0, 0]);
 
-  const narrow = mount(colour, { transport: "dmx", dmxCount: 2 });
+  const narrow = mount(colour, { oscEnabled: false, dmxEnabled: true, dmxCount: 2 });
   pick(narrow.el, "#ff8800");
   assert.deepStrictEqual(narrow.ctx.sent, [], "two channels cannot hold a colour");
   assert.ok(colour.checks.dmxCount(2, { dmxChannel: 1 }), "and the panel says so");
@@ -252,7 +253,7 @@ test("the DMX block is three channels wide by default, blue repeats across a wid
 
 test("the DMX levels are the colour whatever the OSC format or range says", () => {
   for (const overrides of [{ format: "hex" }, { format: "rgba", scale: "byte" }, { scale: "byte" }]) {
-    const { el, ctx } = mount(colour, Object.assign({ transport: "dmx" }, overrides));
+    const { el, ctx } = mount(colour, Object.assign({ oscEnabled: false, dmxEnabled: true }, overrides));
     pick(el, "#8000ff");
     assert.deepStrictEqual(ctx.sent[0].dmx.levels, [128, 0, 255], JSON.stringify(overrides));
   }
@@ -260,11 +261,11 @@ test("the DMX levels are the colour whatever the OSC format or range says", () =
 
 test("alpha never reaches the fixture, and an unreadable alpha silences OSC but not DMX", () => {
   // A fixture has no alpha; a blank Alpha is no reason to stop driving it.
-  const { el, ctx } = mount(colour, { transport: "both", format: "rgba", alpha: "" });
+  const { el, ctx } = mount(colour, { oscEnabled: true, dmxEnabled: true, format: "rgba", alpha: "" });
   pick(el, "#ff0000");
   assert.deepStrictEqual(ctx.sent, [{ dmx: { protocol: "artnet", host: "", universe: 1, channel: 1, levels: [255, 0, 0] } }]);
 
-  const both = mount(colour, { transport: "both", format: "rgba", alpha: 0.5 });
+  const both = mount(colour, { oscEnabled: true, dmxEnabled: true, format: "rgba", alpha: 0.5 });
   pick(both.el, "#ff0000");
   assert.strictEqual(both.ctx.sent[0].args.length, 4, "OSC carries the alpha");
   assert.deepStrictEqual(both.ctx.sent[0].dmx.levels, [255, 0, 0], "DMX does not");

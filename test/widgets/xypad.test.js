@@ -89,7 +89,7 @@ test("the handle stays where it was dragged after the host rewrites the element"
 // --- DMX --------------------------------------------------------------------
 
 test("on DMX, X lands on the first channel and Y on the next: pan and tilt", () => {
-  const { el, ctx } = mount(xypad, { rect: SQUARE, transport: "dmx", dmxChannel: 20 });
+  const { el, ctx } = mount(xypad, { rect: SQUARE, oscEnabled: false, dmxEnabled: true, dmxChannel: 20 });
   el.fire("pointerdown", { clientX: 100, clientY: 75 });
   el.fire("pointerup", { clientX: 100, clientY: 75 });
   const last = ctx.sent[ctx.sent.length - 1];
@@ -99,7 +99,7 @@ test("on DMX, X lands on the first channel and Y on the next: pan and tilt", () 
 test("in two-message mode the OSC goes out twice but the DMX frame once, with both axes", () => {
   // Pan and tilt are one position; a half-updated block would swing the
   // head through somewhere nobody pointed at.
-  const { el, ctx } = mount(xypad, { rect: SQUARE, transport: "both", sendMode: "two" });
+  const { el, ctx } = mount(xypad, { rect: SQUARE, oscEnabled: true, dmxEnabled: true, sendMode: "two" });
   el.fire("pointerdown", { clientX: 50, clientY: 50 });
   el.fire("pointerup", { clientX: 50, clientY: 50 });
   const osc = ctx.sent.filter((m) => m.address);
@@ -111,7 +111,7 @@ test("in two-message mode the OSC goes out twice but the DMX frame once, with bo
 });
 
 test("in two-message mode on DMX alone, nothing goes to OSC", () => {
-  const { el, ctx } = mount(xypad, { rect: SQUARE, transport: "dmx", sendMode: "two" });
+  const { el, ctx } = mount(xypad, { rect: SQUARE, oscEnabled: false, dmxEnabled: true, sendMode: "two" });
   el.fire("pointerdown", { clientX: 0, clientY: 100 });
   el.fire("pointerup", { clientX: 0, clientY: 100 });
   assert.ok(ctx.sent.length >= 1);
@@ -120,7 +120,7 @@ test("in two-message mode on DMX alone, nothing goes to OSC", () => {
 });
 
 test("the pad's DMX levels follow its own ranges and inversions", () => {
-  const { el, ctx } = mount(xypad, { rect: SQUARE, transport: "dmx", minX: -1, maxX: 1, minY: 0, maxY: 10, invertY: true });
+  const { el, ctx } = mount(xypad, { rect: SQUARE, oscEnabled: false, dmxEnabled: true, minX: -1, maxX: 1, minY: 0, maxY: 10, invertY: true });
   el.fire("pointerdown", { clientX: 50, clientY: 0 });
   el.fire("pointerup", { clientX: 50, clientY: 0 });
   // X at the centre of -1..1 is 0, halfway; Y inverted at the top is 0.
@@ -128,12 +128,12 @@ test("the pad's DMX levels follow its own ranges and inversions", () => {
 });
 
 test("a pad over more channels than two repeats tilt; over fewer it is refused", () => {
-  const wide = mount(xypad, { rect: SQUARE, transport: "dmx", dmxCount: 3 });
+  const wide = mount(xypad, { rect: SQUARE, oscEnabled: false, dmxEnabled: true, dmxCount: 3 });
   wide.el.fire("pointerdown", { clientX: 100, clientY: 100 });
   wide.el.fire("pointerup", { clientX: 100, clientY: 100 });
   assert.deepStrictEqual(wide.ctx.sent[wide.ctx.sent.length - 1].dmx.levels, [255, 0, 0]);
 
-  const narrow = mount(xypad, { rect: SQUARE, transport: "dmx", dmxCount: 1 });
+  const narrow = mount(xypad, { rect: SQUARE, oscEnabled: false, dmxEnabled: true, dmxCount: 1 });
   narrow.el.fire("pointerdown", { clientX: 100, clientY: 100 });
   narrow.el.fire("pointerup", { clientX: 100, clientY: 100 });
   assert.deepStrictEqual(narrow.ctx.sent, [], "half a position is no position");
@@ -141,7 +141,8 @@ test("a pad over more channels than two repeats tilt; over fewer it is refused",
 });
 
 test("Output is OSC by default, so a saved pad sends exactly what it always did", () => {
-  assert.strictEqual(xypad.defaults.transport, "osc");
+  assert.strictEqual(xypad.defaults.oscEnabled, true);
+  assert.strictEqual(xypad.defaults.dmxEnabled, false);
   assert.strictEqual(xypad.defaults.dmxCount, 2, "and its block is two channels wide when it is switched");
 });
 

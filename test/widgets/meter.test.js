@@ -68,7 +68,7 @@ test("the meter is display-only: it follows, never sends, and has no address to 
   assert.strictEqual(meter.receives, true);
   assert.strictEqual(meter.dmx, false);
   const keys = meter.fields.map((f) => f.key);
-  for (const key of ["ip", "port", "argType", "transport"]) {
+  for (const key of ["ip", "port", "argType", "oscEnabled", "dmxEnabled"]) {
     assert.ok(!keys.includes(key), "a meter has no " + key);
   }
   assert.strictEqual(keys[keys.indexOf("message") + 1], "listen", "Listen sits right after Message");

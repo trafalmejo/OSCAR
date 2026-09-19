@@ -115,20 +115,21 @@ test("the selection has to be one of the options", () => {
 // --- DMX --------------------------------------------------------------------
 
 test("on DMX the option's value is the level, 0-255", () => {
-  const { el, ctx } = mount(dropdown, { transport: "dmx", options: "Off=0, Half=128, Full=255", dmxChannel: 7 });
+  const { el, ctx } = mount(dropdown, { oscEnabled: false, dmxEnabled: true, options: "Off=0, Half=128, Full=255", dmxChannel: 7 });
   pick(el, "128");
   assert.deepStrictEqual(ctx.sent, [{ dmx: { protocol: "artnet", host: "", universe: 1, channel: 7, levels: [128] } }]);
 });
 
 test("an option that is not a number drives no DMX, and is not sent as a blackout", () => {
-  const { el, ctx } = mount(dropdown, { transport: "both", options: "play, stop", argType: "s" });
+  const { el, ctx } = mount(dropdown, { oscEnabled: true, dmxEnabled: true, options: "play, stop", argType: "s" });
   pick(el, "play");
   assert.deepStrictEqual(ctx.sent[0].args, [{ type: "s", value: "play" }]);
   assert.ok(!("dmx" in ctx.sent[0]));
 });
 
 test("Output is OSC by default", () => {
-  assert.strictEqual(dropdown.defaults.transport, "osc");
+  assert.strictEqual(dropdown.defaults.oscEnabled, true);
+  assert.strictEqual(dropdown.defaults.dmxEnabled, false);
 });
 
 // --- following the rig ---------------------------------------------------------
@@ -171,22 +172,25 @@ test("detaching lets go of everything", () => {
 
 // --- review fixes -------------------------------------------------------------
 
-test("on DMX every option has to be a level, and Output is judged from both sides", () => {
+test("on DMX every option has to be a level, and DMX's Enable is judged from both sides", () => {
   const { checks } = dropdown;
-  for (const transport of ["dmx", "both"]) {
-    assert.match(checks.options("A=abc", { argType: "s", transport }), /not a DMX level/);
-    assert.match(checks.options("A=300", { argType: "i", transport }), /0 to 255/);
-    assert.match(checks.options("A=-5", { argType: "i", transport }), /0 to 255/);
-    assert.match(checks.transport(transport, { options: "A=abc", argType: "s", transport }), /not a DMX level/);
-    assert.strictEqual(checks.options("Off=0, Full=255", { argType: "i", transport }), null);
+  for (const oscEnabled of [false, true]) {
+    const on = { oscEnabled, dmxEnabled: true };
+    assert.match(checks.options("A=abc", Object.assign({ argType: "s" }, on)), /not a DMX level/);
+    assert.match(checks.options("A=300", Object.assign({ argType: "i" }, on)), /0 to 255/);
+    assert.match(checks.options("A=-5", Object.assign({ argType: "i" }, on)), /0 to 255/);
+    assert.strictEqual(checks.options("Off=0, Full=255", Object.assign({ argType: "i" }, on)), null);
   }
-  assert.strictEqual(checks.options("A=abc", { argType: "s", transport: "osc" }), null);
-  assert.strictEqual(checks.transport("osc", { options: "A=abc", argType: "s", transport: "osc" }), null);
+  const off = { options: "A=abc", argType: "s", oscEnabled: true, dmxEnabled: false };
+  assert.strictEqual(checks.options("A=abc", off), null);
+  // Ticking the box with options that are not levels is refused; unticking never is.
+  assert.match(checks.dmxEnabled(true, off), /not a DMX level/);
+  assert.strictEqual(checks.dmxEnabled(false, Object.assign({}, off, { dmxEnabled: true })), null);
 });
 
 test("an option that is not a level puts nothing on DMX, never the nearest end", () => {
   // A project file edited by hand gets past the panel; the send path holds.
-  const { el, ctx } = mount(dropdown, { options: "A=300, B=-5, C=7", value: "7", transport: "dmx" });
+  const { el, ctx } = mount(dropdown, { options: "A=300, B=-5, C=7", value: "7", oscEnabled: false, dmxEnabled: true });
   for (const value of ["300", "-5"]) {
     el.value = value;
     el.fire("input");

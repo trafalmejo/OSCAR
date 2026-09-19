@@ -216,17 +216,19 @@ OSCAR starts, it says so and carries on: sending is unaffected.
 ### Driving lights directly (DMX over Art-Net and sACN)
 
 A button, slider or XY pad can drive lighting fixtures directly, with no
-lighting software in between. Set a widget's **Output** to **DMX** (or **OSC
-and DMX** to keep driving software at the same time) and the DMX settings
-appear below the others:
+lighting software in between. A widget's settings are grouped in collapsible
+sections, one per protocol, each switched on by the **Enable** checkbox at its
+top. Open the **DMX** section and tick **Enable**; leave the **OSC** section
+enabled to keep driving software at the same time, or untick it to drive the
+fixture alone. The DMX section holds:
 
 | Setting | Meaning |
 | --- | --- |
-| **DMX protocol** | Art-Net (UDP 6454) or sACN / E1.31 (UDP 5568) |
-| **DMX node** | The node's address. Blank broadcasts on Art-Net and multicasts on sACN, which every node on that network hears |
-| **DMX universe** | `0`-`32767` on Art-Net (the 15-bit Port-Address), `1`-`63999` on sACN |
-| **DMX channel** | The first channel of the widget's block, `1`-`512` |
-| **DMX channels** | How many channels from there |
+| **Protocol** | Art-Net (UDP 6454) or sACN / E1.31 (UDP 5568) |
+| **Node** | The node's address. Blank broadcasts on Art-Net and multicasts on sACN, which every node on that network hears |
+| **Universe** | `0`-`32767` on Art-Net (the 15-bit Port-Address), `1`-`63999` on sACN |
+| **Channel** | The first channel of the widget's block, `1`-`512` |
+| **Channels** | How many channels from there |
 
 A slider sends its level (`0`-`255` across its own Min-Max range, so a slider
 labelled 20-2000 still means full at the top; Invert mirrors it). A button
@@ -235,8 +237,10 @@ OSC. An XY pad puts X on the first channel and Y on the next: pan and tilt on
 a moving head. Values fill the block in order and the last one repeats, so a
 slider over three channels dims an RGB fixture as a whole. A block that would
 run past channel 512, or is too narrow for the widget's values, is refused in
-the panel and never sent. Output is OSC on every widget until you change it,
-so a project made before this existed behaves exactly as it did.
+the panel and never sent. OSC is enabled and DMX is not on every widget
+until you change them, so a project made before this existed behaves exactly
+as it did, and one saved while this was a single **Output** list opens with
+the matching boxes ticked.
 
 DMX is a stream, not a message: fixtures expect the frame to be repeated, and
 an sACN receiver drops a source that goes quiet for 2.5 seconds. So OSCAR
@@ -383,7 +387,7 @@ message rather than going out as `0`, which is fully transparent. The
 **Colour** setting is the swatch's value as a hex code, so a colour can be
 typed as well as picked; `#f80` and `f80` both mean `#ff8800`.
 
-With **Output** set to DMX, red, green and blue land on three consecutive
+With the **DMX** section enabled, red, green and blue land on three consecutive
 channels, whatever Send as and Range say, so the block is three channels
 wide by default and drives an RGB fixture as it stands; over a wider block
 the blue repeats, and a narrower one is refused. Alpha never reaches the
@@ -439,7 +443,7 @@ as a float -- and checks the other way round too: switching a box that holds
 `GO` to float, or a dropdown whose options say `Red, Green` to int, is
 refused rather than leaving a widget that looks live and sends nothing.
 
-The number box and the dropdown can drive DMX like the slider (**Output**).
+The number box and the dropdown can drive DMX like the slider (enable its **DMX** section).
 The number is the level: `0`-`255` as typed, or, when Min and Max are both
 set, scaled within them, so a box that takes `0`-`100` puts `50` at half. A
 dropdown of `Off=0, Half=128, Full=255` is a three-step dimmer. All three
@@ -450,9 +454,9 @@ value no option sends leaves the dropdown where it was.
 
 A typed DMX level is refused, not pinned, when it is out of range: without
 both Min and Max the box's limits are `0`-`255`, so a slipped `-1` is not a
-blackout and `300` is not full. While **Output** includes DMX the panel
+blackout and `300` is not full. While the **DMX** section is enabled the panel
 likewise refuses a dropdown option that is not a number from `0` to `255`.
-The settings are checked against each other: a Min, Max, Step, Output or
+The settings are checked against each other: a Min, Max, Step, DMX Enable or
 Argument type that the current Value could not be sent under is refused until
 the Value is changed, and a value arriving from the rig is brought inside the
 limits and onto the Step, so Enter on what the box shows always sends.
@@ -562,7 +566,7 @@ so OSCAR opens the serial port for you:
 Every widget that sends can be pointed at the cable, and the message is the
 same OSC message it would have sent to the network, framed with SLIP -- the
 standard way OSC travels over a serial line. `serial` goes in **Ip** rather
-than under **Output** because it changes where the message goes, not what it
+than being a section of its own because it changes where the message goes, not what it
 is: a slider can send OSC to the board and DMX to a dimmer at once. A board
 that talks back is heard like any other OSC in, so a meter with **Listen** on
 can show a potentiometer.

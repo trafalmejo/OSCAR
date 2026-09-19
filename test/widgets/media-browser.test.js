@@ -428,7 +428,7 @@ test("it sends and receives over OSC only, as int, float or string", () => {
     ["i", "f", "s"]
   );
   const keys = mediaBrowser.fields.map((f) => f.key);
-  assert.ok(!keys.includes("transport") && !keys.some((key) => /^dmx/.test(key)));
+  assert.ok(!keys.includes("oscEnabled") && !keys.includes("dmxEnabled") && !keys.some((key) => /^dmx/.test(key)));
 });
 
 test("the panel refuses an empty list, an unsendable value, a duplicate value and a refused image", () => {

@@ -117,27 +117,44 @@ test("a widget that can drive DMX sends numbers", () => {
   }
 });
 
-test("a widget that can drive DMX offers Output and the DMX settings, hidden until asked for", () => {
-  // The same DMX vocabulary on every such widget, and OSC by default, so a
-  // project made before DMX existed behaves exactly as it did.
+test("a widget that can drive DMX has a section per protocol, each switched on by its own checkbox", () => {
+  // The same DMX vocabulary on every such widget, OSC on and DMX off by
+  // default, so a project made before DMX existed behaves exactly as it did.
   const DMX_KEYS = ["dmxProtocol", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"];
   for (const widget of WIDGETS) {
     const keys = widget.fields.map((f) => f.key);
+    assert.ok(!keys.includes("transport"), widget.name + ": there is no Output list; the checkboxes say it");
     if (!widget.dmx) {
-      for (const key of ["transport"].concat(DMX_KEYS)) {
+      // On a widget that only speaks OSC, OSC's Enable would be a second Enabled.
+      for (const key of ["oscEnabled", "dmxEnabled"].concat(DMX_KEYS)) {
         assert.ok(!keys.includes(key), widget.name + " cannot drive DMX but has " + key);
       }
       continue;
     }
-    assert.ok(keys.includes("transport"), widget.name + " has an Output setting");
-    assert.strictEqual(widget.defaults.transport, "osc", widget.name + " sends OSC by default");
+    assert.strictEqual(widget.defaults.oscEnabled, true, widget.name + " sends OSC by default");
+    assert.strictEqual(widget.defaults.dmxEnabled, false, widget.name + " sends no DMX until asked");
+
+    const section = (id) => widget.fields.filter((f) => f.section === id).map((f) => f.key);
+    assert.strictEqual(section("osc")[0], "oscEnabled", widget.name + ": the OSC section opens with its checkbox");
+    assert.deepStrictEqual(section("dmx"), ["dmxEnabled"].concat(DMX_KEYS), widget.name + ": the DMX section, checkbox first");
     for (const key of DMX_KEYS) {
       const field = widget.fields.find((f) => f.key === key);
-      assert.ok(field, widget.name + " has " + key);
-      assert.deepStrictEqual(field.showIf, { key: "transport", in: ["dmx", "both"] }, widget.name + "." + key + " is shown only for DMX");
-    }
-    for (const key of DMX_KEYS) {
+      assert.strictEqual(field.showIf, undefined, widget.name + "." + key + " can be set up before DMX is switched on");
       assert.strictEqual(typeof widget.checks[key], "function", widget.name + " checks " + key);
+    }
+  }
+});
+
+test("everything about reaching software sits in the OSC section, on every widget", () => {
+  for (const widget of WIDGETS) {
+    for (const key of ["ip", "port", "message", "listen", "argType"]) {
+      const field = widget.fields.find((f) => f.key === key);
+      if (field) assert.strictEqual(field.section, "osc", widget.name + "." + key);
+    }
+    // What the widget is and does stays out of the protocol sections.
+    for (const key of ["enabled", "label", "mode", "min", "max", "value", "orientation"]) {
+      const field = widget.fields.find((f) => f.key === key);
+      if (field) assert.strictEqual(field.section, undefined, widget.name + "." + key);
     }
   }
 });
@@ -158,7 +175,7 @@ test("on DMX, every such widget puts a level on the wire that a channel can carr
   const { mount } = require("./helpers/widgets");
   for (const widget of WIDGETS) {
     if (!widget.dmx) continue;
-    const { el, ctx } = mount(widget, { transport: "dmx", rect: { left: 0, top: 0, width: 100, height: 100 } });
+    const { el, ctx } = mount(widget, { oscEnabled: false, dmxEnabled: true, rect: { left: 0, top: 0, width: 100, height: 100 } });
     el.value = "100";
     el.fire("pointerdown", { clientX: 100, clientY: 0 });
     el.fire("input");

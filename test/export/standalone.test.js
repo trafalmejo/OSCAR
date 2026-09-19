@@ -168,7 +168,7 @@ test("the DMX half goes out as dmx, stamped with the widget's id in the project"
 });
 
 test("a slider set to DMX drives its channel from an exported page", () => {
-  const el = exported("oscar-slider", { transport: "dmx", dmxHost: "10.0.0.9", min: 0, max: 100 }, "fader7");
+  const el = exported("oscar-slider", { oscEnabled: false, dmxEnabled: true, dmxHost: "10.0.0.9", min: 0, max: 100 }, "fader7");
   const bridge = fakeBridge();
   standalone.attachAll(fakeDocument([el]), bridge);
 

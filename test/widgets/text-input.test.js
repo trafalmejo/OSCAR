@@ -96,8 +96,8 @@ test("a disabled box takes text but sends nothing", () => {
 test("the text box never drives DMX, and carries none of its settings", () => {
   assert.strictEqual(textInput.dmx, false);
   const keys = textInput.fields.map((f) => f.key);
-  for (const key of ["transport", "dmxProtocol", "dmxChannel"]) assert.ok(!keys.includes(key), key);
-  assert.ok(!("transport" in textInput.defaults));
+  for (const key of ["oscEnabled", "dmxEnabled", "dmxProtocol", "dmxChannel"]) assert.ok(!keys.includes(key), key);
+  assert.ok(!("dmxEnabled" in textInput.defaults) && !("oscEnabled" in textInput.defaults));
 });
 
 // --- the element -------------------------------------------------------------

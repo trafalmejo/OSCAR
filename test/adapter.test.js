@@ -58,8 +58,13 @@ function fakeModel(config, id) {
     get(key) {
       return this.config[key];
     },
+    /** Both of Backbone's forms: set(key, value) and set({ key: value }). */
     set(key, value) {
-      this.config[key] = value;
+      if (key && typeof key === "object") Object.assign(this.config, key);
+      else this.config[key] = value;
+    },
+    unset(key) {
+      delete this.config[key];
     },
     getId() {
       return (this.config.attributes && this.config.attributes.id) || id || "i1";
@@ -249,7 +254,7 @@ test("a message's OSC and DMX halves each go out on their own bridge, the DMX ha
   const type = editor.types[slider.name];
 
   const el = fakeElement();
-  const model = fakeModel(Object.assign({}, slider.defaults, { transport: "both", min: 0, max: 100, dmxChannel: 7 }), "iabc");
+  const model = fakeModel(Object.assign({}, slider.defaults, { oscEnabled: true, dmxEnabled: true, min: 0, max: 100, dmxChannel: 7 }), "iabc");
   const view = { el, model };
   type.view.onRender.call(view);
 
@@ -260,11 +265,11 @@ test("a message's OSC and DMX halves each go out on their own bridge, the DMX ha
   assert.deepStrictEqual(dmx, [{ source: "iabc", protocol: "artnet", host: "", universe: 1, channel: 7, levels: [128] }]);
 
   // OSC only: nothing reaches the DMX bridge, and vice versa.
-  model.config.transport = "osc";
+  Object.assign(model.config, { oscEnabled: true, dmxEnabled: false });
   el.fire("input");
   assert.strictEqual(osc.length, 2);
   assert.strictEqual(dmx.length, 1);
-  model.config.transport = "dmx";
+  Object.assign(model.config, { oscEnabled: false, dmxEnabled: true });
   el.fire("input");
   assert.strictEqual(osc.length, 2);
   assert.strictEqual(dmx.length, 2);
@@ -276,7 +281,7 @@ test("a host with no DMX bridge drops the DMX half and keeps the OSC half", () =
   const osc = [];
   editor.sendOSC = (ip, port, address, args) => osc.push(address);
   register(slider)(editor, {});
-  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { transport: "both" })) };
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { oscEnabled: true, dmxEnabled: true })) };
   editor.types[slider.name].view.onRender.call(view);
   view.el.value = "50";
   assert.doesNotThrow(() => view.el.fire("input"));
@@ -314,7 +319,7 @@ test("a surface being reloaded, or a widget being moved, keeps every channel whe
   editor.stopDMX = (source) => stopped.push(source);
   register(slider)(editor, {});
   const type = editor.types[slider.name];
-  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }), "ilive") };
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { oscEnabled: false, dmxEnabled: true }), "ilive") };
 
   type.view.onRender.call(view);
   type.view.removed.call(view);
@@ -348,7 +353,7 @@ test("the page's own wrapper going, which is how a load tears the surface down, 
   register(slider)(editor, {});
   const type = editor.types[slider.name];
 
-  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }), "iheld") };
+  const view = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { oscEnabled: false, dmxEnabled: true }), "iheld") };
   const body = fakeModel({ type: "wrapper" }, "ibody");
   body.children = [view.model];
   type.view.onRender.call(view);
@@ -387,7 +392,7 @@ test("deleting a container takes the widgets inside it with it", () => {
   register(slider)(editor, {});
   const type = editor.types[slider.name];
 
-  const inner = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }), "iinner") };
+  const inner = { el: fakeElement(), model: fakeModel(Object.assign({}, slider.defaults, { oscEnabled: false, dmxEnabled: true }), "iinner") };
   const box = fakeModel({}, "ibox");
   box.children = [inner.model];
   type.view.onRender.call(inner);
@@ -409,45 +414,93 @@ test("a host with no events cannot tell a deletion from a reload, and holds", ()
   assert.deepStrictEqual(stopped, []);
 });
 
-test("switching Output away from DMX hands the channels back; switching to it does not", () => {
+test("unticking DMX's Enable hands the channels back; ticking OSC's Enable beside it does not", () => {
   const editor = fakeEditor();
   const stopped = [];
   editor.stopDMX = (source) => stopped.push(source);
   register(slider)(editor, {});
-  const model = fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }), "isw");
+  const model = fakeModel(Object.assign({}, slider.defaults, { oscEnabled: false, dmxEnabled: true }), "isw");
   editor.types[slider.name].model.init.call(model);
 
-  model.edit("transport", "both");
+  model.edit("oscEnabled", true);
   assert.deepStrictEqual(stopped, [], "still driving DMX");
-  model.edit("transport", "osc");
+  model.edit("dmxEnabled", false);
   assert.deepStrictEqual(stopped, ["isw"]);
   model.edit("enabled", false);
   assert.deepStrictEqual(stopped, ["isw"], "Enabled off holds the level rather than blacking out");
 });
 
-test("the DMX settings are traits only while Output asks for DMX, and follow an edit", () => {
-  // A field with showIf is data the adapter can act on: the type's trait
-  // list is built from the defaults, a loaded component rebuilds its own if
-  // it disagrees, and an edit to the setting the rule names rebuilds again.
+test("the panel is one collapsible section per protocol, under the widget's own settings", () => {
   const type = registered(slider);
-  const names = (traits) => traits.map((t) => t.name);
-  assert.ok(!names(type.model.defaults.traits).includes("dmxUniverse"), "hidden on an OSC slider");
-  assert.ok(names(type.model.defaults.traits).includes("transport"));
+  const traits = type.model.defaults.traits;
+  const names = (list) => list.map((t) => t.name);
+  const inSection = (id) => names(traits.filter((t) => t.category.id === id));
 
-  const model = fakeModel(Object.assign({}, slider.defaults, { transport: "dmx" }));
+  assert.ok(!names(traits).includes("transport"), "no Output list: the checkboxes say it");
+  assert.deepStrictEqual(inSection("osc"), ["oscEnabled", "ip", "port", "message", "listen", "argType"]);
+  assert.deepStrictEqual(inSection("dmx"), ["dmxEnabled", "dmxProtocol", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"]);
+  // GrapesJS draws categorised traits above uncategorised ones, so the
+  // widget's own settings need a section to stay on top. Sections appear in
+  // the order their first field does, and Enabled is always first.
+  assert.strictEqual(traits[0].name, "enabled");
+  assert.deepStrictEqual(traits[0].category, { id: "widget", label: "Widget", open: true });
+  assert.ok(inSection("widget").includes("orientation"));
+  assert.strictEqual(traits.every((t) => t.category && t.category.id), true, "nothing is left outside a section");
+
+  const labels = {};
+  traits.forEach((t) => (labels[t.category.id] = t.category.label));
+  assert.deepStrictEqual(labels, { widget: "Widget", osc: "OSC", dmx: "DMX" });
+});
+
+test("the DMX section is closed on a widget that sends no DMX, and open on one that does", () => {
+  const type = registered(slider);
+  const dmxOpen = (traits) => traits.find((t) => t.name === "dmxChannel").category.open;
+  const oscOpen = (traits) => traits.find((t) => t.name === "ip").category.open;
+  assert.strictEqual(dmxOpen(type.model.defaults.traits), false, "one closed line on a plain OSC slider");
+  assert.strictEqual(oscOpen(type.model.defaults.traits), true);
+
+  const model = fakeModel(Object.assign({}, slider.defaults, { oscEnabled: false, dmxEnabled: true }));
   type.model.init.call(model);
-  assert.ok(names(model.get("traits")).includes("dmxUniverse"), "a loaded DMX slider shows its channels");
-  assert.ok(names(model.get("traits")).includes("ip"), "and keeps its OSC settings in view");
+  assert.strictEqual(dmxOpen(model.get("traits")), true, "a loaded DMX slider opens on its channels");
+  assert.ok(model.get("traits").some((t) => t.name === "ip"), "and keeps its OSC settings, to be switched back on");
 
-  model.edit("transport", "osc");
-  assert.ok(!names(model.get("traits")).includes("dmxUniverse"), "gone again once Output says OSC");
-  model.edit("transport", "both");
-  assert.ok(names(model.get("traits")).includes("dmxCount"));
+  // toTrait is handed (field, index) by Array.map; an index is not settings.
+  assert.strictEqual(toTrait(slider.fields.find((f) => f.key === "dmxChannel"), 3).category.open, false);
+});
 
-  assert.deepStrictEqual(revealKeys(slider), ["transport"]);
-  assert.strictEqual(visibleFields(slider, { transport: "osc" }).length, slider.fields.length - 5);
-  assert.strictEqual(visibleFields(slider, { transport: "dmx" }).length, slider.fields.length);
-  assert.strictEqual(visibleFields(slider, {}).length, slider.fields.length - 5, "no transport at all reads as OSC");
+test("a widget saved with the old Output setting opens with its checkboxes telling the truth", () => {
+  const type = registered(slider);
+  for (const [word, flags] of [["dmx", [false, true]], ["both", [true, true]], ["osc", [true, false]]]) {
+    // As GrapesJS builds it: the saved word, and the checkboxes at their defaults.
+    const model = fakeModel(Object.assign({}, slider.defaults, { transport: word }));
+    type.model.init.call(model);
+    assert.deepStrictEqual([model.get("oscEnabled"), model.get("dmxEnabled")], flags, word);
+    assert.strictEqual("transport" in model.config, false, word + ": the old word is gone, so it cannot outvote a later edit");
+  }
+  const untouched = fakeModel(Object.assign({}, slider.defaults));
+  type.model.init.call(untouched);
+  assert.deepStrictEqual([untouched.get("oscEnabled"), untouched.get("dmxEnabled")], [true, false]);
+});
+
+test("a field shown only for some settings is a trait only then, and follows an edit", () => {
+  // showIf is data the adapter can act on: the type's trait list is built
+  // from the defaults, a loaded component rebuilds its own if it disagrees,
+  // and an edit to the setting the rule names rebuilds again.
+  const { colour } = require("../lib/widgets/colour");
+  const type = registered(colour);
+  const names = (traits) => traits.map((t) => t.name);
+  assert.ok(!names(type.model.defaults.traits).includes("alpha"), "no Alpha while the colour goes out as r, g, b");
+
+  const model = fakeModel(Object.assign({}, colour.defaults, { format: "rgba" }));
+  type.model.init.call(model);
+  assert.ok(names(model.get("traits")).includes("alpha"), "a loaded r, g, b, a picker shows its Alpha");
+  model.edit("format", "hex");
+  assert.ok(!names(model.get("traits")).includes("alpha"));
+  assert.ok(!names(model.get("traits")).includes("argType"), "a hex string has no argument type");
+
+  assert.deepStrictEqual(revealKeys(colour), ["format"]);
+  assert.deepStrictEqual(revealKeys(slider), [], "nothing on a slider is hidden any more");
+  assert.strictEqual(visibleFields(slider, {}).length, slider.fields.length);
 });
 
 test("the panel follows a setting whose states show different fields of the same number", () => {
