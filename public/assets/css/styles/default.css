@@ -5,7 +5,9 @@
  * its light-to-dark inheritance and its shadow formula, so the values match
  * what tweakcn shows. Only the variables OSCAR's widgets draw with are kept.
  *
- * Also the style of any surface that has not picked one, hence :root.
+ * Also the style of any surface that has not picked one, hence :root, and
+ * what lies under "Page's own" (own), where the page's CSS sets the tokens
+ * it cares about and these fill in the rest.
  * lib/widget-styles.js lists the styles that exist.
  */
 
@@ -13,7 +15,8 @@
 
 @layer oscar.tokens {
   :root,
-  [data-osc-style="default"] {
+  [data-osc-style="default"],
+  [data-osc-style="own"] {
     --osc-radius: 0.625rem;
     --osc-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
     --osc-letter-spacing: 0em;
@@ -32,7 +35,8 @@
     --osc-shadow-sm: 0 1px 3px 0px color-mix(in srgb, oklch(0 0 0) 10%, transparent), 0 1px 2px -1px color-mix(in srgb, oklch(0 0 0) 10%, transparent);
   }
 
-  [data-osc-style="default"][data-osc-appearance="dark"] {
+  [data-osc-style="default"][data-osc-appearance="dark"],
+  [data-osc-style="own"][data-osc-appearance="dark"] {
     --osc-background: oklch(0.145 0 0);
     --osc-foreground: oklch(0.985 0 0);
     --osc-card: oklch(0.205 0 0);

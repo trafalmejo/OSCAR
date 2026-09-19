@@ -123,3 +123,17 @@ test("Reset to style is offered on the widgets and on the body, and nowhere else
     assert.strictEqual(styles.offersReset(type), false, String(type));
   }
 });
+
+test("a page can keep its own look: a choice in the picker with no file behind it", () => {
+  assert.strictEqual(styles.CHOICES[styles.CHOICES.length - 1], styles.OWN_STYLE, "offered last, after the real styles");
+  assert.ok(!styles.STYLES.includes(styles.OWN_STYLE), "not a style with a stylesheet to load");
+  assert.ok(styles.isStyle(styles.OWN_STYLE.id), "and still a value a body may carry");
+  assert.ok(!styles.canvasStylesheets().some((ref) => ref.includes("/" + styles.OWN_STYLE.id + ".css")));
+  // Survives an import, like any other choice.
+  const attrs = styles.withSurfaceStyle({}, { "data-osc-style": "own", "data-osc-appearance": "dark" });
+  assert.deepStrictEqual(attrs, { "data-osc-style": "own", "data-osc-appearance": "dark" });
+  // Default's values lie underneath, light and dark, so no widget goes unpainted.
+  const css = read("styles/default.css");
+  assert.ok(css.includes('[data-osc-style="own"]'));
+  assert.ok(css.includes('[data-osc-style="own"][data-osc-appearance="dark"]'));
+});

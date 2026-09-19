@@ -1131,18 +1131,26 @@ function initGrape(ipServer, socketPort) {
 
     var grid = document.createElement("div");
     grid.className = "o-style-grid";
-    widgetStyles.STYLES.forEach(function (entry) {
+    widgetStyles.CHOICES.forEach(function (entry) {
       var card = document.createElement("button");
       card.type = "button";
       card.className = "o-style-card";
       card.setAttribute("data-style", entry.id);
 
-      // The preview is only a picture: the card is what gets clicked.
-      var preview = document.createElement("iframe");
-      preview.className = "o-style-preview";
-      preview.tabIndex = -1;
-      preview.setAttribute("aria-hidden", "true");
-      card.appendChild(preview);
+      if (entry === widgetStyles.OWN_STYLE) {
+        // Nothing to picture: how it looks is whatever the page says.
+        var note = document.createElement("span");
+        note.className = "o-style-preview o-style-own";
+        note.textContent = entry.hint;
+        card.appendChild(note);
+      } else {
+        // The preview is only a picture: the card is what gets clicked.
+        var preview = document.createElement("iframe");
+        preview.className = "o-style-preview";
+        preview.tabIndex = -1;
+        preview.setAttribute("aria-hidden", "true");
+        card.appendChild(preview);
+      }
 
       var name = document.createElement("span");
       name.className = "o-style-name";
@@ -1172,6 +1180,7 @@ function initGrape(ipServer, socketPort) {
       var style = card.getAttribute("data-style");
       card.setAttribute("aria-pressed", String(style === current.style));
       var preview = card.querySelector("iframe");
+      if (!preview) return;
       // Rewriting the document restarts it; only do that when the picture
       // would actually change.
       var wanted = style + "/" + current.appearance;

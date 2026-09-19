@@ -16,8 +16,11 @@
   - data-osc-style and data-osc-appearance on <body> pick the widget style.
 
   The colours are OSCAR's own: the logo's gradient from #ff623a to #ff3663 on
-  a near-black ground. The widgets take them too, because the first rule sets
-  the style's colour tokens for this page.
+  a near-black ground. The widgets take them too: the body asks for the
+  "Page's own" widget style (data-osc-style="own"), and the first rule sets
+  the colour tokens for it. Pick another widget style in the editor and that
+  rule stops applying, so the widgets take the style you picked; the page
+  around them keeps its own colours.
 
   One thing to keep if you restyle it: the page wrapper hides sideways
   overflow with overflow-x: clip, not hidden. "hidden" would make the wrapper
@@ -69,7 +72,7 @@
   font-display: swap;
   src: url("https://cdn.jsdelivr.net/fontsource/fonts/montserrat:vf@latest/latin-wght-normal.woff2") format("woff2");
 }
-[data-osc-style] {
+[data-osc-style="own"] {
   --osc-background: #0e0e11;
   --osc-foreground: #f4f4f6;
   --osc-card: #17171c;
@@ -692,7 +695,7 @@
 }
 </style>
 </head>
-<body data-osc-style="default" data-osc-appearance="dark">
+<body data-osc-style="own" data-osc-appearance="dark">
 <div id="osh" class="osh" data-gjs-dmode="flow">
   <div id="osh-stage" class="osh-stage" data-gjs-dmode="flow"></div>
   <div id="osh-grain" class="osh-grain" data-gjs-dmode="flow"></div>

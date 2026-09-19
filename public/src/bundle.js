@@ -260,6 +260,20 @@ function parseConfig(raw) {
 }
 
 /**
+ * A widget's settings with the files they name embedded, as the attribute's
+ * new value, or null when there is nothing to change. Which settings name
+ * files is the widget's business: it says so with `embed`.
+ */
+function embedAssets(name, raw, readAsset) {
+  const definition = definitionFor(name);
+  if (!definition || typeof definition.embed !== "function") return null;
+  const config = parseConfig(raw);
+  if (!config) return null;
+  const changed = definition.embed(config, readAsset);
+  return changed ? JSON.stringify(Object.assign({}, config, changed)) : null;
+}
+
+/**
  * The one setting a widget keeps writing itself: where its thumb is, what is
  * selected. The editor judges it when someone types it and not again when
  * the range around it is edited, so a project can honestly hold a Value its
@@ -350,6 +364,7 @@ module.exports = {
   definitionFor,
   exportAttributes,
   parseConfig,
+  embedAssets,
   readWidget,
 };
 
@@ -1357,6 +1372,19 @@ const STYLES = [
   { id: "tangerine", label: "Tangerine", fonts: ["inter"] },
 ];
 
+/**
+ * The choice of no style: the page's own CSS decides how it looks. A page that
+ * is a design of its own -- an imported site, the OSCAR Showcase -- writes its
+ * tokens under [data-osc-style="own"], and they give way the moment one of
+ * the styles above is picked instead. It has no file. Where the page sets
+ * nothing, the Default style's values are underneath (see default.css), so a
+ * widget is never left unpainted.
+ */
+const OWN_STYLE = { id: "own", label: "Page's own", hint: "OSCAR picks no theme. The page's own CSS decides the look." };
+
+/** Everything the picker offers, in order. */
+const CHOICES = STYLES.concat([OWN_STYLE]);
+
 const APPEARANCES = ["light", "dark"];
 
 const DEFAULT_STYLE = "default";
@@ -1366,7 +1394,7 @@ const STYLE_ATTRIBUTE = "data-osc-style";
 const APPEARANCE_ATTRIBUTE = "data-osc-appearance";
 
 function isStyle(id) {
-  return STYLES.some((style) => style.id === id);
+  return CHOICES.some((style) => style.id === id);
 }
 
 function isAppearance(value) {
@@ -1477,6 +1505,8 @@ module.exports = {
   withSurfaceStyle,
   offersReset,
   STYLES,
+  OWN_STYLE,
+  CHOICES,
   APPEARANCES,
   DEFAULT_STYLE,
   DEFAULT_APPEARANCE,
@@ -3106,6 +3136,10 @@ module.exports = { incoming, follow };
  *                 delete. The settings stay the one source of truth. Cannot
  *                 be combined with `text`, which is the host filling the
  *                 element instead.
+ *   embed(config, read) -> changed settings | null   (optional) for a widget
+ *                 whose settings name image files: called at export, where
+ *                 read(path) gives a data: URI for a file that can travel
+ *                 inside the page, or null
  *   block         { label, category, icon } for the palette
  *   defaults      every setting and its starting value
  *   fields        the settings panel, in order; see fields.js
@@ -3527,6 +3561,25 @@ const mediaBrowser = {
       });
     }),
   }),
+
+  /**
+   * Export: a thumbnail given as a path is a file next to OSCAR, and an
+   * exported page leaves OSCAR behind. `read` hands back a data: URI for a
+   * path it can embed, and the items line is rewritten around those. Returns
+   * the settings that changed, or null when none did.
+   */
+  embed: function (config, read) {
+    let embedded = false;
+    const line = parseItems(config.items)
+      .map(function (item) {
+        const uri = item.image && safeImageUrl(item.image) ? read(item.image) : null;
+        if (uri) embedded = true;
+        const image = uri || item.image;
+        return item.label + "|" + item.value + (image ? "|" + image : "");
+      })
+      .join("; ");
+    return embedded ? { items: line } : null;
+  },
 
   attach: function (el, ctx) {
     // The element's own document: the canvas is an iframe, and a node made
@@ -21228,18 +21281,26 @@ function initGrape(ipServer, socketPort) {
 
     var grid = document.createElement("div");
     grid.className = "o-style-grid";
-    widgetStyles.STYLES.forEach(function (entry) {
+    widgetStyles.CHOICES.forEach(function (entry) {
       var card = document.createElement("button");
       card.type = "button";
       card.className = "o-style-card";
       card.setAttribute("data-style", entry.id);
 
-      // The preview is only a picture: the card is what gets clicked.
-      var preview = document.createElement("iframe");
-      preview.className = "o-style-preview";
-      preview.tabIndex = -1;
-      preview.setAttribute("aria-hidden", "true");
-      card.appendChild(preview);
+      if (entry === widgetStyles.OWN_STYLE) {
+        // Nothing to picture: how it looks is whatever the page says.
+        var note = document.createElement("span");
+        note.className = "o-style-preview o-style-own";
+        note.textContent = entry.hint;
+        card.appendChild(note);
+      } else {
+        // The preview is only a picture: the card is what gets clicked.
+        var preview = document.createElement("iframe");
+        preview.className = "o-style-preview";
+        preview.tabIndex = -1;
+        preview.setAttribute("aria-hidden", "true");
+        card.appendChild(preview);
+      }
 
       var name = document.createElement("span");
       name.className = "o-style-name";
@@ -21269,6 +21330,7 @@ function initGrape(ipServer, socketPort) {
       var style = card.getAttribute("data-style");
       card.setAttribute("aria-pressed", String(style === current.style));
       var preview = card.querySelector("iframe");
+      if (!preview) return;
       // Rewriting the document restarts it; only do that when the picture
       // would actually change.
       var wanted = style + "/" + current.appearance;
