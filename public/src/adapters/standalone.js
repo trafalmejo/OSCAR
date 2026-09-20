@@ -164,6 +164,7 @@ function contextFor(el, config, bridge, id, onDropped) {
         if (id) bridge.sendDMX(Object.assign({ source: id }, message.dmx));
         else console.warn("OSCAR: a control with no id cannot drive DMX; dropped", el);
       }
+      if (message.midi && bridge.sendMIDI) bridge.sendMIDI(message.midi);
     },
 
     setClass: function (name, on) {

@@ -8,7 +8,8 @@
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
+var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
+var features = require("../../../lib/features");
 var { exportAttributes } = require("../../../lib/export/config");
 
 /**
@@ -30,7 +31,9 @@ function categoryOf(field, config) {
     if (candidate.id === field.section) section = candidate;
   });
   if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
-  var open = section.id === "dmx" ? sendsDmx(config || {}) : true;
+  // A protocol that is off starts folded away, so the panel of a widget that
+  // only speaks OSC stays as short as it was before the others existed.
+  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) : true;
   // The attribute lands on the section's element, which is how the status
   // light finds it: by what it is, not by what its title happens to say.
   var attributes = {};
@@ -108,6 +111,8 @@ function configOf(model, definition) {
  */
 function visibleFields(definition, config) {
   return definition.fields.filter(function (field) {
+    // A protocol that is switched off (lib/features.js) has no section.
+    if (field.section === "midi" && !features.MIDI) return false;
     var rule = field.showIf;
     return !rule || rule.in.indexOf(config[rule.key]) !== -1;
   });
@@ -272,6 +277,7 @@ function contextFor(view, editor) {
       if (message.dmx && editor.sendDMX) {
         editor.sendDMX(Object.assign({ source: model.getId() }, message.dmx));
       }
+      if (message.midi && editor.sendMIDI) editor.sendMIDI(message.midi);
     },
 
     setClass: function (name, on) {
@@ -910,6 +916,12 @@ function sectionLights(editor, options) {
       }
       var label = row.querySelector(".gjs-label");
       if (label) label.setAttribute("title", row.getAttribute("title"));
+      // A setting that names a list is offered it as suggestions, and stays
+      // free text: a port unplugged for the night is still the widget's port.
+      if (field && field.source && suggestions[field.source]) {
+        var input = row.querySelector("input");
+        if (input) input.setAttribute("list", listFor(doc, field.source));
+      }
     });
   }
 
@@ -918,7 +930,7 @@ function sectionLights(editor, options) {
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:ip change:port";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:ip change:port";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);
@@ -944,6 +956,41 @@ function sectionLights(editor, options) {
   }
 
   return paint;
+}
+
+/**
+ * Lists a text setting can suggest from, by the name a field gives as its
+ * `source`. The editor fills them (suggest()); the panel hangs a <datalist>
+ * on the input. Kept here, not fetched here: the adapter knows no routes.
+ */
+var suggestions = {};
+
+function suggest(source, values) {
+  suggestions[source] = Array.isArray(values) ? values.slice() : [];
+  if (typeof document !== "undefined") listFor(document, source);
+}
+
+/** The id of the <datalist> for `source`, made or refilled as needed. */
+function listFor(doc, source) {
+  var id = "oscar-suggest-" + source;
+  if (!doc.getElementById) return id;
+  var list = doc.getElementById(id);
+  if (!list) {
+    list = doc.createElement("datalist");
+    list.id = id;
+    (doc.body || doc.documentElement).appendChild(list);
+  }
+  var wanted = (suggestions[source] || []).join("\n");
+  if (list.getAttribute("data-values") !== wanted) {
+    list.setAttribute("data-values", wanted);
+    while (list.firstChild) list.removeChild(list.firstChild);
+    (suggestions[source] || []).forEach(function (value) {
+      var option = doc.createElement("option");
+      option.value = value;
+      list.appendChild(option);
+    });
+  }
+  return id;
 }
 
 function fieldOf(definition, key) {
@@ -985,6 +1032,7 @@ function noSelectingWhile(editor, isPreviewing) {
 module.exports = {
   noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
+  suggest: suggest,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,
   exportSnapshot: exportSnapshot,

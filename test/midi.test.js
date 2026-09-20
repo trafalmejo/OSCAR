@@ -23,7 +23,7 @@ test("the ports this computer has are listed by name, and every port asked is le
   const driver = loadDriver(() => fakeLibrary(["IAC Bus 1", "Launchpad"], ["Launchpad"], log));
   const midi = createMidi({ driver });
   assert.strictEqual(midi.supported, true);
-  assert.deepStrictEqual(midi.status(), { supported: true, reason: null, outputs: ["IAC Bus 1", "Launchpad"], inputs: ["Launchpad"] });
+  assert.deepStrictEqual(midi.ports(), { supported: true, reason: null, outputs: ["IAC Bus 1", "Launchpad"], inputs: ["Launchpad"] });
   assert.deepStrictEqual(log, ["destroy", "destroy"], "a probe that is kept holds the system's MIDI service open");
 });
 
@@ -38,7 +38,7 @@ test("a build where the library will not load says so, and OSCAR carries on", ()
 
 test("a MIDI service that fails while being asked is reported, never thrown", () => {
   const driver = { supported: true, outputs: () => { throw new Error("ALSA went away"); }, inputs: () => [] };
-  const status = createMidi({ driver }).status();
+  const status = createMidi({ driver }).ports();
   assert.strictEqual(status.reason, "ALSA went away");
   assert.deepStrictEqual(status.outputs, []);
 });
@@ -82,4 +82,11 @@ test("a tablet on a locked OSCAR learns how many MIDI ports there are, not what 
   const hidden = await diagnosticsAs({ locked: true, remote: true });
   assert.deepStrictEqual([hidden.outputs, hidden.inputs], [[null, null], [null]]);
   assert.strictEqual(hidden.supported, true);
+});
+
+test("the inputs can be left unasked, for a caller that only wants somewhere to send", () => {
+  let asked = 0;
+  const driver = { supported: true, outputs: () => ["Launchpad"], inputs: () => { asked++; return []; } };
+  assert.deepStrictEqual(createMidi({ driver }).ports({ inputs: false }), { supported: true, reason: null, outputs: ["Launchpad"], inputs: [] });
+  assert.strictEqual(asked, 0);
 });

@@ -33,6 +33,7 @@ module.exports = function createRouter({
   serverIP,
   socketPort,
   oscInPort,
+  midiPorts,
   updates,
   diagnostics,
   onPreviewPush,
@@ -130,7 +131,13 @@ module.exports = function createRouter({
     // told how many there are, not what they are.
     if (report.midi && typeof report.midi === "object" && isLocked() && !isLocal(req)) {
       const count = (list) => (Array.isArray(list) ? list.map(() => null) : []);
-      report.midi = Object.assign({}, report.midi, { outputs: count(report.midi.outputs), inputs: count(report.midi.inputs) });
+      report.midi = Object.assign({}, report.midi, {
+        outputs: count(report.midi.outputs),
+        inputs: count(report.midi.inputs),
+        open: count(report.midi.open),
+        // Quotes the port it could not find.
+        error: report.midi.error ? "hidden" : null,
+      });
     }
     res.json(report);
   });
@@ -146,6 +153,13 @@ module.exports = function createRouter({
       console.error("Update check failed:", err.message);
       res.json({ available: false });
     }
+  });
+
+  // ---- MIDI ---------------------------------------------------------------
+  // The ports this computer has, for the Port setting to suggest from. Behind
+  // editorOnly: it is only of use while editing, and the names are hardware.
+  router.get("/midi/ports", editorOnly, (req, res) => {
+    res.json(midiPorts ? midiPorts() : { supported: false, reason: null, outputs: [], inputs: [] });
   });
 
   // ---- The serial cable -------------------------------------------------

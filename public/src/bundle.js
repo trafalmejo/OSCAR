@@ -88,7 +88,7 @@ function spread(levels, count) {
 
 module.exports = { toWhole, unitOf, toLevel, toLevels, spread, clamp };
 
-},{"../osc-args":7,"./spec":2}],2:[function(require,module,exports){
+},{"../osc-args":8,"./spec":2}],2:[function(require,module,exports){
 "use strict";
 
 /**
@@ -368,7 +368,7 @@ module.exports = {
   readWidget,
 };
 
-},{"../widgets":20}],4:[function(require,module,exports){
+},{"../widgets":21}],4:[function(require,module,exports){
 "use strict";
 
 /**
@@ -408,6 +408,17 @@ const DEFAULTS = {
    * affected.
    */
   SERIAL: false,
+
+  /**
+   * MIDI: the MIDI section in a widget's settings.
+   *
+   * On. It is a switch at all because MIDI goes through a compiled module
+   * and the operating system's own MIDI service, which is more that can go
+   * wrong on somebody's computer than a UDP socket; if it does, this is the
+   * one line that takes it out of a release. Off hides the section and
+   * nothing else: a widget already set to send MIDI still does.
+   */
+  MIDI: true,
 };
 
 function isOn(name) {
@@ -524,6 +535,126 @@ function readDocument(input) {
 module.exports = { readDocument, attributesOf, stripCssComments, cleanStyleBlocks };
 
 },{}],6:[function(require,module,exports){
+"use strict";
+
+/**
+ * What MIDI is, as far as a widget needs to know: the kinds of message, their
+ * ranges, and how a gesture becomes bytes.
+ *
+ * Safe for a browser bundle, as lib/dmx/spec.js is: no native module, no
+ * Buffer. The widgets and the settings panel require this file and nothing
+ * else under lib/midi.
+ */
+
+const CHANNELS = 16;
+const MAX_DATA = 127;
+const MAX_BEND = 16383;
+
+/** The kinds of message a widget can send, in the order the panel offers them. */
+const TYPES = [
+  { id: "cc", name: "Control change" },
+  { id: "note", name: "Note" },
+  { id: "program", name: "Program change" },
+  { id: "pitch", name: "Pitch bend" },
+];
+
+const STATUS = { noteOff: 0x80, noteOn: 0x90, cc: 0xb0, program: 0xc0, pitch: 0xe0 };
+
+function isOn(value) {
+  return value === true || value === "true";
+}
+
+/** Whether these settings put MIDI on the wire. Off unless switched on. */
+function sendsMidi(config) {
+  return isOn(config && config.midiEnabled);
+}
+
+function typeOf(id) {
+  for (const type of TYPES) if (type.id === id) return type;
+  return null;
+}
+
+/** A whole number within [min, max], or null. Never rounded into range: a wrong channel plays the wrong synth. */
+function whole(value, min, max) {
+  if (value === "" || value === null || value === undefined || typeof value === "boolean") return null;
+  const number = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(number) || number < min || number > max) return null;
+  return number;
+}
+
+/** One gesture as a list of 0..1, or null if any of it is not a number in that range. */
+function unitsOf(units) {
+  const list = Array.isArray(units) ? units : [units];
+  if (!list.length) return null;
+  for (const unit of list) {
+    if (typeof unit !== "number" || !isFinite(unit) || unit < 0 || unit > 1) return null;
+  }
+  return list;
+}
+
+/**
+ * The bytes for one gesture: a list of messages, or null for silence.
+ *
+ * `units` is the gesture as 0..1, the reading DMX is scaled from too
+ * (lib/widgets/outgoing.js). A widget with several values -- a pad's two, a
+ * colour's three -- sends each on the next number up: controllers 20 and 21,
+ * or notes 60, 61 and 62. Program change and pitch bend have no number to
+ * count up from, so they carry the first value alone.
+ *
+ * A program is a position in a list, not a level, so a whole number from 0
+ * to 127 in `raw` is sent as it is: a dropdown whose options are 0, 1, 2
+ * picks programs 0, 1, 2. Anything else falls back to the level.
+ *
+ * Null, never a guess, as for DMX: a note or a controller that cannot be
+ * worked out is not sent as number 0, which is somebody else's.
+ */
+function midiMessages(config, raw, units) {
+  const type = typeOf(config && config.midiType);
+  const channel = whole(config && config.midiChannel, 1, CHANNELS);
+  const values = unitsOf(units);
+  if (!type || channel === null || !values) return null;
+  const ch = channel - 1;
+
+  if (type.id === "program") {
+    const first = Array.isArray(raw) ? raw[0] : raw;
+    const picked = whole(first, 0, MAX_DATA);
+    return [[STATUS.program | ch, picked !== null ? picked : Math.round(values[0] * MAX_DATA)]];
+  }
+  if (type.id === "pitch") {
+    const bend = Math.round(values[0] * MAX_BEND);
+    return [[STATUS.pitch | ch, bend & 0x7f, bend >> 7]];
+  }
+
+  const number = whole(config.midiNumber, 0, MAX_DATA);
+  if (number === null || number + values.length - 1 > MAX_DATA) return null;
+  return values.map(function (unit, i) {
+    const level = Math.round(unit * MAX_DATA);
+    if (type.id === "cc") return [STATUS.cc | ch, number + i, level];
+    // A note at velocity 0 is a note off to most instruments and a very
+    // quiet note to a few. Said outright, there is nothing to disagree on.
+    return level > 0 ? [STATUS.noteOn | ch, number + i, level] : [STATUS.noteOff | ch, number + i, 0];
+  });
+}
+
+/** The MIDI half of an outgoing message, or null: { port, messages }. */
+function midiRequest(config, raw, units) {
+  const messages = midiMessages(config, raw, units);
+  if (!messages) return null;
+  return { port: typeof config.midiPort === "string" ? config.midiPort.trim() : "", messages: messages };
+}
+
+module.exports = {
+  CHANNELS: CHANNELS,
+  MAX_DATA: MAX_DATA,
+  TYPES: TYPES,
+  STATUS: STATUS,
+  sendsMidi: sendsMidi,
+  whole: whole,
+  midiMessages: midiMessages,
+  midiRequest: midiRequest,
+};
+
+},{}],7:[function(require,module,exports){
 "use strict";
 
 /**
@@ -723,7 +854,7 @@ function matchesAddress(pattern, address) {
 
 module.exports = { matchesAddress, isPattern, compile };
 
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 "use strict";
 
 /**
@@ -841,7 +972,7 @@ function isSendable(argType, raw) {
 
 module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy, toNumber, isInt32 };
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -995,7 +1126,7 @@ function planPorts(args, env) {
 module.exports = { portsFromEnv, planPorts, DEFAULTS, VARIABLES, isPort };
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":31}],9:[function(require,module,exports){
+},{"_process":33}],10:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1204,7 +1335,7 @@ module.exports = {
   stampProject,
 };
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1293,7 +1424,7 @@ const DEFAULT_SORT = { key: "date", direction: "descending" };
 
 module.exports = { formatSize, sortProjects, orderProjects, nextSort, DEFAULT_SORT };
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1319,7 +1450,7 @@ function surfaceAddress(host, httpPort, path) {
 
 module.exports = { surfaceAddress };
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1357,7 +1488,7 @@ function isSerialTarget(ip) {
 
 module.exports = { SERIAL_HOST, isSerialTarget };
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1402,7 +1533,7 @@ function arrange(ids, placements) {
 
 module.exports = { PLACEMENTS, moveAfter, arrange };
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1576,7 +1707,7 @@ module.exports = {
   withoutAppearance,
 };
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 "use strict";
 
 const {
@@ -1588,6 +1719,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
+const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
 const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -1649,7 +1781,8 @@ const button = {
       valueOff: "0",
       argType: "i",
     },
-    dmxDefaults(1)
+    dmxDefaults(1),
+    midiDefaults("note")
   ),
 
   fields: [enabled(), field("label", "Label", "text")]
@@ -1660,9 +1793,10 @@ const button = {
       field("valueOff", "Value OFF", "text"),
       field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
     ])
-    .concat(dmxFields()),
+    .concat(dmxFields())
+    .concat(midiFields()),
 
-  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     valueOn: checkValue,
     valueOff: checkValue,
   }),
@@ -1883,7 +2017,7 @@ function checkValue(value, config) {
 
 module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 
-},{"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26}],16:[function(require,module,exports){
+},{"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":26,"./shared":28}],17:[function(require,module,exports){
 "use strict";
 
 const {
@@ -1895,6 +2029,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
+const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
 const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -2033,7 +2168,8 @@ const colour = {
       alpha: 1,
       argType: "f",
     },
-    dmxDefaults(3)
+    dmxDefaults(3),
+    midiDefaults("cc")
   ),
 
   fields: [enabled()]
@@ -2050,9 +2186,10 @@ const colour = {
       // something to say about the numeric formats.
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES, showIf: { key: "format", in: ["rgb", "rgba"] } }),
     ])
-    .concat(dmxFields()),
+    .concat(dmxFields())
+    .concat(midiFields()),
 
-  checks: Object.assign({}, connectionChecks(), dmxChecks(3), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(3), midiChecks(3), {
     value: checkColour,
     alpha: checkAlpha,
     // One rule, asked from each of the three settings that can bring the
@@ -2351,7 +2488,7 @@ function checkWholeNumbers(value, config) {
 
 module.exports = { colour, FORMATS, SCALES, parseHex, normaliseHex, fromWire };
 
-},{"../dmx/levels":1,"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26}],17:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":26,"./shared":28}],18:[function(require,module,exports){
 "use strict";
 
 const {
@@ -2364,6 +2501,7 @@ const {
   dmxChecks,
   sendsDmx,
 } = require("./fields");
+const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
 const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -2456,7 +2594,8 @@ const dropdown = {
       value: "1",
       argType: "i",
     },
-    dmxDefaults(1)
+    dmxDefaults(1),
+    midiDefaults("program")
   ),
 
   fields: [enabled()]
@@ -2466,9 +2605,10 @@ const dropdown = {
       field("value", "Selected", "text"),
       field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
     ])
-    .concat(dmxFields()),
+    .concat(dmxFields())
+    .concat(midiFields()),
 
-  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     options: checkOptions,
     value: checkValue,
     // Sending DMX decides whether the options have to be levels, so switching
@@ -2680,7 +2820,7 @@ function checkValue(value, config) {
 
 module.exports = { dropdown, parseOptions };
 
-},{"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26,"./typed":29}],18:[function(require,module,exports){
+},{"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":26,"./shared":28,"./typed":31}],19:[function(require,module,exports){
 "use strict";
 
 /**
@@ -2709,6 +2849,7 @@ const { isPort } = require("../ports");
 const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
 const { SLOTS, PROTOCOL_OPTIONS, protocol, readHost } = require("../dmx/spec");
 const { toWhole } = require("../dmx/levels");
+const { sendsMidi } = require("../midi/spec");
 
 const TYPES = ["text", "number", "select", "checkbox"];
 
@@ -2722,6 +2863,7 @@ const TYPES = ["text", "number", "select", "checkbox"];
 const SECTIONS = [
   { id: "osc", label: "OSC" },
   { id: "dmx", label: "DMX" },
+  { id: "midi", label: "MIDI" },
 ];
 
 function field(key, label, type, extra) {
@@ -2763,7 +2905,7 @@ const MASTER_HINT =
  * Which directions of each protocol section are live on a widget, for the
  * lights the panel draws on the section's title so it can be read collapsed.
  *
- *   { osc: { in: true, out: false }, dmx: { out: true } }
+ *   { osc: { in: true, out: false }, dmx: { out: true }, midi: { out: false } }
  *
  * A direction the widget does not have is absent: a meter has no `out`, DMX
  * never has an `in`, and a section the widget lacks is not there at all.
@@ -2783,6 +2925,7 @@ function sectionStatus(fields, config) {
   if (Object.keys(osc).length) status.osc = osc;
 
   if (has("dmxEnabled")) status.dmx = { out: master && sendsDmx(config) };
+  if (has("midiEnabled")) status.midi = { out: master && sendsMidi(config) };
   return status;
 }
 
@@ -3141,6 +3284,7 @@ module.exports = {
   ORIENTATIONS: ORIENTATIONS,
   sendsDmx: sendsDmx,
   sendsOsc: sendsOsc,
+  sendsMidi: sendsMidi,
   dmxFields: dmxFields,
   dmxDefaults: dmxDefaults,
   dmxChecks: dmxChecks,
@@ -3151,7 +3295,7 @@ module.exports = {
   IPV4: IPV4,
 };
 
-},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":7,"../ports":8,"../serial-target":12}],19:[function(require,module,exports){
+},{"../dmx/levels":1,"../dmx/spec":2,"../midi/spec":6,"../osc-args":8,"../ports":9,"../serial-target":13}],20:[function(require,module,exports){
 "use strict";
 
 const { matchesAddress } = require("../osc-address");
@@ -3231,7 +3375,7 @@ function follow(ctx, fn, addresses) {
 
 module.exports = { incoming, follow };
 
-},{"../osc-address":6}],20:[function(require,module,exports){
+},{"../osc-address":7}],21:[function(require,module,exports){
 "use strict";
 
 /**
@@ -3312,7 +3456,10 @@ module.exports = { incoming, follow };
  *             dmxDefaults(n) and checks from dmxChecks(n), n being how many
  *             channels the widget naturally drives). A widget with dmx: false
  *             carries neither checkbox: OSC's Enable on a widget that only speaks
- *             OSC would be a second Enabled. The widget scales its gesture to 0..1 with unitOf()
+ *             OSC would be a second Enabled. The same widgets speak MIDI, the
+ *             same way, from lib/widgets/midi-fields.js: midiFields(),
+ *             midiDefaults(kind) and midiChecks(n), scaled from the same 0..1
+ *             by lib/midi/spec.js. The widget scales its gesture to 0..1 with unitOf()
  *             from lib/dmx/levels.js and passes that as outgoing()'s third
  *             argument; outgoing() builds the DMX half. A widget that sends
  *             text, or sends nothing, sets false. Implies sends.
@@ -3491,7 +3638,7 @@ for (const widget of WIDGETS) {
 
 module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
 
-},{"./outgoing":24,"./registry":25}],21:[function(require,module,exports){
+},{"./outgoing":26,"./registry":27}],22:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -3991,7 +4138,7 @@ module.exports = {
   COLUMNS_PROPERTY,
 };
 
-},{"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26,"./typed":29}],22:[function(require,module,exports){
+},{"../osc-args":8,"./fields":19,"./incoming":20,"./outgoing":26,"./shared":28,"./typed":31}],23:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, checkMessage, checkNumber, ORIENTATIONS } = require("./fields");
@@ -4238,7 +4385,84 @@ function checkPeakHold(value) {
 
 module.exports = { meter, PEAK_CLASS };
 
-},{"../dmx/levels":1,"../osc-args":7,"./fields":18,"./incoming":19}],23:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20}],24:[function(require,module,exports){
+"use strict";
+
+/**
+ * The MIDI section of a widget's settings: its fields, their defaults and
+ * their validators. What a widget spreads into its definition to speak MIDI,
+ * the way dmxFields(), dmxDefaults() and dmxChecks() in fields.js make it
+ * speak DMX.
+ *
+ * MIDI only runs one way for now, from the widget to the instrument, so the
+ * section has the one direction, named as the other sections name theirs.
+ */
+
+const { field } = require("./fields");
+const { TYPES, CHANNELS, MAX_DATA, whole } = require("../midi/spec");
+
+const DATA_OUT_HINT = "Send this widget's value as MIDI when it is used.";
+
+const PORT_HINT =
+  "The MIDI port to send to, as this computer names it. Part of the name is enough. " +
+  "Leave it blank for the first port there is.";
+
+const NUMBER_HINT =
+  "The controller or note number, 0 to 127. A widget with several values uses the numbers that follow: " +
+  "a pad set to 20 sends X on 20 and Y on 21. Program change and pitch bend do not use it.";
+
+function midiFields() {
+  const only = { section: "midi" };
+  return [
+    field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)),
+    // `source` names a list the host may offer as suggestions. It stays a
+    // text field: a port unplugged for the night is still this widget's port.
+    field("midiPort", "Port", "text", Object.assign({ placeholder: "first port", hint: PORT_HINT, source: "midi-outputs" }, only)),
+    field("midiChannel", "Channel", "number", Object.assign({ min: 1, max: CHANNELS }, only)),
+    field("midiType", "Type", "select", Object.assign({ options: TYPES }, only)),
+    field("midiNumber", "Number", "number", Object.assign({ min: 0, max: MAX_DATA, hint: NUMBER_HINT }, only)),
+  ];
+}
+
+/** @param {string} [type] what suits the widget: "note" for a button, "program" for a list */
+function midiDefaults(type) {
+  return { midiEnabled: false, midiPort: "", midiChannel: 1, midiType: type || "cc", midiNumber: type === "note" ? 60 : 1 };
+}
+
+function checkChannel(value) {
+  return whole(value, 1, CHANNELS) === null ? "A MIDI channel is a whole number between 1 and " + CHANNELS : null;
+}
+
+function checkType(value) {
+  return TYPES.some((type) => type.id === value) ? null : "Unknown kind of MIDI message: " + value;
+}
+
+/** @param {number} values how many values the widget sends at once; they take that many numbers in a row */
+function checkNumber(values) {
+  const count = values || 1;
+  return function (value) {
+    const number = whole(value, 0, MAX_DATA);
+    if (number === null) return "A MIDI controller or note number is a whole number between 0 and " + MAX_DATA;
+    if (number + count - 1 > MAX_DATA) {
+      return "This widget sends " + count + " values, on " + number + " and the numbers after it, and they run past " + MAX_DATA;
+    }
+    return null;
+  };
+}
+
+function checkPort(value) {
+  if (value === undefined || value === null) return null;
+  return typeof value === "string" && value.length <= 200 ? null : "A MIDI port is named in at most 200 characters";
+}
+
+/** The validators that go with midiFields(). */
+function midiChecks(values) {
+  return { midiPort: checkPort, midiChannel: checkChannel, midiType: checkType, midiNumber: checkNumber(values) };
+}
+
+module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiChecks: midiChecks };
+
+},{"../midi/spec":6,"./fields":19}],25:[function(require,module,exports){
 "use strict";
 
 const {
@@ -4251,6 +4475,7 @@ const {
   dmxChecks,
   sendsDmx,
 } = require("./fields");
+const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
 const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -4316,7 +4541,8 @@ const numberInput = {
       step: "",
       argType: "f",
     },
-    dmxDefaults(1)
+    dmxDefaults(1),
+    midiDefaults("cc")
   ),
 
   fields: [enabled()]
@@ -4328,9 +4554,10 @@ const numberInput = {
       field("step", "Step", "number", { step: "any", min: 0, placeholder: "any" }),
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
-    .concat(dmxFields()),
+    .concat(dmxFields())
+    .concat(midiFields()),
 
-  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     value: checkValue,
     min: checkLimit("Min", "max"),
     max: checkLimit("Max", "min"),
@@ -4596,13 +4823,14 @@ function checkValue(value, config) {
 
 module.exports = { numberInput };
 
-},{"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26,"./typed":29}],24:[function(require,module,exports){
+},{"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":26,"./shared":28,"./typed":31}],26:[function(require,module,exports){
 "use strict";
 
 const { toArgs } = require("../osc-args");
 const { SLOTS, protocol } = require("../dmx/spec");
 const { toWhole, toLevels, spread } = require("../dmx/levels");
 const { sendsOsc, sendsDmx } = require("./fields");
+const { sendsMidi, midiRequest } = require("../midi/spec");
 const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
 
 /**
@@ -4624,8 +4852,8 @@ const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
  *          button passes 1 or 0. Omitted by a widget that cannot drive DMX.
  *
  * The result is { ip, port, address, args } for OSC, { dmx: {...} } for DMX,
- * or both on one object when both protocols are switched on, and the host sends whichever
- * halves are present. The halves are independent: a button whose Value ON
+ * { midi: {...} } for MIDI, or any of them on one object when several
+ * protocols are switched on, and the host sends whichever halves are present. The halves are independent: a button whose Value ON
  * is "go" cannot send that as a float, but it can still put its dimmer to
  * full, and silence on one wire is no reason for silence on the other.
  */
@@ -4652,6 +4880,16 @@ function outgoing(config, raw, units) {
     const dmx = dmxRequest(config, units);
     if (dmx) {
       message.dmx = dmx;
+      sending = true;
+    }
+  }
+
+  if (sendsMidi(config)) {
+    // The same two readings: MIDI is scaled from `units` as DMX is, except
+    // that a program change is a position in a list and takes `raw`.
+    const midi = midiRequest(config, raw, units);
+    if (midi) {
+      message.midi = midi;
       sending = true;
     }
   }
@@ -4713,13 +4951,16 @@ function dmxRequest(config, units) {
 function only(config, protocol) {
   if (!config) return null;
   if (protocol === "osc" && !sendsOsc(config)) return null;
-  if (protocol === "dmx" && !sendsDmx(config)) return null;
+  // MIDI is scaled from the same levels as DMX, and like it is one position
+  // sent once, so it travels with the DMX half.
+  if (protocol === "dmx" && !sendsDmx(config) && !sendsMidi(config)) return null;
   // `transport` is the old one-setting form of the same choice (fields.js);
   // cleared, so it cannot outvote the two checkboxes set here.
   return Object.assign({}, config, {
     transport: undefined,
     oscEnabled: protocol === "osc",
-    dmxEnabled: protocol === "dmx",
+    dmxEnabled: protocol === "dmx" && sendsDmx(config),
+    midiEnabled: protocol === "dmx" && sendsMidi(config),
   });
 }
 
@@ -4755,12 +4996,17 @@ function routing(ctx) {
     dmxUniverse: ctx.get("dmxUniverse"),
     dmxChannel: ctx.get("dmxChannel"),
     dmxCount: ctx.get("dmxCount"),
+    midiEnabled: ctx.get("midiEnabled"),
+    midiPort: ctx.get("midiPort"),
+    midiChannel: ctx.get("midiChannel"),
+    midiType: ctx.get("midiType"),
+    midiNumber: ctx.get("midiNumber"),
   };
 }
 
 module.exports = { outgoing, only, routing, asCtx };
 
-},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":7,"../serial-target":12,"./fields":18}],25:[function(require,module,exports){
+},{"../dmx/levels":1,"../dmx/spec":2,"../midi/spec":6,"../osc-args":8,"../serial-target":13,"./fields":19}],27:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4784,7 +5030,7 @@ module.exports = [
   require("./media-browser").mediaBrowser,
 ];
 
-},{"./button":15,"./colour":16,"./dropdown":17,"./media-browser":21,"./meter":22,"./number-input":23,"./slider":27,"./text-input":28,"./xypad":30}],26:[function(require,module,exports){
+},{"./button":16,"./colour":17,"./dropdown":18,"./media-browser":22,"./meter":23,"./number-input":25,"./slider":29,"./text-input":30,"./xypad":32}],28:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4851,7 +5097,7 @@ function onShared(ctx, fn) {
 
 module.exports = { share, onShared };
 
-},{}],27:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 "use strict";
 
 const {
@@ -4865,6 +5111,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
+const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
 const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -4916,7 +5163,8 @@ const slider = {
       invert: false,
       argType: "f",
     },
-    dmxDefaults(1)
+    dmxDefaults(1),
+    midiDefaults("cc")
   ),
 
   fields: [enabled()]
@@ -4929,9 +5177,10 @@ const slider = {
       field("invert", "Invert", "checkbox"),
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
-    .concat(dmxFields()),
+    .concat(dmxFields())
+    .concat(midiFields()),
 
-  checks: Object.assign({}, connectionChecks(), dmxChecks(1), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     min: checkNumber("Min"),
     max: checkNumber("Max"),
     value: checkValue,
@@ -5135,7 +5384,7 @@ function checkValue(value, config) {
 // this is where it used to be, and a caller that learned it here keeps working.
 module.exports = { slider, ORIENTATIONS };
 
-},{"../dmx/levels":1,"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26}],28:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":26,"./shared":28}],30:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -5317,7 +5566,7 @@ function checkValue(value, config) {
 
 module.exports = { textInput };
 
-},{"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26,"./typed":29}],29:[function(require,module,exports){
+},{"../osc-args":8,"./fields":19,"./incoming":20,"./outgoing":26,"./shared":28,"./typed":31}],31:[function(require,module,exports){
 "use strict";
 
 const { isSendable, toNumber } = require("../osc-args");
@@ -5536,7 +5785,7 @@ function dmxRange(min, max) {
 
 module.exports = { commitOn, refusal, checkArgType, levelOf, dmxRange };
 
-},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":7}],30:[function(require,module,exports){
+},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":8}],32:[function(require,module,exports){
 "use strict";
 
 const {
@@ -5549,6 +5798,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
+const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
 const { outgoing, only, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
@@ -5618,7 +5868,8 @@ const xypad = {
       invertY: false,
       argType: "f",
     },
-    dmxDefaults(2)
+    dmxDefaults(2),
+    midiDefaults("cc")
   ),
 
   fields: [enabled()]
@@ -5633,9 +5884,10 @@ const xypad = {
       field("invertY", "Invert Y", "checkbox"),
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
-    .concat(dmxFields()),
+    .concat(dmxFields())
+    .concat(midiFields()),
 
-  checks: Object.assign({}, connectionChecks(), dmxChecks(2), {
+  checks: Object.assign({}, connectionChecks(), dmxChecks(2), midiChecks(2), {
     minX: checkNumber("Min X"),
     maxX: checkNumber("Max X"),
     minY: checkNumber("Min Y"),
@@ -5914,7 +6166,7 @@ function within(value, min, max) {
 
 module.exports = { xypad, SEND_MODES };
 
-},{"../dmx/levels":1,"../osc-args":7,"./fields":18,"./incoming":19,"./outgoing":24,"./shared":26}],31:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":26,"./shared":28}],33:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -6100,7 +6352,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],32:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 /*!
  * jquery-confirm v3.3.4 (http://craftpip.github.io/jquery-confirm/)
  * Author: Boniface Pereira
@@ -6111,7 +6363,7 @@ process.umask = function() { return 0; };
  * Licensed under MIT (https://github.com/craftpip/jquery-confirm/blob/master/LICENSE)
  */
 (function(factory){if(typeof define==="function"&&define.amd){define(["jquery"],factory);}else{if(typeof module==="object"&&module.exports){module.exports=function(root,jQuery){if(jQuery===undefined){if(typeof window!=="undefined"){jQuery=require("jquery");}else{jQuery=require("jquery")(root);}}factory(jQuery);return jQuery;};}else{factory(jQuery);}}}(function($){var w=window;$.fn.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}$(this).each(function(){var $this=$(this);if($this.attr("jc-attached")){console.warn("jConfirm has already been attached to this element ",$this[0]);return;}$this.on("click",function(e){e.preventDefault();var jcOption=$.extend({},options);if($this.attr("data-title")){jcOption.title=$this.attr("data-title");}if($this.attr("data-content")){jcOption.content=$this.attr("data-content");}if(typeof jcOption.buttons==="undefined"){jcOption.buttons={};}jcOption["$target"]=$this;if($this.attr("href")&&Object.keys(jcOption.buttons).length===0){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];jcOption.buttons=buttons;jcOption.buttons[firstBtn].action=function(){location.href=$this.attr("href");};}jcOption.closeIcon=false;var instance=$.confirm(jcOption);});$this.attr("jc-attached",true);});return $(this);};$.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});options.buttons=buttons;}return w.jconfirm(options);};$.alert=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];options.buttons[firstBtn]=buttons[firstBtn];}return w.jconfirm(options);};$.dialog=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false,closeIcon:function(){}};}options.buttons={};if(typeof options.closeIcon==="undefined"){options.closeIcon=function(){};}options.confirmKeys=[13];return w.jconfirm(options);};w.jconfirm=function(options){if(typeof options==="undefined"){options={};}var pluginOptions=$.extend(true,{},w.jconfirm.pluginDefaults);if(w.jconfirm.defaults){pluginOptions=$.extend(true,pluginOptions,w.jconfirm.defaults);}pluginOptions=$.extend(true,{},pluginOptions,options);var instance=new w.Jconfirm(pluginOptions);w.jconfirm.instances.push(instance);return instance;};w.Jconfirm=function(options){$.extend(this,options);this._init();};w.Jconfirm.prototype={_init:function(){var that=this;if(!w.jconfirm.instances.length){w.jconfirm.lastFocused=$("body").find(":focus");}this._id=Math.round(Math.random()*99999);this.contentParsed=$(document.createElement("div"));if(!this.lazyOpen){setTimeout(function(){that.open();},0);}},_buildHTML:function(){var that=this;this._parseAnimation(this.animation,"o");this._parseAnimation(this.closeAnimation,"c");this._parseBgDismissAnimation(this.backgroundDismissAnimation);this._parseColumnClass(this.columnClass);this._parseTheme(this.theme);this._parseType(this.type);var template=$(this.template);template.find(".jconfirm-box").addClass(this.animationParsed).addClass(this.backgroundDismissAnimationParsed).addClass(this.typeParsed);if(this.typeAnimated){template.find(".jconfirm-box").addClass("jconfirm-type-animated");}if(this.useBootstrap){template.find(".jc-bs3-row").addClass(this.bootstrapClasses.row);template.find(".jc-bs3-row").addClass("justify-content-md-center justify-content-sm-center justify-content-xs-center justify-content-lg-center");template.find(".jconfirm-box-container").addClass(this.columnClassParsed);if(this.containerFluid){template.find(".jc-bs3-container").addClass(this.bootstrapClasses.containerFluid);}else{template.find(".jc-bs3-container").addClass(this.bootstrapClasses.container);}}else{template.find(".jconfirm-box").css("width",this.boxWidth);}if(this.titleClass){template.find(".jconfirm-title-c").addClass(this.titleClass);}template.addClass(this.themeParsed);var ariaLabel="jconfirm-box"+this._id;template.find(".jconfirm-box").attr("aria-labelledby",ariaLabel).attr("tabindex",-1);template.find(".jconfirm-content").attr("id",ariaLabel);if(this.bgOpacity!==null){template.find(".jconfirm-bg").css("opacity",this.bgOpacity);}if(this.rtl){template.addClass("jconfirm-rtl");}this.$el=template.appendTo(this.container);this.$jconfirmBoxContainer=this.$el.find(".jconfirm-box-container");this.$jconfirmBox=this.$body=this.$el.find(".jconfirm-box");this.$jconfirmBg=this.$el.find(".jconfirm-bg");this.$title=this.$el.find(".jconfirm-title");this.$titleContainer=this.$el.find(".jconfirm-title-c");this.$content=this.$el.find("div.jconfirm-content");this.$contentPane=this.$el.find(".jconfirm-content-pane");this.$icon=this.$el.find(".jconfirm-icon-c");this.$closeIcon=this.$el.find(".jconfirm-closeIcon");this.$holder=this.$el.find(".jconfirm-holder");this.$btnc=this.$el.find(".jconfirm-buttons");this.$scrollPane=this.$el.find(".jconfirm-scrollpane");that.setStartingPoint();this._contentReady=$.Deferred();this._modalReady=$.Deferred();this.$holder.css({"padding-top":this.offsetTop,"padding-bottom":this.offsetBottom,});this.setTitle();this.setIcon();this._setButtons();this._parseContent();this.initDraggable();if(this.isAjax){this.showLoading(false);}$.when(this._contentReady,this._modalReady).then(function(){if(that.isAjaxLoading){setTimeout(function(){that.isAjaxLoading=false;that.setContent();that.setTitle();that.setIcon();setTimeout(function(){that.hideLoading(false);that._updateContentMaxHeight();},100);if(typeof that.onContentReady==="function"){that.onContentReady();}},50);}else{that._updateContentMaxHeight();that.setTitle();that.setIcon();if(typeof that.onContentReady==="function"){that.onContentReady();}}if(that.autoClose){that._startCountDown();}}).then(function(){that._watchContent();});if(this.animation==="none"){this.animationSpeed=1;this.animationBounce=1;}this.$body.css(this._getCSS(this.animationSpeed,this.animationBounce));this.$contentPane.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBg.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBoxContainer.css(this._getCSS(this.animationSpeed,1));},_typePrefix:"jconfirm-type-",typeParsed:"",_parseType:function(type){this.typeParsed=this._typePrefix+type;},setType:function(type){var oldClass=this.typeParsed;this._parseType(type);this.$jconfirmBox.removeClass(oldClass).addClass(this.typeParsed);},themeParsed:"",_themePrefix:"jconfirm-",setTheme:function(theme){var previous=this.theme;this.theme=theme||this.theme;this._parseTheme(this.theme);if(previous){this.$el.removeClass(previous);}this.$el.addClass(this.themeParsed);this.theme=theme;},_parseTheme:function(theme){var that=this;theme=theme.split(",");$.each(theme,function(k,a){if(a.indexOf(that._themePrefix)===-1){theme[k]=that._themePrefix+$.trim(a);}});this.themeParsed=theme.join(" ").toLowerCase();},backgroundDismissAnimationParsed:"",_bgDismissPrefix:"jconfirm-hilight-",_parseBgDismissAnimation:function(bgDismissAnimation){var animation=bgDismissAnimation.split(",");var that=this;$.each(animation,function(k,a){if(a.indexOf(that._bgDismissPrefix)===-1){animation[k]=that._bgDismissPrefix+$.trim(a);}});this.backgroundDismissAnimationParsed=animation.join(" ").toLowerCase();},animationParsed:"",closeAnimationParsed:"",_animationPrefix:"jconfirm-animation-",setAnimation:function(animation){this.animation=animation||this.animation;this._parseAnimation(this.animation,"o");},_parseAnimation:function(animation,which){which=which||"o";var animations=animation.split(",");var that=this;$.each(animations,function(k,a){if(a.indexOf(that._animationPrefix)===-1){animations[k]=that._animationPrefix+$.trim(a);}});var a_string=animations.join(" ").toLowerCase();if(which==="o"){this.animationParsed=a_string;}else{this.closeAnimationParsed=a_string;}return a_string;},setCloseAnimation:function(closeAnimation){this.closeAnimation=closeAnimation||this.closeAnimation;this._parseAnimation(this.closeAnimation,"c");},setAnimationSpeed:function(speed){this.animationSpeed=speed||this.animationSpeed;},columnClassParsed:"",setColumnClass:function(colClass){if(!this.useBootstrap){console.warn("cannot set columnClass, useBootstrap is set to false");return;}this.columnClass=colClass||this.columnClass;this._parseColumnClass(this.columnClass);this.$jconfirmBoxContainer.addClass(this.columnClassParsed);},_updateContentMaxHeight:function(){var height=$(window).height()-(this.$jconfirmBox.outerHeight()-this.$contentPane.outerHeight())-(this.offsetTop+this.offsetBottom);this.$contentPane.css({"max-height":height+"px"});},setBoxWidth:function(width){if(this.useBootstrap){console.warn("cannot set boxWidth, useBootstrap is set to true");return;}this.boxWidth=width;this.$jconfirmBox.css("width",width);},_parseColumnClass:function(colClass){colClass=colClass.toLowerCase();var p;switch(colClass){case"xl":case"xlarge":p="col-md-12";break;case"l":case"large":p="col-md-8 col-md-offset-2";break;case"m":case"medium":p="col-md-6 col-md-offset-3";break;case"s":case"small":p="col-md-4 col-md-offset-4";break;case"xs":case"xsmall":p="col-md-2 col-md-offset-5";break;default:p=colClass;}this.columnClassParsed=p;},initDraggable:function(){var that=this;var $t=this.$titleContainer;this.resetDrag();if(this.draggable){$t.on("mousedown",function(e){$t.addClass("jconfirm-hand");that.mouseX=e.clientX;that.mouseY=e.clientY;that.isDrag=true;});$(window).on("mousemove."+this._id,function(e){if(that.isDrag){that.movingX=e.clientX-that.mouseX+that.initialX;that.movingY=e.clientY-that.mouseY+that.initialY;that.setDrag();}});$(window).on("mouseup."+this._id,function(){$t.removeClass("jconfirm-hand");if(that.isDrag){that.isDrag=false;that.initialX=that.movingX;that.initialY=that.movingY;}});}},resetDrag:function(){this.isDrag=false;this.initialX=0;this.initialY=0;this.movingX=0;this.movingY=0;this.mouseX=0;this.mouseY=0;this.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");},setDrag:function(){if(!this.draggable){return;}this.alignMiddle=false;var boxWidth=this.$jconfirmBox.outerWidth();var boxHeight=this.$jconfirmBox.outerHeight();var windowWidth=$(window).width();var windowHeight=$(window).height();var that=this;var dragUpdate=1;if(that.movingX%dragUpdate===0||that.movingY%dragUpdate===0){if(that.dragWindowBorder){var leftDistance=(windowWidth/2)-boxWidth/2;var topDistance=(windowHeight/2)-boxHeight/2;topDistance-=that.dragWindowGap;leftDistance-=that.dragWindowGap;if(leftDistance+that.movingX<0){that.movingX=-leftDistance;}else{if(leftDistance-that.movingX<0){that.movingX=leftDistance;}}if(topDistance+that.movingY<0){that.movingY=-topDistance;}else{if(topDistance-that.movingY<0){that.movingY=topDistance;}}}that.$jconfirmBoxContainer.css("transform","translate("+that.movingX+"px, "+that.movingY+"px)");}},_scrollTop:function(){if(typeof pageYOffset!=="undefined"){return pageYOffset;}else{var B=document.body;var D=document.documentElement;D=(D.clientHeight)?D:B;return D.scrollTop;}},_watchContent:function(){var that=this;if(this._timer){clearInterval(this._timer);}var prevContentHeight=0;this._timer=setInterval(function(){if(that.smoothContent){var contentHeight=that.$content.outerHeight()||0;if(contentHeight!==prevContentHeight){prevContentHeight=contentHeight;}var wh=$(window).height();var total=that.offsetTop+that.offsetBottom+that.$jconfirmBox.height()-that.$contentPane.height()+that.$content.height();if(total<wh){that.$contentPane.addClass("no-scroll");}else{that.$contentPane.removeClass("no-scroll");}}},this.watchInterval);},_overflowClass:"jconfirm-overflow",_hilightAnimating:false,highlight:function(){this.hiLightModal();},hiLightModal:function(){var that=this;if(this._hilightAnimating){return;}that.$body.addClass("hilight");var duration=parseFloat(that.$body.css("animation-duration"))||2;this._hilightAnimating=true;setTimeout(function(){that._hilightAnimating=false;that.$body.removeClass("hilight");},duration*1000);},_bindEvents:function(){var that=this;this.boxClicked=false;this.$scrollPane.click(function(e){if(!that.boxClicked){var buttonName=false;var shouldClose=false;var str;if(typeof that.backgroundDismiss==="function"){str=that.backgroundDismiss();}else{str=that.backgroundDismiss;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}else{that.hiLightModal();}}that.boxClicked=false;});this.$jconfirmBox.click(function(e){that.boxClicked=true;});var isKeyDown=false;$(window).on("jcKeyDown."+that._id,function(e){if(!isKeyDown){isKeyDown=true;}});$(window).on("keyup."+that._id,function(e){if(isKeyDown){that.reactOnKey(e);isKeyDown=false;}});$(window).on("resize."+this._id,function(){that._updateContentMaxHeight();setTimeout(function(){that.resetDrag();},100);});},_cubic_bezier:"0.36, 0.55, 0.19",_getCSS:function(speed,bounce){return{"-webkit-transition-duration":speed/1000+"s","transition-duration":speed/1000+"s","-webkit-transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")","transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")"};},_setButtons:function(){var that=this;var total_buttons=0;if(typeof this.buttons!=="object"){this.buttons={};}$.each(this.buttons,function(key,button){total_buttons+=1;if(typeof button==="function"){that.buttons[key]=button={action:button};}that.buttons[key].text=button.text||key;that.buttons[key].btnClass=button.btnClass||"btn-default";that.buttons[key].action=button.action||function(){};that.buttons[key].keys=button.keys||[];that.buttons[key].isHidden=button.isHidden||false;that.buttons[key].isDisabled=button.isDisabled||false;$.each(that.buttons[key].keys,function(i,a){that.buttons[key].keys[i]=a.toLowerCase();});var button_element=$('<button type="button" class="btn"></button>').html(that.buttons[key].text).addClass(that.buttons[key].btnClass).prop("disabled",that.buttons[key].isDisabled).css("display",that.buttons[key].isHidden?"none":"").click(function(e){e.preventDefault();var res=that.buttons[key].action.apply(that,[that.buttons[key]]);that.onAction.apply(that,[key,that.buttons[key]]);that._stopCountDown();if(typeof res==="undefined"||res){that.close();}});that.buttons[key].el=button_element;that.buttons[key].setText=function(text){button_element.html(text);};that.buttons[key].addClass=function(className){button_element.addClass(className);};that.buttons[key].removeClass=function(className){button_element.removeClass(className);};that.buttons[key].disable=function(){that.buttons[key].isDisabled=true;button_element.prop("disabled",true);};that.buttons[key].enable=function(){that.buttons[key].isDisabled=false;button_element.prop("disabled",false);};that.buttons[key].show=function(){that.buttons[key].isHidden=false;button_element.css("display","");};that.buttons[key].hide=function(){that.buttons[key].isHidden=true;button_element.css("display","none");};that["$_"+key]=that["$$"+key]=button_element;that.$btnc.append(button_element);});if(total_buttons===0){this.$btnc.hide();}if(this.closeIcon===null&&total_buttons===0){this.closeIcon=true;}if(this.closeIcon){if(this.closeIconClass){var closeHtml='<i class="'+this.closeIconClass+'"></i>';this.$closeIcon.html(closeHtml);}this.$closeIcon.click(function(e){e.preventDefault();var buttonName=false;var shouldClose=false;var str;if(typeof that.closeIcon==="function"){str=that.closeIcon();}else{str=that.closeIcon;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}});this.$closeIcon.show();}else{this.$closeIcon.hide();}},setTitle:function(string,force){force=force||false;if(typeof string!=="undefined"){if(typeof string==="string"){this.title=string;}else{if(typeof string==="function"){if(typeof string.promise==="function"){console.error("Promise was returned from title function, this is not supported.");}var response=string();if(typeof response==="string"){this.title=response;}else{this.title=false;}}else{this.title=false;}}}if(this.isAjaxLoading&&!force){return;}this.$title.html(this.title||"");this.updateTitleContainer();},setIcon:function(iconClass,force){force=force||false;if(typeof iconClass!=="undefined"){if(typeof iconClass==="string"){this.icon=iconClass;}else{if(typeof iconClass==="function"){var response=iconClass();if(typeof response==="string"){this.icon=response;}else{this.icon=false;}}else{this.icon=false;}}}if(this.isAjaxLoading&&!force){return;}this.$icon.html(this.icon?'<i class="'+this.icon+'"></i>':"");this.updateTitleContainer();},updateTitleContainer:function(){if(!this.title&&!this.icon){this.$titleContainer.hide();}else{this.$titleContainer.show();}},setContentPrepend:function(content,force){if(!content){return;}this.contentParsed.prepend(content);},setContentAppend:function(content){if(!content){return;}this.contentParsed.append(content);},setContent:function(content,force){force=!!force;var that=this;if(content){this.contentParsed.html("").append(content);}if(this.isAjaxLoading&&!force){return;}this.$content.html("");this.$content.append(this.contentParsed);setTimeout(function(){that.$body.find("input[autofocus]:visible:first").focus();},100);},loadingSpinner:false,showLoading:function(disableButtons){this.loadingSpinner=true;this.$jconfirmBox.addClass("loading");if(disableButtons){this.$btnc.find("button").prop("disabled",true);}},hideLoading:function(enableButtons){this.loadingSpinner=false;this.$jconfirmBox.removeClass("loading");if(enableButtons){this.$btnc.find("button").prop("disabled",false);}},ajaxResponse:false,contentParsed:"",isAjax:false,isAjaxLoading:false,_parseContent:function(){var that=this;var e="&nbsp;";if(typeof this.content==="function"){var res=this.content.apply(this);if(typeof res==="string"){this.content=res;}else{if(typeof res==="object"&&typeof res.always==="function"){this.isAjax=true;this.isAjaxLoading=true;res.always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});this.content=e;}else{this.content=e;}}}if(typeof this.content==="string"&&this.content.substr(0,4).toLowerCase()==="url:"){this.isAjax=true;this.isAjaxLoading=true;var u=this.content.substring(4,this.content.length);$.get(u).done(function(html){that.contentParsed.html(html);}).always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});}if(!this.content){this.content=e;}if(!this.isAjax){this.contentParsed.html(this.content);this.setContent();that._contentReady.resolve();}},_stopCountDown:function(){clearInterval(this.autoCloseInterval);if(this.$cd){this.$cd.remove();}},_startCountDown:function(){var that=this;var opt=this.autoClose.split("|");if(opt.length!==2){console.error("Invalid option for autoClose. example 'close|10000'");return false;}var button_key=opt[0];var time=parseInt(opt[1]);if(typeof this.buttons[button_key]==="undefined"){console.error("Invalid button key '"+button_key+"' for autoClose");return false;}var seconds=Math.ceil(time/1000);this.$cd=$('<span class="countdown"> ('+seconds+")</span>").appendTo(this["$_"+button_key]);this.autoCloseInterval=setInterval(function(){that.$cd.html(" ("+(seconds-=1)+") ");if(seconds<=0){that["$$"+button_key].trigger("click");that._stopCountDown();}},1000);},_getKey:function(key){switch(key){case 192:return"tilde";case 13:return"enter";case 16:return"shift";case 9:return"tab";case 20:return"capslock";case 17:return"ctrl";case 91:return"win";case 18:return"alt";case 27:return"esc";case 32:return"space";}var initial=String.fromCharCode(key);if(/^[A-z0-9]+$/.test(initial)){return initial.toLowerCase();}else{return false;}},reactOnKey:function(e){var that=this;var a=$(".jconfirm");if(a.eq(a.length-1)[0]!==this.$el[0]){return false;}var key=e.which;if(this.$content.find(":input").is(":focus")&&/13|32/.test(key)){return false;}var keyChar=this._getKey(key);if(keyChar==="esc"&&this.escapeKey){if(this.escapeKey===true){this.$scrollPane.trigger("click");}else{if(typeof this.escapeKey==="string"||typeof this.escapeKey==="function"){var buttonKey;if(typeof this.escapeKey==="function"){buttonKey=this.escapeKey();}else{buttonKey=this.escapeKey;}if(buttonKey){if(typeof this.buttons[buttonKey]==="undefined"){console.warn("Invalid escapeKey, no buttons found with key "+buttonKey);}else{this["$_"+buttonKey].trigger("click");}}}}}$.each(this.buttons,function(key,button){if(button.keys.indexOf(keyChar)!==-1){that["$_"+key].trigger("click");}});},setDialogCenter:function(){console.info("setDialogCenter is deprecated, dialogs are centered with CSS3 tables");},_unwatchContent:function(){clearInterval(this._timer);},close:function(onClosePayload){var that=this;if(typeof this.onClose==="function"){this.onClose(onClosePayload);}this._unwatchContent();$(window).unbind("resize."+this._id);$(window).unbind("keyup."+this._id);$(window).unbind("jcKeyDown."+this._id);if(this.draggable){$(window).unbind("mousemove."+this._id);$(window).unbind("mouseup."+this._id);this.$titleContainer.unbind("mousedown");}that.$el.removeClass(that.loadedClass);$("body").removeClass("jconfirm-no-scroll-"+that._id);that.$jconfirmBoxContainer.removeClass("jconfirm-no-transition");setTimeout(function(){that.$body.addClass(that.closeAnimationParsed);that.$jconfirmBg.addClass("jconfirm-bg-h");var closeTimer=(that.closeAnimation==="none")?1:that.animationSpeed;setTimeout(function(){that.$el.remove();var l=w.jconfirm.instances;var i=w.jconfirm.instances.length-1;for(i;i>=0;i--){if(w.jconfirm.instances[i]._id===that._id){w.jconfirm.instances.splice(i,1);}}if(!w.jconfirm.instances.length){if(that.scrollToPreviousElement&&w.jconfirm.lastFocused&&w.jconfirm.lastFocused.length&&$.contains(document,w.jconfirm.lastFocused[0])){var $lf=w.jconfirm.lastFocused;if(that.scrollToPreviousElementAnimate){var st=$(window).scrollTop();var ot=w.jconfirm.lastFocused.offset().top;var wh=$(window).height();if(!(ot>st&&ot<(st+wh))){var scrollTo=(ot-Math.round((wh/3)));$("html, body").animate({scrollTop:scrollTo},that.animationSpeed,"swing",function(){$lf.focus();});}else{$lf.focus();}}else{$lf.focus();}w.jconfirm.lastFocused=false;}}if(typeof that.onDestroy==="function"){that.onDestroy();}},closeTimer*0.4);},50);return true;},open:function(){if(this.isOpen()){return false;}this._buildHTML();this._bindEvents();this._open();return true;},setStartingPoint:function(){var el=false;if(this.animateFromElement!==true&&this.animateFromElement){el=this.animateFromElement;w.jconfirm.lastClicked=false;}else{if(w.jconfirm.lastClicked&&this.animateFromElement===true){el=w.jconfirm.lastClicked;w.jconfirm.lastClicked=false;}else{return false;}}if(!el){return false;}var offset=el.offset();var iTop=el.outerHeight()/2;var iLeft=el.outerWidth()/2;iTop-=this.$jconfirmBox.outerHeight()/2;iLeft-=this.$jconfirmBox.outerWidth()/2;var sourceTop=offset.top+iTop;sourceTop=sourceTop-this._scrollTop();var sourceLeft=offset.left+iLeft;var wh=$(window).height()/2;var ww=$(window).width()/2;var targetH=wh-this.$jconfirmBox.outerHeight()/2;var targetW=ww-this.$jconfirmBox.outerWidth()/2;sourceTop-=targetH;sourceLeft-=targetW;if(Math.abs(sourceTop)>wh||Math.abs(sourceLeft)>ww){return false;}this.$jconfirmBoxContainer.css("transform","translate("+sourceLeft+"px, "+sourceTop+"px)");},_open:function(){var that=this;if(typeof that.onOpenBefore==="function"){that.onOpenBefore();}this.$body.removeClass(this.animationParsed);this.$jconfirmBg.removeClass("jconfirm-bg-h");this.$body.focus();that.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");setTimeout(function(){that.$body.css(that._getCSS(that.animationSpeed,1));that.$body.css({"transition-property":that.$body.css("transition-property")+", margin"});that.$jconfirmBoxContainer.addClass("jconfirm-no-transition");that._modalReady.resolve();if(typeof that.onOpen==="function"){that.onOpen();}that.$el.addClass(that.loadedClass);},this.animationSpeed);},loadedClass:"jconfirm-open",isClosed:function(){return !this.$el||this.$el.parent().length===0;},isOpen:function(){return !this.isClosed();},toggle:function(){if(!this.isOpen()){this.open();}else{this.close();}}};w.jconfirm.instances=[];w.jconfirm.lastFocused=false;w.jconfirm.pluginDefaults={template:'<div class="jconfirm"><div class="jconfirm-bg jconfirm-bg-h"></div><div class="jconfirm-scrollpane"><div class="jconfirm-row"><div class="jconfirm-cell"><div class="jconfirm-holder"><div class="jc-bs3-container"><div class="jc-bs3-row"><div class="jconfirm-box-container jconfirm-animated"><div class="jconfirm-box" role="dialog" aria-labelledby="labelled" tabindex="-1"><div class="jconfirm-closeIcon">&times;</div><div class="jconfirm-title-c"><span class="jconfirm-icon-c"></span><span class="jconfirm-title"></span></div><div class="jconfirm-content-pane"><div class="jconfirm-content"></div></div><div class="jconfirm-buttons"></div><div class="jconfirm-clear"></div></div></div></div></div></div></div></div></div></div>',title:"Hello",titleClass:"",type:"default",typeAnimated:true,draggable:true,dragWindowGap:15,dragWindowBorder:true,animateFromElement:true,alignMiddle:true,smoothContent:true,content:"Are you sure to continue?",buttons:{},defaultButtons:{ok:{action:function(){}},close:{action:function(){}}},contentLoaded:function(){},icon:"",lazyOpen:false,bgOpacity:null,theme:"light",animation:"scale",closeAnimation:"scale",animationSpeed:400,animationBounce:1,escapeKey:true,rtl:false,container:"body",containerFluid:false,backgroundDismiss:false,backgroundDismissAnimation:"shake",autoClose:false,closeIcon:null,closeIconClass:false,watchInterval:100,columnClass:"col-md-4 col-md-offset-4 col-sm-6 col-sm-offset-3 col-xs-10 col-xs-offset-1",boxWidth:"50%",scrollToPreviousElement:true,scrollToPreviousElementAnimate:true,useBootstrap:true,offsetTop:40,offsetBottom:40,bootstrapClasses:{container:"container",containerFluid:"container-fluid",row:"row"},onContentReady:function(){},onOpenBefore:function(){},onOpen:function(){},onClose:function(){},onDestroy:function(){},onAction:function(){}};var keyDown=false;$(window).on("keydown",function(e){if(!keyDown){var $target=$(e.target);var pass=false;if($target.closest(".jconfirm-box").length){pass=true;}if(pass){$(window).trigger("jcKeyDown");}keyDown=true;}});$(window).on("keyup",function(){keyDown=false;});w.jconfirm.lastClicked=false;$(document).on("mousedown","button, a, [jc-source]",function(){w.jconfirm.lastClicked=$(this);});}));
-},{"jquery":33}],33:[function(require,module,exports){
+},{"jquery":35}],35:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -16829,7 +17081,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],34:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -19128,7 +19380,7 @@ var qrcode = function() {
     return qrcode;
 }));
 
-},{}],35:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 /**
  * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
  *
@@ -19139,7 +19391,8 @@ var qrcode = function() {
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
+var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
+var features = require("../../../lib/features");
 var { exportAttributes } = require("../../../lib/export/config");
 
 /**
@@ -19161,7 +19414,9 @@ function categoryOf(field, config) {
     if (candidate.id === field.section) section = candidate;
   });
   if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
-  var open = section.id === "dmx" ? sendsDmx(config || {}) : true;
+  // A protocol that is off starts folded away, so the panel of a widget that
+  // only speaks OSC stays as short as it was before the others existed.
+  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) : true;
   // The attribute lands on the section's element, which is how the status
   // light finds it: by what it is, not by what its title happens to say.
   var attributes = {};
@@ -19239,6 +19494,8 @@ function configOf(model, definition) {
  */
 function visibleFields(definition, config) {
   return definition.fields.filter(function (field) {
+    // A protocol that is switched off (lib/features.js) has no section.
+    if (field.section === "midi" && !features.MIDI) return false;
     var rule = field.showIf;
     return !rule || rule.in.indexOf(config[rule.key]) !== -1;
   });
@@ -19403,6 +19660,7 @@ function contextFor(view, editor) {
       if (message.dmx && editor.sendDMX) {
         editor.sendDMX(Object.assign({ source: model.getId() }, message.dmx));
       }
+      if (message.midi && editor.sendMIDI) editor.sendMIDI(message.midi);
     },
 
     setClass: function (name, on) {
@@ -20041,6 +20299,12 @@ function sectionLights(editor, options) {
       }
       var label = row.querySelector(".gjs-label");
       if (label) label.setAttribute("title", row.getAttribute("title"));
+      // A setting that names a list is offered it as suggestions, and stays
+      // free text: a port unplugged for the night is still the widget's port.
+      if (field && field.source && suggestions[field.source]) {
+        var input = row.querySelector("input");
+        if (input) input.setAttribute("list", listFor(doc, field.source));
+      }
     });
   }
 
@@ -20049,7 +20313,7 @@ function sectionLights(editor, options) {
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:ip change:port";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:ip change:port";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);
@@ -20075,6 +20339,41 @@ function sectionLights(editor, options) {
   }
 
   return paint;
+}
+
+/**
+ * Lists a text setting can suggest from, by the name a field gives as its
+ * `source`. The editor fills them (suggest()); the panel hangs a <datalist>
+ * on the input. Kept here, not fetched here: the adapter knows no routes.
+ */
+var suggestions = {};
+
+function suggest(source, values) {
+  suggestions[source] = Array.isArray(values) ? values.slice() : [];
+  if (typeof document !== "undefined") listFor(document, source);
+}
+
+/** The id of the <datalist> for `source`, made or refilled as needed. */
+function listFor(doc, source) {
+  var id = "oscar-suggest-" + source;
+  if (!doc.getElementById) return id;
+  var list = doc.getElementById(id);
+  if (!list) {
+    list = doc.createElement("datalist");
+    list.id = id;
+    (doc.body || doc.documentElement).appendChild(list);
+  }
+  var wanted = (suggestions[source] || []).join("\n");
+  if (list.getAttribute("data-values") !== wanted) {
+    list.setAttribute("data-values", wanted);
+    while (list.firstChild) list.removeChild(list.firstChild);
+    (suggestions[source] || []).forEach(function (value) {
+      var option = doc.createElement("option");
+      option.value = value;
+      list.appendChild(option);
+    });
+  }
+  return id;
 }
 
 function fieldOf(definition, key) {
@@ -20116,6 +20415,7 @@ function noSelectingWhile(editor, isPreviewing) {
 module.exports = {
   noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
+  suggest: suggest,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,
   exportSnapshot: exportSnapshot,
@@ -20128,7 +20428,7 @@ module.exports = {
   revealKeys: revealKeys,
 };
 
-},{"../../../lib/export/config":3,"../../../lib/widgets":20,"../../../lib/widgets/fields":18}],36:[function(require,module,exports){
+},{"../../../lib/export/config":3,"../../../lib/features":4,"../../../lib/widgets":21,"../../../lib/widgets/fields":19}],38:[function(require,module,exports){
 /**
  * "Export" in the editor: turning the canvas into one file that works.
  *
@@ -20446,7 +20746,7 @@ function install(editor, options) {
 
 module.exports = { install: install, fileStem: fileStem };
 
-},{"../../lib/published-address":11,"./adapters/grapesjs":35,"qrcode-generator":34}],37:[function(require,module,exports){
+},{"../../lib/published-address":12,"./adapters/grapesjs":37,"qrcode-generator":36}],39:[function(require,module,exports){
 window.$ = $ = window.jQuery = require("jquery");
 
 // jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
@@ -20704,7 +21004,7 @@ var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
 var htmlDocument = require("../../lib/html-document");
-var { followSurfaceStyle, sectionLights, noSelectingWhile } = require("./adapters/grapesjs");
+var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
@@ -20908,6 +21208,23 @@ function initGrape(ipServer, socketPort, oscInPort) {
     root: document.querySelector(".gjs-pn-views-container") || document.body,
     listeningPort: oscInPort,
   });
+
+  // The MIDI ports this computer has, for a widget's Port setting to suggest.
+  // Asked again whenever a widget is picked, since instruments come and go.
+  if (features.MIDI) {
+    var askForMidiPorts = function () {
+      fetch("/midi/ports")
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (ports) {
+          if (ports) suggest("midi-outputs", ports.outputs);
+        })
+        .catch(function () {});
+    };
+    askForMidiPorts();
+    editor.on("component:selected", askForMidiPorts);
+  }
 
   var pn = editor.Panels;
   var modal = editor.Modal;
@@ -22001,7 +22318,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/project-format":9,"../../lib/projects-table":10,"../../lib/toolbar-order":13,"../../lib/widget-styles":14,"./adapters/grapesjs":35,"./export_dialog":36,"./pages":39,"jquery":33,"jquery-confirm":32}],38:[function(require,module,exports){
+},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":37,"./export_dialog":38,"./pages":41,"jquery":35,"jquery-confirm":34}],40:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
@@ -22171,7 +22488,7 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"../../lib/widget-styles":14,"./adapters/grapesjs":35,"./pages":39,"jquery":33}],39:[function(require,module,exports){
+},{"../../lib/widget-styles":15,"./adapters/grapesjs":37,"./pages":41,"jquery":35}],41:[function(require,module,exports){
 /**
  * Multiple pages: what the editor and the control surface have in common.
  *
@@ -22452,4 +22769,4 @@ module.exports = {
   pageTabs: pageTabs,
 };
 
-},{"../../lib/features":4,"../../lib/project-format":9}]},{},[38,37]);
+},{"../../lib/features":4,"../../lib/project-format":10}]},{},[40,39]);

@@ -50,6 +50,16 @@ function oscar_socket(editor, options) {
     editor.socket.emit("dmx", request);
   };
 
+  // ---- MIDI ---------------------------------------------------------------
+  // A third event, with a gate of its own (lib/midi/request.js). The ports
+  // are the server's: a tablet has none, and sends through OSCAR's.
+
+  /** Send one widget's MIDI: { port, messages }. */
+  editor.sendMIDI = function (request) {
+    if (!editor.socket) return;
+    editor.socket.emit("midi", request);
+  };
+
   /** Give a widget's channels up. Sent when a widget is deleted or leaves DMX. */
   editor.stopDMX = function (source) {
     if (!editor.socket) return;

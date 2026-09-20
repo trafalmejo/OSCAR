@@ -285,6 +285,47 @@ Press **Push to preview** (the eye icon) to send the current layout to it.
 Every device showing `/preview` picks the new layout up straight away; there is
 no need to walk over and reload them.
 
+
+### Sending MIDI
+
+Every widget that can drive DMX can send MIDI: open the **MIDI** section of its
+settings and tick **Data out**. It is a third protocol beside OSC and DMX, and
+any of the three can be on at once.
+
+| Setting | |
+| --- | --- |
+| **Port** | The MIDI port to send to, as the computer running OSCAR names it. The box suggests the ports there are. Part of a name is enough ("launchpad"), and blank means the first port. |
+| **Channel** | 1 to 16. |
+| **Type** | Control change, Note, Program change or Pitch bend. |
+| **Number** | The controller or note number, 0 to 127. |
+
+What a widget sends is its value scaled to MIDI's 0 to 127, the way DMX scales
+it to 0 to 255: a slider at the top of its range sends 127 whatever its Min and
+Max. A button sends note on at full velocity and note off, or 127 and 0 as a
+controller. A widget with several values uses the numbers that follow: a pad set
+to controller 20 sends X on 20 and Y on 21, a colour sends red, green and blue
+on three in a row. Program change sends a dropdown's value as it is when that is
+a whole number from 0 to 127, so options valued 0, 1, 2 pick programs 0, 1, 2.
+Pitch bend uses all 14 bits.
+
+The ports belong to the computer running OSCAR. A tablet or a phone showing a
+published surface sends MIDI through it, exactly as it sends OSC and DMX.
+
+To reach software on the same computer (Ableton Live, Resolume, a DAW) you need
+a virtual MIDI port. macOS has one built in: enable the **IAC Driver** in Audio
+MIDI Setup. On Windows install [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+and create a port; OSCAR then lists it. On Linux, `snd-virmidi` or a JACK/ALSA
+bridge does the same.
+
+OSCAR opens a port the first time a widget sends to it and keeps it open. If the
+instrument is unplugged, it is looked for again every two seconds and picked up
+when it returns. Only notes, controllers, programs and bends are sent; system
+exclusive and clock are refused. MIDI **in** is not there yet.
+
+`MIDI` in `lib/features.js` hides the section if it has to be taken out of a
+release. About (Report a problem) says how many ports OSCAR can see, which is
+the first thing to check when nothing arrives.
+
 ### Locking an installation
 
 By default anyone on the network can open the editor at `/` and change things.

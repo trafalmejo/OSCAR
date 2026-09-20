@@ -115,7 +115,16 @@ function diagnostics() {
 
 // Up here for the reason the serial cable is: diagnostics() is handed to the
 // router, and reads this.
-const midi = createMidi();
+const midi = createMidi({
+  onEvent: (event, name) => console.log(event === "open" ? "MIDI: sending to " + name : "MIDI: let go of " + name),
+  onError: (err) => console.error("MIDI could not be sent: " + reason(err)),
+});
+
+function sendMIDI(input) {
+  // False for a malformed request as well as for a port that is not there;
+  // the second has already been said, once, by onError.
+  return midi.send(input);
+}
 
 // ---- The serial cable ------------------------------------------------------
 
@@ -172,6 +181,8 @@ app.use(
     store,
     serverIP: () => serverIP,
     socketPort: () => SOCKET_PORT,
+    // Outputs only: all the Port setting suggests from, until MIDI comes in too.
+    midiPorts: () => midi.ports({ inputs: false }),
     oscInPort: () => OSC_IN_PORT,
     updates,
     diagnostics,
@@ -407,6 +418,15 @@ io.on("connection", (socket) => {
     }
   });
 
+  // One widget's MIDI: { port, messages }.
+  socket.on("midi", (request) => {
+    try {
+      sendMIDI(request);
+    } catch (err) {
+      console.error("Bad MIDI request:", err.message);
+    }
+  });
+
   // A widget giving its channels up: deleted, or switched back to OSC. This
   // is the only thing that releases channels short of quitting. A browser
   // disconnecting deliberately does not, because a phone locking its screen
@@ -421,7 +441,7 @@ io.on("connection", (socket) => {
 
 // Acting on a published surface with no browser showing it (lib/surfaces.js):
 // which widget and what state, never where to send.
-const surfaces = createSurfaces({ published, sendOSC, sendDMX, shared, io });
+const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io });
 
 // Last, so an extension finds everything it is handed already working.
 extensions.start({
@@ -488,6 +508,8 @@ function shutdown() {
   oscIn.close();
   // Let go of the port without forgetting it: the next start reopens it.
   serial.close();
+  // An open MIDI port left behind can keep the instrument from anyone else.
+  midi.close();
   io.close();
   // The channels are handed back before the socket goes, so the zero frames
   // and sACN's terminated packets actually leave; the fallback exit below
