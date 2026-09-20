@@ -41,6 +41,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      # electron-builder compiles the MIDI driver for Electron, and on Linux
+      # that needs ALSA's headers. Windows and macOS have theirs already.
+      - name: Install ALSA headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       # postinstall also installs the browser libraries under public/.
       - name: Install dependencies
         run: npm ci
