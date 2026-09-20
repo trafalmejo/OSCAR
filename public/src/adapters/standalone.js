@@ -358,6 +358,7 @@ function statusBanner(doc) {
 function start(env) {
   var doc = env.document;
   var show = statusBanner(doc);
+  if (env.relay) return startOnRelay(env, show);
   var where = resolveEndpoint(env.baked, env.search, env.served);
 
   // With nowhere to send, nothing is attached: every control stays inert
@@ -413,6 +414,51 @@ function start(env) {
   });
 
   return { bridge: bridge, wired: wired, endpoint: where };
+}
+
+/**
+ * The same page, reached through a relay by a device that is not on OSCAR's
+ * network. It says less than it does at home: there is no address to name,
+ * and a visitor is not the person who can fix the installation.
+ */
+function startOnRelay(env, show) {
+  var doc = env.document;
+  if (typeof env.connectRelay !== "function") {
+    show("offline", "This browser cannot hold the connection this page needs.");
+    return { error: "no WebSocket" };
+  }
+  var bridge = env.connectRelay(env.relay.url);
+  var wired = attachAll(doc, bridge, function () {});
+  var away = "This installation is not reachable right now. The controls will work again when it is back.";
+
+  show("waiting", "Connecting...");
+  bridge.socket.on("connect", function () {
+    show("online", "Connected.");
+  });
+  bridge.socket.on("disconnect", function () {
+    show("offline", bridge.socket.full ? "A lot of people are playing with this right now. It will let you in as soon as there is room." : away);
+  });
+  bridge.socket.on("relay:full", function () {
+    show("offline", "A lot of people are playing with this right now. It will let you in as soon as there is room.");
+  });
+
+  // How long a move takes to reach the installation and come back. Small and
+  // out of the way: it is there for whoever set this up, measuring a venue.
+  var readout = null;
+  bridge.socket.on("relay:latency", function (ms) {
+    if (!readout) {
+      readout = doc.createElement("div");
+      readout.setAttribute("data-oscar-latency", "");
+      readout.setAttribute("aria-hidden", "true");
+      readout.style.cssText =
+        "position:fixed;right:6px;bottom:6px;z-index:2147483646;padding:2px 6px;border-radius:6px;" +
+        "background:rgba(0,0,0,.45);color:#fff;font:10px/1.4 system-ui,sans-serif;pointer-events:none;opacity:.6";
+      doc.body.appendChild(readout);
+    }
+    readout.textContent = ms + " ms";
+  });
+
+  return { bridge: bridge, wired: wired, relay: env.relay.url };
 }
 
 module.exports = {

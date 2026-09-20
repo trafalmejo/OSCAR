@@ -16,10 +16,14 @@ function oscar_socket(editor, options) {
   var port = (options && options.socketPort) || 8081;
 
   editor.ipserver = host;
-  editor.socket = io("http://" + host + ":" + port, {
-    transports: ["websocket", "polling"],
-    reconnectionDelayMax: 5000,
-  });
+  // `socket` is a connection made some other way and shaped like this one: a
+  // surface reaching OSCAR through a relay (relay_socket.js).
+  editor.socket =
+    (options && options.socket) ||
+    io("http://" + host + ":" + port, {
+      transports: ["websocket", "polling"],
+      reconnectionDelayMax: 5000,
+    });
 
   /**
    * Send an OSC message. `args` may be a single value or a list -- a button

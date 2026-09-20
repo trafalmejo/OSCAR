@@ -9,6 +9,7 @@
 
 var standalone = require("./adapters/standalone");
 var oscarSocket = require("./oscar_socket");
+var relaySocket = require("./relay_socket");
 
 function boot() {
   standalone.start({
@@ -19,6 +20,17 @@ function boot() {
     served: window.OSCAR_SERVED
       ? { port: window.OSCAR_SERVED.port, hostname: window.location.hostname }
       : null,
+    // Set only on a page a relay is serving, to a device that is not on
+    // OSCAR's network: { url } of the room's WebSocket. It outranks the rest.
+    relay: window.OSCAR_RELAY && typeof window.OSCAR_RELAY.url === "string" ? window.OSCAR_RELAY : null,
+    connectRelay:
+      typeof WebSocket === "function"
+        ? function (url) {
+            var bridge = {};
+            oscarSocket(bridge, { socket: relaySocket(url), surface: true });
+            return bridge;
+          }
+        : null,
     // `surface`: an exported page is a device showing the layout, exactly as
     // /preview is, so it agrees with the others on what each widget shows.
     connect:

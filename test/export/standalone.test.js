@@ -512,3 +512,42 @@ test("a complete but damaged config is switched off on the page, and sends nothi
   el.fire("pointerdown");
   assert.deepStrictEqual(bridge.osc, []);
 });
+
+test("served by a relay, the page connects through it, and tells a visitor only what a visitor can use", () => {
+  const el = exported("oscar-button", { message: "/go" });
+  const doc = fakeDocument([el]);
+  const bridge = fakeBridge();
+  bridge.socket.connected = false;
+  const asked = [];
+  const result = standalone.start({
+    document: doc,
+    // Everything a page at home would use is ignored once a relay is named.
+    baked: { host: "192.168.0.5", port: 8081 },
+    search: "?oscar-host=10.0.0.1&oscar-port=9",
+    connect: () => assert.fail("a relayed page must not try the local bridge"),
+    relay: { url: "wss://relay.test/r/lobby/ws" },
+    connectRelay: (url) => { asked.push(url); return bridge; },
+  });
+  const banner = doc.body.children[0];
+  assert.deepStrictEqual(asked, ["wss://relay.test/r/lobby/ws"]);
+  assert.strictEqual(result.relay, "wss://relay.test/r/lobby/ws");
+  assert.strictEqual(banner.textContent, "Connecting...");
+
+  bridge.socket.fire("connect");
+  assert.strictEqual(banner.textContent, "Connected.");
+  bridge.socket.fire("disconnect");
+  assert.match(banner.textContent, /not reachable right now/);
+  assert.ok(!/192\.168|OSCAR at|firewall|port/i.test(banner.textContent), "no addresses or advice for someone who cannot act on them");
+  bridge.socket.full = true;
+  bridge.socket.fire("disconnect");
+  assert.match(banner.textContent, /as soon as there is room/);
+
+  // The readout appears with the first measurement and is only ever updated after.
+  bridge.socket.fire("relay:latency");
+  const count = doc.body.children.length;
+  bridge.socket.fire("relay:latency");
+  assert.strictEqual(doc.body.children.length, count);
+
+  const bare = standalone.start({ document: fakeDocument([]), relay: { url: "wss://x" }, connectRelay: null });
+  assert.strictEqual(bare.error, "no WebSocket");
+});
