@@ -1,0 +1,593 @@
+<!doctype html>
+<html>
+<head>
+<title>TV Remote, 1984</title>
+<!--
+  TV Remote, 1984: a handset from the year the remote stopped being a cable.
+  Black plastic, grey rubber keys, a red POWER, a rainbow stripe, a slide
+  switch for TV / VCR / CABLE, and the leaflet that came in the box, which
+  lists every OSC address. Every key works.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the keys take that style's colours instead.
+
+  How the keys behave. OSCAR's buttons are momentary unless told otherwise:
+  1 while a finger is down, 0 when it lifts. That is exactly what a remote
+  is, so almost nothing here is configured. POWER and MUTE are toggles. Each
+  digit has an address of its own, because a key that sent its number on the
+  way down would send "0" on the way up, and 0 is a channel.
+
+  A held key gets the class "toggle" from OSCAR. The pressed-in look is drawn
+  from that, and so is the red light in the window: the case lights it while
+  any key but POWER is down (.tvr-body:has(.tvr-key.toggle)). Where a browser
+  has no :has(), the light simply stays off.
+
+  The slide switch is an OSCAR slider from 1 to 3 that sends whole numbers
+  (argument type i) and moves a notch at a time (step="1").
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the handset fills the screen, which is the point.
+
+  OSC addresses:
+    /tv/power   /tv/mute   /tv/input   /tv/recall
+    /tv/digit/0 ... /tv/digit/9
+    /tv/channel/up   /tv/channel/down   /tv/volume/up   /tv/volume/down
+    /tv/source   (1 TV, 2 VCR, 3 CABLE)
+    /vcr/rew   /vcr/play   /vcr/ff   /vcr/stop   /vcr/rec
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #2a2019;
+  --osc-foreground: #e9e2d2;
+  --osc-card: #1c1c1e;
+  --osc-muted: #3a3a3e;
+  --osc-accent: #55555b;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #0c0c0d;
+  --osc-input: #0c0c0d;
+  --osc-primary: #d8d2c2;
+  --osc-primary-foreground: #1c1c1e;
+  --osc-ring: #e0a23a;
+  --osc-radius: 9px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.tvr {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 380px);
+  justify-content: center;
+  align-items: start;
+  gap: 56px;
+  min-height: 100vh;
+  padding: 48px 24px;
+  /* A coffee table, seen from the sofa. */
+  background:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, 0.09) 0px, rgba(0, 0, 0, 0) 3px, rgba(255, 255, 255, 0.025) 7px, rgba(0, 0, 0, 0.07) 11px),
+    linear-gradient(180deg, #5a3b22, #3e2714 55%, #2c1b0d);
+}
+
+/* ---- the handset ---------------------------------------------------------- */
+.tvr-body {
+  display: grid;
+  gap: 18px;
+  padding: 0 22px 26px;
+  border-radius: 26px 26px 34px 34px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 12%, rgba(0, 0, 0, 0) 88%, rgba(0, 0, 0, 0.35)),
+    linear-gradient(180deg, #2f2f33, #1d1d20 60%, #141416);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.13),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.6),
+    0 3px 0 #0a0a0b,
+    0 30px 40px -12px rgba(0, 0, 0, 0.75);
+}
+.tvr-window {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 30px;
+  margin: 0 -22px;
+  padding: 0 18px;
+  border-radius: 26px 26px 0 0;
+  background: linear-gradient(180deg, #4a0d12, #2a0609 70%, #1a0406);
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.7), inset 0 2px 1px rgba(255, 120, 120, 0.25);
+}
+.tvr-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5a1014;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+/* The light comes on while any key but POWER is held down. */
+.tvr-body:has(.tvr-key.toggle:not(.tvr-key-power)) .tvr-led {
+  background: #ff3b30;
+  box-shadow: 0 0 8px 2px rgba(255, 59, 48, 0.85);
+}
+.tvr-plate {
+  display: grid;
+  gap: 3px;
+  padding: 9px 12px 8px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #d9d9d6, #a9a9a5 48%, #c6c6c2 52%, #8f8f8b);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(0, 0, 0, 0.7);
+  color: #1c1c1e;
+}
+.tvr-brand {
+  margin: 0;
+  font-size: 19px;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+}
+.tvr-model {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.tvr-stripes {
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #d8402f 0 25%, #e98b2a 25% 50%, #e9c53a 50% 75%, #4a9a8a 75% 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.tvr-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 16px;
+}
+.tvr-legend {
+  display: block;
+  margin: 0 0 5px;
+  color: #cfc8b6;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.tvr-cell {
+  display: grid;
+  justify-items: center;
+}
+
+/* ---- the keys: grey rubber, square-shouldered, sunk into the case ----------- */
+.tvr-key {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #6c6c72, #4c4c52 55%, #3d3d42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    0 0 0 2px #0b0b0c,
+    0 3px 0 2px #0b0b0c;
+  color: #f1ecdf;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: none;
+}
+.tvr-key:hover {
+  background: linear-gradient(180deg, #74747a, #525258 55%, #424247);
+  color: #ffffff;
+}
+/* Held down. OSCAR puts .toggle on a key for as long as a finger is on it. */
+.tvr-key.toggle,
+.tvr-key.toggle:hover {
+  background: linear-gradient(180deg, #3a3a3f, #46464b);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 0 0 2px #0b0b0c, 0 1px 0 2px #0b0b0c;
+  color: #d8d2c2;
+  transform: translateY(2px);
+}
+.tvr-key-power {
+  width: 46px;
+  min-height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff6a5a, #c4261c 60%, #8a1610);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+.tvr-key-power:hover {
+  background: radial-gradient(circle at 35% 30%, #ff7c6e, #d02c21 60%, #94180f);
+}
+/* POWER is the one key that stays down: lit while the set is on. */
+.tvr-key-power.toggle,
+.tvr-key-power.toggle:hover {
+  background: radial-gradient(circle at 50% 45%, #ffd0c8, #ff4a3a 45%, #a61b13);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 2px #0b0b0c, 0 0 14px 2px rgba(255, 74, 58, 0.55);
+  color: #ffffff;
+}
+.tvr-key-small {
+  min-height: 30px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.tvr-pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+.tvr-key-digit {
+  font-size: 18px;
+}
+
+/* ---- the rockers ------------------------------------------------------------- */
+.tvr-rockers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.tvr-rocker {
+  width: 100%;
+  max-width: 72px;
+  display: grid;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: #0b0b0c;
+}
+.tvr-rocker .tvr-key {
+  min-height: 46px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  background: linear-gradient(180deg, #d4d0c4, #a9a59a 55%, #8e8a80);
+  color: #1c1c1e;
+  font-size: 17px;
+}
+.tvr-rocker .tvr-key:hover {
+  background: linear-gradient(180deg, #dedad0, #b3afa4 55%, #98948a);
+  color: #000000;
+}
+.tvr-rocker .tvr-key.toggle,
+.tvr-rocker .tvr-key.toggle:hover {
+  background: linear-gradient(180deg, #8e8a80, #a9a59a);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.55);
+  color: #1c1c1e;
+  transform: none;
+}
+.tvr-rocker-up {
+  border-radius: 9px 9px 3px 3px;
+}
+.tvr-rocker-down {
+  border-radius: 3px 3px 9px 9px;
+}
+.tvr-key-mute {
+  min-height: 34px;
+  background: linear-gradient(180deg, #e0a23a, #b9791c 55%, #96600f);
+  color: #1c1c1e;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.tvr-key-mute:hover {
+  background: linear-gradient(180deg, #ebb04c, #c48424 55%, #a06913);
+  color: #000000;
+}
+.tvr-key-mute.toggle,
+.tvr-key-mute.toggle:hover {
+  background: linear-gradient(180deg, #96600f, #b9791c);
+  color: #1c1c1e;
+}
+
+/* ---- the slide switch ---------------------------------------------------------- */
+.tvr-source {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.tvr-source-marks {
+  display: flex;
+  justify-content: space-between;
+}
+.tvr-source-marks .tvr-legend {
+  margin: 0;
+}
+/* A slide switch: a wide slot and a ridged knob. The slider draws itself from
+   these tokens, so the knob and the slot are sized and coloured here. */
+#tvr-source-switch {
+  width: 100%;
+  --osc-primary: #0b0b0c;
+  --osc-muted: #0b0b0c;
+  --osc-background: #d4d0c4;
+  --osc-ring: #e0a23a;
+  --osc-thumb: 26px;
+  --osc-track-size: 14px;
+}
+#tvr-source-switch::-webkit-slider-thumb {
+  width: 38px;
+  border-radius: 5px;
+  background: repeating-linear-gradient(90deg, #d4d0c4 0 4px, #9a968c 4px 6px);
+}
+#tvr-source-switch::-moz-range-thumb {
+  width: 38px;
+  border-radius: 5px;
+  background: repeating-linear-gradient(90deg, #d4d0c4 0 4px, #9a968c 4px 6px);
+}
+
+/* ---- the VCR keys ----------------------------------------------------------------- */
+.tvr-vcr {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+.tvr-vcr .tvr-key {
+  min-height: 32px;
+  padding: 0;
+  font-size: 12px;
+}
+.tvr-key-rec {
+  background: linear-gradient(180deg, #d8402f, #a82a1d 55%, #861f14);
+}
+.tvr-key-rec:hover {
+  background: linear-gradient(180deg, #e44e3d, #b43023 55%, #902318);
+}
+.tvr-door {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 2px solid #0b0b0c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.tvr-grip {
+  height: 3px;
+  border-radius: 2px;
+  background: #0b0b0c;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.tvr-small-print {
+  margin: 4px 0 0;
+  color: #77736a;
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---- the leaflet that came in the box ------------------------------------------------ */
+.tvr-manual {
+  padding: 28px 28px 24px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f3ecd8, #e6dcc2);
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(120, 90, 40, 0.18);
+  color: #2a2418;
+  font-family: "Courier New", Courier, monospace;
+  transform: rotate(1.2deg);
+}
+.tvr-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.tvr-manual-title {
+  margin: 0 0 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.tvr-manual-lead {
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.tvr-manual-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.tvr-manual-row {
+  display: grid;
+  gap: 1px;
+}
+.tvr-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.tvr-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.tvr-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.tvr-manual-foot {
+  margin: 18px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+  font-size: 10px;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+@media (max-width: 992px) {
+  .tvr {
+    grid-template-columns: minmax(0, 340px);
+    gap: 40px;
+    padding: 32px 20px;
+  }
+  .tvr-manual {
+    transform: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .tvr {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+    padding: 16px 12px 28px;
+  }
+  .tvr-body {
+    padding: 0 16px 22px;
+  }
+  .tvr-window {
+    margin: 0 -16px;
+  }
+  .tvr-pad {
+    gap: 12px;
+  }
+  .tvr-manual {
+    padding: 22px 18px;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="tvr" class="tvr" data-gjs-dmode="flow">
+  <section id="tvr-body" class="tvr-body" data-gjs-dmode="flow">
+    <div id="tvr-window" class="tvr-window" data-gjs-dmode="flow"><span id="tvr-led" class="tvr-led" data-gjs-dmode="flow"></span></div>
+
+    <div id="tvr-plate" class="tvr-plate" data-gjs-dmode="flow">
+      <h1 id="tvr-brand" class="tvr-brand" data-gjs-dmode="flow">OSCAR</h1>
+      <span id="tvr-model" class="tvr-model" data-gjs-dmode="flow">Colour TV &middot; Remote Control Unit RC-84</span>
+      <span id="tvr-stripes" class="tvr-stripes" data-gjs-dmode="flow"></span>
+    </div>
+
+    <div id="tvr-top" class="tvr-row" data-gjs-dmode="flow">
+      <div id="tvr-power-cell" class="tvr-cell" data-gjs-dmode="flow">
+        <span id="tvr-power-legend" class="tvr-legend" data-gjs-dmode="flow">Power</span>
+        <button id="tvr-power" class="tvr-key tvr-key-power" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/tv/power" data-gjs-value-on="1" data-gjs-value-off="0">ON</button>
+      </div>
+      <div id="tvr-input-cell" class="tvr-cell" data-gjs-dmode="flow">
+        <span id="tvr-input-legend" class="tvr-legend" data-gjs-dmode="flow">TV / Video</span>
+        <button id="tvr-input" class="tvr-key tvr-key-small" data-gjs-dmode="flow" data-gjs-message="/tv/input" data-gjs-value-on="1" data-gjs-value-off="0">INPUT</button>
+      </div>
+      <div id="tvr-recall-cell" class="tvr-cell" data-gjs-dmode="flow">
+        <span id="tvr-recall-legend" class="tvr-legend" data-gjs-dmode="flow">Last ch</span>
+        <button id="tvr-recall" class="tvr-key tvr-key-small" data-gjs-dmode="flow" data-gjs-message="/tv/recall" data-gjs-value-on="1" data-gjs-value-off="0">RECALL</button>
+      </div>
+    </div>
+
+    <div id="tvr-pad" class="tvr-pad" data-gjs-dmode="flow">
+        <button id="tvr-digit-1" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/1" data-gjs-value-on="1" data-gjs-value-off="0">1</button>
+        <button id="tvr-digit-2" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/2" data-gjs-value-on="1" data-gjs-value-off="0">2</button>
+        <button id="tvr-digit-3" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/3" data-gjs-value-on="1" data-gjs-value-off="0">3</button>
+        <button id="tvr-digit-4" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/4" data-gjs-value-on="1" data-gjs-value-off="0">4</button>
+        <button id="tvr-digit-5" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/5" data-gjs-value-on="1" data-gjs-value-off="0">5</button>
+        <button id="tvr-digit-6" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/6" data-gjs-value-on="1" data-gjs-value-off="0">6</button>
+        <button id="tvr-digit-7" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/7" data-gjs-value-on="1" data-gjs-value-off="0">7</button>
+        <button id="tvr-digit-8" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/8" data-gjs-value-on="1" data-gjs-value-off="0">8</button>
+        <button id="tvr-digit-9" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/9" data-gjs-value-on="1" data-gjs-value-off="0">9</button>
+        <span id="tvr-pad-gap-left" data-gjs-dmode="flow"></span>
+        <button id="tvr-digit-0" class="tvr-key tvr-key-digit" data-gjs-dmode="flow" data-gjs-message="/tv/digit/0" data-gjs-value-on="1" data-gjs-value-off="0">0</button>
+        <span id="tvr-pad-gap-right" data-gjs-dmode="flow"></span>
+    </div>
+
+    <div id="tvr-rockers" class="tvr-rockers" data-gjs-dmode="flow">
+      <div id="tvr-volume-cell" class="tvr-cell" data-gjs-dmode="flow">
+        <span id="tvr-volume-legend" class="tvr-legend" data-gjs-dmode="flow">Vol</span>
+        <div id="tvr-volume" class="tvr-rocker" data-gjs-dmode="flow">
+          <button id="tvr-volume-up" class="tvr-key tvr-rocker-up" data-gjs-dmode="flow" data-gjs-message="/tv/volume/up" data-gjs-value-on="1" data-gjs-value-off="0">+</button>
+          <button id="tvr-volume-down" class="tvr-key tvr-rocker-down" data-gjs-dmode="flow" data-gjs-message="/tv/volume/down" data-gjs-value-on="1" data-gjs-value-off="0">&minus;</button>
+        </div>
+      </div>
+      <div id="tvr-mute-cell" class="tvr-cell" data-gjs-dmode="flow">
+        <span id="tvr-mute-legend" class="tvr-legend" data-gjs-dmode="flow">Sound</span>
+        <button id="tvr-mute" class="tvr-key tvr-key-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/tv/mute" data-gjs-value-on="1" data-gjs-value-off="0">MUTE</button>
+      </div>
+      <div id="tvr-channel-cell" class="tvr-cell" data-gjs-dmode="flow">
+        <span id="tvr-channel-legend" class="tvr-legend" data-gjs-dmode="flow">Ch</span>
+        <div id="tvr-channel" class="tvr-rocker" data-gjs-dmode="flow">
+          <button id="tvr-channel-up" class="tvr-key tvr-rocker-up" data-gjs-dmode="flow" data-gjs-message="/tv/channel/up" data-gjs-value-on="1" data-gjs-value-off="0">&#9650;</button>
+          <button id="tvr-channel-down" class="tvr-key tvr-rocker-down" data-gjs-dmode="flow" data-gjs-message="/tv/channel/down" data-gjs-value-on="1" data-gjs-value-off="0">&#9660;</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="tvr-source" class="tvr-source" data-gjs-dmode="flow">
+      <div id="tvr-source-marks" class="tvr-source-marks" data-gjs-dmode="flow">
+        <span id="tvr-source-tv" class="tvr-legend" data-gjs-dmode="flow">TV</span>
+        <span id="tvr-source-vcr" class="tvr-legend" data-gjs-dmode="flow">VCR</span>
+        <span id="tvr-source-cable" class="tvr-legend" data-gjs-dmode="flow">Cable</span>
+      </div>
+      <input id="tvr-source-switch" type="range" min="1" max="3" step="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/tv/source" data-gjs-min="1" data-gjs-max="3" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+    </div>
+
+    <div id="tvr-vcr-cell" data-gjs-dmode="flow">
+      <span id="tvr-vcr-legend" class="tvr-legend" data-gjs-dmode="flow">Video cassette recorder</span>
+      <div id="tvr-vcr" class="tvr-vcr" data-gjs-dmode="flow">
+        <button id="tvr-vcr-rew" class="tvr-key" data-gjs-dmode="flow" data-gjs-message="/vcr/rew" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
+        <button id="tvr-vcr-play" class="tvr-key" data-gjs-dmode="flow" data-gjs-message="/vcr/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;</button>
+        <button id="tvr-vcr-ff" class="tvr-key" data-gjs-dmode="flow" data-gjs-message="/vcr/ff" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
+        <button id="tvr-vcr-stop" class="tvr-key" data-gjs-dmode="flow" data-gjs-message="/vcr/stop" data-gjs-value-on="1" data-gjs-value-off="0">&#9632;</button>
+        <button id="tvr-vcr-rec" class="tvr-key tvr-key-rec" data-gjs-dmode="flow" data-gjs-message="/vcr/rec" data-gjs-value-on="1" data-gjs-value-off="0">&#9679;</button>
+      </div>
+    </div>
+
+    <div id="tvr-door" class="tvr-door" data-gjs-dmode="flow">
+      <span id="tvr-grip-1" class="tvr-grip" data-gjs-dmode="flow"></span>
+      <span id="tvr-grip-2" class="tvr-grip" data-gjs-dmode="flow"></span>
+      <span id="tvr-grip-3" class="tvr-grip" data-gjs-dmode="flow"></span>
+      <p id="tvr-small-print" class="tvr-small-print" data-gjs-dmode="flow">2 &times; AA &middot; Open Sound Control &middot; No cable required</p>
+    </div>
+  </section>
+
+  <aside id="tvr-manual" class="tvr-manual" data-gjs-dmode="flow">
+    <p id="tvr-manual-eyebrow" class="tvr-manual-eyebrow" data-gjs-dmode="flow">Operating instructions</p>
+    <h2 id="tvr-manual-title" class="tvr-manual-title" data-gjs-dmode="flow">Your new remote control unit</h2>
+    <p id="tvr-manual-lead" class="tvr-manual-lead" data-gjs-dmode="flow">Point the unit at anything that understands OSC. Each key sends to the address below. Select a key in the editor to aim it somewhere else.</p>
+    <dl id="tvr-manual-list" class="tvr-manual-list" data-gjs-dmode="flow">
+        <div id="tvr-manual-row-1" class="tvr-manual-row" data-gjs-dmode="flow">
+          <dt id="tvr-manual-key-1" class="tvr-manual-key" data-gjs-dmode="flow">POWER</dt>
+          <dd id="tvr-manual-address-1" class="tvr-manual-address" data-gjs-dmode="flow">/tv/power</dd>
+          <dd id="tvr-manual-note-1" class="tvr-manual-note" data-gjs-dmode="flow">1 on, 0 off. It stays lit while the set is on.</dd>
+        </div>
+        <div id="tvr-manual-row-2" class="tvr-manual-row" data-gjs-dmode="flow">
+          <dt id="tvr-manual-key-2" class="tvr-manual-key" data-gjs-dmode="flow">0 to 9</dt>
+          <dd id="tvr-manual-address-2" class="tvr-manual-address" data-gjs-dmode="flow">/tv/digit/0 ... /tv/digit/9</dd>
+          <dd id="tvr-manual-note-2" class="tvr-manual-note" data-gjs-dmode="flow">1 while the key is held, 0 when it is let go.</dd>
+        </div>
+        <div id="tvr-manual-row-3" class="tvr-manual-row" data-gjs-dmode="flow">
+          <dt id="tvr-manual-key-3" class="tvr-manual-key" data-gjs-dmode="flow">CH</dt>
+          <dd id="tvr-manual-address-3" class="tvr-manual-address" data-gjs-dmode="flow">/tv/channel/up  /tv/channel/down</dd>
+          <dd id="tvr-manual-note-3" class="tvr-manual-note" data-gjs-dmode="flow">1 while held.</dd>
+        </div>
+        <div id="tvr-manual-row-4" class="tvr-manual-row" data-gjs-dmode="flow">
+          <dt id="tvr-manual-key-4" class="tvr-manual-key" data-gjs-dmode="flow">VOL</dt>
+          <dd id="tvr-manual-address-4" class="tvr-manual-address" data-gjs-dmode="flow">/tv/volume/up  /tv/volume/down</dd>
+          <dd id="tvr-manual-note-4" class="tvr-manual-note" data-gjs-dmode="flow">1 while held. Hold it and count, as the set did.</dd>
+        </div>
+        <div id="tvr-manual-row-5" class="tvr-manual-row" data-gjs-dmode="flow">
+          <dt id="tvr-manual-key-5" class="tvr-manual-key" data-gjs-dmode="flow">MUTE</dt>
+          <dd id="tvr-manual-address-5" class="tvr-manual-address" data-gjs-dmode="flow">/tv/mute</dd>
+          <dd id="tvr-manual-note-5" class="tvr-manual-note" data-gjs-dmode="flow">1 muted, 0 not.</dd>
+        </div>
+        <div id="tvr-manual-row-6" class="tvr-manual-row" data-gjs-dmode="flow">
+          <dt id="tvr-manual-key-6" class="tvr-manual-key" data-gjs-dmode="flow">TV / VCR / CABLE</dt>
+          <dd id="tvr-manual-address-6" class="tvr-manual-address" data-gjs-dmode="flow">/tv/source</dd>
+          <dd id="tvr-manual-note-6" class="tvr-manual-note" data-gjs-dmode="flow">1, 2 or 3, as a whole number.</dd>
+        </div>
+        <div id="tvr-manual-row-7" class="tvr-manual-row" data-gjs-dmode="flow">
+          <dt id="tvr-manual-key-7" class="tvr-manual-key" data-gjs-dmode="flow">VCR keys</dt>
+          <dd id="tvr-manual-address-7" class="tvr-manual-address" data-gjs-dmode="flow">/vcr/rew  /vcr/play  /vcr/ff  /vcr/stop  /vcr/rec</dd>
+          <dd id="tvr-manual-note-7" class="tvr-manual-note" data-gjs-dmode="flow">1 while held. REC is red for a reason.</dd>
+        </div>
+    </dl>
+    <p id="tvr-manual-foot" class="tvr-manual-foot" data-gjs-dmode="flow">Keep this leaflet. Delete it from the layout when the unit goes to the sofa: on a phone the handset is all you need.</p>
+  </aside>
+</div>
+</body>
+</html>
