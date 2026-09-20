@@ -168,10 +168,59 @@ test("drive and driveInput come as a pair, and drive never sends or stores", () 
     assert.ok(widget.sends, widget.name + " is driven but says it sends nothing");
     const config = Object.freeze(Object.assign({}, widget.defaults));
     const input = widget.driveInput(config);
-    assert.ok(["on", "value", "choice"].includes(input.kind), widget.name);
     // Frozen settings: a drive() that stored anything would throw here.
-    const state = input.kind === "on" ? { on: true } : input.kind === "choice" ? { value: input.options[0].value } : { value: input.min === null ? 0 : input.min };
+    const first = {
+      on: () => ({ on: true }),
+      value: () => ({ value: input.min === null ? 0 : input.min }),
+      choice: () => ({ value: input.options[0].value }),
+      position: () => ({ x: input.minX, y: input.minY }),
+      colour: () => ({ value: "#336699" }),
+      text: () => ({ value: "hello" }),
+    };
+    assert.ok(first[input.kind], widget.name + " asks for a kind of input nothing knows how to offer: " + input.kind);
+    const state = first[input.kind]();
     const driven = widget.drive(config, state);
-    assert.ok(driven && driven.state && "message" in driven, widget.name + " could not be driven to its own first value");
+    assert.ok(driven && driven.state && ("message" in driven || Array.isArray(driven.messages)), widget.name + " could not be driven to its own first value");
   }
+});
+
+test("every widget that sends can be driven, so a phone on a relay is never stuck with half a surface", () => {
+  const stuck = WIDGETS.filter((w) => w.sends && typeof w.drive !== "function").map((w) => w.name);
+  assert.deepStrictEqual(stuck, []);
+});
+
+test("a pad, a colour, a line of text and a tile, driven", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-surfaces-"));
+  const published = new PublishedStore(dir);
+  await published.save(
+    "Stage",
+    "<body>" +
+      tag("oscar-xypad", "pan", { message: "/pos", sendMode: "two", minX: 0, maxX: 1, minY: 0, maxY: 1 }) +
+      tag("oscar-colour", "wash", { message: "/wash", format: "hex" }) +
+      tag("oscar-text-input", "caption", { message: "/caption", argType: "s" }) +
+      tag("oscar-media-browser", "clips", { message: "/clip", items: "Forest|7; Waves|12", argType: "i" }) +
+      "</body>"
+  );
+  const osc = [];
+  const surfaces = createSurfaces({ published, sendOSC: (ip, port, address, args) => osc.push([address, args.map((a) => a.value)]), sendDMX: () => {} });
+
+  assert.deepStrictEqual((await surfaces.widgets("stage")).map((w) => w.input.kind), ["position", "colour", "text", "choice"]);
+
+  // A pad sending its axes apart sends both, in order, each held to its range.
+  assert.deepStrictEqual((await surfaces.drive("stage", "pan", { x: 7, y: 0.25 })).state, { x: 1, y: 0.25 });
+  assert.deepStrictEqual(osc.splice(0), [["/pos/x", [1]], ["/pos/y", [0.25]]]);
+  assert.strictEqual((await surfaces.drive("stage", "pan", { x: 0.5 })).ok, false, "half a position is not a position");
+
+  assert.deepStrictEqual((await surfaces.drive("stage", "wash", { value: "#F80" })).state, { value: "#ff8800" });
+  assert.deepStrictEqual(osc.splice(0), [["/wash", ["#ff8800"]]]);
+  assert.strictEqual((await surfaces.drive("stage", "wash", { value: "javascript:alert(1)" })).ok, false);
+
+  assert.strictEqual((await surfaces.drive("stage", "caption", { value: "Doors at eight" })).ok, true);
+  assert.deepStrictEqual(osc.splice(0), [["/caption", ["Doors at eight"]]]);
+  for (const bad of ["", "   ", "x".repeat(201), 42, null]) assert.strictEqual((await surfaces.drive("stage", "caption", { value: bad })).ok, false, String(bad).slice(0, 12));
+
+  assert.deepStrictEqual((await surfaces.drive("stage", "clips", { value: 12 })).state, { value: "12" });
+  assert.deepStrictEqual(osc.splice(0), [["/clip", [12]]]);
+  assert.strictEqual((await surfaces.drive("stage", "clips", { value: "99" })).ok, false, "only a tile the surface has");
+  assert.deepStrictEqual(osc, []);
 });

@@ -1895,7 +1895,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
-const { outgoing, routing } = require("./outgoing");
+const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
@@ -2061,6 +2061,23 @@ const colour = {
     scale: checkWholeNumbers,
     format: checkWholeNumbers,
   }),
+
+  /** How a state for drive() is asked for: a colour, as #rrggbb. */
+  driveInput: function () {
+    return { kind: "colour" };
+  },
+
+  /**
+   * What picking this colour sends: { state: { value }, message }, the colour
+   * as the six-digit hex the widget keeps, or null for one it cannot read.
+   * See `drive` in lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    const rgb = parseHex(state && state.value);
+    if (rgb === null) return null;
+    const hex = toHex(rgb);
+    return { state: { value: hex }, message: resolve(asCtx(config), hex) };
+  },
 
   attach: function (el, ctx) {
     // True from the first move inside the picker until it is dismissed. The
@@ -3234,13 +3251,17 @@ module.exports = { incoming, follow };
  *                 shape the widget shares ({ on }, { value }); what comes
  *                 back is that state as the widget would keep it (clamped,
  *                 on its step) and the message from outgoing(), which may be
- *                 null for a widget that is switched off. Null altogether
+ *                 null for a widget that is switched off. A widget that
+ *                 sends several at once (an XY pad with its axes apart)
+ *                 gives `messages`, an array, in the order they leave. Null altogether
  *                 means the widget cannot take that state. Pure: it sends
  *                 nothing and stores nothing.
  *   driveInput(config) -> { kind, ... }   goes with drive(): how its state is
  *                 asked for, so a panel can offer the right control without
  *                 knowing the widget. { kind: "on" }, { kind: "value", min,
- *                 max, step } or { kind: "choice", options: [{ label, value }] }.
+ *                 max, step }, { kind: "choice", options: [{ label, value }] },
+ *                 { kind: "position", minX, maxX, minY, maxY },
+ *                 { kind: "colour" } or { kind: "text", maxLength }.
  *   block         { label, category, icon } for the palette
  *   defaults      every setting and its starting value
  *   fields        the settings panel, in order; see fields.js
@@ -3449,7 +3470,7 @@ module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
-const { outgoing, routing } = require("./outgoing");
+const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { refusal, checkArgType } = require("./typed");
@@ -3680,6 +3701,32 @@ const mediaBrowser = {
       })
       .join("; ");
     return embedded ? { items: line } : null;
+  },
+
+  /** How a state for drive() is asked for: one of the tiles. */
+  driveInput: function (config) {
+    return {
+      kind: "choice",
+      options: parseItems(config.items).map(function (item) {
+        return { label: item.label || item.value, value: item.value };
+      }),
+    };
+  },
+
+  /**
+   * What picking this tile sends: { state: { value }, message }, or null for
+   * a value no tile has. See `drive` in lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    const value = state && state.value !== undefined && state.value !== null ? String(state.value) : null;
+    const item =
+      value === null
+        ? null
+        : parseItems(config.items).filter(function (candidate) {
+            return candidate.value === value;
+          })[0];
+    if (!item) return null;
+    return { state: { value: item.value }, message: outgoing(routing(asCtx(config)), item.value) };
   },
 
   attach: function (el, ctx) {
@@ -5067,7 +5114,7 @@ module.exports = { slider, ORIENTATIONS };
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
-const { outgoing, routing } = require("./outgoing");
+const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { commitOn, refusal, checkArgType } = require("./typed");
@@ -5136,6 +5183,24 @@ const textInput = {
       return text(config.value).trim() ? [config.value] : [];
     }),
   }),
+
+  /** How a state for drive() is asked for: a line of text. */
+  driveInput: function () {
+    return { kind: "text", maxLength: MAX_DRIVEN };
+  },
+
+  /**
+   * What sending this text sends: { state: { value }, message }. Nothing for
+   * an empty line, which the box itself never sends, for one the argument
+   * type cannot carry, or for one longer than anyone types into a box. See
+   * `drive` in lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    const raw = state && typeof state.value === "string" ? state.value : null;
+    if (raw === null || !raw.trim() || raw.length > MAX_DRIVEN) return null;
+    if (refusal(config.argType || "s", raw)) return null;
+    return { state: { value: raw }, message: outgoing(routing(asCtx(config)), raw) };
+  },
 
   attach: function (el, ctx) {
     const entry = commitOn(el, function (raw) {
@@ -5207,6 +5272,9 @@ const textInput = {
     };
   },
 };
+
+/** The longest line drive() takes. A host acting for a stranger needs a ceiling, and a caption has one. */
+const MAX_DRIVEN = 200;
 
 function text(value) {
   return value === null || value === undefined ? "" : String(value);
@@ -5456,7 +5524,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
-const { outgoing, only, routing } = require("./outgoing");
+const { outgoing, only, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
@@ -5548,6 +5616,30 @@ const xypad = {
     minY: checkNumber("Min Y"),
     maxY: checkNumber("Max Y"),
   }),
+
+  /** How a state for drive() is asked for: a position, and the range of each axis. */
+  driveInput: function (config) {
+    return {
+      kind: "position",
+      minX: toNumber(config.minX),
+      maxX: toNumber(config.maxX),
+      minY: toNumber(config.minY),
+      maxY: toNumber(config.maxY),
+    };
+  },
+
+  /**
+   * What putting the handle here sends: { state: { x, y }, messages }, each
+   * axis kept inside its range. Several messages, because a pad set to send
+   * its axes apart sends three. See `drive` in lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    const x = toNumber(state && state.x);
+    const y = toNumber(state && state.y);
+    if (x === null || y === null) return null;
+    const values = { x: within(x, config.minX, config.maxX), y: within(y, config.minY, config.maxY) };
+    return { state: values, messages: resolveAll(asCtx(config), values) };
+  },
 
   attach: function (el, ctx) {
     let dragging = false;
@@ -5676,23 +5768,9 @@ const xypad = {
       const values = pending;
       pending = null;
 
-      const config = routing(ctx);
-      const units = [
-        unitOf(values.x, ctx.get("minX"), ctx.get("maxX")),
-        unitOf(values.y, ctx.get("minY"), ctx.get("maxY")),
-      ];
-
-      if (ctx.get("sendMode") === "two") {
-        // Two OSC messages, but one DMX frame: pan and tilt are one position
-        // on a moving head, and a half-updated block would swing it through
-        // somewhere nobody pointed at.
-        const osc = only(config, "osc");
-        ctx.send(outgoing(osc && Object.assign({}, osc, { message: config.message + "/x" }), values.x));
-        ctx.send(outgoing(osc && Object.assign({}, osc, { message: config.message + "/y" }), values.y));
-        ctx.send(outgoing(only(config, "dmx"), null, units));
-      } else {
-        ctx.send(outgoing(config, [values.x, values.y], units));
-      }
+      resolveAll(ctx, values).forEach(function (message) {
+        ctx.send(message);
+      });
       // One position for the other devices, whichever way it went out.
       share(ctx, { x: values.x, y: values.y });
     }
@@ -5778,6 +5856,28 @@ const xypad = {
     };
   },
 };
+
+/**
+ * Everything one position puts on the wire, in the order it leaves. Entries
+ * may be null, which send() takes to mean nothing.
+ */
+function resolveAll(ctx, values) {
+  const config = routing(ctx);
+  const units = [
+    unitOf(values.x, ctx.get("minX"), ctx.get("maxX")),
+    unitOf(values.y, ctx.get("minY"), ctx.get("maxY")),
+  ];
+  if (ctx.get("sendMode") !== "two") return [outgoing(config, [values.x, values.y], units)];
+  // Two OSC messages, but one DMX frame: pan and tilt are one position on a
+  // moving head, and a half-updated block would swing it through somewhere
+  // nobody pointed at.
+  const osc = only(config, "osc");
+  return [
+    outgoing(osc && Object.assign({}, osc, { message: config.message + "/x" }), values.x),
+    outgoing(osc && Object.assign({}, osc, { message: config.message + "/y" }), values.y),
+    outgoing(only(config, "dmx"), null, units),
+  ];
+}
 
 /** Keep a received value inside an axis's range, so handle and value agree. */
 function within(value, min, max) {
