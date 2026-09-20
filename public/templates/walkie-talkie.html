@@ -1,0 +1,625 @@
+<!doctype html>
+<html>
+<head>
+<title>Walkie-Talkie</title>
+<!--
+  Walkie-Talkie: an olive handset with a rubber aerial, a grey-green display,
+  a speaker grille and one big orange key. Hold it and you are on the air;
+  let go and you are off. Every control works, and the signal bars listen:
+  send them OSC and they climb.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the controls take that style's colours instead.
+
+  Why it is a good first look at OSCAR's button. PUSH TO TALK is momentary,
+  the way every OSCAR button starts out: 1 while a finger is down, 0 when it
+  lifts. MON, SCAN and BEEP are the same widget set to Toggle. Side by side,
+  the difference is plain.
+
+  OSCAR puts the class "toggle" on a button that is down. The case watches
+  for it with :has(): the TX lamp and the TX flag on the display come on
+  while the big key is held, RX and MON with the monitor, and SCAN blinks.
+  Where a browser has no :has(), the lamps simply stay off.
+
+  The channel is an OSCAR dropdown and the callsign an OSCAR text input, both
+  dressed as the display. The signal bars are a meter with Data in on, cut
+  into five bars by a mask and sloped by a clip-path.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the handset fills the screen and the aerial goes down.
+
+  OSC addresses:
+    /radio/ptt        (1 while held)
+    /radio/channel    (1 to 22)
+    /radio/callsign   (text)
+    /radio/call       (1 while held)
+    /radio/monitor   /radio/scan   /radio/beep   (latching)
+    /radio/volume   /radio/squelch
+    /radio/signal     (this listens)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #20241c;
+  --osc-foreground: #e6e2d0;
+  --osc-card: #2b2e27;
+  --osc-muted: #15170f;
+  --osc-accent: #4a4e40;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #0b0c08;
+  --osc-input: #0b0c08;
+  --osc-primary: #f07c1e;
+  --osc-primary-foreground: #1a1204;
+  --osc-ring: #f07c1e;
+  --osc-radius: 8px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.wkt {
+  display: grid;
+  grid-template-columns: minmax(0, 330px) minmax(0, 380px);
+  justify-content: center;
+  align-items: start;
+  gap: 56px;
+  min-height: 100vh;
+  padding: 40px 24px 48px;
+  /* A canvas tarpaulin. */
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.08) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    linear-gradient(180deg, #5d6148, #3c402e);
+}
+
+/* ---- the handset --------------------------------------------------------------- */
+.wkt-set {
+  display: grid;
+}
+.wkt-crown {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 34px 26px;
+  align-items: end;
+  gap: 14px;
+  height: 120px;
+  padding: 0 26px;
+}
+.wkt-antenna {
+  height: 100%;
+  border-radius: 9px 9px 2px 2px;
+  background: linear-gradient(90deg, #2c2c2a, #111110 60%, #000000);
+  box-shadow: inset 2px 0 0 rgba(255, 255, 255, 0.12);
+}
+.wkt-knob {
+  height: 24px;
+  border-radius: 4px 4px 0 0;
+  background: repeating-linear-gradient(90deg, #3a3a37 0 2px, #161614 2px 4px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.15);
+}
+.wkt-knob-small {
+  height: 16px;
+}
+.wkt-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 22px;
+  border-radius: 18px 18px 26px 26px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 12%, rgba(0, 0, 0, 0) 86%, rgba(0, 0, 0, 0.4)),
+    linear-gradient(180deg, #34382e, #23261f 60%, #181a15);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.13),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.6),
+    /* The rubber bumper round the case. */
+    0 0 0 4px #0f100c,
+    0 30px 40px -12px rgba(0, 0, 0, 0.75);
+}
+.wkt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.wkt-brand {
+  margin: 0;
+  color: #e6e2d0;
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  line-height: 1;
+}
+.wkt-lamps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wkt-legend {
+  display: block;
+  color: #c9c5b0;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.wkt-lamp {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #3a1210;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+.wkt-lamp-rx {
+  background: #12301a;
+  margin-left: 6px;
+}
+/* On the air while the big key is down; listening while MON is on. */
+.wkt-body:has(#wkt-ptt.toggle) .wkt-lamp-tx {
+  background: #ff3b30;
+  box-shadow: 0 0 8px 2px rgba(255, 59, 48, 0.85);
+}
+.wkt-body:has(#wkt-monitor.toggle) .wkt-lamp-rx {
+  background: #36d35a;
+  box-shadow: 0 0 8px 2px rgba(54, 211, 90, 0.8);
+}
+
+/* ---- the display: grey-green glass, black segments --------------------------------- */
+.wkt-lcd {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #9aa88a, #b3c0a0);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55), 0 0 0 3px #0b0c08, 0 1px 0 3px rgba(255, 255, 255, 0.12);
+  color: #1a2414;
+  font-family: "Courier New", Courier, monospace;
+}
+.wkt-lcd .wkt-legend {
+  color: #1a2414;
+}
+.wkt-flags {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+}
+/* A flag that is not showing is still faintly there, as on real glass. */
+.wkt-flag {
+  color: rgba(26, 36, 20, 0.16);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.wkt-body:has(#wkt-ptt.toggle) .wkt-flag-tx,
+.wkt-body:has(#wkt-monitor.toggle) .wkt-flag-mon,
+.wkt-body:has(#wkt-beep.toggle) .wkt-flag-beep {
+  color: #1a2414;
+}
+/* SCAN blinks while it is on. The timing waits here; the case names the animation. */
+.wkt-flag-scan {
+  animation: none 0.8s steps(1) infinite;
+}
+.wkt-body:has(#wkt-scan.toggle) .wkt-flag-scan {
+  color: #1a2414;
+  animation-name: wkt-blink;
+}
+@keyframes wkt-blink {
+  50% { color: rgba(26, 36, 20, 0.16); }
+}
+#wkt-channel {
+  width: 100%;
+  /* OSCAR's dropdown has a least width, wider than this display. */
+  min-width: 0;
+  box-sizing: border-box;
+  height: 46px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 3px;
+  background-color: rgba(26, 36, 20, 0.08);
+  box-shadow: none;
+  color: #1a2414;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+#wkt-callsign {
+  grid-column: 1 / -1;
+  width: 100%;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 2px dotted rgba(26, 36, 20, 0.5);
+  border-radius: 0;
+  background-color: rgba(0, 0, 0, 0);
+  box-shadow: none;
+  color: #1a2414;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+#wkt-callsign::placeholder {
+  color: rgba(26, 36, 20, 0.45);
+}
+/* Five bars, each taller than the last. */
+#wkt-signal {
+  width: 100%;
+  height: 16px;
+  border: 0;
+  border-radius: 0;
+  background-color: rgba(0, 0, 0, 0);
+  background-image: linear-gradient(90deg, #1a2414, #1a2414);
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000000 0 calc(20% - 4px), rgba(0, 0, 0, 0) calc(20% - 4px) 20%);
+  mask-image: repeating-linear-gradient(90deg, #000000 0 calc(20% - 4px), rgba(0, 0, 0, 0) calc(20% - 4px) 20%);
+  clip-path: polygon(0 70%, 100% 0, 100% 100%, 0 100%);
+}
+#wkt-signal::before {
+  right: 0;
+  left: var(--oscar-level);
+  width: auto;
+  background: #a3b092;
+}
+#wkt-signal.oscar-peak::after {
+  display: none;
+}
+
+/* ---- the grille ----------------------------------------------------------------------- */
+.wkt-grille {
+  display: grid;
+  gap: 6px;
+  padding: 6px 18px;
+}
+.wkt-slot {
+  height: 5px;
+  border-radius: 3px;
+  background: #0b0c08;
+  box-shadow: inset 0 1px 2px #000000, 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+/* ---- the small keys --------------------------------------------------------------------- */
+.wkt-pad {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.wkt-key {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #5d6152, #43473a 55%, #363a2e);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 0 0 2px #0b0c08, 0 3px 0 2px #0b0c08;
+  color: #ece8d6;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  transition: none;
+}
+.wkt-key:hover {
+  background: linear-gradient(180deg, #676b5b, #4b4f41 55%, #3d4134);
+  color: #ffffff;
+}
+.wkt-key.toggle,
+.wkt-key.toggle:hover {
+  background: linear-gradient(180deg, #2f3228, #3c4033);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 0 0 2px #0b0c08, 0 1px 0 2px #0b0c08;
+  color: #f07c1e;
+  transform: translateY(2px);
+}
+
+/* ---- the two wheels, as slots ---------------------------------------------------------------- */
+.wkt-wheels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.wkt-wheel {
+  display: grid;
+  gap: 5px;
+}
+.wkt-wheel input[type="range"] {
+  width: 100%;
+  --osc-primary: #0b0c08;
+  --osc-muted: #0b0c08;
+  --osc-track-size: 10px;
+  --osc-thumb: 26px;
+}
+.wkt-wheel input[type="range"]::-webkit-slider-thumb {
+  width: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, #d8d4c0 0 3px, #8b8874 3px 5px);
+}
+.wkt-wheel input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, #d8d4c0 0 3px, #8b8874 3px 5px);
+}
+
+/* ---- the key that matters ---------------------------------------------------------------------- */
+.wkt-key-ptt {
+  min-height: 96px;
+  border-radius: 12px;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px),
+    linear-gradient(180deg, #f59a3c, #f07c1e 50%, #c45f0e);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), inset 0 -3px 0 rgba(0, 0, 0, 0.3), 0 0 0 3px #0b0c08, 0 5px 0 3px #0b0c08;
+  color: #1a1204;
+  font-size: 17px;
+  letter-spacing: 0.16em;
+  /* A finger held here should talk, not scroll the page or call up a menu. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.wkt-key-ptt:hover {
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px),
+    linear-gradient(180deg, #f8a74f, #f38a2f 50%, #cc6712);
+  color: #000000;
+}
+.wkt-key-ptt.toggle,
+.wkt-key-ptt.toggle:hover {
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px),
+    linear-gradient(180deg, #c45f0e, #e06f16);
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.55), 0 0 0 3px #0b0c08, 0 1px 0 3px #0b0c08;
+  color: #1a1204;
+  transform: translateY(4px);
+}
+.wkt-small-print {
+  margin: 0;
+  color: #8b8874;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---- the field card that lists every address ------------------------------------------------------ */
+.wkt-manual {
+  margin-top: 120px;
+  padding: 26px 26px 22px;
+  border: 2px solid #2a2418;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #d9cfa6, #c7bc90);
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(80, 70, 30, 0.2);
+  color: #2a2418;
+  font-family: "Courier New", Courier, monospace;
+  transform: rotate(1deg);
+}
+.wkt-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.wkt-manual-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+.wkt-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #2a2418;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.wkt-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+.wkt-manual-row {
+  display: grid;
+  gap: 1px;
+}
+.wkt-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.wkt-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.wkt-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.75;
+}
+.wkt-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  border-top: 2px solid #2a2418;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ---- tablet: the card goes under the handset --------------------------------------------------------- */
+@media (max-width: 992px) {
+  .wkt {
+    grid-template-columns: minmax(0, 360px);
+    gap: 32px;
+    padding: 24px 20px 40px;
+  }
+  .wkt-manual {
+    margin-top: 0;
+    transform: none;
+  }
+}
+
+/* ---- phone: the handset is the screen ------------------------------------------------------------------ */
+@media (max-width: 480px) {
+  .wkt {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding: 10px 12px 28px;
+  }
+  /* No room to wave an aerial about: it is pushed down. */
+  .wkt-crown {
+    height: 44px;
+  }
+  .wkt-body {
+    gap: 12px;
+    padding: 16px 16px 20px;
+  }
+  .wkt-grille {
+    gap: 5px;
+  }
+  .wkt-slot:nth-child(n + 5) {
+    display: none;
+  }
+  .wkt-key {
+    min-height: 44px;
+  }
+  .wkt-key-ptt {
+    min-height: 120px;
+  }
+  .wkt-wheel input[type="range"] {
+    --osc-thumb: 32px;
+  }
+  .wkt-manual {
+    padding: 20px 16px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .wkt-flag-scan {
+    animation: none !important;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="wkt" class="wkt" data-gjs-dmode="flow">
+  <section id="wkt-set" class="wkt-set" data-gjs-dmode="flow">
+    <div id="wkt-crown" class="wkt-crown" data-gjs-dmode="flow">
+      <span id="wkt-antenna" class="wkt-antenna" data-gjs-dmode="flow"></span>
+      <span id="wkt-crown-gap" data-gjs-dmode="flow"></span>
+      <span id="wkt-knob-volume" class="wkt-knob" data-gjs-dmode="flow"></span>
+      <span id="wkt-knob-channel" class="wkt-knob wkt-knob-small" data-gjs-dmode="flow"></span>
+    </div>
+
+    <div id="wkt-body" class="wkt-body" data-gjs-dmode="flow">
+      <div id="wkt-head" class="wkt-head" data-gjs-dmode="flow">
+        <h1 id="wkt-brand" class="wkt-brand" data-gjs-dmode="flow">OSCAR</h1>
+        <div id="wkt-lamps" class="wkt-lamps" data-gjs-dmode="flow">
+          <span id="wkt-lamp-tx-legend" class="wkt-legend" data-gjs-dmode="flow">TX</span>
+          <span id="wkt-lamp-tx" class="wkt-lamp wkt-lamp-tx" data-gjs-dmode="flow"></span>
+          <span id="wkt-lamp-rx" class="wkt-lamp wkt-lamp-rx" data-gjs-dmode="flow"></span>
+          <span id="wkt-lamp-rx-legend" class="wkt-legend" data-gjs-dmode="flow">RX</span>
+        </div>
+      </div>
+
+      <div id="wkt-lcd" class="wkt-lcd" data-gjs-dmode="flow">
+        <div id="wkt-flags" class="wkt-flags" data-gjs-dmode="flow">
+          <span id="wkt-flag-tx" class="wkt-flag wkt-flag-tx" data-gjs-dmode="flow">TX</span>
+          <span id="wkt-flag-mon" class="wkt-flag wkt-flag-mon" data-gjs-dmode="flow">MON</span>
+          <span id="wkt-flag-scan" class="wkt-flag wkt-flag-scan" data-gjs-dmode="flow">SCAN</span>
+          <span id="wkt-flag-beep" class="wkt-flag wkt-flag-beep" data-gjs-dmode="flow">BEEP</span>
+        </div>
+        <span id="wkt-channel-legend" class="wkt-legend" data-gjs-dmode="flow">CH</span>
+        <select id="wkt-channel" class="oscar-dropdown" data-gjs-dmode="flow" data-gjs-message="/radio/channel" data-gjs-options="01=1, 02=2, 03=3, 04=4, 05=5, 06=6, 07=7, 08=8, 09=9, 10=10, 11=11, 12=12, 13=13, 14=14, 15=15, 16=16, 17=17, 18=18, 19=19, 20=20, 21=21, 22=22" data-gjs-value="1" data-gjs-arg-type="i"></select>
+        <span id="wkt-signal-legend" class="wkt-legend" data-gjs-dmode="flow">SIG</span>
+        <div id="wkt-signal" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/radio/signal" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.6" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+        <input id="wkt-callsign" type="text" class="oscar-text-input" data-gjs-dmode="flow" data-gjs-message="/radio/callsign" data-gjs-placeholder="Callsign, then Enter" data-gjs-arg-type="s">
+      </div>
+
+      <div id="wkt-grille" class="wkt-grille" data-gjs-dmode="flow">
+        <span id="wkt-slot-1" class="wkt-slot" data-gjs-dmode="flow"></span>
+        <span id="wkt-slot-2" class="wkt-slot" data-gjs-dmode="flow"></span>
+        <span id="wkt-slot-3" class="wkt-slot" data-gjs-dmode="flow"></span>
+        <span id="wkt-slot-4" class="wkt-slot" data-gjs-dmode="flow"></span>
+        <span id="wkt-slot-5" class="wkt-slot" data-gjs-dmode="flow"></span>
+        <span id="wkt-slot-6" class="wkt-slot" data-gjs-dmode="flow"></span>
+        <span id="wkt-slot-7" class="wkt-slot" data-gjs-dmode="flow"></span>
+      </div>
+
+      <div id="wkt-pad" class="wkt-pad" data-gjs-dmode="flow">
+        <button id="wkt-call" class="wkt-key" data-gjs-dmode="flow" data-gjs-message="/radio/call" data-gjs-value-on="1" data-gjs-value-off="0">CALL</button>
+        <button id="wkt-monitor" class="wkt-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/radio/monitor" data-gjs-value-on="1" data-gjs-value-off="0">MON</button>
+        <button id="wkt-scan" class="wkt-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/radio/scan" data-gjs-value-on="1" data-gjs-value-off="0">SCAN</button>
+        <button id="wkt-beep" class="wkt-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/radio/beep" data-gjs-value-on="1" data-gjs-value-off="0">BEEP</button>
+      </div>
+
+      <div id="wkt-wheels" class="wkt-wheels" data-gjs-dmode="flow">
+        <div id="wkt-volume-cell" class="wkt-wheel" data-gjs-dmode="flow">
+          <span id="wkt-volume-legend" class="wkt-legend" data-gjs-dmode="flow">Vol</span>
+          <input id="wkt-volume" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/radio/volume" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.7" data-gjs-orientation="horizontal">
+        </div>
+        <div id="wkt-squelch-cell" class="wkt-wheel" data-gjs-dmode="flow">
+          <span id="wkt-squelch-legend" class="wkt-legend" data-gjs-dmode="flow">Sql</span>
+          <input id="wkt-squelch" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/radio/squelch" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.3" data-gjs-orientation="horizontal">
+        </div>
+      </div>
+
+      <button id="wkt-ptt" class="wkt-key wkt-key-ptt" data-gjs-dmode="flow" data-gjs-message="/radio/ptt" data-gjs-value-on="1" data-gjs-value-off="0">PUSH TO TALK</button>
+
+      <p id="wkt-small-print" class="wkt-small-print" data-gjs-dmode="flow">Model HT-22 &middot; 22 channels &middot; Open Sound Control &middot; Over</p>
+    </div>
+  </section>
+
+  <aside id="wkt-manual" class="wkt-manual" data-gjs-dmode="flow">
+    <p id="wkt-manual-eyebrow" class="wkt-manual-eyebrow" data-gjs-dmode="flow">Field card &middot; Keep with set</p>
+    <h2 id="wkt-manual-title" class="wkt-manual-title" data-gjs-dmode="flow">Radio procedure</h2>
+    <p id="wkt-manual-lead" class="wkt-manual-lead" data-gjs-dmode="flow">Each control sends OSC to the address below. Select one in the editor to aim it somewhere else.</p>
+    <dl id="wkt-manual-list" class="wkt-manual-list" data-gjs-dmode="flow">
+      <div id="wkt-manual-row-1" class="wkt-manual-row" data-gjs-dmode="flow">
+        <dt id="wkt-manual-key-1" class="wkt-manual-key" data-gjs-dmode="flow">PUSH TO TALK</dt>
+        <dd id="wkt-manual-address-1" class="wkt-manual-address" data-gjs-dmode="flow">/radio/ptt</dd>
+        <dd id="wkt-manual-note-1" class="wkt-manual-note" data-gjs-dmode="flow">1 while held, 0 when let go. Nothing latches: let go and you are off the air.</dd>
+      </div>
+      <div id="wkt-manual-row-2" class="wkt-manual-row" data-gjs-dmode="flow">
+        <dt id="wkt-manual-key-2" class="wkt-manual-key" data-gjs-dmode="flow">CHANNEL</dt>
+        <dd id="wkt-manual-address-2" class="wkt-manual-address" data-gjs-dmode="flow">/radio/channel</dd>
+        <dd id="wkt-manual-note-2" class="wkt-manual-note" data-gjs-dmode="flow">1 to 22, as a whole number.</dd>
+      </div>
+      <div id="wkt-manual-row-3" class="wkt-manual-row" data-gjs-dmode="flow">
+        <dt id="wkt-manual-key-3" class="wkt-manual-key" data-gjs-dmode="flow">CALLSIGN</dt>
+        <dd id="wkt-manual-address-3" class="wkt-manual-address" data-gjs-dmode="flow">/radio/callsign</dd>
+        <dd id="wkt-manual-note-3" class="wkt-manual-note" data-gjs-dmode="flow">Type it and press Enter. It is sent as text.</dd>
+      </div>
+      <div id="wkt-manual-row-4" class="wkt-manual-row" data-gjs-dmode="flow">
+        <dt id="wkt-manual-key-4" class="wkt-manual-key" data-gjs-dmode="flow">CALL</dt>
+        <dd id="wkt-manual-address-4" class="wkt-manual-address" data-gjs-dmode="flow">/radio/call</dd>
+        <dd id="wkt-manual-note-4" class="wkt-manual-note" data-gjs-dmode="flow">1 while held.</dd>
+      </div>
+      <div id="wkt-manual-row-5" class="wkt-manual-row" data-gjs-dmode="flow">
+        <dt id="wkt-manual-key-5" class="wkt-manual-key" data-gjs-dmode="flow">MON, SCAN, BEEP</dt>
+        <dd id="wkt-manual-address-5" class="wkt-manual-address" data-gjs-dmode="flow">/radio/monitor  /radio/scan  /radio/beep</dd>
+        <dd id="wkt-manual-note-5" class="wkt-manual-note" data-gjs-dmode="flow">They latch: 1 on, 0 off.</dd>
+      </div>
+      <div id="wkt-manual-row-6" class="wkt-manual-row" data-gjs-dmode="flow">
+        <dt id="wkt-manual-key-6" class="wkt-manual-key" data-gjs-dmode="flow">VOL, SQL</dt>
+        <dd id="wkt-manual-address-6" class="wkt-manual-address" data-gjs-dmode="flow">/radio/volume  /radio/squelch</dd>
+        <dd id="wkt-manual-note-6" class="wkt-manual-note" data-gjs-dmode="flow">0 to 1.</dd>
+      </div>
+      <div id="wkt-manual-row-7" class="wkt-manual-row" data-gjs-dmode="flow">
+        <dt id="wkt-manual-key-7" class="wkt-manual-key" data-gjs-dmode="flow">Signal bars</dt>
+        <dd id="wkt-manual-address-7" class="wkt-manual-address" data-gjs-dmode="flow">/radio/signal</dd>
+        <dd id="wkt-manual-note-7" class="wkt-manual-note" data-gjs-dmode="flow">These listen. Send 0 to 1 and the bars climb.</dd>
+      </div>
+    </dl>
+    <p id="wkt-manual-foot" class="wkt-manual-foot" data-gjs-dmode="flow">Delete this card from the layout before going into the field: on a phone the handset is all you need. Out.</p>
+  </aside>
+</div>
+</body>
+</html>

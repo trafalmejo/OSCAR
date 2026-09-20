@@ -1,0 +1,598 @@
+<!doctype html>
+<html>
+<head>
+<title>Arcade Cabinet</title>
+<!--
+  Arcade Cabinet: a lit marquee, a screen behind glass, a ball-top joystick,
+  six coloured buttons, a coin door. Every control works, the screen answers
+  the coin and the start button, and its ENERGY bar listens: send it OSC and
+  it fills.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the controls take that style's colours instead.
+
+  The joystick is OSCAR's XY pad: the plate is the pad and the red ball is
+  its handle, which the pad draws itself (--osc-thumb sizes it). It sends x
+  and y from -1 to 1 and starts in the middle. It does not spring back.
+
+  OSCAR puts the class "toggle" on a button that is down. The cabinet watches
+  for it with :has(): the screen says INSERT COIN until the coin button is
+  held, then counts the credit, and 1P START, which latches, starts the
+  game. Where a browser has no :has(), the screen goes on asking for a coin.
+
+  The lettering is Press Start 2P, fetched from jsDelivr. Without a
+  connection it falls back to Courier and everything still fits.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the stick sits above the buttons, thumb sized.
+
+  OSC addresses:
+    /arcade/stick             (x y, each -1 to 1)
+    /arcade/button/1 ... /arcade/button/6   (1 while held)
+    /arcade/coin              (1 while held)
+    /arcade/start             (latching)
+    /arcade/energy            (this listens)
+-->
+<style>
+@font-face {
+  font-family: "Press Start 2P";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/press-start-2p@latest/latin-400-normal.woff2") format("woff2");
+}
+[data-osc-style="own"] {
+  --osc-background: #0b0714;
+  --osc-foreground: #f4f1ff;
+  --osc-card: #15101f;
+  --osc-muted: #241a38;
+  --osc-accent: #3a2a5c;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #05030a;
+  --osc-input: #05030a;
+  --osc-primary: #ff2e88;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #2ee6ff;
+  --osc-radius: 10px;
+  --osc-font: "Press Start 2P", "Courier New", Courier, monospace;
+}
+.arc {
+  display: grid;
+  grid-template-columns: minmax(0, 560px) minmax(0, 300px);
+  justify-content: center;
+  align-items: center;
+  gap: 48px;
+  min-height: 100vh;
+  padding: 32px 24px;
+  /* The back wall of the arcade: dark carpet, and neon somewhere out of sight. */
+  background:
+    radial-gradient(60% 40% at 15% 10%, rgba(255, 46, 136, 0.22), rgba(0, 0, 0, 0)),
+    radial-gradient(60% 40% at 85% 20%, rgba(46, 230, 255, 0.18), rgba(0, 0, 0, 0)),
+    linear-gradient(180deg, #120b22, #07040d);
+}
+
+/* ---- the cabinet ---------------------------------------------------------------- */
+.arc-cab {
+  display: grid;
+  /* The side panels, with their stripes. */
+  border: solid #15101f;
+  border-width: 0 16px;
+  border-image: linear-gradient(180deg, #ff2e88 0 4%, #ffb02e 4% 8%, #2ee6ff 8% 12%, #15101f 12% 100%) 1;
+  background: #0e0a17;
+  box-shadow: 0 30px 50px -10px rgba(0, 0, 0, 0.9);
+}
+.arc-marquee {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 12px 16px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
+    linear-gradient(180deg, #2a0f4a, #12082a);
+  box-shadow: inset 0 0 30px rgba(255, 46, 136, 0.45), inset 0 -3px 0 #05030a;
+  text-align: center;
+}
+.arc-title {
+  margin: 0;
+  color: #fff6c9;
+  font-family: "Press Start 2P", "Courier New", Courier, monospace;
+  font-size: clamp(22px, 6vw, 40px);
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+  text-shadow: 3px 3px 0 #ff2e88, 6px 6px 0 #2ee6ff, 0 0 22px rgba(255, 246, 201, 0.7);
+  animation: arc-flicker 5s steps(1) infinite;
+}
+@keyframes arc-flicker {
+  0%, 92%, 96%, 100% { opacity: 1; }
+  94% { opacity: 0.72; }
+}
+.arc-tagline {
+  color: #2ee6ff;
+  font-family: "Press Start 2P", "Courier New", Courier, monospace;
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  line-height: 1.6;
+}
+
+/* ---- the screen: a bezel, glass, scanlines ----------------------------------------- */
+.arc-bezel {
+  padding: 18px 22px;
+  background: linear-gradient(180deg, #05030a, #120c1e);
+  box-shadow: inset 0 8px 14px rgba(0, 0, 0, 0.9);
+}
+.arc-screen {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: 14px;
+  min-height: 230px;
+  padding: 18px 18px 16px;
+  border-radius: 22px / 16px;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    radial-gradient(120% 100% at 50% 50%, #0a1a3a, #03060f 80%);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.9), inset 0 0 4px rgba(46, 230, 255, 0.5), 0 0 0 3px #000000;
+  color: #f4f1ff;
+  font-family: "Press Start 2P", "Courier New", Courier, monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  overflow: hidden;
+}
+.arc-scores {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.arc-score {
+  display: grid;
+  gap: 2px;
+}
+.arc-score-name {
+  color: #ff2e88;
+}
+.arc-score-right {
+  text-align: right;
+}
+.arc-stage {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.arc-invaders {
+  color: #36d35a;
+  font-size: 16px;
+  letter-spacing: 0.5em;
+  animation: arc-march 1.6s steps(2) infinite;
+}
+@keyframes arc-march {
+  50% { transform: translateX(10px); }
+}
+/* One line shows at a time: waiting, a coin going in, or the game on. OSCAR
+   puts the class "toggle" on a button that is down, and the cabinet looks. */
+.arc-msg {
+  color: #ffe14a;
+  font-size: 12px;
+}
+.arc-msg-idle {
+  animation: arc-blink 1s steps(1) infinite;
+}
+@keyframes arc-blink {
+  50% { opacity: 0; }
+}
+.arc-msg-coin,
+.arc-msg-play {
+  display: none;
+}
+.arc-cab:has(#arc-coin.toggle) .arc-msg-idle,
+.arc-cab:has(#arc-start.toggle) .arc-msg-idle {
+  display: none;
+}
+.arc-cab:has(#arc-coin.toggle) .arc-msg-coin {
+  display: block;
+}
+.arc-cab:has(#arc-start.toggle):not(:has(#arc-coin.toggle)) .arc-msg-play {
+  display: block;
+  color: #2ee6ff;
+}
+.arc-energy {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.arc-energy-name {
+  color: #2ee6ff;
+}
+#arc-energy-bar {
+  width: 100%;
+  height: 14px;
+  border: 2px solid #f4f1ff;
+  border-radius: 0;
+  background-color: rgba(0, 0, 0, 0);
+  --osc-primary: #36d35a;
+  --osc-foreground: #ffe14a;
+}
+
+/* ---- the control panel ------------------------------------------------------------------ */
+.arc-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px 28px;
+  padding: 22px 26px 20px;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, rgba(0, 0, 0, 0) 1.5px) 0 0 / 7px 7px,
+    linear-gradient(180deg, #2b2140, #1a1230);
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.14), inset 0 -4px 0 #05030a;
+}
+/* The stick: OSCAR's XY pad. The plate is the pad, the red ball its handle. */
+#arc-stick {
+  width: clamp(140px, 34vw, 180px);
+  height: auto;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 26%;
+  background:
+    radial-gradient(circle, #05030a 0 16%, #2a2a2e 17% 30%, rgba(0, 0, 0, 0) 31%),
+    radial-gradient(circle at 30% 25%, #4a4a52, #15151a 75%);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 0 0 3px #05030a, 0 5px 0 3px #05030a;
+  --osc-thumb: 62px;
+}
+#arc-stick::after {
+  border: 0;
+  background: radial-gradient(circle at 34% 28%, #ff9aa0, #e8202c 45%, #7d0d14 100%);
+  box-shadow: 0 8px 10px rgba(0, 0, 0, 0.65), inset 0 -4px 6px rgba(0, 0, 0, 0.35);
+}
+.arc-fire {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-items: center;
+  gap: 16px 12px;
+  /* The middle column sits higher, the way a hand does. */
+  padding-top: 12px;
+}
+.arc-key {
+  border: 0;
+  font-family: "Press Start 2P", "Courier New", Courier, monospace;
+  transition: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.arc-key-fire {
+  --arc-cap: #e8202c;
+  --arc-rim: #7d0d14;
+  width: clamp(54px, 15vw, 68px);
+  height: auto;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 50%;
+  /* A dished cap inside a rim. */
+  background:
+    radial-gradient(circle at 50% 38%, rgba(0, 0, 0, 0.22) 0 30%, rgba(255, 255, 255, 0.28) 46%, rgba(0, 0, 0, 0) 58%),
+    radial-gradient(circle, var(--arc-cap) 0 60%, var(--arc-rim) 62% 100%);
+  box-shadow: 0 0 0 3px #05030a, 0 5px 0 3px #05030a, 0 9px 12px rgba(0, 0, 0, 0.6);
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 11px;
+}
+.arc-key-fire:hover {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(0, 0, 0, 0.18) 0 30%, rgba(255, 255, 255, 0.4) 46%, rgba(0, 0, 0, 0) 58%),
+    radial-gradient(circle, var(--arc-cap) 0 60%, var(--arc-rim) 62% 100%);
+  color: rgba(0, 0, 0, 0.8);
+}
+.arc-key-fire.toggle,
+.arc-key-fire.toggle:hover {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(0, 0, 0, 0.4) 0 34%, rgba(255, 255, 255, 0.12) 48%, rgba(0, 0, 0, 0) 58%),
+    radial-gradient(circle, var(--arc-cap) 0 60%, var(--arc-rim) 62% 100%);
+  box-shadow: 0 0 0 3px #05030a, 0 1px 0 3px #05030a, 0 0 18px 2px var(--arc-cap);
+  color: rgba(0, 0, 0, 0.8);
+  transform: translateY(4px);
+}
+.arc-key-fire:nth-child(3n + 2) {
+  margin-top: -12px;
+}
+.arc-key-yellow {
+  --arc-cap: #ffd21f;
+  --arc-rim: #8a6d00;
+}
+.arc-key-blue {
+  --arc-cap: #2e8bff;
+  --arc-rim: #0b3a80;
+}
+.arc-key-green {
+  --arc-cap: #36d35a;
+  --arc-rim: #0f6b27;
+}
+.arc-key-white {
+  --arc-cap: #f4f1ff;
+  --arc-rim: #8d8aa0;
+}
+.arc-key-orange {
+  --arc-cap: #ff8a1f;
+  --arc-rim: #8a4200;
+}
+
+/* ---- the coin door ------------------------------------------------------------------------- */
+.arc-door {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 26px 22px;
+  background: linear-gradient(180deg, #120c1e, #0a0612);
+  box-shadow: inset 0 3px 0 #05030a;
+}
+.arc-key-coin,
+.arc-key-start {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+/* A lit coin reject button: red plastic with the price on it. */
+.arc-key-coin {
+  background: linear-gradient(180deg, #ff5a3a, #c4201c);
+  box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 0 3px #3a3a40, 0 0 16px rgba(255, 90, 58, 0.5);
+  color: #fff6c9;
+}
+.arc-key-coin:hover {
+  background: linear-gradient(180deg, #ff7252, #d62c26);
+  color: #ffffff;
+}
+.arc-key-coin.toggle,
+.arc-key-coin.toggle:hover {
+  background: linear-gradient(180deg, #a81814, #c4201c);
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.6), 0 0 0 3px #3a3a40;
+  color: #fff6c9;
+  transform: translateY(2px);
+}
+.arc-key-start {
+  background: linear-gradient(180deg, #2a2140, #1a1230);
+  box-shadow: inset 0 0 0 2px #2ee6ff, 0 0 0 3px #05030a;
+  color: #2ee6ff;
+}
+.arc-key-start:hover {
+  background: linear-gradient(180deg, #34294e, #21173c);
+  color: #ffffff;
+}
+.arc-key-start.toggle,
+.arc-key-start.toggle:hover {
+  background: linear-gradient(180deg, #2ee6ff, #1aa6c0);
+  box-shadow: inset 0 0 0 2px #ffffff, 0 0 0 3px #05030a, 0 0 18px rgba(46, 230, 255, 0.8);
+  color: #05030a;
+}
+
+/* ---- the instruction card ------------------------------------------------------------------------ */
+.arc-manual {
+  padding: 22px 20px 18px;
+  border: 3px solid #ffe14a;
+  border-radius: 4px;
+  background: #15101f;
+  box-shadow: 0 0 0 3px #05030a, 0 18px 30px -14px rgba(0, 0, 0, 0.9);
+  color: #f4f1ff;
+  font-family: "Courier New", Courier, monospace;
+}
+.arc-manual-eyebrow {
+  margin: 0 0 8px;
+  color: #2ee6ff;
+  font-family: "Press Start 2P", "Courier New", Courier, monospace;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+.arc-manual-title {
+  margin: 0 0 10px;
+  color: #ffe14a;
+  font-family: "Press Start 2P", "Courier New", Courier, monospace;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.arc-manual-lead {
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed rgba(244, 241, 255, 0.4);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.arc-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+.arc-manual-row {
+  display: grid;
+  gap: 2px;
+}
+.arc-manual-key {
+  color: #ff2e88;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.arc-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.arc-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.arc-manual-foot {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(244, 241, 255, 0.4);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ---- tablet: the card goes under the cabinet -------------------------------------------------------- */
+@media (max-width: 992px) {
+  .arc {
+    grid-template-columns: minmax(0, 560px);
+    gap: 28px;
+    padding: 20px 16px 40px;
+  }
+}
+
+/* ---- phone: the screen shrinks, the stick goes above the buttons, both big enough for thumbs ---------- */
+@media (max-width: 480px) {
+  .arc {
+    gap: 20px;
+    padding: 0 0 28px;
+  }
+  .arc-cab {
+    border-width: 0 8px;
+  }
+  .arc-marquee {
+    padding: 12px 8px 10px;
+  }
+  .arc-tagline {
+    font-size: 7px;
+  }
+  .arc-bezel {
+    padding: 10px 12px;
+  }
+  .arc-screen {
+    min-height: 170px;
+    padding: 14px 12px 12px;
+    font-size: 8px;
+  }
+  .arc-msg {
+    font-size: 10px;
+  }
+  .arc-panel {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 22px;
+    padding: 18px 12px 16px;
+  }
+  #arc-stick {
+    width: 170px;
+  }
+  .arc-fire {
+    width: 100%;
+    gap: 16px 8px;
+  }
+  .arc-key-fire {
+    width: clamp(64px, 24vw, 84px);
+  }
+  .arc-door {
+    gap: 10px;
+    padding: 14px 12px 18px;
+  }
+  .arc-key-coin,
+  .arc-key-start {
+    font-size: 9px;
+  }
+  .arc-manual {
+    margin: 0 12px;
+    padding: 18px 14px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .arc-title,
+  .arc-invaders,
+  .arc-msg-idle {
+    animation: none !important;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="arc" class="arc" data-gjs-dmode="flow">
+  <section id="arc-cab" class="arc-cab" data-gjs-dmode="flow">
+    <header id="arc-marquee" class="arc-marquee" data-gjs-dmode="flow">
+      <h1 id="arc-title" class="arc-title" data-gjs-dmode="flow">OSCAR</h1>
+      <span id="arc-tagline" class="arc-tagline" data-gjs-dmode="flow">Open Sound Control &middot; 1 or 2 players</span>
+    </header>
+
+    <div id="arc-bezel" class="arc-bezel" data-gjs-dmode="flow">
+      <div id="arc-screen" class="arc-screen" data-gjs-dmode="flow">
+        <div id="arc-scores" class="arc-scores" data-gjs-dmode="flow">
+          <div id="arc-score-1up" class="arc-score" data-gjs-dmode="flow"><span id="arc-score-1up-name" class="arc-score-name" data-gjs-dmode="flow">1UP</span><span id="arc-score-1up-value" data-gjs-dmode="flow">000000</span></div>
+          <div id="arc-score-hi" class="arc-score arc-score-right" data-gjs-dmode="flow"><span id="arc-score-hi-name" class="arc-score-name" data-gjs-dmode="flow">HI-SCORE</span><span id="arc-score-hi-value" data-gjs-dmode="flow">084000</span></div>
+        </div>
+        <div id="arc-stage" class="arc-stage" data-gjs-dmode="flow">
+          <span id="arc-invaders" class="arc-invaders" data-gjs-dmode="flow">&#9660; &#9660; &#9660; &#9660;</span>
+          <span id="arc-msg-idle" class="arc-msg arc-msg-idle" data-gjs-dmode="flow">INSERT COIN</span>
+          <span id="arc-msg-coin" class="arc-msg arc-msg-coin" data-gjs-dmode="flow">CREDIT 01</span>
+          <span id="arc-msg-play" class="arc-msg arc-msg-play" data-gjs-dmode="flow">PLAYER 1 READY</span>
+        </div>
+        <div id="arc-energy" class="arc-energy" data-gjs-dmode="flow">
+          <span id="arc-energy-name" class="arc-energy-name" data-gjs-dmode="flow">ENERGY</span>
+          <div id="arc-energy-bar" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/arcade/energy" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="arc-panel" class="arc-panel" data-gjs-dmode="flow">
+      <div id="arc-stick" class="oscar-xypad" data-gjs-dmode="flow" data-gjs-message="/arcade/stick" data-gjs-min-x="-1" data-gjs-max-x="1" data-gjs-min-y="-1" data-gjs-max-y="1" data-gjs-x="0" data-gjs-y="0"></div>
+      <div id="arc-fire" class="arc-fire" data-gjs-dmode="flow">
+          <button id="arc-button-1" class="arc-key arc-key-fire arc-key-red" data-gjs-dmode="flow" data-gjs-message="/arcade/button/1" data-gjs-value-on="1" data-gjs-value-off="0">1</button>
+          <button id="arc-button-2" class="arc-key arc-key-fire arc-key-yellow" data-gjs-dmode="flow" data-gjs-message="/arcade/button/2" data-gjs-value-on="1" data-gjs-value-off="0">2</button>
+          <button id="arc-button-3" class="arc-key arc-key-fire arc-key-blue" data-gjs-dmode="flow" data-gjs-message="/arcade/button/3" data-gjs-value-on="1" data-gjs-value-off="0">3</button>
+          <button id="arc-button-4" class="arc-key arc-key-fire arc-key-green" data-gjs-dmode="flow" data-gjs-message="/arcade/button/4" data-gjs-value-on="1" data-gjs-value-off="0">4</button>
+          <button id="arc-button-5" class="arc-key arc-key-fire arc-key-white" data-gjs-dmode="flow" data-gjs-message="/arcade/button/5" data-gjs-value-on="1" data-gjs-value-off="0">5</button>
+          <button id="arc-button-6" class="arc-key arc-key-fire arc-key-orange" data-gjs-dmode="flow" data-gjs-message="/arcade/button/6" data-gjs-value-on="1" data-gjs-value-off="0">6</button>
+      </div>
+    </div>
+
+    <div id="arc-door" class="arc-door" data-gjs-dmode="flow">
+      <button id="arc-coin" class="arc-key arc-key-coin" data-gjs-dmode="flow" data-gjs-message="/arcade/coin" data-gjs-value-on="1" data-gjs-value-off="0">INSERT COIN 25&cent;</button>
+      <button id="arc-start" class="arc-key arc-key-start" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/arcade/start" data-gjs-value-on="1" data-gjs-value-off="0">1P START</button>
+    </div>
+  </section>
+
+  <aside id="arc-manual" class="arc-manual" data-gjs-dmode="flow">
+    <p id="arc-manual-eyebrow" class="arc-manual-eyebrow" data-gjs-dmode="flow">Instruction card</p>
+    <h2 id="arc-manual-title" class="arc-manual-title" data-gjs-dmode="flow">How to play</h2>
+    <p id="arc-manual-lead" class="arc-manual-lead" data-gjs-dmode="flow">Each control sends OSC to the address below. Select one in the editor to aim it somewhere else.</p>
+    <dl id="arc-manual-list" class="arc-manual-list" data-gjs-dmode="flow">
+      <div id="arc-manual-row-1" class="arc-manual-row" data-gjs-dmode="flow">
+        <dt id="arc-manual-key-1" class="arc-manual-key" data-gjs-dmode="flow">JOYSTICK</dt>
+        <dd id="arc-manual-address-1" class="arc-manual-address" data-gjs-dmode="flow">/arcade/stick</dd>
+        <dd id="arc-manual-note-1" class="arc-manual-note" data-gjs-dmode="flow">Two numbers, x then y, each from -1 to 1. It stays where you leave it.</dd>
+      </div>
+      <div id="arc-manual-row-2" class="arc-manual-row" data-gjs-dmode="flow">
+        <dt id="arc-manual-key-2" class="arc-manual-key" data-gjs-dmode="flow">BUTTONS 1 to 6</dt>
+        <dd id="arc-manual-address-2" class="arc-manual-address" data-gjs-dmode="flow">/arcade/button/1 ... /arcade/button/6</dd>
+        <dd id="arc-manual-note-2" class="arc-manual-note" data-gjs-dmode="flow">1 while held, 0 when let go.</dd>
+      </div>
+      <div id="arc-manual-row-3" class="arc-manual-row" data-gjs-dmode="flow">
+        <dt id="arc-manual-key-3" class="arc-manual-key" data-gjs-dmode="flow">COIN</dt>
+        <dd id="arc-manual-address-3" class="arc-manual-address" data-gjs-dmode="flow">/arcade/coin</dd>
+        <dd id="arc-manual-note-3" class="arc-manual-note" data-gjs-dmode="flow">1 while held. The screen counts the credit.</dd>
+      </div>
+      <div id="arc-manual-row-4" class="arc-manual-row" data-gjs-dmode="flow">
+        <dt id="arc-manual-key-4" class="arc-manual-key" data-gjs-dmode="flow">1P START</dt>
+        <dd id="arc-manual-address-4" class="arc-manual-address" data-gjs-dmode="flow">/arcade/start</dd>
+        <dd id="arc-manual-note-4" class="arc-manual-note" data-gjs-dmode="flow">It latches: 1 game on, 0 game over.</dd>
+      </div>
+      <div id="arc-manual-row-5" class="arc-manual-row" data-gjs-dmode="flow">
+        <dt id="arc-manual-key-5" class="arc-manual-key" data-gjs-dmode="flow">ENERGY</dt>
+        <dd id="arc-manual-address-5" class="arc-manual-address" data-gjs-dmode="flow">/arcade/energy</dd>
+        <dd id="arc-manual-note-5" class="arc-manual-note" data-gjs-dmode="flow">This listens. Send 0 to 1 and the bar on the screen fills.</dd>
+      </div>
+    </dl>
+    <p id="arc-manual-foot" class="arc-manual-foot" data-gjs-dmode="flow">Delete this card from the layout when the cabinet goes on the floor.</p>
+  </aside>
+</div>
+</body>
+</html>

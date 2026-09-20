@@ -1,0 +1,835 @@
+<!doctype html>
+<html>
+<head>
+<title>Boombox, 1986</title>
+<!--
+  Boombox, 1986: brushed silver, two speakers behind punched steel, a tape
+  door, piano keys that stay down, a tuner under glass, a five band graphic
+  equaliser and two rows of level lights. Every control works, and the level
+  lights listen: send them OSC and they light.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the controls take that style's colours instead.
+
+  How it moves. OSCAR puts the class "toggle" on a button that is down. REC,
+  PLAY and PAUSE are toggles, so they latch like the real keys. The case
+  watches them with :has(): the reels turn and the cones thump while PLAY is
+  down, PAUSE holds them, and the winding keys hurry the reels while held.
+  Where a browser has no :has(), everything still works and nothing turns.
+
+  The level lights are two OSCAR meters with Data in on. A meter draws a bar
+  from the left; here the bar is turned round to cover the lamps that are
+  out, and a mask cuts the strip into twelve lamps.
+
+  The tuner's needle is a slider with everything but its thumb made clear,
+  laid over the printed scale.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the works come first and the speakers sit beneath.
+
+  OSC addresses:
+    /boombox/power
+    /boombox/rec  /boombox/play  /boombox/pause   (latching)
+    /boombox/rew  /boombox/ff  /boombox/stop      (while held)
+    /boombox/tuning (88 to 108)   /boombox/function (1 tape, 2 radio, 3 line in)
+    /boombox/volume   /boombox/balance
+    /boombox/eq/100  /boombox/eq/330  /boombox/eq/1k  /boombox/eq/3k3  /boombox/eq/10k
+    /boombox/level/left  /boombox/level/right   (these listen)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #17151c;
+  --osc-foreground: #ece9e1;
+  --osc-card: #c4c4c0;
+  --osc-muted: #1a1a1d;
+  --osc-accent: #55555b;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #0c0c0d;
+  --osc-input: #0c0c0d;
+  --osc-primary: #e23b2e;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #f2b632;
+  --osc-radius: 6px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.bbx {
+  display: grid;
+  grid-template-columns: minmax(0, 860px) minmax(0, 300px);
+  justify-content: center;
+  align-items: center;
+  gap: 48px;
+  min-height: 100vh;
+  padding: 48px 24px;
+  /* A bedroom wall, late. */
+  background: radial-gradient(120% 80% at 50% 0%, #3b2f52, #17151c 70%);
+}
+
+/* ---- the unit ----------------------------------------------------------------- */
+.bbx-unit {
+  display: grid;
+}
+.bbx-handle {
+  justify-self: center;
+  width: 62%;
+  height: 46px;
+  margin-bottom: -6px;
+  border: 12px solid #1b1b1e;
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12), 0 -2px 0 #000000;
+}
+.bbx-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    linear-gradient(180deg, #d4d4d1, #a9a9a6 50%, #8d8d8a);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -5px 8px rgba(0, 0, 0, 0.35),
+    0 3px 0 #4a4a48,
+    0 30px 34px -14px rgba(0, 0, 0, 0.8);
+  color: #1c1c1e;
+}
+.bbx-legend {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---- the top deck: power, the slide controls, the equaliser ---------------------- */
+.bbx-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 14px;
+}
+.bbx-panel {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #232326, #18181a);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.55);
+  color: #d9d5c8;
+}
+.bbx-plate {
+  justify-items: center;
+}
+.bbx-brand {
+  margin: 0;
+  color: #ffffff;
+  font-size: 22px;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+}
+.bbx-model {
+  color: #f2b632;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.bbx-stripes {
+  width: 100%;
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e23b2e 0 25%, #f2842a 25% 50%, #f2b632 50% 75%, #3aa6a0 75% 100%);
+}
+.bbx-slides {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 18px;
+}
+.bbx-slide {
+  display: grid;
+  gap: 5px;
+}
+.bbx-marks {
+  display: flex;
+  justify-content: space-between;
+}
+/* Every slider on the unit is a slot with a ridged cap, drawn from the
+   slider's own tokens and its thumb. */
+.bbx-slide input[type="range"],
+.bbx-eq-cell input[type="range"] {
+  --osc-primary: #000000;
+  --osc-muted: #000000;
+  --osc-track-size: 8px;
+  --osc-thumb: 24px;
+}
+.bbx-slide input[type="range"] {
+  width: 100%;
+}
+.bbx-slide input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  border: 0;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
+}
+.bbx-slide input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  border: 0;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
+}
+#bbx-function::-webkit-slider-thumb {
+  width: 30px;
+}
+#bbx-function::-moz-range-thumb {
+  width: 30px;
+}
+.bbx-eq {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+.bbx-eq-title {
+  grid-column: 1 / -1;
+  color: #f2b632;
+}
+.bbx-eq-cell {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+.bbx-eq-cell input[type="range"] {
+  width: 28px;
+  height: 92px;
+}
+.bbx-eq-cell input[type="range"]::-webkit-slider-thumb {
+  width: 24px;
+  height: 12px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e1e1dd 0 40%, #e23b2e 40% 60%, #b9b9b5 60%);
+}
+.bbx-eq-cell input[type="range"]::-moz-range-thumb {
+  width: 24px;
+  height: 12px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e1e1dd 0 40%, #e23b2e 40% 60%, #b9b9b5 60%);
+}
+
+/* ---- the face: a speaker either side of the works ---------------------------------- */
+.bbx-face {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-areas: "left centre right";
+  align-items: stretch;
+  gap: 14px;
+}
+.bbx-speaker {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  /* Punched steel. */
+  background:
+    radial-gradient(circle, #000000 1.2px, rgba(0, 0, 0, 0) 1.6px) 0 0 / 6px 6px,
+    linear-gradient(180deg, #3a3a3e, #232326);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.bbx-speaker-left {
+  grid-area: left;
+}
+.bbx-speaker-right {
+  grid-area: right;
+}
+.bbx-tweeter {
+  width: 26%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, #d9d9d5 0 18%, #2a2a2d 20% 55%, #0c0c0d 57% 100%);
+  box-shadow: 0 0 0 3px #b9b9b5, 0 0 0 4px #000000;
+}
+.bbx-cone {
+  width: 88%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #e8e8e4 0 9%, #8d8d8a 10% 12%, #1c1c1e 13% 30%, #2c2c30 31% 46%, #1c1c1e 47% 62%, #2c2c30 63% 78%, #0c0c0d 79% 100%);
+  box-shadow: 0 0 0 5px #c4c4c0, 0 0 0 6px #000000, 0 4px 10px 4px rgba(0, 0, 0, 0.6);
+}
+/* The cones move while the tape plays. */
+.bbx-body:has(#bbx-play.toggle):not(:has(#bbx-pause.toggle)) .bbx-cone {
+  animation: bbx-thump 0.5s ease-out infinite;
+}
+@keyframes bbx-thump {
+  0% { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+.bbx-centre {
+  grid-area: centre;
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+}
+
+/* ---- the tuner: a scale under glass, and a red needle ------------------------------ */
+.bbx-dial {
+  display: grid;
+  padding: 6px 12px 4px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #0e1a1c, #15292b);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.15), 0 1px 0 rgba(255, 255, 255, 0.55);
+  color: #bfe9e2;
+}
+.bbx-dial-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+.bbx-scale {
+  grid-area: 2 / 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  height: 34px;
+  padding-top: 2px;
+  background: repeating-linear-gradient(90deg, rgba(191, 233, 226, 0.55) 0 1px, rgba(0, 0, 0, 0) 1px 5%) 0 100% / 100% 9px no-repeat;
+  font-size: 10px;
+  font-weight: 700;
+}
+/* The slider lies over the scale, all of it clear but its thumb, the needle. */
+#bbx-tuning {
+  grid-area: 2 / 1;
+  width: 100%;
+  --osc-primary: rgba(0, 0, 0, 0);
+  --osc-muted: rgba(0, 0, 0, 0);
+  --osc-track-size: 34px;
+  --osc-thumb: 34px;
+  --osc-control-height: 34px;
+}
+#bbx-tuning::-webkit-slider-thumb {
+  width: 3px;
+  border: 0;
+  border-radius: 0;
+  background: #ff3b30;
+  box-shadow: 0 0 6px 1px rgba(255, 59, 48, 0.8);
+}
+#bbx-tuning::-moz-range-thumb {
+  width: 3px;
+  border: 0;
+  border-radius: 0;
+  background: #ff3b30;
+  box-shadow: 0 0 6px 1px rgba(255, 59, 48, 0.8);
+}
+
+/* ---- the level lights: two rows of LEDs that follow what the rig sends ---------------- */
+.bbx-levels {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #101012;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.55);
+  color: #d9d5c8;
+}
+.bbx-levels .oscar-meter {
+  width: 100%;
+  height: 10px;
+  border: 0;
+  border-radius: 0;
+  background-color: rgba(0, 0, 0, 0);
+  background-image: linear-gradient(90deg, #36d35a 0 60%, #f2d13a 60% 82%, #ff3b30 82% 100%);
+  /* Cut into twelve lamps. */
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000000 0 calc(100% / 12 - 3px), rgba(0, 0, 0, 0) calc(100% / 12 - 3px) calc(100% / 12));
+  mask-image: repeating-linear-gradient(90deg, #000000 0 calc(100% / 12 - 3px), rgba(0, 0, 0, 0) calc(100% / 12 - 3px) calc(100% / 12));
+}
+/* The bar is drawn the other way about: it covers the lamps that are out. */
+.bbx-levels .oscar-meter::before {
+  right: 0;
+  left: var(--oscar-level);
+  width: auto;
+  background: #2a2a2e;
+}
+
+/* ---- the cassette door ----------------------------------------------------------------- */
+.bbx-deck {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 38%), linear-gradient(180deg, #26262a, #121214);
+  box-shadow: inset 0 0 0 2px #000000, inset 0 0 0 3px rgba(255, 255, 255, 0.18), 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.bbx-tape {
+  display: grid;
+  gap: 6px;
+  padding: 7px 10px 9px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #efe7d2, #ddd3b8);
+  color: #2a2418;
+}
+.bbx-tape-label {
+  margin: 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #e23b2e;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.bbx-tape-window {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 5px 8%;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #33261c, #1c140e);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+.bbx-reel {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #1c140e 0 22%, rgba(0, 0, 0, 0) 23%),
+    conic-gradient(#f4f1e8 0 8%, #8d8d8a 8% 16.6%, #f4f1e8 16.6% 25%, #8d8d8a 25% 33.3%, #f4f1e8 33.3% 41.6%, #8d8d8a 41.6% 50%, #f4f1e8 50% 58.3%, #8d8d8a 58.3% 66.6%, #f4f1e8 66.6% 75%, #8d8d8a 75% 83.3%, #f4f1e8 83.3% 91.6%, #8d8d8a 91.6% 100%);
+  box-shadow: 0 0 0 5px #4a3525;
+  animation: bbx-turn 2.4s linear infinite paused;
+}
+@keyframes bbx-turn {
+  to { transform: rotate(-360deg); }
+}
+/* PLAY turns the reels, PAUSE holds them, and the two winding keys hurry them
+   for as long as they are held. */
+.bbx-body:has(#bbx-play.toggle) .bbx-reel {
+  animation-play-state: running;
+}
+.bbx-body:has(#bbx-pause.toggle) .bbx-reel {
+  animation-play-state: paused;
+}
+.bbx-body:has(#bbx-ff.toggle) .bbx-reel {
+  animation-duration: 0.5s;
+  animation-play-state: running;
+}
+.bbx-body:has(#bbx-rew.toggle) .bbx-reel {
+  animation-duration: 0.5s;
+  animation-direction: reverse;
+  animation-play-state: running;
+}
+
+/* ---- the keys: piano keys, the kind that stay down --------------------------------------- */
+.bbx-keys {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  padding: 5px 5px 8px;
+  border-radius: 6px;
+  background: #0c0c0d;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.bbx-key {
+  width: 100%;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px 2px 5px 5px;
+  background: linear-gradient(180deg, #e6e6e2, #bdbdb9 70%, #9b9b97);
+  box-shadow: inset 0 1px 0 #ffffff, 0 4px 0 #5a5a57;
+  color: #1c1c1e;
+  font-size: 13px;
+  transition: none;
+}
+.bbx-key:hover {
+  background: linear-gradient(180deg, #f2f2ee, #c9c9c5 70%, #a6a6a2);
+  color: #000000;
+}
+.bbx-key.toggle,
+.bbx-key.toggle:hover {
+  background: linear-gradient(180deg, #a9a9a5, #bdbdb9);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 #5a5a57;
+  color: #1c1c1e;
+  transform: translateY(3px);
+}
+.bbx-key-rec,
+.bbx-key-rec:hover {
+  color: #c4261c;
+}
+.bbx-key-rec.toggle,
+.bbx-key-rec.toggle:hover {
+  background: linear-gradient(180deg, #c4261c, #e23b2e);
+  color: #ffffff;
+}
+.bbx-key-names {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  padding: 9px 5px 0;
+}
+.bbx-key-power {
+  width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #4a4a4f, #232326 65%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 0 2px #000000, 0 3px 0 2px #000000;
+  color: #8d8d8a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.bbx-key-power:hover {
+  background: radial-gradient(circle at 35% 30%, #56565b, #2a2a2e 65%);
+  color: #ffffff;
+}
+.bbx-key-power.toggle,
+.bbx-key-power.toggle:hover {
+  background: radial-gradient(circle at 35% 30%, #3a3a3f, #1c1c1e 65%);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7), 0 0 0 2px #000000, 0 1px 0 2px #000000;
+  color: #ff3b30;
+  text-shadow: 0 0 6px rgba(255, 59, 48, 0.9);
+  transform: translateY(2px);
+}
+
+/* ---- the inlay card that lists every address ------------------------------------------------ */
+.bbx-manual {
+  padding: 22px 20px 18px;
+  border-left: 14px solid #e23b2e;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f4f1e8, #e6e0cf);
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.8);
+  color: #2a2418;
+  font-family: "Courier New", Courier, monospace;
+  transform: rotate(-1.4deg);
+}
+.bbx-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.bbx-manual-title {
+  margin: 0 0 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.bbx-manual-lead {
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.bbx-manual-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.bbx-manual-row {
+  display: grid;
+  gap: 1px;
+}
+.bbx-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.bbx-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.bbx-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.bbx-manual-foot {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ---- tablet: the card goes under the unit ----------------------------------------------------- */
+@media (max-width: 992px) {
+  .bbx {
+    grid-template-columns: minmax(0, 720px);
+    gap: 28px;
+    padding: 28px 16px 40px;
+  }
+  .bbx-top {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .bbx-eq {
+    grid-column: 1 / -1;
+  }
+  .bbx-eq-cell input[type="range"] {
+    height: 84px;
+  }
+  .bbx-manual {
+    transform: none;
+  }
+}
+
+/* ---- phone: the works first, full width, and the speakers side by side beneath ------------------ */
+@media (max-width: 480px) {
+  .bbx {
+    gap: 20px;
+    padding: 12px 8px 28px;
+  }
+  .bbx-handle {
+    height: 30px;
+    border-width: 9px;
+  }
+  .bbx-body {
+    gap: 10px;
+    padding: 10px;
+  }
+  .bbx-top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .bbx-plate {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+    gap: 4px 12px;
+  }
+  .bbx-plate .bbx-key-power {
+    grid-row: 1 / span 3;
+  }
+  .bbx-slides {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .bbx-slide-function {
+    grid-column: 1 / -1;
+  }
+  .bbx-slide input[type="range"] {
+    --osc-thumb: 30px;
+  }
+  .bbx-face {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "centre centre" "left right";
+    gap: 10px;
+  }
+  .bbx-speaker {
+    grid-template-columns: auto;
+    padding: 10px;
+  }
+  .bbx-tweeter {
+    display: none;
+  }
+  .bbx-cone {
+    width: 70%;
+  }
+  .bbx-key {
+    min-height: 54px;
+    font-size: 15px;
+  }
+  .bbx-manual {
+    padding: 18px 16px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .bbx-reel,
+  .bbx-cone {
+    animation: none !important;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="bbx" class="bbx" data-gjs-dmode="flow">
+  <section id="bbx-unit" class="bbx-unit" data-gjs-dmode="flow">
+    <div id="bbx-handle" class="bbx-handle" data-gjs-dmode="flow"></div>
+    <div id="bbx-body" class="bbx-body" data-gjs-dmode="flow">
+
+      <div id="bbx-top" class="bbx-top" data-gjs-dmode="flow">
+        <div id="bbx-plate" class="bbx-panel bbx-plate" data-gjs-dmode="flow">
+          <button id="bbx-power" class="bbx-key bbx-key-power" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/power" data-gjs-value-on="1" data-gjs-value-off="0">ON</button>
+          <h1 id="bbx-brand" class="bbx-brand" data-gjs-dmode="flow">OSCAR</h1>
+          <span id="bbx-model" class="bbx-model" data-gjs-dmode="flow">Stereo radio cassette &middot; RX-86</span>
+          <span id="bbx-stripes" class="bbx-stripes" data-gjs-dmode="flow"></span>
+        </div>
+
+        <div id="bbx-slides" class="bbx-panel bbx-slides" data-gjs-dmode="flow">
+          <div id="bbx-volume-cell" class="bbx-slide" data-gjs-dmode="flow">
+            <span id="bbx-volume-legend" class="bbx-legend" data-gjs-dmode="flow">Volume</span>
+            <input id="bbx-volume" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/boombox/volume" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.6" data-gjs-orientation="horizontal">
+            <div id="bbx-volume-marks" class="bbx-marks" data-gjs-dmode="flow"><span id="bbx-volume-min" class="bbx-legend" data-gjs-dmode="flow">Min</span><span id="bbx-volume-max" class="bbx-legend" data-gjs-dmode="flow">Max</span></div>
+          </div>
+          <div id="bbx-balance-cell" class="bbx-slide" data-gjs-dmode="flow">
+            <span id="bbx-balance-legend" class="bbx-legend" data-gjs-dmode="flow">Balance</span>
+            <input id="bbx-balance" type="range" step="0.01" min="-1" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/boombox/balance" data-gjs-min="-1" data-gjs-max="1" data-gjs-value="0" data-gjs-orientation="horizontal">
+            <div id="bbx-balance-marks" class="bbx-marks" data-gjs-dmode="flow"><span id="bbx-balance-l" class="bbx-legend" data-gjs-dmode="flow">L</span><span id="bbx-balance-r" class="bbx-legend" data-gjs-dmode="flow">R</span></div>
+          </div>
+          <div id="bbx-function-cell" class="bbx-slide bbx-slide-function" data-gjs-dmode="flow">
+            <span id="bbx-function-legend" class="bbx-legend" data-gjs-dmode="flow">Function</span>
+            <input id="bbx-function" type="range" step="1" min="1" max="3" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/boombox/function" data-gjs-min="1" data-gjs-max="3" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+            <div id="bbx-function-marks" class="bbx-marks" data-gjs-dmode="flow"><span id="bbx-function-tape" class="bbx-legend" data-gjs-dmode="flow">Tape</span><span id="bbx-function-radio" class="bbx-legend" data-gjs-dmode="flow">Radio</span><span id="bbx-function-line" class="bbx-legend" data-gjs-dmode="flow">Line</span></div>
+          </div>
+        </div>
+
+        <div id="bbx-eq" class="bbx-panel bbx-eq" data-gjs-dmode="flow">
+          <span id="bbx-eq-title" class="bbx-legend bbx-eq-title" data-gjs-dmode="flow">5 band graphic equaliser</span>
+          <div id="bbx-eq-100-cell" class="bbx-eq-cell" data-gjs-dmode="flow">
+            <input id="bbx-eq-100" type="range" step="1" min="-12" max="12" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/boombox/eq/100" data-gjs-min="-12" data-gjs-max="12" data-gjs-value="0" data-gjs-orientation="vertical">
+            <span id="bbx-eq-100-legend" class="bbx-legend" data-gjs-dmode="flow">100</span>
+          </div>
+          <div id="bbx-eq-330-cell" class="bbx-eq-cell" data-gjs-dmode="flow">
+            <input id="bbx-eq-330" type="range" step="1" min="-12" max="12" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/boombox/eq/330" data-gjs-min="-12" data-gjs-max="12" data-gjs-value="0" data-gjs-orientation="vertical">
+            <span id="bbx-eq-330-legend" class="bbx-legend" data-gjs-dmode="flow">330</span>
+          </div>
+          <div id="bbx-eq-1k-cell" class="bbx-eq-cell" data-gjs-dmode="flow">
+            <input id="bbx-eq-1k" type="range" step="1" min="-12" max="12" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/boombox/eq/1k" data-gjs-min="-12" data-gjs-max="12" data-gjs-value="0" data-gjs-orientation="vertical">
+            <span id="bbx-eq-1k-legend" class="bbx-legend" data-gjs-dmode="flow">1k</span>
+          </div>
+          <div id="bbx-eq-3k3-cell" class="bbx-eq-cell" data-gjs-dmode="flow">
+            <input id="bbx-eq-3k3" type="range" step="1" min="-12" max="12" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/boombox/eq/3k3" data-gjs-min="-12" data-gjs-max="12" data-gjs-value="0" data-gjs-orientation="vertical">
+            <span id="bbx-eq-3k3-legend" class="bbx-legend" data-gjs-dmode="flow">3.3k</span>
+          </div>
+          <div id="bbx-eq-10k-cell" class="bbx-eq-cell" data-gjs-dmode="flow">
+            <input id="bbx-eq-10k" type="range" step="1" min="-12" max="12" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/boombox/eq/10k" data-gjs-min="-12" data-gjs-max="12" data-gjs-value="0" data-gjs-orientation="vertical">
+            <span id="bbx-eq-10k-legend" class="bbx-legend" data-gjs-dmode="flow">10k</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="bbx-face" class="bbx-face" data-gjs-dmode="flow">
+        <div id="bbx-speaker-left" class="bbx-speaker bbx-speaker-left" data-gjs-dmode="flow">
+          <span id="bbx-tweeter-left" class="bbx-tweeter" data-gjs-dmode="flow"></span>
+          <span id="bbx-cone-left" class="bbx-cone" data-gjs-dmode="flow"></span>
+        </div>
+
+        <div id="bbx-centre" class="bbx-centre" data-gjs-dmode="flow">
+          <div id="bbx-dial" class="bbx-dial" data-gjs-dmode="flow">
+            <div id="bbx-dial-head" class="bbx-dial-head" data-gjs-dmode="flow"><span id="bbx-dial-band" data-gjs-dmode="flow">FM STEREO</span><span id="bbx-dial-unit" data-gjs-dmode="flow">MHz</span></div>
+            <div id="bbx-scale" class="bbx-scale" data-gjs-dmode="flow">
+            <span id="bbx-scale-88" class="bbx-scale-mark" data-gjs-dmode="flow">88</span>
+            <span id="bbx-scale-92" class="bbx-scale-mark" data-gjs-dmode="flow">92</span>
+            <span id="bbx-scale-96" class="bbx-scale-mark" data-gjs-dmode="flow">96</span>
+            <span id="bbx-scale-100" class="bbx-scale-mark" data-gjs-dmode="flow">100</span>
+            <span id="bbx-scale-104" class="bbx-scale-mark" data-gjs-dmode="flow">104</span>
+            <span id="bbx-scale-108" class="bbx-scale-mark" data-gjs-dmode="flow">108</span>
+            </div>
+            <input id="bbx-tuning" type="range" step="0.1" min="88" max="108" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/boombox/tuning" data-gjs-min="88" data-gjs-max="108" data-gjs-value="98.5" data-gjs-orientation="horizontal">
+          </div>
+
+          <div id="bbx-levels" class="bbx-levels" data-gjs-dmode="flow">
+            <span id="bbx-level-left-legend" class="bbx-legend" data-gjs-dmode="flow">L</span>
+            <div id="bbx-level-left" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/boombox/level/left" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.55" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+            <span id="bbx-level-right-legend" class="bbx-legend" data-gjs-dmode="flow">R</span>
+            <div id="bbx-level-right" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/boombox/level/right" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.4" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+          </div>
+
+          <div id="bbx-deck" class="bbx-deck" data-gjs-dmode="flow">
+            <div id="bbx-tape" class="bbx-tape" data-gjs-dmode="flow">
+              <p id="bbx-tape-label" class="bbx-tape-label" data-gjs-dmode="flow">Side A &middot; Open Sound Control mix</p>
+              <div id="bbx-tape-window" class="bbx-tape-window" data-gjs-dmode="flow">
+                <span id="bbx-reel-left" class="bbx-reel" data-gjs-dmode="flow"></span>
+                <span id="bbx-reel-right" class="bbx-reel" data-gjs-dmode="flow"></span>
+              </div>
+            </div>
+          </div>
+
+          <div id="bbx-transport" data-gjs-dmode="flow">
+            <div id="bbx-keys" class="bbx-keys" data-gjs-dmode="flow">
+              <button id="bbx-rec" class="bbx-key bbx-key-rec" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/rec" data-gjs-value-on="1" data-gjs-value-off="0">&#9679;</button>
+              <button id="bbx-play" class="bbx-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;</button>
+              <button id="bbx-rew" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/rew" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
+              <button id="bbx-ff" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/ff" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
+              <button id="bbx-stop" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/stop" data-gjs-value-on="1" data-gjs-value-off="0">&#9632;</button>
+              <button id="bbx-pause" class="bbx-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/pause" data-gjs-value-on="1" data-gjs-value-off="0">&#10074;&#10074;</button>
+            </div>
+            <div id="bbx-key-names" class="bbx-key-names" data-gjs-dmode="flow">
+              <span id="bbx-name-rec" class="bbx-legend" data-gjs-dmode="flow">Rec</span>
+              <span id="bbx-name-play" class="bbx-legend" data-gjs-dmode="flow">Play</span>
+              <span id="bbx-name-rew" class="bbx-legend" data-gjs-dmode="flow">Rew</span>
+              <span id="bbx-name-ff" class="bbx-legend" data-gjs-dmode="flow">F.Fwd</span>
+              <span id="bbx-name-stop" class="bbx-legend" data-gjs-dmode="flow">Stop</span>
+              <span id="bbx-name-pause" class="bbx-legend" data-gjs-dmode="flow">Pause</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="bbx-speaker-right" class="bbx-speaker bbx-speaker-right" data-gjs-dmode="flow">
+          <span id="bbx-tweeter-right" class="bbx-tweeter" data-gjs-dmode="flow"></span>
+          <span id="bbx-cone-right" class="bbx-cone" data-gjs-dmode="flow"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside id="bbx-manual" class="bbx-manual" data-gjs-dmode="flow">
+    <p id="bbx-manual-eyebrow" class="bbx-manual-eyebrow" data-gjs-dmode="flow">Side A &middot; Inlay card</p>
+    <h2 id="bbx-manual-title" class="bbx-manual-title" data-gjs-dmode="flow">What every control sends</h2>
+    <p id="bbx-manual-lead" class="bbx-manual-lead" data-gjs-dmode="flow">Each control sends OSC to the address below. Select one in the editor to aim it somewhere else.</p>
+    <dl id="bbx-manual-list" class="bbx-manual-list" data-gjs-dmode="flow">
+      <div id="bbx-manual-row-1" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-1" class="bbx-manual-key" data-gjs-dmode="flow">POWER</dt>
+        <dd id="bbx-manual-address-1" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/power</dd>
+        <dd id="bbx-manual-note-1" class="bbx-manual-note" data-gjs-dmode="flow">1 on, 0 off.</dd>
+      </div>
+      <div id="bbx-manual-row-2" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-2" class="bbx-manual-key" data-gjs-dmode="flow">Tape keys</dt>
+        <dd id="bbx-manual-address-2" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/rec  /boombox/play  /boombox/pause</dd>
+        <dd id="bbx-manual-note-2" class="bbx-manual-note" data-gjs-dmode="flow">They latch, as the real keys did: 1 down, 0 up. The reels turn while PLAY is down.</dd>
+      </div>
+      <div id="bbx-manual-row-3" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-3" class="bbx-manual-key" data-gjs-dmode="flow">REW, F.FWD, STOP</dt>
+        <dd id="bbx-manual-address-3" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/rew  /boombox/ff  /boombox/stop</dd>
+        <dd id="bbx-manual-note-3" class="bbx-manual-note" data-gjs-dmode="flow">1 while held.</dd>
+      </div>
+      <div id="bbx-manual-row-4" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-4" class="bbx-manual-key" data-gjs-dmode="flow">TUNING</dt>
+        <dd id="bbx-manual-address-4" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/tuning</dd>
+        <dd id="bbx-manual-note-4" class="bbx-manual-note" data-gjs-dmode="flow">88 to 108, in steps of 0.1.</dd>
+      </div>
+      <div id="bbx-manual-row-5" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-5" class="bbx-manual-key" data-gjs-dmode="flow">FUNCTION</dt>
+        <dd id="bbx-manual-address-5" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/function</dd>
+        <dd id="bbx-manual-note-5" class="bbx-manual-note" data-gjs-dmode="flow">1 tape, 2 radio, 3 line in, as a whole number.</dd>
+      </div>
+      <div id="bbx-manual-row-6" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-6" class="bbx-manual-key" data-gjs-dmode="flow">VOLUME, BALANCE</dt>
+        <dd id="bbx-manual-address-6" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/volume  /boombox/balance</dd>
+        <dd id="bbx-manual-note-6" class="bbx-manual-note" data-gjs-dmode="flow">0 to 1, and -1 to 1.</dd>
+      </div>
+      <div id="bbx-manual-row-7" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-7" class="bbx-manual-key" data-gjs-dmode="flow">Graphic equaliser</dt>
+        <dd id="bbx-manual-address-7" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/eq/100 ... /boombox/eq/10k</dd>
+        <dd id="bbx-manual-note-7" class="bbx-manual-note" data-gjs-dmode="flow">-12 to 12, a decibel at a time.</dd>
+      </div>
+      <div id="bbx-manual-row-8" class="bbx-manual-row" data-gjs-dmode="flow">
+        <dt id="bbx-manual-key-8" class="bbx-manual-key" data-gjs-dmode="flow">Level lights</dt>
+        <dd id="bbx-manual-address-8" class="bbx-manual-address" data-gjs-dmode="flow">/boombox/level/left  /boombox/level/right</dd>
+        <dd id="bbx-manual-note-8" class="bbx-manual-note" data-gjs-dmode="flow">These listen. Send them 0 to 1 and they light.</dd>
+      </div>
+    </dl>
+    <p id="bbx-manual-foot" class="bbx-manual-foot" data-gjs-dmode="flow">Delete this card from the layout when the unit goes out on the street.</p>
+  </aside>
+</div>
+</body>
+</html>
