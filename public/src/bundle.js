@@ -1617,7 +1617,7 @@ const button = {
 
   block: {
     label: "Button",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M5,3H19A2,2 0 0,1 21,5V19A2,2 0 0,1 19,21H5A2,2 0 0,1 3,19V5A2,2 0 0,1 5,3Z"/></svg>',
@@ -1980,7 +1980,7 @@ const colour = {
 
   block: {
     label: "Colour",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 ' +
@@ -2393,7 +2393,7 @@ const dropdown = {
 
   block: {
     label: "Dropdown",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M2,5H22A1,1 0 0,1 23,6V18A1,1 0 0,1 22,19H2A1,1 0 0,1 1,18V6A1,1 0 0,1 ' +
@@ -3567,7 +3567,7 @@ const mediaBrowser = {
 
   block: {
     label: "Media Browser",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M3,3H11V11H3V3M13,3H21V11H13V3M3,13H11V21H3V13M13,13H21V21H13V13M15,15V19H19V15H15Z"/></svg>',
@@ -3920,7 +3920,7 @@ const meter = {
 
   block: {
     label: "Meter",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M3,7H21A2,2 0 0,1 23,9V15A2,2 0 0,1 21,17H3A2,2 0 0,1 1,15V9A2,2 0 0,1 3,7' +
@@ -4165,7 +4165,7 @@ const numberInput = {
 
   block: {
     label: "Number Input",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M4,17V9H2V7H6V17H4M22,15C22,16.11 21.1,17 20,17H16V15H20V13H18V11H20V9H16V7H20A2,2 0 0,1 ' +
@@ -4735,7 +4735,7 @@ const slider = {
 
   block: {
     label: "Slider",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7V15H9V9H7M21,' +
@@ -4994,7 +4994,7 @@ const textInput = {
 
   block: {
     label: "Text Input",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M17,7H22V17H17V19A1,1 0 0,0 18,20H20V22H17.5C16.95,22 16,21.55 16,21C16,21.55 15.05,22 ' +
@@ -5392,7 +5392,7 @@ const xypad = {
 
   block: {
     label: "XY Pad",
-    category: "OSC",
+    category: "IO Widgets",
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M3,3H21A2,2 0 0,1 23,5V19A2,2 0 0,1 21,21H3A2,2 0 0,1 1,19V5A2,2 0 0,1 3,3M3,5V19H21V5H3' +

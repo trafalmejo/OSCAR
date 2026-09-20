@@ -480,3 +480,9 @@ test("the editor and the preview take their widgets from the registry, never by 
     assert.ok(/widgetPlugins\(/.test(code), entry + " registers the widgets generically");
   }
 });
+
+test("every widget sits in the one palette section, IO Widgets", () => {
+  // They send and receive over more than OSC now (DMX, serial), so the
+  // section is named for what they are rather than for one protocol.
+  assert.deepStrictEqual([...new Set(WIDGETS.map((w) => w.block.category))], ["IO Widgets"]);
+});
