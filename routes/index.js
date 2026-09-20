@@ -32,6 +32,7 @@ module.exports = function createRouter({
   store,
   serverIP,
   socketPort,
+  oscInPort,
   updates,
   diagnostics,
   onPreviewPush,
@@ -102,7 +103,12 @@ module.exports = function createRouter({
   // listen on 8081 -- OSCAR_SOCKET_PORT moves it, and a second instance on the
   // same machine has to -- so the port is reported rather than assumed.
   router.get("/connection", (req, res) =>
-    res.json({ address: serverIP(), socketPort: socketPort ? socketPort() : 8081 })
+    res.json({
+      address: serverIP(),
+      socketPort: socketPort ? socketPort() : 8081,
+      // The one port OSCAR hears OSC on, so the editor can say it.
+      oscInPort: oscInPort ? oscInPort() : null,
+    })
   );
 
   // Kept for anything written against older OSCARs.

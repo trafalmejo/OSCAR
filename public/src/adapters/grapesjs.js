@@ -8,7 +8,7 @@
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx, upgradeRouting, sectionStatus, SECTIONS } = require("../../../lib/widgets/fields");
+var { sendsDmx, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var { exportAttributes } = require("../../../lib/export/config");
 
 /**
@@ -58,7 +58,9 @@ function toTrait(field, config) {
   if (field.placeholder) trait.placeholder = field.placeholder;
   // Shown by the browser on hover. decoratePanel() copies it onto the label
   // too, which GrapesJS titles with the label's own text.
-  if (field.hint) trait.attributes = { title: field.hint };
+  // The field's name goes along so the panel can add to the hints that say
+  // where data goes (see sectionLights).
+  if (field.hint) trait.attributes = { title: field.hint, "data-oscar-field": field.key };
   if (field.min !== undefined) trait.min = field.min;
   if (field.max !== undefined) trait.max = field.max;
   if (field.step !== undefined) trait.step = field.step;
@@ -833,20 +835,23 @@ function followSurfaceStyle(editor, copy) {
  * and a repaint changes attributes, so decorating cannot set itself off.
  */
 var DIRECTIONS = [
-  { id: "in", tag: "IN", label: "Data in" },
-  { id: "out", tag: "OUT", label: "Data out" },
+  { id: "in", tag: "IN", label: "Data in", field: "listen" },
+  { id: "out", tag: "OUT", label: "Data out", field: "oscEnabled" },
 ];
 
 function sectionLights(editor, options) {
   var doc = (options && options.document) || document;
   var root = (options && options.root) || doc;
+  // What the server said of itself: { listeningPort }, the one OSC in port.
+  var server = { listeningPort: options && options.listeningPort };
   var watched = null;
   var unwatch = null;
 
   function paint() {
     var model = editor.getSelected();
     var definition = model && byType(model.get("type"));
-    var status = definition ? sectionStatus(definition.fields, configOf(model, definition)) : {};
+    var config = definition ? configOf(model, definition) : {};
+    var status = definition ? sectionStatus(definition.fields, config) : {};
 
     var sections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + "]");
     Array.prototype.forEach.call(sections, function (section) {
@@ -879,6 +884,10 @@ function sectionLights(editor, options) {
         }
         var on = directions[direction.id] === true;
         var words = direction.label + (on ? ": on" : ": off");
+        // OSC's lights also say where: the port OSCAR listens on, or the
+        // address this widget sends to.
+        var where = section.getAttribute(SECTION_ATTRIBUTE) === "osc" ? oscEndpoint(direction.field, config, server) : "";
+        if (where) words += ". " + where;
         light.setAttribute("data-on", String(on));
         // In words as well as colour, for a reader and for anyone who cannot
         // tell the two colours apart.
@@ -891,6 +900,14 @@ function sectionLights(editor, options) {
     // GrapesJS puts a trait's attributes on the wrapper around its row.
     var hinted = root.querySelectorAll(".gjs-trt-trait__wrp[title]");
     Array.prototype.forEach.call(hinted, function (row) {
+      var key = row.getAttribute("data-oscar-field");
+      var field = key && definition ? fieldOf(definition, key) : null;
+      if (field && field.hint) {
+        // Written from the field's own hint each time, so a changed port
+        // replaces the old one rather than piling up after it.
+        var where = oscEndpoint(key, config, server);
+        row.setAttribute("title", where ? field.hint + " " + where : field.hint);
+      }
       var label = row.querySelector(".gjs-label");
       if (label) label.setAttribute("title", row.getAttribute("title"));
     });
@@ -901,7 +918,7 @@ function sectionLights(editor, options) {
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:ip change:port";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);
@@ -927,6 +944,12 @@ function sectionLights(editor, options) {
   }
 
   return paint;
+}
+
+function fieldOf(definition, key) {
+  var fields = definition.fields || [];
+  for (var i = 0; i < fields.length; i++) if (fields[i].key === key) return fields[i];
+  return null;
 }
 
 function byType(type) {

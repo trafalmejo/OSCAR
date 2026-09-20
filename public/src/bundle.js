@@ -2879,6 +2879,30 @@ function oscToggle() {
   return field("oscEnabled", "Data out", "checkbox", { section: "osc", hint: DATA_OUT_HINT });
 }
 
+/**
+ * Where a direction of the OSC section points, for whoever hovers over its
+ * checkbox or its light: the one port OSCAR listens on for Data in, which is
+ * the server's and not the widget's, and the widget's own IP and Port for
+ * Data out. Empty for anything else, and for what is not known.
+ *
+ * @param {string} key      `listen` or `oscEnabled`
+ * @param {object} config   the widget's settings
+ * @param {object} [server] `{ listeningPort }`, as GET /connection said
+ */
+function oscEndpoint(key, config, server) {
+  if (key === "listen") {
+    const port = server && server.listeningPort;
+    return port ? "OSCAR listens on port " + port + "." : "";
+  }
+  if (key === "oscEnabled") {
+    const port = config && config.port;
+    if (port === undefined || port === null || port === "") return "";
+    const ip = config.ip ? config.ip + ", " : "";
+    return "Sends to " + ip + "port " + port + ".";
+  }
+  return "";
+}
+
 // DMX only runs one way, from the desk to the fixture, so its section has the
 // one direction. Named as OSC's is, so the two sections read alike.
 function dmxToggle() {
@@ -3110,6 +3134,7 @@ module.exports = {
   connectionChecks: connectionChecks,
   SECTIONS: SECTIONS,
   sectionStatus: sectionStatus,
+  oscEndpoint: oscEndpoint,
   oscToggle: oscToggle,
   dmxToggle: dmxToggle,
   upgradeRouting: upgradeRouting,
@@ -19114,7 +19139,7 @@ var qrcode = function() {
  */
 
 var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx, upgradeRouting, sectionStatus, SECTIONS } = require("../../../lib/widgets/fields");
+var { sendsDmx, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var { exportAttributes } = require("../../../lib/export/config");
 
 /**
@@ -19164,7 +19189,9 @@ function toTrait(field, config) {
   if (field.placeholder) trait.placeholder = field.placeholder;
   // Shown by the browser on hover. decoratePanel() copies it onto the label
   // too, which GrapesJS titles with the label's own text.
-  if (field.hint) trait.attributes = { title: field.hint };
+  // The field's name goes along so the panel can add to the hints that say
+  // where data goes (see sectionLights).
+  if (field.hint) trait.attributes = { title: field.hint, "data-oscar-field": field.key };
   if (field.min !== undefined) trait.min = field.min;
   if (field.max !== undefined) trait.max = field.max;
   if (field.step !== undefined) trait.step = field.step;
@@ -19939,20 +19966,23 @@ function followSurfaceStyle(editor, copy) {
  * and a repaint changes attributes, so decorating cannot set itself off.
  */
 var DIRECTIONS = [
-  { id: "in", tag: "IN", label: "Data in" },
-  { id: "out", tag: "OUT", label: "Data out" },
+  { id: "in", tag: "IN", label: "Data in", field: "listen" },
+  { id: "out", tag: "OUT", label: "Data out", field: "oscEnabled" },
 ];
 
 function sectionLights(editor, options) {
   var doc = (options && options.document) || document;
   var root = (options && options.root) || doc;
+  // What the server said of itself: { listeningPort }, the one OSC in port.
+  var server = { listeningPort: options && options.listeningPort };
   var watched = null;
   var unwatch = null;
 
   function paint() {
     var model = editor.getSelected();
     var definition = model && byType(model.get("type"));
-    var status = definition ? sectionStatus(definition.fields, configOf(model, definition)) : {};
+    var config = definition ? configOf(model, definition) : {};
+    var status = definition ? sectionStatus(definition.fields, config) : {};
 
     var sections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + "]");
     Array.prototype.forEach.call(sections, function (section) {
@@ -19985,6 +20015,10 @@ function sectionLights(editor, options) {
         }
         var on = directions[direction.id] === true;
         var words = direction.label + (on ? ": on" : ": off");
+        // OSC's lights also say where: the port OSCAR listens on, or the
+        // address this widget sends to.
+        var where = section.getAttribute(SECTION_ATTRIBUTE) === "osc" ? oscEndpoint(direction.field, config, server) : "";
+        if (where) words += ". " + where;
         light.setAttribute("data-on", String(on));
         // In words as well as colour, for a reader and for anyone who cannot
         // tell the two colours apart.
@@ -19997,6 +20031,14 @@ function sectionLights(editor, options) {
     // GrapesJS puts a trait's attributes on the wrapper around its row.
     var hinted = root.querySelectorAll(".gjs-trt-trait__wrp[title]");
     Array.prototype.forEach.call(hinted, function (row) {
+      var key = row.getAttribute("data-oscar-field");
+      var field = key && definition ? fieldOf(definition, key) : null;
+      if (field && field.hint) {
+        // Written from the field's own hint each time, so a changed port
+        // replaces the old one rather than piling up after it.
+        var where = oscEndpoint(key, config, server);
+        row.setAttribute("title", where ? field.hint + " " + where : field.hint);
+      }
       var label = row.querySelector(".gjs-label");
       if (label) label.setAttribute("title", row.getAttribute("title"));
     });
@@ -20007,7 +20049,7 @@ function sectionLights(editor, options) {
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:ip change:port";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);
@@ -20033,6 +20075,12 @@ function sectionLights(editor, options) {
   }
 
   return paint;
+}
+
+function fieldOf(definition, key) {
+  var fields = definition.fields || [];
+  for (var i = 0; i < fields.length; i++) if (fields[i].key === key) return fields[i];
+  return null;
 }
 
 function byType(type) {
@@ -20471,7 +20519,7 @@ if (document.getElementById("gjs")) {
       return {};
     })
     .then(function (conn) {
-      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081);
+      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081, conn.oscInPort);
       window.editor = editor;
     });
 
@@ -20673,7 +20721,7 @@ function postJSON(url, body) {
   });
 }
 
-function initGrape(ipServer, socketPort) {
+function initGrape(ipServer, socketPort, oscInPort) {
   editor = grapesjs.init({
     // GrapesJS fetches Font Awesome from a CDN by default, which fails without
     // a word at a venue with no internet. The few icons it still draws that
@@ -20849,7 +20897,10 @@ function initGrape(ipServer, socketPort) {
   // A light on each protocol section of the settings panel, so a collapsed
   // section still says whether the widget uses it. Watches the views column,
   // which is where GrapesJS draws and redraws the panel.
-  sectionLights(editor, { root: document.querySelector(".gjs-pn-views-container") || document.body });
+  sectionLights(editor, {
+    root: document.querySelector(".gjs-pn-views-container") || document.body,
+    listeningPort: oscInPort,
+  });
 
   var pn = editor.Panels;
   var modal = editor.Modal;
@@ -21784,9 +21835,13 @@ function initGrape(ipServer, socketPort) {
   pn.addButton("devices-c", {
     id: "ipButton",
     className: "oscar-ip-label",
-    label: "Server IP: " + ipServer,
+    label: "Server IP: " + ipServer + (oscInPort ? " · Listening Port: " + oscInPort : ""),
     command: null,
-    attributes: { title: "Point other devices at this address" },
+    attributes: {
+      title: oscInPort
+        ? "Point other devices at this address. OSCAR hears OSC on port " + oscInPort
+        : "Point other devices at this address",
+    },
     active: false,
     disable: true,
   });

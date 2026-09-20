@@ -163,6 +163,7 @@ app.use(
     store,
     serverIP: () => serverIP,
     socketPort: () => SOCKET_PORT,
+    oscInPort: () => OSC_IN_PORT,
     updates,
     diagnostics,
     // `io` and `shared` are created below; this only runs once a request arrives.

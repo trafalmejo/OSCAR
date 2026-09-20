@@ -317,8 +317,9 @@ test("GET /connection tells the browser where the OSC bridge is", async () => {
       const body = await (await fetch(base + "/connection")).json();
       assert.strictEqual(body.address, "192.168.0.5");
       assert.strictEqual(body.socketPort, 18091, "the configured port, not the default");
+      assert.strictEqual(body.oscInPort, 18092, "and the port OSCAR hears OSC on, for the editor to say");
     },
-    { socketPort: () => 18091 }
+    { socketPort: () => 18091, oscInPort: () => 18092 }
   );
 });
 
@@ -326,6 +327,7 @@ test("GET /connection falls back to the default bridge port", async () => {
   await withServer(async (base) => {
     const body = await (await fetch(base + "/connection")).json();
     assert.strictEqual(body.socketPort, 8081);
+    assert.strictEqual(body.oscInPort, null, "unknown is said as unknown, never guessed");
   });
 });
 

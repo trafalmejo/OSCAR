@@ -849,6 +849,7 @@ test("each protocol section carries what it is, and a setting's hint travels wit
   const master = traits.find((t) => t.name === "enabled");
   assert.strictEqual(master.label, "Master comms");
   assert.match(master.attributes.title, /Master switch/);
+  assert.strictEqual(master.attributes["data-oscar-field"], "enabled", "and says which setting it is");
   assert.strictEqual(traits.find((t) => t.name === "ip").attributes, undefined, "a setting with no hint gets no title");
 });
 
@@ -921,6 +922,57 @@ test("the lights follow the selected widget: one per direction it has, green whi
   selected = fakeModel(Object.assign({}, meter.defaults, { type: "oscar-meter" }));
   paint();
   assert.deepStrictEqual(lights(osc), [["IN", "true"]]);
+});
+
+test("Data in says the port OSCAR listens on, Data out the widget's own, on the light and on the checkbox", () => {
+  const { sectionLights } = require("../public/src/adapters/grapesjs");
+  const { oscEndpoint } = require("../lib/widgets/fields");
+
+  assert.strictEqual(oscEndpoint("listen", {}, { listeningPort: 9000 }), "OSCAR listens on port 9000.");
+  assert.strictEqual(oscEndpoint("listen", {}, {}), "", "an unknown port is not guessed");
+  assert.strictEqual(oscEndpoint("oscEnabled", { ip: "10.0.0.2", port: 7000 }), "Sends to 10.0.0.2, port 7000.");
+  assert.strictEqual(oscEndpoint("dmxEnabled", { port: 7000 }), "", "DMX has no port to name");
+
+  function node(attrs) {
+    const el = { attrs: Object.assign({}, attrs), children: [] };
+    el.getAttribute = (k) => (k in el.attrs ? el.attrs[k] : null);
+    el.setAttribute = (k, v) => { el.attrs[k] = String(v); };
+    el.appendChild = (child) => { el.children.push(child); return child; };
+    el.removeChild = (child) => child;
+    el.querySelector = (sel) => {
+      if (sel === "[data-title]") return el.title || null;
+      if (sel === ".oscar-section-lights") return el.children[0] || null;
+      if (sel === ".gjs-label") return el.label || null;
+      const dir = /data-direction="(\w+)"/.exec(sel);
+      return dir ? el.children.find((c) => c.attrs["data-direction"] === dir[1]) || null : null;
+    };
+    return el;
+  }
+  const osc = node({ "data-oscar-section": "osc" });
+  osc.title = node({});
+  const row = (key) => { const r = node({ title: "stale", "data-oscar-field": key }); r.label = node({}); return r; };
+  const dataIn = row("listen");
+  const dataOut = row("oscEnabled");
+  const root = { querySelectorAll: (sel) => (sel.indexOf("data-oscar-section") !== -1 ? [osc] : [dataIn, dataOut]) };
+
+  const handlers = {};
+  const selected = fakeModel(Object.assign({}, slider.defaults, { type: "oscar-slider", ip: "10.0.0.2", port: 7000 }));
+  const editor = { getSelected: () => selected, on: (events, fn) => events.split(" ").forEach((e) => (handlers[e] = fn)) };
+  const paint = sectionLights(editor, { document: { createElement: () => node({}) }, root, listeningPort: 18302 });
+  paint();
+
+  const light = (i) => osc.title.children[0].children[i].attrs.title;
+  assert.strictEqual(light(0), "Data in: off. OSCAR listens on port 18302.");
+  assert.strictEqual(light(1), "Data out: on. Sends to 10.0.0.2, port 7000.");
+  assert.match(dataIn.attrs.title, /^Follow the rig.* OSCAR listens on port 18302\.$/);
+  assert.match(dataOut.label.attrs.title, /Sends to 10\.0\.0\.2, port 7000\.$/, "the label carries it too");
+
+  // Editing the Port changes what is said, and leaves no old port behind.
+  handlers["component:selected"]();
+  selected.edit("port", 7100);
+  assert.strictEqual(light(1), "Data out: on. Sends to 10.0.0.2, port 7100.");
+  assert.doesNotMatch(dataOut.attrs.title, /7000/);
+  assert.match(dataOut.attrs.title, /port 7100\.$/);
 });
 
 // --- a click has to stay a click while previewing ---------------------------------

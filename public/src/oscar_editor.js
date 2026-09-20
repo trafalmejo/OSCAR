@@ -70,7 +70,7 @@ if (document.getElementById("gjs")) {
       return {};
     })
     .then(function (conn) {
-      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081);
+      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081, conn.oscInPort);
       window.editor = editor;
     });
 
@@ -272,7 +272,7 @@ function postJSON(url, body) {
   });
 }
 
-function initGrape(ipServer, socketPort) {
+function initGrape(ipServer, socketPort, oscInPort) {
   editor = grapesjs.init({
     // GrapesJS fetches Font Awesome from a CDN by default, which fails without
     // a word at a venue with no internet. The few icons it still draws that
@@ -448,7 +448,10 @@ function initGrape(ipServer, socketPort) {
   // A light on each protocol section of the settings panel, so a collapsed
   // section still says whether the widget uses it. Watches the views column,
   // which is where GrapesJS draws and redraws the panel.
-  sectionLights(editor, { root: document.querySelector(".gjs-pn-views-container") || document.body });
+  sectionLights(editor, {
+    root: document.querySelector(".gjs-pn-views-container") || document.body,
+    listeningPort: oscInPort,
+  });
 
   var pn = editor.Panels;
   var modal = editor.Modal;
@@ -1383,9 +1386,13 @@ function initGrape(ipServer, socketPort) {
   pn.addButton("devices-c", {
     id: "ipButton",
     className: "oscar-ip-label",
-    label: "Server IP: " + ipServer,
+    label: "Server IP: " + ipServer + (oscInPort ? " · Listening Port: " + oscInPort : ""),
     command: null,
-    attributes: { title: "Point other devices at this address" },
+    attributes: {
+      title: oscInPort
+        ? "Point other devices at this address. OSCAR hears OSC on port " + oscInPort
+        : "Point other devices at this address",
+    },
     active: false,
     disable: true,
   });
