@@ -428,7 +428,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // The MIDI inputs this page's widgets listen on: parts of names, "" for all.
+  // The MIDI inputs this page's widgets listen on: parts of names, "*" for all, "" for the first.
   socket.on("midi:want", (parts) => {
     const list = Array.isArray(parts) ? parts.filter((part) => typeof part === "string" && part.length <= 200).slice(0, 64) : [];
     if (list.length) midiWanted.set(socket.id, list);
@@ -484,9 +484,9 @@ const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared,
 // widgets that listen for it follow (lib/widgets/midi-in.js). Nothing is sent
 // on, unless MIDI_BRIDGE is on (lib/features.js): then a knob is a hand, and
 // the sending is done here, once, for the widgets of published surfaces.
-midi.onMessage((heard, port) => {
-  io.emit("midi:in", { heard, port });
-  if (features.MIDI_BRIDGE) surfaces.hearMidi(heard, port).catch((err) => console.error("MIDI in: " + reason(err)));
+midi.onMessage((heard, port, first) => {
+  io.emit("midi:in", { heard, port, first });
+  if (features.MIDI_BRIDGE) surfaces.hearMidi(heard, port, first).catch((err) => console.error("MIDI in: " + reason(err)));
 });
 
 // Only the inputs somebody wants are opened: on Windows an input belongs to

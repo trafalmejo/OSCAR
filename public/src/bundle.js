@@ -679,6 +679,22 @@ function readMidi(bytes) {
   return null;
 }
 
+/**
+ * What an In port setting says to listen on. Blank is the first port there
+ * is, as a blank Out port is the first there is to send to. Every port has to
+ * be asked for in words, because on Windows a port OSCAR has open is taken
+ * from every other program. "*" and "all" are taken to mean it too.
+ */
+const ALL_INPUTS = "All MIDI inputs";
+const ALL = "*";
+
+/** "*" for every port, "" for the first, otherwise the part of a name asked for, lower case. */
+function inputWanted(value) {
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (text === ALL || text === "all" || text === ALL_INPUTS.toLowerCase()) return ALL;
+  return text;
+}
+
 function isListening(config) {
   return isOn(config && config.midiListen);
 }
@@ -688,21 +704,22 @@ function isListening(config) {
  * carries: 0 for the first, 1 for a pad's Y or a colour's green. -1 if not.
  *
  * The mirror of midiMessages(): a widget with several values listens on the
- * numbers it would send on. `port` is the name of the port it came in by; a
- * widget with no In port named takes it from any.
+ * numbers it would send on. `port` is the name of the port it came in by, and
+ * `first` whether that is the first port there is, which is the one a widget
+ * with no In port named listens on.
  *
  * @param {number} values how many values the widget has
  */
-function midiIndex(config, heard, port, values) {
+function midiIndex(config, heard, port, values, first) {
   if (!config || !config.enabled || !isListening(config) || !heard) return -1;
   if (heard.type !== config.midiType) return -1;
   if (whole(config.midiChannel, 1, CHANNELS) !== heard.channel) return -1;
-  const wanted = typeof config.midiInPort === "string" ? config.midiInPort.trim().toLowerCase() : "";
-  if (wanted && String(port || "").toLowerCase().indexOf(wanted) === -1) return -1;
+  const wanted = inputWanted(config.midiInPort);
+  if (wanted === "" ? first === false : wanted !== ALL && String(port || "").toLowerCase().indexOf(wanted) === -1) return -1;
   if (heard.type === "program" || heard.type === "pitch") return 0;
-  const first = whole(config.midiNumber, 0, MAX_DATA);
-  if (first === null) return -1;
-  const index = heard.number - first;
+  const lowest = whole(config.midiNumber, 0, MAX_DATA);
+  if (lowest === null) return -1;
+  const index = heard.number - lowest;
   return index >= 0 && index < (values || 1) ? index : -1;
 }
 
@@ -725,6 +742,8 @@ module.exports = {
   readMidi: readMidi,
   isListening: isListening,
   midiIndex: midiIndex,
+  ALL_INPUTS: ALL_INPUTS,
+  inputWanted: inputWanted,
 };
 
 },{}],7:[function(require,module,exports){
@@ -4488,8 +4507,8 @@ const DATA_IN_HINT =
 
 const IN_PORT_HINT =
   "The MIDI port to listen on, as this computer names it. Part of the name is enough. " +
-  "Ticking Data in fills in the first port there is, and Learn the one you touch. " +
-  "Blank listens on every port, which on Windows takes them all from other programs.";
+  "Ticking Data in fills in the first port there is, and Learn the one you touch. Blank means the first port. " +
+  "\"All MIDI inputs\" listens on every port, which on Windows takes them all from other programs.";
 
 const PORT_HINT =
   "The MIDI port to send to, as this computer names it. Part of the name is enough. " +
@@ -4506,7 +4525,7 @@ function midiFields() {
     field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)),
     // `source` names a list the host may offer as suggestions. It stays a
     // text field: a port unplugged for the night is still this widget's port.
-    field("midiInPort", "In port", "text", Object.assign({ placeholder: "every port", hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
+    field("midiInPort", "In port", "text", Object.assign({ placeholder: "first port", hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
     field("midiPort", "Out port", "text", Object.assign({ placeholder: "first port", hint: PORT_HINT, source: "midi-outputs" }, only)),
     field("midiChannel", "Channel", "number", Object.assign({ min: 1, max: CHANNELS }, only)),
     field("midiType", "Type", "select", Object.assign({ options: TYPES }, only)),
@@ -4671,12 +4690,12 @@ function stateFromMidi(definition, config, heard, index, current) {
  * @param {object} definition the widget's definition
  * @param {() => object} read     its settings, read afresh: they are edited while it is live
  * @param {() => object} showing  what it shows now, for the values a message leaves alone
- * @returns {(heard: object, port: string) => object|null}
+ * @returns {(heard: object, port: string, first: boolean) => object|null}
  */
 function followMidi(definition, read, showing) {
-  return function (heard, port) {
+  return function (heard, port, first) {
     const config = read();
-    const index = midiIndex(config, heard, port, valuesOf(definition, config));
+    const index = midiIndex(config, heard, port, valuesOf(definition, config), first);
     if (index === -1) return null;
     return stateFromMidi(definition, config, heard, index, showing ? showing() : null);
   };
@@ -4688,7 +4707,7 @@ module.exports = { stateFromMidi: stateFromMidi, valuesOf: valuesOf, followMidi:
 "use strict";
 
 const { followMidi } = require("./midi-in");
-const { isListening } = require("../midi/spec");
+const { isListening, inputWanted } = require("../midi/spec");
 
 /**
  * MIDI's Data in, for one widget: subscribe `fn` to the states a controller
@@ -4708,12 +4727,12 @@ function midiSource(host, definition, id, read, showing, adopt, onSettings) {
       if (!host.wantMidi) return;
       var config = read();
       var listening = config.enabled && isListening(config);
-      host.wantMidi(key, listening ? String(config.midiInPort || "").trim() : null);
+      host.wantMidi(key, listening ? inputWanted(config.midiInPort) : null);
     };
     want();
     var stopSettings = onSettings ? onSettings(want) : null;
-    var stop = host.onMidiIn(function (heard, port) {
-      var state = follow(heard, port);
+    var stop = host.onMidiIn(function (heard, port, first) {
+      var state = follow(heard, port, first);
       if (!state) return;
       adopt(function () {
         fn(state);
@@ -19662,7 +19681,7 @@ var qrcode = function() {
 var { WIDGETS } = require("../../../lib/widgets");
 var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var features = require("../../../lib/features");
-var { isListening } = require("../../../lib/midi/spec");
+var { isListening, ALL_INPUTS } = require("../../../lib/midi/spec");
 var { midiSource } = require("../../../lib/widgets/midi-source");
 var { exportAttributes } = require("../../../lib/export/config");
 
@@ -20320,10 +20339,10 @@ function register(definition) {
             });
           }
 
-          // Ticking MIDI's Data in with no In port named would listen on
-          // every port, and on Windows a port OSCAR has open is taken from
-          // every other program. So it is given one: the first there is.
-          // Learn names the right one; clearing the box still means them all.
+          // Ticking MIDI's Data in with no In port named listens on the first
+          // port there is. Which one that is is written into the box, so it
+          // is there to be read and changed. Learn names the one touched.
+          // Every port has to be asked for, in words (lib/midi/spec.js).
           if (definition.fields.some(function (field) { return field.key === "midiListen"; })) {
             model.on("change:midiListen", function () {
               var port = namedMidiInput(configOf(model, definition));
@@ -20797,7 +20816,10 @@ var suggestions = {};
 /** The In port to give a widget whose Data in was just ticked, or null to leave it as it is. */
 function namedMidiInput(config) {
   if (!isListening(config) || String(config.midiInPort || "").trim()) return null;
-  var inputs = suggestions["midi-inputs"] || [];
+  // The list opens with the words for every port, which nobody is given unasked.
+  var inputs = (suggestions["midi-inputs"] || []).filter(function (name) {
+    return name !== ALL_INPUTS;
+  });
   return inputs.length ? inputs[0] : null;
 }
 
@@ -21466,6 +21488,7 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
 var features = require("../../lib/features");
+var { ALL_INPUTS } = require("../../lib/midi/spec");
 
 var oscarExport = require("./export_dialog");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -21673,7 +21696,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
         })
         .then(function (ports) {
           if (ports) suggest("midi-outputs", ports.outputs);
-          if (ports) suggest("midi-inputs", ports.inputs);
+          // In words, first: every port is a choice somebody has to make (lib/midi/spec.js).
+          if (ports) suggest("midi-inputs", [ALL_INPUTS].concat(ports.inputs));
         })
         .catch(function () {});
     };
@@ -22773,7 +22797,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./export_dialog":40,"./pages":43,"jquery":37,"jquery-confirm":36}],42:[function(require,module,exports){
+},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/midi/spec":6,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./export_dialog":40,"./pages":43,"jquery":37,"jquery-confirm":36}],42:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.

@@ -139,7 +139,7 @@ test("a knob works a published fader as a hand would: it moves on every device, 
     tag("oscar-slider", "deaf", { message: "/deaf", midiNumber: 7 }),
   ]);
 
-  assert.deepStrictEqual(await surfaces.midiPorts(), [""], "every port, since no widget names one");
+  assert.deepStrictEqual(await surfaces.midiPorts(), [""], "the first port there is, since no widget names one");
   assert.strictEqual(await surfaces.hearMidi({ type: "cc", channel: 1, number: 7, unit: 1 }, "nanoKONTROL2"), 1);
   assert.deepStrictEqual(sent.osc, [["/master", [100]]]);
   assert.deepStrictEqual(sent.dmx, [[255]]);
@@ -162,12 +162,12 @@ test("a pad follows two knobs, each moving its own axis from where the other lef
 
 test("the ports to open are the ones the published widgets name, and a surface published since is noticed", async () => {
   const { surfaces, published, tick } = await stage([tag("oscar-slider", "a", { midiListen: true, midiInPort: "Launchpad" })]);
-  assert.deepStrictEqual(await surfaces.midiPorts(), ["Launchpad"]);
+  assert.deepStrictEqual(await surfaces.midiPorts(), ["launchpad"]);
 
   await published.save("Booth", "<body>" + tag("oscar-button", "go", { midiListen: true, midiInPort: " nano " }) + "</body>");
-  assert.deepStrictEqual(await surfaces.midiPorts(), ["Launchpad"], "the folder is not read again for every turn of a knob");
+  assert.deepStrictEqual(await surfaces.midiPorts(), ["launchpad"], "the folder is not read again for every turn of a knob");
   tick(2000);
-  assert.deepStrictEqual((await surfaces.midiPorts()).sort(), ["Launchpad", "nano"]);
+  assert.deepStrictEqual((await surfaces.midiPorts()).sort(), ["launchpad", "nano"]);
 });
 
 // ---- the ports listened on, and Learn -----------------------------------------------------------
@@ -219,8 +219,8 @@ test("a port is only opened while a widget wants it, because on Windows opening 
   driver.play("Launchpad Mini", [0xf8]);
   assert.deepStrictEqual(heard, [["Launchpad Mini", "note", 36]], "clock is not a widget's business");
 
-  // Plugged in later, and unplugged: both noticed at the next look.
-  midi.listenFor([""]);
+  // Every port, which has to be asked for. Then one is unplugged: noticed at the next look.
+  midi.listenFor(["*"]);
   assert.deepStrictEqual(driver.log.slice(1), ["open nanoKONTROL2"]);
   driver.names = ["nanoKONTROL2"];
   t.ticks[0]();
@@ -340,10 +340,13 @@ test("a page asks only for the inputs its widgets listen on, and keeps that up t
 
   config.midiListen = true;
   changed();
-  assert.deepStrictEqual(host.wanted, { fader: "Launchpad" });
+  assert.deepStrictEqual(host.wanted, { fader: "launchpad" });
   config.midiInPort = "";
   changed();
-  assert.deepStrictEqual(host.wanted, { fader: "" }, "every port");
+  assert.deepStrictEqual(host.wanted, { fader: "" }, "the first port there is");
+  config.midiInPort = "All MIDI inputs";
+  changed();
+  assert.deepStrictEqual(host.wanted, { fader: "*" }, "every port, because somebody asked for every port");
   config.enabled = false;
   changed();
   assert.deepStrictEqual(host.wanted, {}, "the master switch makes it deaf");
@@ -358,5 +361,31 @@ test("sending onward is a switch, and it is off", () => {
   assert.strictEqual(features.MIDI_BRIDGE, false);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   assert.match(server, /if \(features\.MIDI_BRIDGE\) surfaces\.hearMidi\(/, "the server drives published widgets only with the switch on");
-  assert.match(server, /io\.emit\("midi:in", \{ heard, port \}\);/, "and tells the pages either way");
+  assert.match(server, /io\.emit\("midi:in", \{ heard, port, first \}\);/, "and tells the pages either way");
+});
+
+test("a blank In port is the first port, as a blank Out port is; every port has to be asked for in words", () => {
+  const { inputWanted, ALL_INPUTS } = require("../lib/midi/spec");
+  assert.strictEqual(ALL_INPUTS, "All MIDI inputs");
+  for (const said of ["All MIDI inputs", " all midi INPUTS ", "*", "all"]) assert.strictEqual(inputWanted(said), "*", said);
+  assert.deepStrictEqual(["", "  ", null, undefined].map(inputWanted), ["", "", "", ""]);
+  assert.strictEqual(inputWanted(" nanoKONTROL "), "nanokontrol");
+
+  const config = (midiInPort) => ({ enabled: true, midiListen: true, midiType: "cc", midiChannel: 1, midiNumber: 7, midiInPort });
+  const heard = { type: "cc", channel: 1, number: 7, unit: 1 };
+  // Two controllers open, because another widget asked for the second.
+  assert.strictEqual(midiIndex(config(""), heard, "nanoKONTROL2", 1, true), 0, "the first port there is");
+  assert.strictEqual(midiIndex(config(""), heard, "Launchpad Mini", 1, false), -1, "not the second, which was opened for somebody else");
+  assert.strictEqual(midiIndex(config("All MIDI inputs"), heard, "Launchpad Mini", 1, false), 0);
+  assert.strictEqual(midiIndex(config("launch"), heard, "Launchpad Mini", 1, false), 0);
+
+  // And only the first is opened for it.
+  const driver = fakeDriver(["nanoKONTROL2", "Launchpad Mini"]);
+  const midi = createMidi(Object.assign({ driver }, timers().options));
+  const from = [];
+  midi.onMessage((message, port, first) => from.push([port, first]));
+  midi.listenFor([""]);
+  assert.deepStrictEqual(driver.log, ["open nanoKONTROL2"]);
+  driver.play("nanoKONTROL2", [0xb0, 7, 1]);
+  assert.deepStrictEqual(from, [["nanoKONTROL2", true]]);
 });

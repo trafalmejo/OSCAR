@@ -68,14 +68,14 @@ function oscar_socket(editor, options) {
     if (!message || !message.heard) return;
     midiListeners.slice().forEach(function (fn) {
       try {
-        fn(message.heard, message.port);
+        fn(message.heard, message.port, message.first === true);
       } catch (err) {
         console.warn("A widget mishandled an incoming MIDI message:", err && err.message);
       }
     });
   });
 
-  /** Subscribe to every note, controller, program and bend: fn(heard, port). Returns an unsubscribe function. */
+  /** Subscribe to every note, controller, program and bend: fn(heard, port, first). Returns an unsubscribe function. */
   editor.onMidiIn = function (fn) {
     midiListeners.push(fn);
     return function () {
@@ -87,7 +87,7 @@ function oscar_socket(editor, options) {
 
   // OSCAR only opens the MIDI inputs somebody wants: on Windows an input
   // belongs to whoever opened it first. So this page says which ones its
-  // widgets listen on: a part of a name, "" for every port, per widget.
+  // widgets listen on: a part of a name, "*" for every port, "" for the first, per widget.
   var midiWanted = {};
   var midiWantTimer = null;
 
@@ -101,7 +101,7 @@ function oscar_socket(editor, options) {
     editor.socket.emit("midi:want", parts);
   }
 
-  /** `part` is the widget's In port ("" for every port), or null when it has stopped listening. */
+  /** `part` is what the widget's In port asks for (inputWanted() in lib/midi/spec.js), or null when it has stopped listening. */
   editor.wantMidi = function (key, part) {
     if (part === null || part === undefined) delete midiWanted[key];
     else midiWanted[key] = String(part);

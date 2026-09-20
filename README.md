@@ -301,7 +301,7 @@ any of the three can be on at once.
 | Setting | |
 | --- | --- |
 | **Data in**, **Data out** | A checkbox per direction, as for OSC. Both off on a new widget. |
-| **In port** | The MIDI port to listen on. Part of a name is enough. Ticking Data in fills in the first port there is, and Learn the one you touch. Blank means every port, which on Windows takes them all from other programs. |
+| **In port** | The MIDI port to listen on. Part of a name is enough. Ticking Data in fills in the first port there is, and Learn the one you touch. Blank means the first port, as it does for Out port. **All MIDI inputs** (the first suggestion; `*` works too) listens on every port, which on Windows takes them all from other programs. |
 | **Out port** | The MIDI port to send to, as the computer running OSCAR names it. The box suggests the ports there are. Part of a name is enough ("launchpad"), and blank means the first port. |
 | **Channel** | 1 to 16. Shared by both directions, as Type and Number are. |
 | **Type** | Control change, Note, Program change or Pitch bend. |
@@ -352,8 +352,8 @@ you play moves no other widget.
   on three in a row. What is not touched stays where it was.
 
 OSCAR only opens the input ports that the widgets on an open page listen on, or
-every port if one of them names none, and lets go of them when the last such
-page closes. On Windows a MIDI input belongs to whichever program opened it
+every port if one of them asks for **All MIDI inputs**, and lets go of them when
+the last such page closes. On Windows a MIDI input belongs to whichever program opened it
 first, so a controller OSCAR is listening to is not available to other
 software, and the other way round; the console says when a port is in use.
 

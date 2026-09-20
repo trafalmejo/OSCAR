@@ -146,10 +146,11 @@ test("MIDI Learn fills port, channel, type and number from what was played, or s
 
 test("ticking MIDI's Data in names a port, so OSCAR does not take every controller from every other program", () => {
   const { suggest, namedMidiInput } = require("../public/src/adapters/grapesjs");
-  suggest("midi-inputs", ["nanoKONTROL2", "Launchpad Mini"]);
+  // The list opens with the words for every port, which nobody is given unasked.
+  suggest("midi-inputs", ["All MIDI inputs", "nanoKONTROL2", "Launchpad Mini"]);
   assert.strictEqual(namedMidiInput({ midiListen: true, midiInPort: "" }), "nanoKONTROL2", "the first there is");
   assert.strictEqual(namedMidiInput({ midiListen: true, midiInPort: "Launchpad" }), null, "one that is named is left alone");
   assert.strictEqual(namedMidiInput({ midiListen: false, midiInPort: "" }), null, "only when Data in goes on");
-  suggest("midi-inputs", []);
-  assert.strictEqual(namedMidiInput({ midiListen: true, midiInPort: "" }), null, "nothing plugged in: nothing to choose from");
+  suggest("midi-inputs", ["All MIDI inputs"]);
+  assert.strictEqual(namedMidiInput({ midiListen: true, midiInPort: "" }), null, "nothing plugged in: left blank, which is the first port when one turns up");
 });

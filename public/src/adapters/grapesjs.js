@@ -10,7 +10,7 @@
 var { WIDGETS } = require("../../../lib/widgets");
 var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var features = require("../../../lib/features");
-var { isListening } = require("../../../lib/midi/spec");
+var { isListening, ALL_INPUTS } = require("../../../lib/midi/spec");
 var { midiSource } = require("../../../lib/widgets/midi-source");
 var { exportAttributes } = require("../../../lib/export/config");
 
@@ -668,10 +668,10 @@ function register(definition) {
             });
           }
 
-          // Ticking MIDI's Data in with no In port named would listen on
-          // every port, and on Windows a port OSCAR has open is taken from
-          // every other program. So it is given one: the first there is.
-          // Learn names the right one; clearing the box still means them all.
+          // Ticking MIDI's Data in with no In port named listens on the first
+          // port there is. Which one that is is written into the box, so it
+          // is there to be read and changed. Learn names the one touched.
+          // Every port has to be asked for, in words (lib/midi/spec.js).
           if (definition.fields.some(function (field) { return field.key === "midiListen"; })) {
             model.on("change:midiListen", function () {
               var port = namedMidiInput(configOf(model, definition));
@@ -1145,7 +1145,10 @@ var suggestions = {};
 /** The In port to give a widget whose Data in was just ticked, or null to leave it as it is. */
 function namedMidiInput(config) {
   if (!isListening(config) || String(config.midiInPort || "").trim()) return null;
-  var inputs = suggestions["midi-inputs"] || [];
+  // The list opens with the words for every port, which nobody is given unasked.
+  var inputs = (suggestions["midi-inputs"] || []).filter(function (name) {
+    return name !== ALL_INPUTS;
+  });
   return inputs.length ? inputs[0] : null;
 }
 

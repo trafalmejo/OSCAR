@@ -263,6 +263,7 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
 var features = require("../../lib/features");
+var { ALL_INPUTS } = require("../../lib/midi/spec");
 
 var oscarExport = require("./export_dialog");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -470,7 +471,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
         })
         .then(function (ports) {
           if (ports) suggest("midi-outputs", ports.outputs);
-          if (ports) suggest("midi-inputs", ports.inputs);
+          // In words, first: every port is a choice somebody has to make (lib/midi/spec.js).
+          if (ports) suggest("midi-inputs", [ALL_INPUTS].concat(ports.inputs));
         })
         .catch(function () {});
     };
