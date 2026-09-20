@@ -301,8 +301,8 @@ any of the three can be on at once.
 | Setting | |
 | --- | --- |
 | **Data in**, **Data out** | A checkbox per direction, as for OSC. Both off on a new widget. |
-| **In port** | The MIDI port to listen on. Part of a name is enough. Ticking Data in fills in the first port there is, and Learn the one you touch. Blank means the first port, as it does for Out port. **All MIDI inputs** (the first suggestion; `*` works too) listens on every port, which on Windows takes them all from other programs. |
-| **Out port** | The MIDI port to send to, as the computer running OSCAR names it. The box suggests the ports there are. Part of a name is enough ("launchpad"), and blank means the first port. |
+| **In port** | The MIDI port to listen on, from a list of the ports the computer running OSCAR has. Ticking Data in picks the first one, and Learn the one you touch. **First port** is whichever is first at the time. **All MIDI inputs** listens on every port, which on Windows takes them all from other programs. |
+| **Out port** | The MIDI port to send to, from the same kind of list. **First port** is whichever is first at the time. |
 | **Channel** | 1 to 16. Shared by both directions, as Type and Number are. |
 | **Type** | Control change, Note, Program change or Pitch bend. |
 | **Number** | The controller or note number, 0 to 127. |

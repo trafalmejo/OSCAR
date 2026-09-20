@@ -4497,7 +4497,7 @@ module.exports = { meter, PEAK_CLASS };
  */
 
 const { field } = require("./fields");
-const { TYPES, CHANNELS, MAX_DATA, whole } = require("../midi/spec");
+const { TYPES, CHANNELS, MAX_DATA, ALL_INPUTS, whole } = require("../midi/spec");
 
 const DATA_OUT_HINT = "Send this widget's value as MIDI when it is used.";
 
@@ -4506,13 +4506,18 @@ const DATA_IN_HINT =
   "Learn fills in the settings below from the next control you touch.";
 
 const IN_PORT_HINT =
-  "The MIDI port to listen on, as this computer names it. Part of the name is enough. " +
-  "Ticking Data in fills in the first port there is, and Learn the one you touch. Blank means the first port. " +
+  "The MIDI port to listen on. Ticking Data in picks the first port there is, and Learn the one you touch. " +
   "\"All MIDI inputs\" listens on every port, which on Windows takes them all from other programs.";
 
-const PORT_HINT =
-  "The MIDI port to send to, as this computer names it. Part of the name is enough. " +
-  "Leave it blank for the first port there is.";
+const PORT_HINT = "The MIDI port to send to, out of the ones this computer has.";
+
+// What a port setting offers before the ports are known, and whatever they
+// are: the first there is, which is what no value means, and for listening
+// every one of them. A host that knows the ports adds them (`source`), and
+// keeps the widget's own port in the list when it is unplugged.
+const FIRST_PORT = { id: "", name: "First port" };
+const IN_PORTS = [FIRST_PORT, { id: ALL_INPUTS, name: ALL_INPUTS }];
+const OUT_PORTS = [FIRST_PORT];
 
 const NUMBER_HINT =
   "The controller or note number, 0 to 127. A widget with several values uses the numbers that follow: " +
@@ -4523,10 +4528,8 @@ function midiFields() {
   return [
     field("midiListen", "Data in", "checkbox", Object.assign({ hint: DATA_IN_HINT }, only)),
     field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)),
-    // `source` names a list the host may offer as suggestions. It stays a
-    // text field: a port unplugged for the night is still this widget's port.
-    field("midiInPort", "In port", "text", Object.assign({ placeholder: "first port", hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
-    field("midiPort", "Out port", "text", Object.assign({ placeholder: "first port", hint: PORT_HINT, source: "midi-outputs" }, only)),
+    field("midiInPort", "In port", "select", Object.assign({ options: IN_PORTS, hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
+    field("midiPort", "Out port", "select", Object.assign({ options: OUT_PORTS, hint: PORT_HINT, source: "midi-outputs" }, only)),
     field("midiChannel", "Channel", "number", Object.assign({ min: 1, max: CHANNELS }, only)),
     field("midiType", "Type", "select", Object.assign({ options: TYPES }, only)),
     field("midiNumber", "Number", "number", Object.assign({ min: 0, max: MAX_DATA, hint: NUMBER_HINT }, only)),
@@ -19681,7 +19684,7 @@ var qrcode = function() {
 var { WIDGETS } = require("../../../lib/widgets");
 var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var features = require("../../../lib/features");
-var { isListening, ALL_INPUTS } = require("../../../lib/midi/spec");
+var { isListening } = require("../../../lib/midi/spec");
 var { midiSource } = require("../../../lib/widgets/midi-source");
 var { exportAttributes } = require("../../../lib/export/config");
 
@@ -19706,7 +19709,7 @@ function categoryOf(field, config) {
   if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
   // A protocol that is off starts folded away, so the panel of a widget that
   // only speaks OSC stays as short as it was before the others existed.
-  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) : true;
+  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) || isListening(config || {}) : true;
   // The attribute lands on the section's element, which is how the status
   // light finds it: by what it is, not by what its title happens to say.
   var attributes = {};
@@ -19729,7 +19732,7 @@ function toTrait(field, config) {
 
   if (field.type === "select") {
     // GrapesJS wants { id, name }, which is the shape lib/widgets uses too.
-    trait.options = field.options;
+    trait.options = field.source ? choicesFor(field, config && config[field.key]) : field.options;
   }
   if (field.placeholder) trait.placeholder = field.placeholder;
   // Shown by the browser on hover. decoratePanel() copies it onto the label
@@ -20721,12 +20724,6 @@ function sectionLights(editor, options) {
       }
       var label = row.querySelector(".gjs-label");
       if (label) label.setAttribute("title", row.getAttribute("title"));
-      // A setting that names a list is offered it as suggestions, and stays
-      // free text: a port unplugged for the night is still the widget's port.
-      if (field && field.source && suggestions[field.source]) {
-        var input = row.querySelector("input");
-        if (input) input.setAttribute("list", listFor(doc, field.source));
-      }
     });
   }
 
@@ -20807,48 +20804,91 @@ function sectionLights(editor, options) {
 }
 
 /**
- * Lists a text setting can suggest from, by the name a field gives as its
- * `source`. The editor fills them (suggest()); the panel hangs a <datalist>
- * on the input. Kept here, not fetched here: the adapter knows no routes.
+ * What the computer has, for the settings that choose from it: the MIDI ports,
+ * by the name a field gives as its `source`. The editor fills them (choices());
+ * kept here, not fetched here: the adapter knows no routes.
  */
 var suggestions = {};
+
+/**
+ * A dropdown's choices: the field's own, then what the computer has, then the
+ * widget's own value if it is none of those. A port unplugged for the night
+ * is still this widget's port, and a dropdown that could not show it would
+ * show another, which the next edit would save.
+ */
+function choicesFor(field, value) {
+  var options = (field.options || []).slice();
+  var has = function (id) {
+    return options.some(function (option) {
+      return option.id === id;
+    });
+  };
+  (suggestions[field.source] || []).forEach(function (name) {
+    if (!has(name)) options.push({ id: name, name: name });
+  });
+  var own = value === undefined || value === null ? "" : String(value);
+  if (!has(own)) options.push({ id: own, name: own + " (not connected)" });
+  return options;
+}
 
 /** The In port to give a widget whose Data in was just ticked, or null to leave it as it is. */
 function namedMidiInput(config) {
   if (!isListening(config) || String(config.midiInPort || "").trim()) return null;
-  // The list opens with the words for every port, which nobody is given unasked.
-  var inputs = (suggestions["midi-inputs"] || []).filter(function (name) {
-    return name !== ALL_INPUTS;
-  });
+  var inputs = suggestions["midi-inputs"] || [];
   return inputs.length ? inputs[0] : null;
 }
 
-function suggest(source, values) {
+/**
+ * Say what the computer has. If that changed and the selected widget has a
+ * setting that chooses from it, its panel is rebuilt, which is the only way
+ * GrapesJS redraws a dropdown's choices.
+ */
+function suggest(source, values, editor) {
   suggestions[source] = Array.isArray(values) ? values.slice() : [];
-  if (typeof document !== "undefined") listFor(document, source);
+  if (editor) refreshChoices(editor);
 }
 
-/** The id of the <datalist> for `source`, made or refilled as needed. */
-function listFor(doc, source) {
-  var id = "oscar-suggest-" + source;
-  if (!doc.getElementById) return id;
-  var list = doc.getElementById(id);
-  if (!list) {
-    list = doc.createElement("datalist");
-    list.id = id;
-    (doc.body || doc.documentElement).appendChild(list);
-  }
-  var wanted = (suggestions[source] || []).join("\n");
-  if (list.getAttribute("data-values") !== wanted) {
-    list.setAttribute("data-values", wanted);
-    while (list.firstChild) list.removeChild(list.firstChild);
-    (suggestions[source] || []).forEach(function (value) {
-      var option = doc.createElement("option");
-      option.value = value;
-      list.appendChild(option);
+/** What a widget's dropdowns that choose from the computer offer, as one comparable string. */
+function choiceIds(traits) {
+  return (traits || [])
+    .map(function (trait) {
+      var read = typeof trait.get === "function";
+      var options = (read ? trait.get("options") : trait.options) || [];
+      return (
+        (read ? trait.get("name") : trait.name) +
+        "=" +
+        options
+          .map(function (option) {
+            return option.id;
+          })
+          .join("|")
+      );
+    })
+    .join("\n");
+}
+
+/**
+ * Give the selected widget's dropdowns the choices there are now. Called when
+ * a widget is picked, since its panel was built before the ports were known,
+ * when the ports change, and when a port is named that the dropdown has not
+ * got. The panel is only rebuilt if a dropdown would differ.
+ */
+function refreshChoices(editor) {
+  if (!editor || typeof editor.getSelected !== "function") return;
+  var model = editor.getSelected();
+  var definition = model && byType(model.get("type"));
+  var chooses =
+    definition &&
+    definition.fields.some(function (field) {
+      return !!field.source;
     });
-  }
-  return id;
+  if (!chooses) return;
+  var wanted = traitsFor(definition, configOf(model, definition));
+  var has = model.get("traits");
+  // A collection once GrapesJS has built it, a plain list before.
+  var list = has && typeof has.map === "function" && !Array.isArray(has) ? has.map(function (trait) { return trait; }) : has;
+  if (choiceIds(list) === choiceIds(wanted)) return;
+  model.set("traits", wanted);
 }
 
 function fieldOf(definition, key) {
@@ -20891,6 +20931,8 @@ module.exports = {
   noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
   suggest: suggest,
+  refreshChoices: refreshChoices,
+  choicesFor: choicesFor,
   namedMidiInput: namedMidiInput,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,
@@ -21480,7 +21522,7 @@ var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
 var htmlDocument = require("../../lib/html-document");
-var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest } = require("./adapters/grapesjs");
+var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest, refreshChoices } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
@@ -21488,7 +21530,6 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
 var features = require("../../lib/features");
-var { ALL_INPUTS } = require("../../lib/midi/spec");
 
 var oscarExport = require("./export_dialog");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -21695,14 +21736,21 @@ function initGrape(ipServer, socketPort, oscInPort) {
           return res.ok ? res.json() : null;
         })
         .then(function (ports) {
-          if (ports) suggest("midi-outputs", ports.outputs);
-          // In words, first: every port is a choice somebody has to make (lib/midi/spec.js).
-          if (ports) suggest("midi-inputs", [ALL_INPUTS].concat(ports.inputs));
+          if (ports) suggest("midi-outputs", ports.outputs, editor);
+          if (ports) suggest("midi-inputs", ports.inputs, editor);
         })
         .catch(function () {});
     };
     askForMidiPorts();
-    editor.on("component:selected", askForMidiPorts);
+    editor.on("component:selected", function () {
+      // With what is known already, at once; then with what the server says.
+      refreshChoices(editor);
+      askForMidiPorts();
+    });
+    // Learn, and ticking Data in, can name a port the dropdown has not got.
+    editor.on("component:update:midiInPort component:update:midiPort", function () {
+      refreshChoices(editor);
+    });
   }
 
   var pn = editor.Panels;
@@ -22797,7 +22845,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/midi/spec":6,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./export_dialog":40,"./pages":43,"jquery":37,"jquery-confirm":36}],42:[function(require,module,exports){
+},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./export_dialog":40,"./pages":43,"jquery":37,"jquery-confirm":36}],42:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.

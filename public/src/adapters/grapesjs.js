@@ -10,7 +10,7 @@
 var { WIDGETS } = require("../../../lib/widgets");
 var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var features = require("../../../lib/features");
-var { isListening, ALL_INPUTS } = require("../../../lib/midi/spec");
+var { isListening } = require("../../../lib/midi/spec");
 var { midiSource } = require("../../../lib/widgets/midi-source");
 var { exportAttributes } = require("../../../lib/export/config");
 
@@ -35,7 +35,7 @@ function categoryOf(field, config) {
   if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
   // A protocol that is off starts folded away, so the panel of a widget that
   // only speaks OSC stays as short as it was before the others existed.
-  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) : true;
+  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) || isListening(config || {}) : true;
   // The attribute lands on the section's element, which is how the status
   // light finds it: by what it is, not by what its title happens to say.
   var attributes = {};
@@ -58,7 +58,7 @@ function toTrait(field, config) {
 
   if (field.type === "select") {
     // GrapesJS wants { id, name }, which is the shape lib/widgets uses too.
-    trait.options = field.options;
+    trait.options = field.source ? choicesFor(field, config && config[field.key]) : field.options;
   }
   if (field.placeholder) trait.placeholder = field.placeholder;
   // Shown by the browser on hover. decoratePanel() copies it onto the label
@@ -1050,12 +1050,6 @@ function sectionLights(editor, options) {
       }
       var label = row.querySelector(".gjs-label");
       if (label) label.setAttribute("title", row.getAttribute("title"));
-      // A setting that names a list is offered it as suggestions, and stays
-      // free text: a port unplugged for the night is still the widget's port.
-      if (field && field.source && suggestions[field.source]) {
-        var input = row.querySelector("input");
-        if (input) input.setAttribute("list", listFor(doc, field.source));
-      }
     });
   }
 
@@ -1136,48 +1130,91 @@ function sectionLights(editor, options) {
 }
 
 /**
- * Lists a text setting can suggest from, by the name a field gives as its
- * `source`. The editor fills them (suggest()); the panel hangs a <datalist>
- * on the input. Kept here, not fetched here: the adapter knows no routes.
+ * What the computer has, for the settings that choose from it: the MIDI ports,
+ * by the name a field gives as its `source`. The editor fills them (choices());
+ * kept here, not fetched here: the adapter knows no routes.
  */
 var suggestions = {};
+
+/**
+ * A dropdown's choices: the field's own, then what the computer has, then the
+ * widget's own value if it is none of those. A port unplugged for the night
+ * is still this widget's port, and a dropdown that could not show it would
+ * show another, which the next edit would save.
+ */
+function choicesFor(field, value) {
+  var options = (field.options || []).slice();
+  var has = function (id) {
+    return options.some(function (option) {
+      return option.id === id;
+    });
+  };
+  (suggestions[field.source] || []).forEach(function (name) {
+    if (!has(name)) options.push({ id: name, name: name });
+  });
+  var own = value === undefined || value === null ? "" : String(value);
+  if (!has(own)) options.push({ id: own, name: own + " (not connected)" });
+  return options;
+}
 
 /** The In port to give a widget whose Data in was just ticked, or null to leave it as it is. */
 function namedMidiInput(config) {
   if (!isListening(config) || String(config.midiInPort || "").trim()) return null;
-  // The list opens with the words for every port, which nobody is given unasked.
-  var inputs = (suggestions["midi-inputs"] || []).filter(function (name) {
-    return name !== ALL_INPUTS;
-  });
+  var inputs = suggestions["midi-inputs"] || [];
   return inputs.length ? inputs[0] : null;
 }
 
-function suggest(source, values) {
+/**
+ * Say what the computer has. If that changed and the selected widget has a
+ * setting that chooses from it, its panel is rebuilt, which is the only way
+ * GrapesJS redraws a dropdown's choices.
+ */
+function suggest(source, values, editor) {
   suggestions[source] = Array.isArray(values) ? values.slice() : [];
-  if (typeof document !== "undefined") listFor(document, source);
+  if (editor) refreshChoices(editor);
 }
 
-/** The id of the <datalist> for `source`, made or refilled as needed. */
-function listFor(doc, source) {
-  var id = "oscar-suggest-" + source;
-  if (!doc.getElementById) return id;
-  var list = doc.getElementById(id);
-  if (!list) {
-    list = doc.createElement("datalist");
-    list.id = id;
-    (doc.body || doc.documentElement).appendChild(list);
-  }
-  var wanted = (suggestions[source] || []).join("\n");
-  if (list.getAttribute("data-values") !== wanted) {
-    list.setAttribute("data-values", wanted);
-    while (list.firstChild) list.removeChild(list.firstChild);
-    (suggestions[source] || []).forEach(function (value) {
-      var option = doc.createElement("option");
-      option.value = value;
-      list.appendChild(option);
+/** What a widget's dropdowns that choose from the computer offer, as one comparable string. */
+function choiceIds(traits) {
+  return (traits || [])
+    .map(function (trait) {
+      var read = typeof trait.get === "function";
+      var options = (read ? trait.get("options") : trait.options) || [];
+      return (
+        (read ? trait.get("name") : trait.name) +
+        "=" +
+        options
+          .map(function (option) {
+            return option.id;
+          })
+          .join("|")
+      );
+    })
+    .join("\n");
+}
+
+/**
+ * Give the selected widget's dropdowns the choices there are now. Called when
+ * a widget is picked, since its panel was built before the ports were known,
+ * when the ports change, and when a port is named that the dropdown has not
+ * got. The panel is only rebuilt if a dropdown would differ.
+ */
+function refreshChoices(editor) {
+  if (!editor || typeof editor.getSelected !== "function") return;
+  var model = editor.getSelected();
+  var definition = model && byType(model.get("type"));
+  var chooses =
+    definition &&
+    definition.fields.some(function (field) {
+      return !!field.source;
     });
-  }
-  return id;
+  if (!chooses) return;
+  var wanted = traitsFor(definition, configOf(model, definition));
+  var has = model.get("traits");
+  // A collection once GrapesJS has built it, a plain list before.
+  var list = has && typeof has.map === "function" && !Array.isArray(has) ? has.map(function (trait) { return trait; }) : has;
+  if (choiceIds(list) === choiceIds(wanted)) return;
+  model.set("traits", wanted);
 }
 
 function fieldOf(definition, key) {
@@ -1220,6 +1257,8 @@ module.exports = {
   noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
   suggest: suggest,
+  refreshChoices: refreshChoices,
+  choicesFor: choicesFor,
   namedMidiInput: namedMidiInput,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,

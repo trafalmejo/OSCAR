@@ -282,43 +282,49 @@ test("the MIDI section is there while the switch is on, and gone, with nothing e
   }
 });
 
-test("the Port setting is offered the ports there are, and stays free text", () => {
-  const { suggest, sectionLights } = require("../public/src/adapters/grapesjs");
+test("the port settings are dropdowns: the first port, for listening every port, the ports there are, and the widget's own if it is unplugged", () => {
+  const { suggest, choicesFor, toTrait } = require("../public/src/adapters/grapesjs");
   const slider = WIDGETS.find((w) => w.name === "oscar-slider");
-  const port = slider.fields.find((f) => f.key === "midiPort");
-  assert.strictEqual(port.type, "text", "a port unplugged for the night is still this widget's port");
-  assert.strictEqual(port.source, "midi-outputs");
+  const inPort = slider.fields.find((f) => f.key === "midiInPort");
+  const outPort = slider.fields.find((f) => f.key === "midiPort");
+  assert.deepStrictEqual([inPort.type, outPort.type], ["select", "select"]);
 
-  const made = {};
-  const el = (tag) => {
-    const node = { tag, attrs: {}, children: [], firstChild: null };
-    node.setAttribute = (k, v) => { node.attrs[k] = String(v); };
-    node.getAttribute = (k) => (k in node.attrs ? node.attrs[k] : null);
-    node.appendChild = (child) => { node.children.push(child); node.firstChild = node.children[0]; return child; };
-    node.removeChild = (child) => { node.children = node.children.filter((c) => c !== child); node.firstChild = node.children[0] || null; };
-    node.querySelector = (sel) => (sel === "input" ? node.input : sel === ".gjs-label" ? node.label : null);
-    return node;
-  };
-  const doc = { body: el("body"), createElement: el, getElementById: (id) => made[id] || null };
-  doc.body.appendChild = (child) => { made[child.id] = child; return child; };
+  suggest("midi-inputs", ["nanoKONTROL2", "Launchpad Mini"]);
+  suggest("midi-outputs", ["Launchpad Mini"]);
+  const names = (field, value) => choicesFor(field, value).map((option) => option.name);
+  assert.deepStrictEqual(names(inPort, ""), ["First port", "All MIDI inputs", "nanoKONTROL2", "Launchpad Mini"]);
+  assert.deepStrictEqual(names(outPort, ""), ["First port", "Launchpad Mini"], "there is no sending to every port");
+  assert.deepStrictEqual(toTrait(inPort, { midiInPort: "All MIDI inputs" }).options.length, 4, "a choice that is offered is not added again");
 
-  const row = el("div");
-  row.attrs = { title: port.hint, "data-oscar-field": "midiPort" };
-  row.input = el("input");
-  row.label = el("label");
-  const root = { querySelectorAll: (sel) => (sel.indexOf("data-oscar-section") !== -1 ? [] : [row]) };
-  const model = { get: (k) => (k === "type" ? "oscar-slider" : slider.defaults[k]), on: () => {}, off: () => {} };
-  const editor = { getSelected: () => model, on: () => {} };
+  // Unplugged for the night: still this widget's port, and shown as it is. A
+  // dropdown that could not show it would show another, and the next edit would save that.
+  const unplugged = choicesFor(inPort, "Faderfox");
+  assert.deepStrictEqual(unplugged[unplugged.length - 1], { id: "Faderfox", name: "Faderfox (not connected)" });
+});
 
-  suggest("midi-outputs", ["IAC Bus 1", "Launchpad"]);
-  sectionLights(editor, { document: doc, root })();
-  assert.strictEqual(row.input.attrs.list, "oscar-suggest-midi-outputs");
-  assert.deepStrictEqual(made["oscar-suggest-midi-outputs"].children.map((o) => o.value), ["IAC Bus 1", "Launchpad"]);
+test("the dropdown of the selected widget is redrawn when a port is plugged in, and not otherwise", () => {
+  const { suggest } = require("../public/src/adapters/grapesjs");
+  const slider = WIDGETS.find((w) => w.name === "oscar-slider");
+  const values = Object.assign({ type: "oscar-slider" }, slider.defaults, { midiListen: true });
+  let redrawn = 0;
+  const model = { get: (k) => (k === "traits" ? model.traits : values[k]), set: (k, traits) => { if (k === "traits") { redrawn++; model.traits = traits; } } };
+  const editor = { getSelected: () => model };
 
-  // Unplugged: the list follows, and is not rebuilt when nothing changed.
-  suggest("midi-outputs", ["IAC Bus 1"]);
-  sectionLights(editor, { document: doc, root })();
-  assert.deepStrictEqual(made["oscar-suggest-midi-outputs"].children.map((o) => o.value), ["IAC Bus 1"]);
+  suggest("midi-inputs", ["nanoKONTROL2"], editor);
+  assert.strictEqual(redrawn, 1);
+  const options = model.traits.find((t) => t.name === "midiInPort").options.map((o) => o.name);
+  assert.ok(options.includes("nanoKONTROL2") && options.includes("All MIDI inputs"));
+  assert.strictEqual(model.traits.find((t) => t.name === "midiInPort").category.open, true, "a section that is only listening stays open through it");
+
+  suggest("midi-inputs", ["nanoKONTROL2"], editor);
+  assert.strictEqual(redrawn, 1, "asked on every selection; redrawn only on a change");
+  suggest("midi-inputs", ["nanoKONTROL2", "Launchpad Mini"], editor);
+  assert.strictEqual(redrawn, 2);
+
+  // A widget with no port settings is left alone.
+  const meter = { get: (k) => (k === "type" ? "oscar-meter" : undefined), set: () => { redrawn = 99; } };
+  suggest("midi-inputs", [], { getSelected: () => meter });
+  assert.strictEqual(redrawn, 2);
 });
 
 test("GET /midi/ports names the ports for the editor, and for nobody a locked OSCAR would turn away", async () => {

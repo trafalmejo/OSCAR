@@ -255,7 +255,7 @@ var projectFormat = require("../../lib/project-format");
 var projectsTable = require("../../lib/projects-table");
 var widgetStyles = require("../../lib/widget-styles");
 var htmlDocument = require("../../lib/html-document");
-var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest } = require("./adapters/grapesjs");
+var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest, refreshChoices } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
 var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
@@ -263,7 +263,6 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
 var features = require("../../lib/features");
-var { ALL_INPUTS } = require("../../lib/midi/spec");
 
 var oscarExport = require("./export_dialog");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -470,14 +469,21 @@ function initGrape(ipServer, socketPort, oscInPort) {
           return res.ok ? res.json() : null;
         })
         .then(function (ports) {
-          if (ports) suggest("midi-outputs", ports.outputs);
-          // In words, first: every port is a choice somebody has to make (lib/midi/spec.js).
-          if (ports) suggest("midi-inputs", [ALL_INPUTS].concat(ports.inputs));
+          if (ports) suggest("midi-outputs", ports.outputs, editor);
+          if (ports) suggest("midi-inputs", ports.inputs, editor);
         })
         .catch(function () {});
     };
     askForMidiPorts();
-    editor.on("component:selected", askForMidiPorts);
+    editor.on("component:selected", function () {
+      // With what is known already, at once; then with what the server says.
+      refreshChoices(editor);
+      askForMidiPorts();
+    });
+    // Learn, and ticking Data in, can name a port the dropdown has not got.
+    editor.on("component:update:midiInPort component:update:midiPort", function () {
+      refreshChoices(editor);
+    });
   }
 
   var pn = editor.Panels;
