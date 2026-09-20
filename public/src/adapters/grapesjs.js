@@ -10,6 +10,7 @@
 var { WIDGETS } = require("../../../lib/widgets");
 var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var features = require("../../../lib/features");
+var { isListening } = require("../../../lib/midi/spec");
 var { midiSource } = require("../../../lib/widgets/midi-source");
 var { exportAttributes } = require("../../../lib/export/config");
 
@@ -667,6 +668,17 @@ function register(definition) {
             });
           }
 
+          // Ticking MIDI's Data in with no In port named would listen on
+          // every port, and on Windows a port OSCAR has open is taken from
+          // every other program. So it is given one: the first there is.
+          // Learn names the right one; clearing the box still means them all.
+          if (definition.fields.some(function (field) { return field.key === "midiListen"; })) {
+            model.on("change:midiListen", function () {
+              var port = namedMidiInput(configOf(model, definition));
+              if (port) model.set("midiInPort", port);
+            });
+          }
+
           if (definition.text) {
             model.on("change:" + definition.text, function () {
               model.components(String(model.get(definition.text) || ""));
@@ -1130,6 +1142,13 @@ function sectionLights(editor, options) {
  */
 var suggestions = {};
 
+/** The In port to give a widget whose Data in was just ticked, or null to leave it as it is. */
+function namedMidiInput(config) {
+  if (!isListening(config) || String(config.midiInPort || "").trim()) return null;
+  var inputs = suggestions["midi-inputs"] || [];
+  return inputs.length ? inputs[0] : null;
+}
+
 function suggest(source, values) {
   suggestions[source] = Array.isArray(values) ? values.slice() : [];
   if (typeof document !== "undefined") listFor(document, source);
@@ -1198,6 +1217,7 @@ module.exports = {
   noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
   suggest: suggest,
+  namedMidiInput: namedMidiInput,
   parsed: parsed,
   followSurfaceStyle: followSurfaceStyle,
   exportSnapshot: exportSnapshot,

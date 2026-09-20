@@ -143,3 +143,13 @@ test("MIDI Learn fills port, channel, type and number from what was played, or s
   p.click("midi");
   assert.strictEqual(stopped, 1, "calling it off tells the server to stop waiting");
 });
+
+test("ticking MIDI's Data in names a port, so OSCAR does not take every controller from every other program", () => {
+  const { suggest, namedMidiInput } = require("../public/src/adapters/grapesjs");
+  suggest("midi-inputs", ["nanoKONTROL2", "Launchpad Mini"]);
+  assert.strictEqual(namedMidiInput({ midiListen: true, midiInPort: "" }), "nanoKONTROL2", "the first there is");
+  assert.strictEqual(namedMidiInput({ midiListen: true, midiInPort: "Launchpad" }), null, "one that is named is left alone");
+  assert.strictEqual(namedMidiInput({ midiListen: false, midiInPort: "" }), null, "only when Data in goes on");
+  suggest("midi-inputs", []);
+  assert.strictEqual(namedMidiInput({ midiListen: true, midiInPort: "" }), null, "nothing plugged in: nothing to choose from");
+});
