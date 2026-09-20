@@ -83,3 +83,13 @@
     transition: none;
   }
 }
+
+/* GrapesJS makes every panel a stacking context of its own (position:
+   absolute; z-index: 3), so a tooltip's z-index only counts inside its panel.
+   The right-hand column is a panel too, comes later in the page and has the
+   same z-index, so it painted over the tooltips of the last toolbar buttons.
+   The toolbar is lifted above it; it is only as big as its buttons, so
+   nothing else ends up covered. */
+.gjs-pn-options {
+  z-index: 5;
+}
