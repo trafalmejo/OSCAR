@@ -6,7 +6,7 @@ const cors = require("cors");
 const osc = require("osc");
 const { Server } = require("socket.io");
 
-const { lanAddress } = require("./lib/net");
+const { lanAddress, isLoopbackAddress } = require("./lib/net");
 const { ProjectStore } = require("./lib/projects");
 const { PublishedStore } = require("./lib/published");
 const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
@@ -115,9 +115,10 @@ function diagnostics() {
 
 // Up here for the reason the serial cable is: diagnostics() is handed to the
 // router, and reads this.
+const MIDI_EVENTS = { open: "sending to", closed: "let go of", listening: "listening to", deaf: "stopped listening to" };
 const midi = createMidi({
-  onEvent: (event, name) => console.log(event === "open" ? "MIDI: sending to " + name : "MIDI: let go of " + name),
-  onError: (err) => console.error("MIDI could not be sent: " + reason(err)),
+  onEvent: (event, name) => console.log("MIDI: " + MIDI_EVENTS[event] + " " + name),
+  onError: (err) => console.error("MIDI: " + reason(err)),
 });
 
 function sendMIDI(input) {
@@ -181,8 +182,7 @@ app.use(
     store,
     serverIP: () => serverIP,
     socketPort: () => SOCKET_PORT,
-    // Outputs only: all the Port setting suggests from, until MIDI comes in too.
-    midiPorts: () => midi.ports({ inputs: false }),
+    midiPorts: () => midi.ports(),
     oscInPort: () => OSC_IN_PORT,
     updates,
     diagnostics,
@@ -427,6 +427,31 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Learn: the next thing anybody plays, for the editor to fill a widget's
+  // MIDI settings from. It names the hardware, so it is for whoever may edit.
+  socket.on("midi:learn", () => {
+    if (lock.isLocked() && !isLoopbackAddress(socket.handshake.address)) {
+      socket.emit("midi:learned", { error: "OSCAR is locked." });
+      return;
+    }
+    if (!midi.supported) {
+      socket.emit("midi:learned", { error: midi.status().reason || "This build of OSCAR cannot use MIDI." });
+      return;
+    }
+    const stop = midi.learn((result) => {
+      socket.off("disconnect", stop);
+      socket.off("midi:learn:stop", stop);
+      socket.emit(
+        "midi:learned",
+        result
+          ? { port: result.port, type: result.heard.type, channel: result.heard.channel, number: result.heard.number }
+          : { error: "Nothing was played." }
+      );
+    });
+    socket.once("disconnect", stop);
+    socket.once("midi:learn:stop", stop);
+  });
+
   // A widget giving its channels up: deleted, or switched back to OSC. This
   // is the only thing that releases channels short of quitting. A browser
   // disconnecting deliberately does not, because a phone locking its screen
@@ -442,6 +467,25 @@ io.on("connection", (socket) => {
 // Acting on a published surface with no browser showing it (lib/surfaces.js):
 // which widget and what state, never where to send.
 const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io });
+
+// MIDI in. A controller works a widget as a hand would, and it is done here,
+// once, not by each tablet showing the surface (lib/widgets/midi-in.js). Only
+// the ports the published widgets name are opened, and they are asked after
+// again every few seconds, which is also how a surface published a moment ago
+// starts being listened for.
+midi.onMessage((heard, port) => {
+  surfaces.hearMidi(heard, port).catch((err) => console.error("MIDI in: " + reason(err)));
+});
+function listenForMidi() {
+  surfaces
+    .midiPorts()
+    .then((parts) => midi.listenFor(parts))
+    .catch((err) => console.error("MIDI in: " + reason(err)));
+}
+if (midi.supported) {
+  listenForMidi();
+  setInterval(listenForMidi, 3000).unref();
+}
 
 // Last, so an extension finds everything it is handed already working.
 extensions.start({

@@ -60,6 +60,32 @@ function oscar_socket(editor, options) {
     editor.socket.emit("midi", request);
   };
 
+  /**
+   * Learn: the next note, controller, program or bend anybody plays.
+   * fn({ port, type, channel, number }) or fn({ error }). Returns a way to
+   * stop waiting. The server gives up by itself after a while.
+   */
+  editor.learnMidi = function (fn) {
+    if (!editor.socket) {
+      fn({ error: "Not connected to OSCAR." });
+      return function () {};
+    }
+    var done = false;
+    var heard = function (result) {
+      if (done) return;
+      done = true;
+      fn(result || { error: "Nothing was played." });
+    };
+    editor.socket.once("midi:learned", heard);
+    editor.socket.emit("midi:learn");
+    return function () {
+      if (done) return;
+      done = true;
+      editor.socket.off("midi:learned", heard);
+      editor.socket.emit("midi:learn:stop");
+    };
+  };
+
   /** Give a widget's channels up. Sent when a widget is deleted or leaves DMX. */
   editor.stopDMX = function (source) {
     if (!editor.socket) return;

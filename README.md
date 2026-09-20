@@ -198,6 +198,12 @@ in two-message mode), and a toggle button lights up and adopts the state, so
 the next press sends the opposite edge. A momentary button only lights up,
 because its state is your finger's.
 
+You do not have to type the address. Click **Learn** on the title of the
+widget's OSC section, then send a message from your software (move the thing you
+want the widget to follow). The widget takes the address of the first message
+that arrives and turns **Data in** on. Learn gives up after fifteen seconds, and a
+second click calls it off.
+
 Data in is off by default, so nothing starts moving on its own. Untick **Data
 out** and a widget keeps following the rig while sending nothing. **Master
 comms**, at the top of every widget, is over all of it: a widget with it off
@@ -294,8 +300,10 @@ any of the three can be on at once.
 
 | Setting | |
 | --- | --- |
-| **Port** | The MIDI port to send to, as the computer running OSCAR names it. The box suggests the ports there are. Part of a name is enough ("launchpad"), and blank means the first port. |
-| **Channel** | 1 to 16. |
+| **Data in**, **Data out** | A checkbox per direction, as for OSC. Both off on a new widget. |
+| **In port** | The MIDI port to listen on. Part of a name is enough, and blank means every port. |
+| **Out port** | The MIDI port to send to, as the computer running OSCAR names it. The box suggests the ports there are. Part of a name is enough ("launchpad"), and blank means the first port. |
+| **Channel** | 1 to 16. Shared by both directions, as Type and Number are. |
 | **Type** | Control change, Note, Program change or Pitch bend. |
 | **Number** | The controller or note number, 0 to 127. |
 
@@ -320,11 +328,47 @@ bridge does the same.
 OSCAR opens a port the first time a widget sends to it and keeps it open. If the
 instrument is unplugged, it is looked for again every two seconds and picked up
 when it returns. Only notes, controllers, programs and bends are sent; system
-exclusive and clock are refused. MIDI **in** is not there yet.
+exclusive and clock are refused.
+
+#### MIDI in: a controller that works your widgets
+
+Tick **Data in** in the MIDI section and a knob, fader or pad on a MIDI
+controller works the widget **as a hand would**: the widget moves on every
+device showing the surface, and sends its OSC and DMX. That is the difference
+from OSC's Data in, which follows software reporting where it already is and
+sends nothing on. A cheap MIDI fader box becomes a controller for anything OSCAR
+can reach.
+
+Click **Learn** on the title of the MIDI section and touch the control: the
+widget takes its port, channel, type and number. While Learn is waiting, what
+you play moves no other widget.
+
+- A fader, a number box: the level, across the widget's own Min to Max.
+- A button: held while a note is held; with a controller, on from halfway up. A
+  button set to Toggle changes over on each press and ignores the release.
+- A dropdown: a program change picks the option with that value, or failing
+  that the option at that position. Any other message picks along the list.
+- A pad: the Number is X and the next one up is Y. A colour: red, green and blue
+  on three in a row. What is not touched stays where it was.
+
+What comes in by MIDI is **never sent back out as MIDI**, even with Data out
+on: through a virtual port it would come straight back in, for ever. A hand on
+the same widget still sends MIDI.
+
+It happens on a **published** surface, because OSCAR itself does the moving,
+once, however many tablets are showing the surface; if each tablet answered the
+knob, the rig would hear every move several times. So publish to try it: the
+widget in the editor's canvas does not follow the controller. A surface
+published a moment ago is listened for within a few seconds.
+
+OSCAR only opens the input ports your published widgets name, or every port if
+one of them names none. On Windows a MIDI input belongs to whichever program
+opened it first, so a controller OSCAR is listening to is not available to other
+software, and the other way round; the console says when a port is in use.
 
 `MIDI` in `lib/features.js` hides the section if it has to be taken out of a
 release. About (Report a problem) says how many ports OSCAR can see, which is
-the first thing to check when nothing arrives.
+the first thing to check when nothing arrives or nothing is heard.
 
 ### Locking an installation
 

@@ -235,16 +235,17 @@ test("each direction of a section has its own light, on only when it would reall
   const { textInput } = require("../../lib/widgets/text-input");
   const of = (overrides) => sectionStatus(slider.fields, Object.assign({}, slider.defaults, overrides));
 
-  assert.deepStrictEqual(of({}), { osc: { in: false, out: true }, dmx: { out: false }, midi: { out: false } }, "a new slider sends OSC and nothing else");
-  assert.deepStrictEqual(of({ listen: true }), { osc: { in: true, out: true }, dmx: { out: false }, midi: { out: false } });
-  assert.deepStrictEqual(of({ listen: true, oscEnabled: false }), { osc: { in: true, out: false }, dmx: { out: false }, midi: { out: false } }, "following the rig while sending nothing");
-  assert.deepStrictEqual(of({ oscEnabled: false, dmxEnabled: true }), { osc: { in: false, out: false }, dmx: { out: true }, midi: { out: false } });
+  assert.deepStrictEqual(of({}), { osc: { in: false, out: true }, dmx: { out: false }, midi: { in: false, out: false } }, "a new slider sends OSC and nothing else");
+  assert.deepStrictEqual(of({ listen: true }), { osc: { in: true, out: true }, dmx: { out: false }, midi: { in: false, out: false } });
+  assert.deepStrictEqual(of({ listen: true, oscEnabled: false }), { osc: { in: true, out: false }, dmx: { out: false }, midi: { in: false, out: false } }, "following the rig while sending nothing");
+  assert.deepStrictEqual(of({ oscEnabled: false, dmxEnabled: true }), { osc: { in: false, out: false }, dmx: { out: true }, midi: { in: false, out: false } });
   // The master switch stops every direction of every protocol. Green over a
   // widget it has silenced would be a lie, and the collapsed section is the
   // one that gets trusted at a glance.
-  assert.deepStrictEqual(of({ listen: true, dmxEnabled: true, enabled: false }), { osc: { in: false, out: false }, dmx: { out: false }, midi: { out: false } });
-  assert.deepStrictEqual(of({ midiEnabled: true }).midi, { out: true });
-  assert.deepStrictEqual(of({ midiEnabled: true, enabled: false }).midi, { out: false }, "the master switch silences MIDI too");
+  assert.deepStrictEqual(of({ listen: true, dmxEnabled: true, enabled: false }), { osc: { in: false, out: false }, dmx: { out: false }, midi: { in: false, out: false } });
+  assert.deepStrictEqual(of({ midiEnabled: true }).midi, { in: false, out: true });
+  assert.deepStrictEqual(of({ midiListen: true }).midi, { in: true, out: false }, "a controller working the widget, which says nothing back");
+  assert.deepStrictEqual(of({ midiEnabled: true, midiListen: true, enabled: false }).midi, { in: false, out: false }, "the master switch silences MIDI too");
   assert.deepStrictEqual(of({ transport: "dmx" }).dmx, { out: true }, "an old project's Output word counts");
 
   // A direction the widget does not have has no light: DMX never listens,

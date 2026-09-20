@@ -823,6 +823,46 @@ a {
   vertical-align: middle;
 }
 
+/* Learn: beside the lights, on the sections that can be taught from what
+   arrives. Small, because it sits in a title; amber while it is waiting. */
+.oscar-learn {
+  padding: 2px 7px;
+  border: 1px solid var(--gray-7);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--o-text-muted);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.oscar-learn:hover {
+  border-color: var(--gray-9);
+  color: var(--o-text-muted);
+}
+
+.oscar-learn[data-busy="true"] {
+  border-color: #ffc53d;
+  color: #ffc53d;
+  animation: oscar-learn-wait 1s ease-in-out infinite alternate;
+}
+
+@keyframes oscar-learn-wait {
+  to {
+    box-shadow: 0 0 0 3px color-mix(in srgb, #ffc53d 25%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oscar-learn[data-busy="true"] {
+    animation: none;
+  }
+}
+
 .oscar-section-light {
   display: inline-flex;
   align-items: center;

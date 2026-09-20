@@ -18,13 +18,23 @@ function fakeLibrary(outputs, inputs, log) {
   return { Output: port(outputs), Input: port(inputs) };
 }
 
-test("the ports this computer has are listed by name, and every port asked is let go of", () => {
+test("the ports this computer has are listed by name, off one port kept for asking, which is let go of at the end", () => {
   const log = [];
-  const driver = loadDriver(() => fakeLibrary(["IAC Bus 1", "Launchpad"], ["Launchpad"], log));
+  let made = 0;
+  const library = fakeLibrary(["IAC Bus 1", "Launchpad"], ["Launchpad"], log);
+  const count = (Port) => class extends Port { constructor() { super(); made++; } };
+  const driver = loadDriver(() => ({ Output: count(library.Output), Input: count(library.Input) }));
   const midi = createMidi({ driver });
   assert.strictEqual(midi.supported, true);
-  assert.deepStrictEqual(midi.ports(), { supported: true, reason: null, outputs: ["IAC Bus 1", "Launchpad"], inputs: ["Launchpad"] });
-  assert.deepStrictEqual(log, ["destroy", "destroy"], "a probe that is kept holds the system's MIDI service open");
+  for (let i = 0; i < 3; i++) {
+    assert.deepStrictEqual(midi.ports(), { supported: true, reason: null, outputs: ["IAC Bus 1", "Launchpad"], inputs: ["Launchpad"] });
+  }
+  // Making a port is the slow part, and the part the library complains
+  // about on stderr when nothing is plugged in. Once each, however often asked.
+  assert.strictEqual(made, 2);
+  assert.deepStrictEqual(log, []);
+  midi.close();
+  assert.deepStrictEqual(log, ["destroy", "destroy"], "a probe that is kept for ever holds the system's MIDI service open");
 });
 
 test("a build where the library will not load says so, and OSCAR carries on", () => {

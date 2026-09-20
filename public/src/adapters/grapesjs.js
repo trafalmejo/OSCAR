@@ -845,9 +845,87 @@ var DIRECTIONS = [
   { id: "out", tag: "OUT", label: "Data out", field: "oscEnabled" },
 ];
 
+// How long Learn waits for OSC. For MIDI the server keeps the time (lib/midi).
+var LEARN_MS = 15000;
+
+/**
+ * Learn, per section: what is needed to start listening, and the settings to
+ * write from what was heard. A section is offered Learn when the selected
+ * widget has the section's Data in setting and the editor can hear that way.
+ */
+var LEARNERS = {
+  osc: {
+    field: "listen",
+    can: function (editor) {
+      return typeof editor.onOscIn === "function";
+    },
+    start: function (editor, config, done) {
+      var timer = null;
+      var stop = editor.onOscIn(function (message) {
+        var address = message.address;
+        // A pad sending its axes apart listens on /address/x and /address/y,
+        // and one of those is what arrives. The setting is the part before.
+        if (config.sendMode === "two") address = address.replace(/\/[xy]$/, "");
+        finish({ message: address, listen: true });
+      });
+      function finish(settings) {
+        clearTimeout(timer);
+        stop();
+        done(settings);
+      }
+      timer = setTimeout(function () {
+        finish(null);
+      }, LEARN_MS);
+      return function () {
+        clearTimeout(timer);
+        stop();
+      };
+    },
+  },
+  midi: {
+    field: "midiListen",
+    can: function (editor) {
+      return typeof editor.learnMidi === "function";
+    },
+    start: function (editor, config, done) {
+      return editor.learnMidi(function (result) {
+        if (!result || result.error) return done(null, result && result.error);
+        done({ midiInPort: result.port, midiChannel: result.channel, midiType: result.type, midiNumber: result.number, midiListen: true });
+      });
+    },
+  },
+};
+
 function sectionLights(editor, options) {
   var doc = (options && options.document) || document;
   var root = (options && options.root) || doc;
+  // The one Learn in progress, if any: { section, model, stop }, and the last
+  // thing to tell about one that ended: { section, model, text }.
+  var learning = null;
+  var told = null;
+
+  function endLearning() {
+    if (learning) learning.stop();
+    learning = null;
+  }
+
+  function learn(sectionId, model, definition) {
+    var same = learning && learning.section === sectionId && learning.model === model;
+    endLearning();
+    told = null;
+    // A second click calls it off.
+    if (same) return paint();
+    var entry = { section: sectionId, model: model, stop: function () {} };
+    learning = entry;
+    entry.stop = LEARNERS[sectionId].start(editor, configOf(model, definition), function (settings, complaint) {
+      if (learning !== entry) return;
+      learning = null;
+      if (settings) model.set(settings);
+      told = { section: sectionId, model: model, text: settings ? "Learned" : complaint || "Nothing heard" };
+      paint();
+    });
+    paint();
+  }
   // What the server said of itself: { listeningPort }, the one OSC in port.
   var server = { listeningPort: options && options.listeningPort };
   var watched = null;
@@ -873,6 +951,7 @@ function sectionLights(editor, options) {
         holder.className = "oscar-section-lights";
         title.appendChild(holder);
       }
+      paintLearn(holder, section.getAttribute(SECTION_ATTRIBUTE), model, definition);
       DIRECTIONS.forEach(function (direction) {
         var light = holder.querySelector('[data-direction="' + direction.id + '"]');
         if (!(direction.id in directions)) {
@@ -925,12 +1004,52 @@ function sectionLights(editor, options) {
     });
   }
 
+  /** The section's Learn button: there if the widget can be taught that way, and saying how it is going. */
+  function paintLearn(holder, sectionId, model, definition) {
+    var learner = LEARNERS[sectionId];
+    var offered = !!(learner && definition && fieldOf(definition, learner.field) && learner.can(editor));
+    var button = holder.querySelector(".oscar-learn");
+    if (!offered) {
+      if (button) holder.removeChild(button);
+      return;
+    }
+    if (!button) {
+      button = doc.createElement("button");
+      button.className = "oscar-learn";
+      button.setAttribute("type", "button");
+      button.addEventListener("click", function (event) {
+        // The title it sits on folds the section when clicked.
+        event.stopPropagation();
+        var selected = editor.getSelected();
+        var type = selected && byType(selected.get("type"));
+        if (type) learn(holder.getAttribute("data-learn-section"), selected, type);
+      });
+      holder.appendChild(button);
+    }
+    holder.setAttribute("data-learn-section", sectionId);
+    var busy = !!(learning && learning.section === sectionId && learning.model === model);
+    var said = told && told.section === sectionId && told.model === model ? told.text : null;
+    var text = busy ? "Listening..." : said || "Learn";
+    // Written only when it differs: the panel is watched for changes, and a
+    // button rewritten on every look would be one.
+    if (button.textContent !== text) button.textContent = text;
+    if (button.getAttribute("data-busy") !== String(busy)) button.setAttribute("data-busy", String(busy));
+    button.setAttribute(
+      "title",
+      busy
+        ? "Waiting for a message. Click to stop."
+        : sectionId === "midi"
+        ? "Touch a control on your MIDI controller and this widget takes its port, channel, type and number."
+        : "Send an OSC message from your software and this widget takes its address."
+    );
+  }
+
   function watch(model) {
     if (unwatch) unwatch();
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:ip change:port";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:midiListen change:ip change:port";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);
@@ -938,6 +1057,9 @@ function sectionLights(editor, options) {
   }
 
   editor.on("component:selected component:deselected", function () {
+    // Learn belongs to the widget it was started on.
+    endLearning();
+    told = null;
     watch(editor.getSelected());
     // The panel is drawn after the selection is announced.
     setTimeout(paint, 0);

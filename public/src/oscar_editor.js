@@ -470,6 +470,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         })
         .then(function (ports) {
           if (ports) suggest("midi-outputs", ports.outputs);
+          if (ports) suggest("midi-inputs", ports.inputs);
         })
         .catch(function () {});
     };

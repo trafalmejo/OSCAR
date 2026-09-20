@@ -636,6 +636,58 @@ function midiMessages(config, raw, units) {
   });
 }
 
+/**
+ * What arrived, in the words the settings use, or null for anything that is
+ * not a note, a controller, a program or a bend.
+ *
+ *   { type, channel, number, unit }
+ *
+ * `unit` is the level as 0..1, the reading a widget's range is scaled from.
+ * A note off, and a note on at velocity 0, which means the same, are a note
+ * at 0. A program has no level of its own: its number is its position.
+ */
+function readMidi(bytes) {
+  if (!bytes || typeof bytes.length !== "number" || bytes.length < 2) return null;
+  const status = bytes[0] & 0xf0;
+  const channel = (bytes[0] & 0x0f) + 1;
+  const a = bytes[1];
+  const b = bytes.length > 2 ? bytes[2] : 0;
+  if (!(bytes[0] >= 0x80 && bytes[0] <= 0xef) || a > MAX_DATA || b > MAX_DATA) return null;
+  if (status === STATUS.noteOn) return { type: "note", channel: channel, number: a, unit: b / MAX_DATA };
+  if (status === STATUS.noteOff) return { type: "note", channel: channel, number: a, unit: 0 };
+  if (status === STATUS.cc) return { type: "cc", channel: channel, number: a, unit: b / MAX_DATA };
+  if (status === STATUS.program) return { type: "program", channel: channel, number: a, unit: a / MAX_DATA };
+  if (status === STATUS.pitch) return { type: "pitch", channel: channel, number: 0, unit: ((b << 7) | a) / MAX_BEND };
+  return null;
+}
+
+function isListening(config) {
+  return isOn(config && config.midiListen);
+}
+
+/**
+ * Whether what arrived is this widget's, and if so which of its values it
+ * carries: 0 for the first, 1 for a pad's Y or a colour's green. -1 if not.
+ *
+ * The mirror of midiMessages(): a widget with several values listens on the
+ * numbers it would send on. `port` is the name of the port it came in by; a
+ * widget with no In port named takes it from any.
+ *
+ * @param {number} values how many values the widget has
+ */
+function midiIndex(config, heard, port, values) {
+  if (!config || !config.enabled || !isListening(config) || !heard) return -1;
+  if (heard.type !== config.midiType) return -1;
+  if (whole(config.midiChannel, 1, CHANNELS) !== heard.channel) return -1;
+  const wanted = typeof config.midiInPort === "string" ? config.midiInPort.trim().toLowerCase() : "";
+  if (wanted && String(port || "").toLowerCase().indexOf(wanted) === -1) return -1;
+  if (heard.type === "program" || heard.type === "pitch") return 0;
+  const first = whole(config.midiNumber, 0, MAX_DATA);
+  if (first === null) return -1;
+  const index = heard.number - first;
+  return index >= 0 && index < (values || 1) ? index : -1;
+}
+
 /** The MIDI half of an outgoing message, or null: { port, messages }. */
 function midiRequest(config, raw, units) {
   const messages = midiMessages(config, raw, units);
@@ -652,6 +704,9 @@ module.exports = {
   whole: whole,
   midiMessages: midiMessages,
   midiRequest: midiRequest,
+  readMidi: readMidi,
+  isListening: isListening,
+  midiIndex: midiIndex,
 };
 
 },{}],7:[function(require,module,exports){
@@ -2849,7 +2904,7 @@ const { isPort } = require("../ports");
 const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
 const { SLOTS, PROTOCOL_OPTIONS, protocol, readHost } = require("../dmx/spec");
 const { toWhole } = require("../dmx/levels");
-const { sendsMidi } = require("../midi/spec");
+const { sendsMidi, isListening } = require("../midi/spec");
 
 const TYPES = ["text", "number", "select", "checkbox"];
 
@@ -2905,7 +2960,7 @@ const MASTER_HINT =
  * Which directions of each protocol section are live on a widget, for the
  * lights the panel draws on the section's title so it can be read collapsed.
  *
- *   { osc: { in: true, out: false }, dmx: { out: true }, midi: { out: false } }
+ *   { osc: { in: true, out: false }, dmx: { out: true }, midi: { in: false, out: false } }
  *
  * A direction the widget does not have is absent: a meter has no `out`, DMX
  * never has an `in`, and a section the widget lacks is not there at all.
@@ -2925,7 +2980,7 @@ function sectionStatus(fields, config) {
   if (Object.keys(osc).length) status.osc = osc;
 
   if (has("dmxEnabled")) status.dmx = { out: master && sendsDmx(config) };
-  if (has("midiEnabled")) status.midi = { out: master && sendsMidi(config) };
+  if (has("midiEnabled")) status.midi = { in: master && isListening(config), out: master && sendsMidi(config) };
   return status;
 }
 
@@ -3459,7 +3514,9 @@ module.exports = { incoming, follow };
  *             OSC would be a second Enabled. The same widgets speak MIDI, the
  *             same way, from lib/widgets/midi-fields.js: midiFields(),
  *             midiDefaults(kind) and midiChecks(n), scaled from the same 0..1
- *             by lib/midi/spec.js. The widget scales its gesture to 0..1 with unitOf()
+ *             by lib/midi/spec.js. MIDI coming in is not the widget's to
+ *             handle: the server reads it and calls drive() (midi-in.js).
+ *             The widget scales its gesture to 0..1 with unitOf()
  *             from lib/dmx/levels.js and passes that as outgoing()'s third
  *             argument; outgoing() builds the DMX half. A widget that sends
  *             text, or sends nothing, sets false. Implies sends.
@@ -4394,14 +4451,26 @@ module.exports = { meter, PEAK_CLASS };
  * the way dmxFields(), dmxDefaults() and dmxChecks() in fields.js make it
  * speak DMX.
  *
- * MIDI only runs one way for now, from the widget to the instrument, so the
- * section has the one direction, named as the other sections name theirs.
+ * It runs both ways, like OSC, and the two directions share Channel, Type and
+ * Number: the knob that moves a fader is the knob a motorised controller
+ * expects to hear back about. They do not share a port, because a computer
+ * names its MIDI inputs and its outputs apart. What coming in does to a widget
+ * is in midi-in.js.
  */
 
 const { field } = require("./fields");
 const { TYPES, CHANNELS, MAX_DATA, whole } = require("../midi/spec");
 
 const DATA_OUT_HINT = "Send this widget's value as MIDI when it is used.";
+
+const DATA_IN_HINT =
+  "Let a MIDI controller work this widget, as a hand would: it moves, and sends its OSC and DMX. " +
+  "What comes in is never sent back out as MIDI. This happens on a published surface, where OSCAR itself " +
+  "does the moving, so publish to try it. Learn fills in the settings below from the next control you touch.";
+
+const IN_PORT_HINT =
+  "The MIDI port to listen on, as this computer names it. Part of the name is enough. " +
+  "Leave it blank to listen on every port.";
 
 const PORT_HINT =
   "The MIDI port to send to, as this computer names it. Part of the name is enough. " +
@@ -4414,10 +4483,12 @@ const NUMBER_HINT =
 function midiFields() {
   const only = { section: "midi" };
   return [
+    field("midiListen", "Data in", "checkbox", Object.assign({ hint: DATA_IN_HINT }, only)),
     field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)),
     // `source` names a list the host may offer as suggestions. It stays a
     // text field: a port unplugged for the night is still this widget's port.
-    field("midiPort", "Port", "text", Object.assign({ placeholder: "first port", hint: PORT_HINT, source: "midi-outputs" }, only)),
+    field("midiInPort", "In port", "text", Object.assign({ placeholder: "every port", hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
+    field("midiPort", "Out port", "text", Object.assign({ placeholder: "first port", hint: PORT_HINT, source: "midi-outputs" }, only)),
     field("midiChannel", "Channel", "number", Object.assign({ min: 1, max: CHANNELS }, only)),
     field("midiType", "Type", "select", Object.assign({ options: TYPES }, only)),
     field("midiNumber", "Number", "number", Object.assign({ min: 0, max: MAX_DATA, hint: NUMBER_HINT }, only)),
@@ -4426,7 +4497,7 @@ function midiFields() {
 
 /** @param {string} [type] what suits the widget: "note" for a button, "program" for a list */
 function midiDefaults(type) {
-  return { midiEnabled: false, midiPort: "", midiChannel: 1, midiType: type || "cc", midiNumber: type === "note" ? 60 : 1 };
+  return { midiListen: false, midiEnabled: false, midiInPort: "", midiPort: "", midiChannel: 1, midiType: type || "cc", midiNumber: type === "note" ? 60 : 1 };
 }
 
 function checkChannel(value) {
@@ -4457,7 +4528,7 @@ function checkPort(value) {
 
 /** The validators that go with midiFields(). */
 function midiChecks(values) {
-  return { midiPort: checkPort, midiChannel: checkChannel, midiType: checkType, midiNumber: checkNumber(values) };
+  return { midiInPort: checkPort, midiPort: checkPort, midiChannel: checkChannel, midiType: checkType, midiNumber: checkNumber(values) };
 }
 
 module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiChecks: midiChecks };
@@ -20228,9 +20299,87 @@ var DIRECTIONS = [
   { id: "out", tag: "OUT", label: "Data out", field: "oscEnabled" },
 ];
 
+// How long Learn waits for OSC. For MIDI the server keeps the time (lib/midi).
+var LEARN_MS = 15000;
+
+/**
+ * Learn, per section: what is needed to start listening, and the settings to
+ * write from what was heard. A section is offered Learn when the selected
+ * widget has the section's Data in setting and the editor can hear that way.
+ */
+var LEARNERS = {
+  osc: {
+    field: "listen",
+    can: function (editor) {
+      return typeof editor.onOscIn === "function";
+    },
+    start: function (editor, config, done) {
+      var timer = null;
+      var stop = editor.onOscIn(function (message) {
+        var address = message.address;
+        // A pad sending its axes apart listens on /address/x and /address/y,
+        // and one of those is what arrives. The setting is the part before.
+        if (config.sendMode === "two") address = address.replace(/\/[xy]$/, "");
+        finish({ message: address, listen: true });
+      });
+      function finish(settings) {
+        clearTimeout(timer);
+        stop();
+        done(settings);
+      }
+      timer = setTimeout(function () {
+        finish(null);
+      }, LEARN_MS);
+      return function () {
+        clearTimeout(timer);
+        stop();
+      };
+    },
+  },
+  midi: {
+    field: "midiListen",
+    can: function (editor) {
+      return typeof editor.learnMidi === "function";
+    },
+    start: function (editor, config, done) {
+      return editor.learnMidi(function (result) {
+        if (!result || result.error) return done(null, result && result.error);
+        done({ midiInPort: result.port, midiChannel: result.channel, midiType: result.type, midiNumber: result.number, midiListen: true });
+      });
+    },
+  },
+};
+
 function sectionLights(editor, options) {
   var doc = (options && options.document) || document;
   var root = (options && options.root) || doc;
+  // The one Learn in progress, if any: { section, model, stop }, and the last
+  // thing to tell about one that ended: { section, model, text }.
+  var learning = null;
+  var told = null;
+
+  function endLearning() {
+    if (learning) learning.stop();
+    learning = null;
+  }
+
+  function learn(sectionId, model, definition) {
+    var same = learning && learning.section === sectionId && learning.model === model;
+    endLearning();
+    told = null;
+    // A second click calls it off.
+    if (same) return paint();
+    var entry = { section: sectionId, model: model, stop: function () {} };
+    learning = entry;
+    entry.stop = LEARNERS[sectionId].start(editor, configOf(model, definition), function (settings, complaint) {
+      if (learning !== entry) return;
+      learning = null;
+      if (settings) model.set(settings);
+      told = { section: sectionId, model: model, text: settings ? "Learned" : complaint || "Nothing heard" };
+      paint();
+    });
+    paint();
+  }
   // What the server said of itself: { listeningPort }, the one OSC in port.
   var server = { listeningPort: options && options.listeningPort };
   var watched = null;
@@ -20256,6 +20405,7 @@ function sectionLights(editor, options) {
         holder.className = "oscar-section-lights";
         title.appendChild(holder);
       }
+      paintLearn(holder, section.getAttribute(SECTION_ATTRIBUTE), model, definition);
       DIRECTIONS.forEach(function (direction) {
         var light = holder.querySelector('[data-direction="' + direction.id + '"]');
         if (!(direction.id in directions)) {
@@ -20308,12 +20458,52 @@ function sectionLights(editor, options) {
     });
   }
 
+  /** The section's Learn button: there if the widget can be taught that way, and saying how it is going. */
+  function paintLearn(holder, sectionId, model, definition) {
+    var learner = LEARNERS[sectionId];
+    var offered = !!(learner && definition && fieldOf(definition, learner.field) && learner.can(editor));
+    var button = holder.querySelector(".oscar-learn");
+    if (!offered) {
+      if (button) holder.removeChild(button);
+      return;
+    }
+    if (!button) {
+      button = doc.createElement("button");
+      button.className = "oscar-learn";
+      button.setAttribute("type", "button");
+      button.addEventListener("click", function (event) {
+        // The title it sits on folds the section when clicked.
+        event.stopPropagation();
+        var selected = editor.getSelected();
+        var type = selected && byType(selected.get("type"));
+        if (type) learn(holder.getAttribute("data-learn-section"), selected, type);
+      });
+      holder.appendChild(button);
+    }
+    holder.setAttribute("data-learn-section", sectionId);
+    var busy = !!(learning && learning.section === sectionId && learning.model === model);
+    var said = told && told.section === sectionId && told.model === model ? told.text : null;
+    var text = busy ? "Listening..." : said || "Learn";
+    // Written only when it differs: the panel is watched for changes, and a
+    // button rewritten on every look would be one.
+    if (button.textContent !== text) button.textContent = text;
+    if (button.getAttribute("data-busy") !== String(busy)) button.setAttribute("data-busy", String(busy));
+    button.setAttribute(
+      "title",
+      busy
+        ? "Waiting for a message. Click to stop."
+        : sectionId === "midi"
+        ? "Touch a control on your MIDI controller and this widget takes its port, channel, type and number."
+        : "Send an OSC message from your software and this widget takes its address."
+    );
+  }
+
   function watch(model) {
     if (unwatch) unwatch();
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:ip change:port";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:midiListen change:ip change:port";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);
@@ -20321,6 +20511,9 @@ function sectionLights(editor, options) {
   }
 
   editor.on("component:selected component:deselected", function () {
+    // Learn belongs to the widget it was started on.
+    endLearning();
+    told = null;
     watch(editor.getSelected());
     // The panel is drawn after the selection is announced.
     setTimeout(paint, 0);
@@ -21219,6 +21412,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         })
         .then(function (ports) {
           if (ports) suggest("midi-outputs", ports.outputs);
+          if (ports) suggest("midi-inputs", ports.inputs);
         })
         .catch(function () {});
     };
