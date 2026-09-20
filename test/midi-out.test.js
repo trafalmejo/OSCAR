@@ -271,7 +271,7 @@ test("the MIDI section is there while the switch is on, and gone, with nothing e
   const slider = WIDGETS.find((w) => w.name === "oscar-slider");
   const sections = () => Array.from(new Set(visibleFields(slider, slider.defaults).map((f) => f.section || "widget")));
 
-  assert.deepStrictEqual(sections(), ["widget", "osc", "dmx", "midi"]);
+  assert.deepStrictEqual(sections(), ["widget", "osc", "midi", "dmx"], "in the order the panel shows them");
   global.window = { OSCAR_FEATURES: { MIDI: false } };
   try {
     assert.deepStrictEqual(sections(), ["widget", "osc", "dmx"]);

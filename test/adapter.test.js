@@ -452,7 +452,7 @@ test("the panel is one collapsible section per protocol, under the widget's own 
 
   const labels = {};
   traits.forEach((t) => (labels[t.category.id] = t.category.label));
-  assert.deepStrictEqual(labels, { widget: "Widget", osc: "OSC", dmx: "DMX", midi: "MIDI" });
+  assert.deepStrictEqual(labels, { widget: "Widget", osc: "OSC", midi: "MIDI", dmx: "DMX" });
 });
 
 test("the DMX section is closed on a widget that sends no DMX, and open on one that does", () => {

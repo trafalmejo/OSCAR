@@ -1885,8 +1885,9 @@ const button = {
       field("valueOff", "Value OFF", "text"),
       field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
     ])
-    .concat(dmxFields())
-    .concat(midiFields()),
+    // In the order the panel shows them: OSC, MIDI, DMX.
+    .concat(midiFields())
+    .concat(dmxFields()),
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     valueOn: checkValue,
@@ -2278,8 +2279,9 @@ const colour = {
       // something to say about the numeric formats.
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES, showIf: { key: "format", in: ["rgb", "rgba"] } }),
     ])
-    .concat(dmxFields())
-    .concat(midiFields()),
+    // In the order the panel shows them: OSC, MIDI, DMX.
+    .concat(midiFields())
+    .concat(dmxFields()),
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(3), midiChecks(3), {
     value: checkColour,
@@ -2697,8 +2699,9 @@ const dropdown = {
       field("value", "Selected", "text"),
       field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
     ])
-    .concat(dmxFields())
-    .concat(midiFields()),
+    // In the order the panel shows them: OSC, MIDI, DMX.
+    .concat(midiFields())
+    .concat(dmxFields()),
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     options: checkOptions,
@@ -2954,8 +2957,8 @@ const TYPES = ["text", "number", "select", "checkbox"];
  */
 const SECTIONS = [
   { id: "osc", label: "OSC" },
-  { id: "dmx", label: "DMX" },
   { id: "midi", label: "MIDI" },
+  { id: "dmx", label: "DMX" },
 ];
 
 function field(key, label, type, extra) {
@@ -4845,8 +4848,9 @@ const numberInput = {
       field("step", "Step", "number", { step: "any", min: 0, placeholder: "any" }),
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
-    .concat(dmxFields())
-    .concat(midiFields()),
+    // In the order the panel shows them: OSC, MIDI, DMX.
+    .concat(midiFields())
+    .concat(dmxFields()),
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     value: checkValue,
@@ -5468,8 +5472,9 @@ const slider = {
       field("invert", "Invert", "checkbox"),
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
-    .concat(dmxFields())
-    .concat(midiFields()),
+    // In the order the panel shows them: OSC, MIDI, DMX.
+    .concat(midiFields())
+    .concat(dmxFields()),
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     min: checkNumber("Min"),
@@ -6175,8 +6180,9 @@ const xypad = {
       field("invertY", "Invert Y", "checkbox"),
       field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
     ])
-    .concat(dmxFields())
-    .concat(midiFields()),
+    // In the order the panel shows them: OSC, MIDI, DMX.
+    .concat(midiFields())
+    .concat(dmxFields()),
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(2), midiChecks(2), {
     minX: checkNumber("Min X"),

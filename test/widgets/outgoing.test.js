@@ -166,7 +166,7 @@ test("a showIf rule is data, and a malformed one is refused when the field is bu
 });
 
 test("a field names its protocol's section, and an unknown section is refused when the field is built", () => {
-  assert.deepStrictEqual(SECTIONS.map((s) => s.id), ["osc", "dmx", "midi"], "one section per protocol, in panel order");
+  assert.deepStrictEqual(SECTIONS.map((s) => s.id), ["osc", "midi", "dmx"], "one section per protocol, in panel order");
   assert.strictEqual(field("a", "A", "text", { section: "osc" }).section, "osc");
   assert.strictEqual(field("a", "A", "text").section, undefined, "none means the widget's own settings");
   assert.throws(() => field("a", "A", "text", { section: "sacn" }), /unknown section/);
