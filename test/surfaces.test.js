@@ -138,6 +138,28 @@ test("nothing a caller adds to the state can change where a message goes", async
   assert.strictEqual(osc.length, 1);
 });
 
+test("the surface can be followed: every change, whoever made it, and everything at once", async () => {
+  const { surfaces, shared } = await setUp();
+  const seen = [];
+  const stop = surfaces.onState((id, state) => seen.push([id, state]));
+  await surfaces.drive("lobby", "dim", { value: 30 });
+  // A hand on a tablet goes through the same record.
+  shared.store.apply("house", { on: true });
+  // Saying the same thing again is not a change.
+  await surfaces.drive("lobby", "dim", { value: 30 });
+  assert.deepStrictEqual(seen, [["dim", { value: 30 }], ["house", { on: true }]]);
+  assert.deepStrictEqual(surfaces.snapshot(), { dim: { value: 30 }, house: { on: true } });
+
+  // A watcher that throws costs nobody else anything.
+  surfaces.onState(() => { throw new Error("boom"); });
+  assert.strictEqual((await surfaces.drive("lobby", "dim", { value: 31 })).ok, true);
+  assert.strictEqual(seen.length, 3);
+
+  stop();
+  await surfaces.drive("lobby", "dim", { value: 32 });
+  assert.strictEqual(seen.length, 3);
+});
+
 test("a widget that is switched off shows the state and sends nothing", async () => {
   const { surfaces, osc, shared } = await setUp();
   assert.deepStrictEqual(await surfaces.drive("lobby", "off", { value: 40 }), { ok: true, state: { value: 40 }, sent: false });
