@@ -20564,6 +20564,13 @@ function environmentReport() {
     // Whether this build can open a serial port at all is the first question
     // a "my Arduino does nothing" report raises. The port name stays out.
     "Serial:     " + (info.serial ? (info.serial.supported ? info.serial.state : "not in this build") : "?"),
+    // Counts only: a MIDI port is named after the hardware plugged in.
+    "MIDI:       " +
+      (info.midi
+        ? info.midi.supported
+          ? (info.midi.outputs || []).length + " out, " + (info.midi.inputs || []).length + " in"
+          : "not in this build"
+        : "?"),
     // Behaviour nobody else sees is sometimes an extension's (lib/extensions.js).
     "Extensions: " +
       ((info.extensions || [])

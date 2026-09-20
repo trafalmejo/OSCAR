@@ -126,6 +126,12 @@ module.exports = function createRouter({
     if (report.serial && typeof report.serial === "object" && isLocked() && !isLocal(req)) {
       report.serial = Object.assign({}, report.serial, { path: null, error: null });
     }
+    // MIDI ports are named after the hardware plugged in. The same people are
+    // told how many there are, not what they are.
+    if (report.midi && typeof report.midi === "object" && isLocked() && !isLocal(req)) {
+      const count = (list) => (Array.isArray(list) ? list.map(() => null) : []);
+      report.midi = Object.assign({}, report.midi, { outputs: count(report.midi.outputs), inputs: count(report.midi.inputs) });
+    }
     res.json(report);
   });
 

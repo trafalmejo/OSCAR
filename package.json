@@ -134,5 +134,8 @@
   },
   "overrides": {
     "ws": "^8.21.3"
+  },
+  "optionalDependencies": {
+    "@julusian/midi": "^3.8.1"
   }
 }

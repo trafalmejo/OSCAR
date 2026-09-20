@@ -63,6 +63,16 @@ jobs:
           # damaged.
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      # MIDI needs a compiled module, and one that is left inside the archive
+      # cannot be loaded. This fails the build rather than ship an OSCAR whose
+      # MIDI silently is not there.
+      - name: Check the MIDI driver was packaged
+        shell: bash
+        run: |
+          found=$(find dist -path '*app.asar.unpacked*' -name '*.node' | grep -i midi || true)
+          echo "$found"
+          test -n "$found"
+
       # Keeps the installers available from the run even if publishing is
       # skipped (for example on a workflow_dispatch dry run).
       - name: Upload installers as run artifacts

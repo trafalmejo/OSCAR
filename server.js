@@ -15,6 +15,7 @@ const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
 const { receiver: oscReceiver, listenOn, atMostOncePer, parse: parseOsc } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
+const { createMidi } = require("./lib/midi");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket } = require("./lib/dmx");
 const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
@@ -103,10 +104,18 @@ function diagnostics() {
     // "My Arduino does nothing" is unanswerable without knowing whether this
     // build can open a port at all, and whether it thinks it has one.
     serial: serial.status(),
+    // The same question for MIDI: is there a driver, and what does it see.
+    midi: midi.status(),
     // Behaviour nobody can reproduce is sometimes an extension's.
     extensions: extensions.list(),
   };
 }
+
+// ---- MIDI -------------------------------------------------------------------
+
+// Up here for the reason the serial cable is: diagnostics() is handed to the
+// router, and reads this.
+const midi = createMidi();
 
 // ---- The serial cable ------------------------------------------------------
 
