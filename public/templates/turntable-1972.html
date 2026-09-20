@@ -1,0 +1,735 @@
+<!doctype html>
+<html>
+<head>
+<title>Turntable, 1972</title>
+<!--
+  Turntable, 1972: a walnut plinth, a brushed top plate, strobe dots round the
+  platter, a straight arm, a pitch fader and three square keys. START
+  turns the platter, 45 turns it faster, CUE swings the arm over the record,
+  and the record itself can be touched. The output lamps listen: send them
+  OSC and they light.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the whole object is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
+
+  How the record is made. It is OSCAR's XY pad, made round, and it sends
+  where a finger is as x and y from -1 to 1; whatever listens takes
+  atan2(y, x) for the angle, and following that angle is a scratch. The pad
+  stands still. Grooves look the same however they are turned, and a pad
+  that turned would lose track of the finger. What turns is the label and
+  the ring of strobe dots, two plain elements laid over and under the pad
+  on the same grid with pointer-events: none, so every touch reaches the
+  record. The arm lets touches through in the same way.
+
+  OSCAR puts the class "toggle" on a button that is down. All three keys are
+  toggles, and the top plate watches them with :has(): START runs the
+  turning, 45 shortens its period from 1.8s to 1.33s (33 1/3 and 45 turns
+  a minute), and CUE rotates the arm about its pivot. Where a browser has no
+  :has(), everything still sends and nothing moves.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. The platter is square at any width, and the arm is sized from it,
+  so the stylus lands on the record on a phone as it does on a desk.
+
+  OSC addresses:
+    /turntable/start   /turntable/45   /turntable/cue   (latching)
+    /turntable/scratch    (x y, each -1 to 1)
+    /turntable/pitch      (-8 to 8)
+    /turntable/antiskate  (0 to 3)
+    /turntable/level      (this listens)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #2a1d14;
+  --osc-foreground: #efe9dc;
+  --osc-card: #c9c9c5;
+  --osc-muted: #1a1a1d;
+  --osc-accent: #55555b;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #0c0c0d;
+  --osc-input: #0c0c0d;
+  --osc-primary: #e23b2e;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #f2b632;
+  --osc-radius: 6px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* A sideboard, and a lamp somewhere to the left. */
+.vtt {
+  display: grid;
+  grid-template-columns: minmax(0, 620px) minmax(0, 320px);
+  justify-content: center;
+  align-items: center;
+  gap: 52px;
+  min-height: 100vh;
+  padding: 40px 24px;
+}
+[data-osc-style="own"] .vtt {
+  background:
+    radial-gradient(90% 70% at 20% 10%, rgba(255, 196, 120, 0.22), rgba(0, 0, 0, 0)),
+    linear-gradient(180deg, #4a3222, #24170e);
+}
+
+/* ---- the plinth: walnut round a brushed top plate ------------------------------------ */
+.vtt-plinth {
+  padding: 16px;
+  border-radius: 10px;
+}
+[data-osc-style="own"] .vtt-plinth {
+  background:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, 0.12) 0 2px, rgba(0, 0, 0, 0) 2px 7px, rgba(255, 255, 255, 0.04) 7px 9px, rgba(0, 0, 0, 0) 9px 15px),
+    linear-gradient(180deg, #8a5a33, #6b4223 60%, #4f2f17);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), inset 0 -4px 6px rgba(0, 0, 0, 0.4), 0 4px 0 #2a180b, 0 34px 40px -14px rgba(0, 0, 0, 0.8);
+}
+
+.vtt-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  grid-template-areas: "platter arm" "controls pitch";
+  gap: 16px 12px;
+  padding: 18px;
+  border-radius: 6px;
+}
+[data-osc-style="own"] .vtt-top {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    linear-gradient(180deg, #d6d6d2, #aeaeaa 60%, #979793);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.75), inset 0 -3px 5px rgba(0, 0, 0, 0.3), 0 0 0 2px #2a180b;
+  color: #1c1c1e;
+}
+
+.vtt-legend {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---- the platter: strobe dots round the rim, the record, the label ------------------------ */
+/* Three things share one square. The record is OSCAR's XY pad, made round, and
+   it stands still: grooves look the same however they are turned, and a pad
+   that turned would lose track of the finger on it. The label and the strobe
+   dots do the turning, and let every touch through to the record. */
+.vtt-platter {
+  grid-area: platter;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+[data-osc-style="own"] .vtt-platter {
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 0 3px #6d6d69;
+}
+
+.vtt-strobe {
+  grid-area: 1 / 1;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: vtt-spin 1.8s linear infinite paused;
+}
+[data-osc-style="own"] .vtt-strobe {
+  background: repeating-conic-gradient(#e6e6e2 0 1.5deg, #4a4a4f 1.5deg 3deg);
+}
+
+#vtt-record {
+  grid-area: 1 / 1;
+  width: 93%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  cursor: grab;
+}
+[data-osc-style="own"] #vtt-record {
+  border: 0;
+  background:
+    conic-gradient(from 25deg, rgba(255, 255, 255, 0) 0 8%, rgba(255, 255, 255, 0.16) 12%, rgba(255, 255, 255, 0) 17% 58%, rgba(255, 255, 255, 0.16) 62%, rgba(255, 255, 255, 0) 67% 100%),
+    repeating-radial-gradient(circle, #0c0c0d 0 1px, #1e1e21 1px 3px);
+  box-shadow: 0 0 0 2px #000000;
+  --osc-thumb: 54px;
+}
+
+/* Where the finger last was: a smudge, no more. */
+[data-osc-style="own"] #vtt-record::after {
+  border: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 70%);
+  box-shadow: none;
+}
+
+.vtt-label {
+  grid-area: 1 / 1;
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  width: 33%;
+  aspect-ratio: 1;
+  padding-top: 5%;
+  box-sizing: border-box;
+  border-radius: 50%;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  pointer-events: none;
+  animation: vtt-spin 1.8s linear infinite paused;
+}
+[data-osc-style="own"] .vtt-label {
+  background:
+    radial-gradient(circle, #0c0c0d 0 4%, #d9d9d5 4.5% 6.5%, rgba(0, 0, 0, 0) 7%),
+    conic-gradient(#e23b2e 0 50%, #f2b632 50% 100%);
+  box-shadow: 0 0 0 2px #0c0c0d;
+  color: #1c1c1e;
+}
+
+@keyframes vtt-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* OSCAR puts the class "toggle" on a button that is down, and the deck looks. */
+.vtt-top:has(#vtt-start.toggle) .vtt-strobe,
+.vtt-top:has(#vtt-start.toggle) .vtt-label {
+  animation-play-state: running;
+}
+
+.vtt-top:has(#vtt-45.toggle) .vtt-strobe,
+.vtt-top:has(#vtt-45.toggle) .vtt-label {
+  animation-duration: 1.33s;
+}
+
+/* ---- the arm: it rests at the right, and CUE swings it over the record ------------------------ */
+.vtt-arm {
+  grid-area: arm;
+  justify-self: center;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  width: 44px;
+  height: 76%;
+  transform: rotate(3deg);
+  transform-origin: 50% 22px;
+  transition: transform 0.9s ease-in-out;
+  pointer-events: none;
+}
+
+.vtt-top:has(#vtt-cue.toggle) .vtt-arm {
+  transform: rotate(24deg);
+}
+
+.vtt-arm-pivot {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+[data-osc-style="own"] .vtt-arm-pivot {
+  background: radial-gradient(circle, #2a2a2e 0 28%, #e6e6e2 30% 48%, #8d8d8a 50% 70%, #d6d6d2 72% 100%);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+}
+
+.vtt-arm-tube {
+  width: 7px;
+  margin-top: -6px;
+  border-radius: 3px;
+}
+[data-osc-style="own"] .vtt-arm-tube {
+  background: linear-gradient(90deg, #f4f4f0, #a9a9a5 60%, #6d6d69);
+  box-shadow: 3px 3px 5px rgba(0, 0, 0, 0.4);
+}
+
+.vtt-arm-head {
+  width: 18px;
+  height: 30px;
+  border-radius: 2px 2px 4px 4px;
+  transform: rotate(-18deg);
+  transform-origin: 50% 0;
+}
+[data-osc-style="own"] .vtt-arm-head {
+  background: linear-gradient(180deg, #2a2a2e, #0c0c0d);
+  box-shadow: inset 0 -5px 0 #e23b2e, 3px 3px 5px rgba(0, 0, 0, 0.45);
+}
+
+/* ---- the controls --------------------------------------------------------------------------------- */
+.vtt-controls {
+  grid-area: controls;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr minmax(0, 2fr);
+  align-items: end;
+  gap: 12px;
+}
+
+.vtt-cell {
+  display: grid;
+  gap: 5px;
+}
+
+.vtt-key {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  transition: none;
+}
+[data-osc-style="own"] .vtt-key {
+  border: 0;
+  background: linear-gradient(180deg, #ecece8, #c2c2be 70%, #a3a39f);
+  box-shadow: inset 0 1px 0 #ffffff, 0 0 0 2px #55555b, 0 4px 0 2px #3a3a3f;
+  color: #1c1c1e;
+}
+
+[data-osc-style="own"] .vtt-key:hover {
+  background: linear-gradient(180deg, #f6f6f2, #ccccc8 70%, #adada9);
+  color: #000000;
+}
+
+.vtt-key.toggle,
+.vtt-key.toggle:hover {
+  transform: translateY(3px);
+}
+[data-osc-style="own"] .vtt-key.toggle,
+[data-osc-style="own"] .vtt-key.toggle:hover {
+  background: linear-gradient(180deg, #a9a9a5, #c2c2be);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 -4px 0 #e23b2e, 0 0 0 2px #55555b, 0 1px 0 2px #3a3a3f;
+  color: #1c1c1e;
+}
+
+.vtt-side {
+  display: grid;
+  gap: 10px;
+}
+
+[data-osc-style="own"] .vtt-slot input[type="range"],
+[data-osc-style="own"] .vtt-pitch input[type="range"] {
+  --osc-primary: #0c0c0d;
+  --osc-muted: #0c0c0d;
+  --osc-track-size: 8px;
+  --osc-thumb: 24px;
+}
+
+.vtt-slot input[type="range"] {
+  width: 100%;
+}
+
+[data-osc-style="own"] .vtt-slot input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  border: 0;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #2a2a2e 0 3px, #55555b 3px 4px);
+}
+
+[data-osc-style="own"] .vtt-slot input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  border: 0;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #2a2a2e 0 3px, #55555b 3px 4px);
+}
+
+.vtt-output {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+#vtt-level {
+  width: 100%;
+  height: 8px;
+  border-radius: 0;
+}
+[data-osc-style="own"] #vtt-level {
+  border: 0;
+  background-color: rgba(0, 0, 0, 0);
+  background-image: linear-gradient(90deg, #36d35a 0 60%, #f2d13a 60% 80%, #ff3b30 80% 100%);
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000000 0 calc(10% - 3px), rgba(0, 0, 0, 0) calc(10% - 3px) 10%);
+  mask-image: repeating-linear-gradient(90deg, #000000 0 calc(10% - 3px), rgba(0, 0, 0, 0) calc(10% - 3px) 10%);
+}
+
+/* The bar is drawn the other way about: it covers the lamps that are out. */
+[data-osc-style="own"] #vtt-level::before {
+  right: 0;
+  left: var(--oscar-level);
+  width: auto;
+  background: #55555b;
+}
+
+[data-osc-style="own"] #vtt-level.oscar-peak::after {
+  display: none;
+}
+
+/* ---- the pitch fader ---------------------------------------------------------------------------------- */
+.vtt-pitch {
+  grid-area: pitch;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: 4px;
+}
+[data-osc-style="own"] .vtt-pitch {
+  background: linear-gradient(180deg, #2a2a2e, #1a1a1d);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.6);
+  color: #d9d5c8;
+}
+
+.vtt-pitch input[type="range"] {
+  width: 30px;
+  height: 104px;
+}
+
+[data-osc-style="own"] .vtt-pitch input[type="range"]::-webkit-slider-thumb {
+  width: 28px;
+  height: 14px;
+  margin-left: -10px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e6e6e2 0 40%, #0c0c0d 40% 60%, #b9b9b5 60%);
+}
+
+[data-osc-style="own"] .vtt-pitch input[type="range"]::-moz-range-thumb {
+  width: 28px;
+  height: 14px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e6e6e2 0 40%, #0c0c0d 40% 60%, #b9b9b5 60%);
+}
+
+.vtt-badge {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 6px 0;
+}
+[data-osc-style="own"] .vtt-badge {
+  color: #f2d9b8;
+}
+
+.vtt-brand {
+  margin: 0;
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+}
+
+.vtt-model {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* ---- the leaflet that lists every address ---- */
+.vtt-manual {
+  padding: 26px 26px 22px;
+  border-radius: 2px;
+  transform: rotate(1.2deg);
+}
+[data-osc-style="own"] .vtt-manual {
+  background: linear-gradient(180deg, #f3ecd8, #e6dcc2);
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.8), inset 0 0 40px rgba(120, 90, 40, 0.18);
+  color: #2a2418;
+  font-family: "Courier New", Courier, monospace;
+}
+
+.vtt-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.vtt-manual-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+[data-osc-style="own"] .vtt-manual-title {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.vtt-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+[data-osc-style="own"] .vtt-manual-lead {
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+.vtt-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+
+.vtt-manual-row {
+  display: grid;
+  gap: 1px;
+}
+
+.vtt-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.vtt-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.vtt-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.vtt-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+[data-osc-style="own"] .vtt-manual-foot {
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .vtt {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .vtt-plinth,
+body:not([data-osc-style="own"]) .vtt-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .vtt-top,
+body:not([data-osc-style="own"]) .vtt-pitch {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .vtt-platter {
+  border: 2px solid var(--osc-border);
+}
+body:not([data-osc-style="own"]) .vtt-strobe {
+  border: 4px dotted var(--osc-border);
+  box-sizing: border-box;
+}
+body:not([data-osc-style="own"]) .vtt-label {
+  border: 3px dashed var(--osc-foreground);
+  background: var(--osc-card);
+}
+body:not([data-osc-style="own"]) .vtt-arm-pivot,
+body:not([data-osc-style="own"]) .vtt-arm-tube,
+body:not([data-osc-style="own"]) .vtt-arm-head {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-accent);
+}
+
+/* ---- tablet: the sleeve notes go under the deck ------------------------------------------------------- */
+@media (max-width: 992px) {
+  .vtt {
+    grid-template-columns: minmax(0, 620px);
+    gap: 32px;
+    padding: 28px 20px 40px;
+  }
+
+  .vtt-manual {
+    transform: none;
+  }
+}
+
+/* ---- phone: the deck is the screen; the keys get a row of their own ------------------------------------- */
+@media (max-width: 480px) {
+  .vtt {
+    gap: 24px;
+    padding: 10px 8px 28px;
+  }
+
+  .vtt-plinth {
+    padding: 10px;
+  }
+
+  .vtt-top {
+    grid-template-columns: minmax(0, 1fr) 64px;
+    gap: 14px 6px;
+    padding: 12px 10px;
+  }
+
+  .vtt-arm {
+    width: 36px;
+  }
+
+  .vtt-arm-pivot {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* A shorter arm, nearer the platter: it has further to swing. */
+  .vtt-top:has(#vtt-cue.toggle) .vtt-arm {
+    transform: rotate(31deg);
+  }
+
+  .vtt-controls {
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 12px 8px;
+  }
+
+  .vtt-side {
+    grid-column: 1 / -1;
+  }
+
+  .vtt-key {
+    min-height: 58px;
+  }
+
+  .vtt-label {
+    font-size: 8px;
+  }
+
+  [data-osc-style="own"] .vtt-slot input[type="range"] {
+    --osc-thumb: 32px;
+  }
+
+  .vtt-manual {
+    padding: 20px 16px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+
+  .vtt-strobe,
+  .vtt-label {
+    animation: none !important;
+  }
+
+  .vtt-arm {
+    transition: none;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="vtt" class="vtt" data-gjs-dmode="flow">
+  <section id="vtt-plinth" class="vtt-plinth" data-gjs-dmode="flow">
+    <div id="vtt-top" class="vtt-top" data-gjs-dmode="flow">
+      <div id="vtt-platter" class="vtt-platter" data-gjs-dmode="flow">
+        <span id="vtt-strobe" class="vtt-strobe" data-gjs-dmode="flow"></span>
+        <div id="vtt-record" class="oscar-xypad" data-gjs-dmode="flow" data-gjs-message="/turntable/scratch" data-gjs-min-x="-1" data-gjs-max-x="1" data-gjs-min-y="-1" data-gjs-max-y="1" data-gjs-x="0.6" data-gjs-y="-0.3"></div>
+        <span id="vtt-label" class="vtt-label" data-gjs-dmode="flow">OSCAR</span>
+      </div>
+
+      <div id="vtt-arm" class="vtt-arm" data-gjs-dmode="flow">
+        <span id="vtt-arm-pivot" class="vtt-arm-pivot" data-gjs-dmode="flow"></span>
+        <span id="vtt-arm-tube" class="vtt-arm-tube" data-gjs-dmode="flow"></span>
+        <span id="vtt-arm-head" class="vtt-arm-head" data-gjs-dmode="flow"></span>
+      </div>
+
+      <div id="vtt-controls" class="vtt-controls" data-gjs-dmode="flow">
+        <div id="vtt-start-cell" class="vtt-cell" data-gjs-dmode="flow">
+          <button id="vtt-start" class="vtt-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/turntable/start" data-gjs-value-on="1" data-gjs-value-off="0">START &middot; STOP</button>
+        </div>
+        <div id="vtt-45-cell" class="vtt-cell" data-gjs-dmode="flow">
+          <button id="vtt-45" class="vtt-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/turntable/45" data-gjs-value-on="1" data-gjs-value-off="0">45</button>
+        </div>
+        <div id="vtt-cue-cell" class="vtt-cell" data-gjs-dmode="flow">
+          <button id="vtt-cue" class="vtt-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/turntable/cue" data-gjs-value-on="1" data-gjs-value-off="0">CUE</button>
+        </div>
+        <div id="vtt-side" class="vtt-side" data-gjs-dmode="flow">
+          <div id="vtt-antiskate-cell" class="vtt-cell vtt-slot" data-gjs-dmode="flow">
+            <span id="vtt-antiskate-legend" class="vtt-legend" data-gjs-dmode="flow">Anti-skate</span>
+            <input id="vtt-antiskate" type="range" step="0.1" min="0" max="3" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/turntable/antiskate" data-gjs-min="0" data-gjs-max="3" data-gjs-value="1.5" data-gjs-orientation="horizontal">
+          </div>
+          <div id="vtt-output" class="vtt-output" data-gjs-dmode="flow">
+            <span id="vtt-output-legend" class="vtt-legend" data-gjs-dmode="flow">Output</span>
+            <div id="vtt-level" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/turntable/level" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.6" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="vtt-pitch" class="vtt-pitch" data-gjs-dmode="flow">
+        <span id="vtt-pitch-plus" class="vtt-legend" data-gjs-dmode="flow">+8</span>
+        <input id="vtt-pitch-fader" type="range" step="0.1" min="-8" max="8" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/turntable/pitch" data-gjs-min="-8" data-gjs-max="8" data-gjs-value="0" data-gjs-orientation="vertical">
+        <span id="vtt-pitch-minus" class="vtt-legend" data-gjs-dmode="flow">&minus;8</span>
+        <span id="vtt-pitch-legend" class="vtt-legend" data-gjs-dmode="flow">Pitch</span>
+      </div>
+    </div>
+
+    <div id="vtt-badge" class="vtt-badge" data-gjs-dmode="flow">
+      <h1 id="vtt-brand" class="vtt-brand" data-gjs-dmode="flow">OSCAR</h1>
+      <span id="vtt-model" class="vtt-model" data-gjs-dmode="flow">Direct drive turntable &middot; SL-72</span>
+    </div>
+  </section>
+
+  <aside id="vtt-manual" class="vtt-manual" data-gjs-dmode="flow">
+    <p id="vtt-manual-eyebrow" class="vtt-manual-eyebrow" data-gjs-dmode="flow">Sleeve notes</p>
+    <h2 id="vtt-manual-title" class="vtt-manual-title" data-gjs-dmode="flow">Handle by the edges</h2>
+    <p id="vtt-manual-lead" class="vtt-manual-lead" data-gjs-dmode="flow">Each control sends OSC to the address below. Select one in the editor to aim it somewhere else.</p>
+    <dl id="vtt-manual-list" class="vtt-manual-list" data-gjs-dmode="flow">
+      <div id="vtt-manual-row-1" class="vtt-manual-row" data-gjs-dmode="flow">
+        <dt id="vtt-manual-key-1" class="vtt-manual-key" data-gjs-dmode="flow">START &middot; STOP</dt>
+        <dd id="vtt-manual-address-1" class="vtt-manual-address" data-gjs-dmode="flow">/turntable/start</dd>
+        <dd id="vtt-manual-note-1" class="vtt-manual-note" data-gjs-dmode="flow">It latches: 1 turning, 0 stopped. The label and the strobe dots turn with it.</dd>
+      </div>
+      <div id="vtt-manual-row-2" class="vtt-manual-row" data-gjs-dmode="flow">
+        <dt id="vtt-manual-key-2" class="vtt-manual-key" data-gjs-dmode="flow">45</dt>
+        <dd id="vtt-manual-address-2" class="vtt-manual-address" data-gjs-dmode="flow">/turntable/45</dd>
+        <dd id="vtt-manual-note-2" class="vtt-manual-note" data-gjs-dmode="flow">It latches: 1 for 45 rpm, 0 for 33 1/3. The platter turns faster to match.</dd>
+      </div>
+      <div id="vtt-manual-row-3" class="vtt-manual-row" data-gjs-dmode="flow">
+        <dt id="vtt-manual-key-3" class="vtt-manual-key" data-gjs-dmode="flow">CUE</dt>
+        <dd id="vtt-manual-address-3" class="vtt-manual-address" data-gjs-dmode="flow">/turntable/cue</dd>
+        <dd id="vtt-manual-note-3" class="vtt-manual-note" data-gjs-dmode="flow">It latches: 1 lowers the arm onto the record, 0 lifts it back to its rest.</dd>
+      </div>
+      <div id="vtt-manual-row-4" class="vtt-manual-row" data-gjs-dmode="flow">
+        <dt id="vtt-manual-key-4" class="vtt-manual-key" data-gjs-dmode="flow">The record</dt>
+        <dd id="vtt-manual-address-4" class="vtt-manual-address" data-gjs-dmode="flow">/turntable/scratch</dd>
+        <dd id="vtt-manual-note-4" class="vtt-manual-note" data-gjs-dmode="flow">Two numbers, x then y, each from -1 to 1: where a finger is on the vinyl. The angle is atan2(y, x); follow it and you have a scratch.</dd>
+      </div>
+      <div id="vtt-manual-row-5" class="vtt-manual-row" data-gjs-dmode="flow">
+        <dt id="vtt-manual-key-5" class="vtt-manual-key" data-gjs-dmode="flow">PITCH</dt>
+        <dd id="vtt-manual-address-5" class="vtt-manual-address" data-gjs-dmode="flow">/turntable/pitch</dd>
+        <dd id="vtt-manual-note-5" class="vtt-manual-note" data-gjs-dmode="flow">-8 to 8 per cent.</dd>
+      </div>
+      <div id="vtt-manual-row-6" class="vtt-manual-row" data-gjs-dmode="flow">
+        <dt id="vtt-manual-key-6" class="vtt-manual-key" data-gjs-dmode="flow">ANTI-SKATE</dt>
+        <dd id="vtt-manual-address-6" class="vtt-manual-address" data-gjs-dmode="flow">/turntable/antiskate</dd>
+        <dd id="vtt-manual-note-6" class="vtt-manual-note" data-gjs-dmode="flow">0 to 3.</dd>
+      </div>
+      <div id="vtt-manual-row-7" class="vtt-manual-row" data-gjs-dmode="flow">
+        <dt id="vtt-manual-key-7" class="vtt-manual-key" data-gjs-dmode="flow">OUTPUT</dt>
+        <dd id="vtt-manual-address-7" class="vtt-manual-address" data-gjs-dmode="flow">/turntable/level</dd>
+        <dd id="vtt-manual-note-7" class="vtt-manual-note" data-gjs-dmode="flow">This listens. Send 0 to 1 and the lamps light.</dd>
+      </div>
+    </dl>
+    <p id="vtt-manual-foot" class="vtt-manual-foot" data-gjs-dmode="flow">Delete these notes from the layout when the needle goes down.</p>
+  </aside>
+</div>
+</body>
+</html>
