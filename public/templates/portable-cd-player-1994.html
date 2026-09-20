@@ -1,0 +1,561 @@
+<!doctype html>
+<html>
+<head>
+<title>Portable CD Player, 1994</title>
+<!--
+  Portable CD Player, 1994: a dark rounded slab that is mostly lid, a disc
+  that catches the light through the window, a grey-green display, a blue
+  PLAY key, bass boost, anti-shock and a HOLD switch nobody ever meant to
+  leave on. Every control works, and the battery on the display listens:
+  send it OSC and it fills.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the controls take that style's colours instead.
+
+  OSCAR puts the class "toggle" on a button that is down. PLAY and the four
+  mode keys are toggles, and the case watches them with :has(): the disc
+  turns while PLAY is on, and each mode lights its word on the display.
+  Where a browser has no :has(), everything still works and nothing lights.
+
+  The track number is an OSCAR number input dressed as the display, and the
+  battery is an OSCAR meter with Data in on, given a border.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the player fills the screen.
+
+  OSC addresses:
+    /cd/play   (latching)
+    /cd/stop   /cd/prev   /cd/next   /cd/open   (while held)
+    /cd/track  (1 to 99)
+    /cd/shuffle   /cd/repeat   /cd/bass   /cd/antishock   (latching)
+    /cd/volume   /cd/hold (0 or 1)
+    /cd/battery   (this listens)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #1b1d22;
+  --osc-foreground: #e8eaf0;
+  --osc-card: #2a2d34;
+  --osc-muted: #0e0f12;
+  --osc-accent: #4a4e58;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #08090b;
+  --osc-input: #08090b;
+  --osc-primary: #3aa6ff;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #3aa6ff;
+  --osc-radius: 8px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.pcd {
+  display: grid;
+  grid-template-columns: minmax(0, 440px) minmax(0, 340px);
+  justify-content: center;
+  align-items: center;
+  gap: 56px;
+  min-height: 100vh;
+  padding: 40px 24px;
+  /* A school desk. */
+  background:
+    repeating-linear-gradient(3deg, rgba(0, 0, 0, 0.06) 0 2px, rgba(0, 0, 0, 0) 2px 13px),
+    linear-gradient(180deg, #c9a874, #a98955);
+}
+
+/* ---- the player: a rounded slab, mostly lid ---------------------------------------- */
+.pcd-unit {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 46px 46px 30px 30px;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, #3a3d46, #24262c 60%, #17181c);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.6),
+    0 3px 0 #08090b,
+    0 30px 40px -12px rgba(0, 0, 0, 0.7);
+  color: #c8ccd6;
+}
+.pcd-legend {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.pcd-lid {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  border-radius: 34px 34px 16px 16px;
+  background: linear-gradient(180deg, #2c2f37, #1e2026);
+  box-shadow: inset 0 0 0 2px #08090b, inset 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+.pcd-lid-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  width: 100%;
+}
+.pcd-brand {
+  margin: 0;
+  color: #ffffff;
+  font-size: 18px;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+}
+.pcd-model {
+  color: #3aa6ff;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+/* The window in the lid, and the disc under it. */
+.pcd-window {
+  display: grid;
+  place-items: center;
+  width: 78%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, #0e0f12 0 60%, #17181c 100%);
+  box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.pcd-disc {
+  width: 92%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #17181c 0 7%, #d9dce4 7.5% 9%, rgba(255, 255, 255, 0.7) 9.5% 15%, rgba(0, 0, 0, 0) 15.5%),
+    conic-gradient(#d9dce4, #ffd1f2, #c6f3ff, #d9dce4, #fff3b8, #c9ffd6, #d9dce4, #d6c9ff, #ffd9c2, #d9dce4);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6), 0 2px 6px rgba(0, 0, 0, 0.6);
+  animation: pcd-spin 1.4s linear infinite paused;
+}
+@keyframes pcd-spin {
+  to { transform: rotate(360deg); }
+}
+.pcd-unit:has(#pcd-play.toggle) .pcd-disc {
+  animation-play-state: running;
+}
+.pcd-lid-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+.pcd-compact {
+  padding: 2px 6px;
+  border: 1px solid #8a8f9c;
+  border-radius: 2px;
+  color: #8a8f9c;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  line-height: 1.3;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---- the display --------------------------------------------------------------------- */
+.pcd-lcd {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #9db1a0, #b6c8b6);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55), 0 0 0 3px #08090b;
+  color: #16221a;
+  font-family: "Courier New", Courier, monospace;
+}
+.pcd-lcd .pcd-legend {
+  color: #16221a;
+}
+.pcd-flags {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+/* A word that is not showing is still faintly there, as on real glass. */
+.pcd-flag {
+  color: rgba(22, 34, 26, 0.16);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.pcd-unit:has(#pcd-play.toggle) .pcd-flag-play,
+.pcd-unit:has(#pcd-shuffle.toggle) .pcd-flag-shuffle,
+.pcd-unit:has(#pcd-repeat.toggle) .pcd-flag-repeat,
+.pcd-unit:has(#pcd-bass.toggle) .pcd-flag-bass,
+.pcd-unit:has(#pcd-antishock.toggle) .pcd-flag-esp {
+  color: #16221a;
+}
+#pcd-track {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 42px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 3px;
+  background-color: rgba(22, 34, 26, 0.08);
+  box-shadow: none;
+  color: #16221a;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.pcd-batt {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+}
+#pcd-battery {
+  width: 46px;
+  height: 16px;
+  border: 2px solid #16221a;
+  border-radius: 2px;
+  background-color: rgba(0, 0, 0, 0);
+  --osc-primary: #16221a;
+}
+#pcd-battery.oscar-peak::after {
+  display: none;
+}
+
+/* ---- the keys ---------------------------------------------------------------------------- */
+.pcd-keys {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.pcd-key {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #5a5e69, #3d4049 55%, #2f3138);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 2px #08090b, 0 3px 0 2px #08090b;
+  color: #e8eaf0;
+  font-size: 12px;
+  font-weight: 700;
+  transition: none;
+}
+.pcd-key:hover {
+  background: linear-gradient(180deg, #666a76, #474a54 55%, #363840);
+  color: #ffffff;
+}
+.pcd-key.toggle,
+.pcd-key.toggle:hover {
+  background: linear-gradient(180deg, #2a2c32, #3a3d45);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 0 0 2px #08090b, 0 1px 0 2px #08090b;
+  color: #3aa6ff;
+  transform: translateY(2px);
+}
+.pcd-key-play {
+  background: linear-gradient(180deg, #5cb6ff, #3aa6ff 55%, #1f7fd0);
+  color: #04203a;
+}
+.pcd-key-play:hover {
+  background: linear-gradient(180deg, #74c1ff, #4cafff 55%, #2a8ada);
+  color: #000000;
+}
+.pcd-key-play.toggle,
+.pcd-key-play.toggle:hover {
+  background: linear-gradient(180deg, #1f7fd0, #2f95ea);
+  color: #ffffff;
+}
+.pcd-modes {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.pcd-modes .pcd-key {
+  min-height: 32px;
+  border-radius: 6px;
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+}
+
+/* ---- the wheel and the switch, as slots ------------------------------------------------------ */
+.pcd-slots {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 18px;
+}
+.pcd-slot {
+  display: grid;
+  gap: 5px;
+}
+.pcd-marks {
+  display: flex;
+  justify-content: space-between;
+}
+.pcd-slot input[type="range"] {
+  width: 100%;
+  --osc-primary: #08090b;
+  --osc-muted: #08090b;
+  --osc-track-size: 10px;
+  --osc-thumb: 26px;
+}
+.pcd-slot input[type="range"]::-webkit-slider-thumb {
+  width: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, #c8ccd6 0 3px, #6d717c 3px 5px);
+}
+.pcd-slot input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, #c8ccd6 0 3px, #6d717c 3px 5px);
+}
+#pcd-hold::-webkit-slider-thumb {
+  width: 34px;
+  background: repeating-linear-gradient(90deg, #ffb02e 0 3px, #b9791c 3px 5px);
+}
+#pcd-hold::-moz-range-thumb {
+  width: 34px;
+  background: repeating-linear-gradient(90deg, #ffb02e 0 3px, #b9791c 3px 5px);
+}
+
+/* ---- the leaflet that lists every address ---- */
+.pcd-manual {
+  padding: 26px 26px 22px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #ffffff, #eef0f5);
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.6);
+  color: #1b1d22;
+  transform: rotate(1.2deg);
+  font-family: "Courier New", Courier, monospace;
+}
+.pcd-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.pcd-manual-title {
+  margin: 0 0 6px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.pcd-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(27, 29, 34, 0.35);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.pcd-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+.pcd-manual-row {
+  display: grid;
+  gap: 1px;
+}
+.pcd-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.pcd-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.pcd-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.pcd-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(27, 29, 34, 0.35);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ---- tablet: the booklet goes under the player ------------------------------------------------- */
+@media (max-width: 992px) {
+  .pcd {
+    grid-template-columns: minmax(0, 440px);
+    gap: 32px;
+    padding: 28px 20px 40px;
+  }
+  .pcd-manual {
+    transform: none;
+  }
+}
+
+/* ---- phone: the player is the screen --------------------------------------------------------------- */
+@media (max-width: 480px) {
+  .pcd {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding: 12px 10px 28px;
+  }
+  .pcd-unit {
+    gap: 12px;
+    padding: 12px;
+    border-radius: 34px 34px 22px 22px;
+  }
+  .pcd-lid {
+    padding: 12px 12px 10px;
+    border-radius: 26px 26px 12px 12px;
+  }
+  .pcd-window {
+    width: 66%;
+  }
+  .pcd-keys {
+    gap: 6px;
+  }
+  .pcd-key {
+    min-height: 48px;
+    font-size: 13px;
+  }
+  .pcd-modes .pcd-key {
+    min-height: 40px;
+    font-size: 7.5px;
+  }
+  .pcd-slot input[type="range"] {
+    --osc-thumb: 32px;
+  }
+  .pcd-manual {
+    padding: 20px 16px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .pcd-disc {
+    animation: none !important;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="pcd" class="pcd" data-gjs-dmode="flow">
+  <section id="pcd-unit" class="pcd-unit" data-gjs-dmode="flow">
+    <div id="pcd-lid" class="pcd-lid" data-gjs-dmode="flow">
+      <div id="pcd-lid-head" class="pcd-lid-head" data-gjs-dmode="flow">
+        <h1 id="pcd-brand" class="pcd-brand" data-gjs-dmode="flow">OSCAR</h1>
+        <span id="pcd-model" class="pcd-model" data-gjs-dmode="flow">Portable compact disc player &middot; D-94</span>
+      </div>
+      <div id="pcd-window" class="pcd-window" data-gjs-dmode="flow"><span id="pcd-disc" class="pcd-disc" data-gjs-dmode="flow"></span></div>
+      <div id="pcd-lid-foot" class="pcd-lid-foot" data-gjs-dmode="flow">
+        <span id="pcd-compact" class="pcd-compact" data-gjs-dmode="flow">Digital audio</span>
+        <span id="pcd-lid-note" class="pcd-legend" data-gjs-dmode="flow">1 bit DAC &middot; 10 sec anti-shock</span>
+      </div>
+    </div>
+
+    <div id="pcd-lcd" class="pcd-lcd" data-gjs-dmode="flow">
+      <div id="pcd-flags" class="pcd-flags" data-gjs-dmode="flow">
+        <span id="pcd-flag-play" class="pcd-flag pcd-flag-play" data-gjs-dmode="flow">&#9654; PLAY</span>
+        <span id="pcd-flag-shuffle" class="pcd-flag pcd-flag-shuffle" data-gjs-dmode="flow">SHUF</span>
+        <span id="pcd-flag-repeat" class="pcd-flag pcd-flag-repeat" data-gjs-dmode="flow">REP</span>
+        <span id="pcd-flag-bass" class="pcd-flag pcd-flag-bass" data-gjs-dmode="flow">BASS</span>
+        <span id="pcd-flag-esp" class="pcd-flag pcd-flag-esp" data-gjs-dmode="flow">ESP</span>
+      </div>
+      <span id="pcd-track-legend" class="pcd-legend" data-gjs-dmode="flow">Track</span>
+      <input id="pcd-track" type="number" class="oscar-number-input " data-gjs-dmode="flow" data-gjs-message="/cd/track" data-gjs-value="1" data-gjs-min="1" data-gjs-max="99" data-gjs-step="1" data-gjs-arg-type="i">
+      <div id="pcd-batt" class="pcd-batt" data-gjs-dmode="flow">
+        <div id="pcd-battery" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/cd/battery" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.7" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+        <span id="pcd-batt-legend" class="pcd-legend" data-gjs-dmode="flow">Batt</span>
+      </div>
+    </div>
+
+    <div id="pcd-keys" class="pcd-keys" data-gjs-dmode="flow">
+      <button id="pcd-prev" class="pcd-key" data-gjs-dmode="flow" data-gjs-message="/cd/prev" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
+      <button id="pcd-play" class="pcd-key pcd-key-play" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cd/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#10074;&#10074;</button>
+      <button id="pcd-next" class="pcd-key" data-gjs-dmode="flow" data-gjs-message="/cd/next" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
+      <button id="pcd-stop" class="pcd-key" data-gjs-dmode="flow" data-gjs-message="/cd/stop" data-gjs-value-on="1" data-gjs-value-off="0">&#9632;</button>
+      <button id="pcd-open" class="pcd-key" data-gjs-dmode="flow" data-gjs-message="/cd/open" data-gjs-value-on="1" data-gjs-value-off="0">&#9650;</button>
+    </div>
+
+    <div id="pcd-modes" class="pcd-keys pcd-modes" data-gjs-dmode="flow">
+      <button id="pcd-shuffle" class="pcd-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cd/shuffle" data-gjs-value-on="1" data-gjs-value-off="0">SHUFFLE</button>
+      <button id="pcd-repeat" class="pcd-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cd/repeat" data-gjs-value-on="1" data-gjs-value-off="0">REPEAT</button>
+      <button id="pcd-bass" class="pcd-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cd/bass" data-gjs-value-on="1" data-gjs-value-off="0">BASS</button>
+      <button id="pcd-antishock" class="pcd-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cd/antishock" data-gjs-value-on="1" data-gjs-value-off="0">ANTI-SHOCK</button>
+    </div>
+
+    <div id="pcd-slots" class="pcd-slots" data-gjs-dmode="flow">
+      <div id="pcd-volume-cell" class="pcd-slot" data-gjs-dmode="flow">
+        <span id="pcd-volume-legend" class="pcd-legend" data-gjs-dmode="flow">Volume</span>
+        <input id="pcd-volume" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/cd/volume" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.5" data-gjs-orientation="horizontal">
+      </div>
+      <div id="pcd-hold-cell" class="pcd-slot" data-gjs-dmode="flow">
+        <span id="pcd-hold-legend" class="pcd-legend" data-gjs-dmode="flow">Hold</span>
+        <input id="pcd-hold" type="range" step="1" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/cd/hold" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+        <div id="pcd-hold-marks" class="pcd-marks" data-gjs-dmode="flow"><span id="pcd-hold-off" class="pcd-legend" data-gjs-dmode="flow">Off</span><span id="pcd-hold-on" class="pcd-legend" data-gjs-dmode="flow">On</span></div>
+      </div>
+    </div>
+  </section>
+
+  <aside id="pcd-manual" class="pcd-manual" data-gjs-dmode="flow">
+    <p id="pcd-manual-eyebrow" class="pcd-manual-eyebrow" data-gjs-dmode="flow">Booklet &middot; Page 1</p>
+    <h2 id="pcd-manual-title" class="pcd-manual-title" data-gjs-dmode="flow">Do not run with this player</h2>
+    <p id="pcd-manual-lead" class="pcd-manual-lead" data-gjs-dmode="flow">Each control sends OSC to the address below. Select one in the editor to aim it somewhere else.</p>
+    <dl id="pcd-manual-list" class="pcd-manual-list" data-gjs-dmode="flow">
+      <div id="pcd-manual-row-1" class="pcd-manual-row" data-gjs-dmode="flow">
+        <dt id="pcd-manual-key-1" class="pcd-manual-key" data-gjs-dmode="flow">PLAY / PAUSE</dt>
+        <dd id="pcd-manual-address-1" class="pcd-manual-address" data-gjs-dmode="flow">/cd/play</dd>
+        <dd id="pcd-manual-note-1" class="pcd-manual-note" data-gjs-dmode="flow">It latches: 1 playing, 0 paused. The disc turns while it is on.</dd>
+      </div>
+      <div id="pcd-manual-row-2" class="pcd-manual-row" data-gjs-dmode="flow">
+        <dt id="pcd-manual-key-2" class="pcd-manual-key" data-gjs-dmode="flow">STOP, PREV, NEXT, OPEN</dt>
+        <dd id="pcd-manual-address-2" class="pcd-manual-address" data-gjs-dmode="flow">/cd/stop  /cd/prev  /cd/next  /cd/open</dd>
+        <dd id="pcd-manual-note-2" class="pcd-manual-note" data-gjs-dmode="flow">1 while held.</dd>
+      </div>
+      <div id="pcd-manual-row-3" class="pcd-manual-row" data-gjs-dmode="flow">
+        <dt id="pcd-manual-key-3" class="pcd-manual-key" data-gjs-dmode="flow">TRACK</dt>
+        <dd id="pcd-manual-address-3" class="pcd-manual-address" data-gjs-dmode="flow">/cd/track</dd>
+        <dd id="pcd-manual-note-3" class="pcd-manual-note" data-gjs-dmode="flow">1 to 99, as a whole number. Type it, or use the arrows.</dd>
+      </div>
+      <div id="pcd-manual-row-4" class="pcd-manual-row" data-gjs-dmode="flow">
+        <dt id="pcd-manual-key-4" class="pcd-manual-key" data-gjs-dmode="flow">SHUFFLE, REPEAT, BASS, ANTI-SHOCK</dt>
+        <dd id="pcd-manual-address-4" class="pcd-manual-address" data-gjs-dmode="flow">/cd/shuffle  /cd/repeat  /cd/bass  /cd/antishock</dd>
+        <dd id="pcd-manual-note-4" class="pcd-manual-note" data-gjs-dmode="flow">They latch: 1 on, 0 off. Each lights its word on the display.</dd>
+      </div>
+      <div id="pcd-manual-row-5" class="pcd-manual-row" data-gjs-dmode="flow">
+        <dt id="pcd-manual-key-5" class="pcd-manual-key" data-gjs-dmode="flow">VOLUME</dt>
+        <dd id="pcd-manual-address-5" class="pcd-manual-address" data-gjs-dmode="flow">/cd/volume</dd>
+        <dd id="pcd-manual-note-5" class="pcd-manual-note" data-gjs-dmode="flow">0 to 1.</dd>
+      </div>
+      <div id="pcd-manual-row-6" class="pcd-manual-row" data-gjs-dmode="flow">
+        <dt id="pcd-manual-key-6" class="pcd-manual-key" data-gjs-dmode="flow">HOLD</dt>
+        <dd id="pcd-manual-address-6" class="pcd-manual-address" data-gjs-dmode="flow">/cd/hold</dd>
+        <dd id="pcd-manual-note-6" class="pcd-manual-note" data-gjs-dmode="flow">0 or 1, as a whole number.</dd>
+      </div>
+      <div id="pcd-manual-row-7" class="pcd-manual-row" data-gjs-dmode="flow">
+        <dt id="pcd-manual-key-7" class="pcd-manual-key" data-gjs-dmode="flow">Battery</dt>
+        <dd id="pcd-manual-address-7" class="pcd-manual-address" data-gjs-dmode="flow">/cd/battery</dd>
+        <dd id="pcd-manual-note-7" class="pcd-manual-note" data-gjs-dmode="flow">This listens. Send 0 to 1 and the battery on the display fills.</dd>
+      </div>
+    </dl>
+    <p id="pcd-manual-foot" class="pcd-manual-foot" data-gjs-dmode="flow">Delete this booklet from the layout when the player goes in a bag.</p>
+  </aside>
+</div>
+</body>
+</html>

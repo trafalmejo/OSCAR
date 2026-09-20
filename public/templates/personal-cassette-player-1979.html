@@ -1,0 +1,564 @@
+<!doctype html>
+<html>
+<head>
+<title>Personal Cassette Player, 1979</title>
+<!--
+  Personal Cassette Player, 1979: blue case, silver cap, a tape behind a
+  door, a volume slider for each ear, two headphone sockets and the orange
+  key that let you talk over the music. Every control works, and the battery
+  lamps listen: send them OSC and they light.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the controls take that style's colours instead.
+
+  OSCAR puts the class "toggle" on a button that is down. PLAY is a toggle,
+  so it latches like the real key, and the case watches it with :has(): the
+  reels turn while it is down and the winding keys hurry them while held.
+  Where a browser has no :has(), everything still works and nothing turns.
+
+  The battery lamps are an OSCAR meter with Data in on. A meter draws a bar
+  from the left; here the bar is turned round to cover the lamps that are
+  out, and a mask cuts the strip into ten lamps.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the player fills the screen.
+
+  OSC addresses:
+    /cassette/play   (latching)
+    /cassette/stop   /cassette/rew   /cassette/ff   /cassette/hotline   (while held)
+    /cassette/volume/left   /cassette/volume/right
+    /cassette/tape   (1 normal, 2 chrome, 3 metal)
+    /cassette/battery   (this listens)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #d8d2c4;
+  --osc-foreground: #1c1c1e;
+  --osc-card: #2c4f8a;
+  --osc-muted: #10213f;
+  --osc-accent: #55555b;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #0a1428;
+  --osc-input: #0a1428;
+  --osc-primary: #f26a1b;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #f26a1b;
+  --osc-radius: 6px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.pcp {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 360px);
+  justify-content: center;
+  align-items: center;
+  gap: 56px;
+  min-height: 100vh;
+  padding: 40px 24px;
+  /* A bus seat, 1979. */
+  background:
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
+    linear-gradient(180deg, #a5673a, #7c4826);
+}
+
+/* ---- the player: a silver cap on a blue case ------------------------------------ */
+.pcp-unit {
+  display: grid;
+  border-radius: 12px;
+  box-shadow: 0 3px 0 #0a1428, 0 30px 40px -12px rgba(0, 0, 0, 0.7);
+}
+.pcp-cap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 12px 12px 0 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    linear-gradient(180deg, #e2e2df, #a8a8a5);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+  color: #1c1c1e;
+}
+.pcp-legend {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.pcp-jacks {
+  display: flex;
+  gap: 8px;
+}
+.pcp-jack {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #000000 0 35%, #d8b84a 38% 60%, #55555b 63% 100%);
+}
+/* The orange key everyone remembers. */
+.pcp-cap .pcp-key-hotline {
+  width: 58px;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ff8a3c, #f26a1b 55%, #c44f0c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 0 2px #55555b, 0 3px 0 2px #3a3a3f;
+  color: #2a1204;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  transition: none;
+}
+.pcp-cap .pcp-key-hotline:hover {
+  background: linear-gradient(180deg, #ff9a54, #f57a2d 55%, #cc5812);
+  color: #000000;
+}
+.pcp-cap .pcp-key-hotline.toggle,
+.pcp-cap .pcp-key-hotline.toggle:hover {
+  background: linear-gradient(180deg, #c44f0c, #e0621a);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5), 0 0 0 2px #55555b, 0 1px 0 2px #3a3a3f;
+  color: #2a1204;
+  transform: translateY(2px);
+}
+.pcp-case {
+  display: grid;
+  gap: 16px;
+  padding: 18px 18px 20px;
+  border-radius: 0 0 12px 12px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 14%, rgba(0, 0, 0, 0) 86%, rgba(0, 0, 0, 0.3)),
+    linear-gradient(180deg, #3560a6, #2c4f8a 60%, #223f70);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), inset 0 -5px 8px rgba(0, 0, 0, 0.35);
+  color: #e9eefb;
+}
+.pcp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+}
+.pcp-brand {
+  margin: 0;
+  color: #ffffff;
+  font-size: 19px;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+}
+.pcp-model {
+  color: #c9d6f2;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* ---- the door, the tape behind it ------------------------------------------------- */
+.pcp-door {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 36%), linear-gradient(180deg, #1a2f57, #10213f);
+  box-shadow: inset 0 0 0 2px #0a1428, inset 0 0 0 3px rgba(255, 255, 255, 0.2), 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.pcp-tape {
+  display: grid;
+  gap: 8px;
+  padding: 9px 12px 12px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #f4efe0, #e0d8c0);
+  color: #2a2418;
+}
+.pcp-tape-label {
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 2px solid #f26a1b;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.pcp-tape-window {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 8px 10%;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #33261c, #1c140e);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+.pcp-reel {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #1c140e 0 22%, rgba(0, 0, 0, 0) 23%),
+    conic-gradient(#f4f1e8 0 8%, #8d8d8a 8% 16.6%, #f4f1e8 16.6% 25%, #8d8d8a 25% 33.3%, #f4f1e8 33.3% 41.6%, #8d8d8a 41.6% 50%, #f4f1e8 50% 58.3%, #8d8d8a 58.3% 66.6%, #f4f1e8 66.6% 75%, #8d8d8a 75% 83.3%, #f4f1e8 83.3% 91.6%, #8d8d8a 91.6% 100%);
+  box-shadow: 0 0 0 7px #4a3525;
+  animation: pcp-turn 2.4s linear infinite paused;
+}
+@keyframes pcp-turn {
+  to { transform: rotate(-360deg); }
+}
+.pcp-case:has(#pcp-play.toggle) .pcp-reel {
+  animation-play-state: running;
+}
+.pcp-case:has(#pcp-ff.toggle) .pcp-reel {
+  animation-duration: 0.5s;
+  animation-play-state: running;
+}
+.pcp-case:has(#pcp-rew.toggle) .pcp-reel {
+  animation-duration: 0.5s;
+  animation-direction: reverse;
+  animation-play-state: running;
+}
+
+/* ---- the keys: they were on the side; here they face you ------------------------------ */
+.pcp-keys {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #0a1428;
+}
+.pcp-key {
+  width: 100%;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #e6e6e2, #bdbdb9 70%, #9b9b97);
+  box-shadow: inset 0 1px 0 #ffffff, 0 4px 0 #5a5a57;
+  color: #1c1c1e;
+  font-size: 14px;
+  transition: none;
+}
+.pcp-key:hover {
+  background: linear-gradient(180deg, #f2f2ee, #c9c9c5 70%, #a6a6a2);
+  color: #000000;
+}
+.pcp-key.toggle,
+.pcp-key.toggle:hover {
+  background: linear-gradient(180deg, #a9a9a5, #bdbdb9);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 #5a5a57;
+  color: #f26a1b;
+  transform: translateY(3px);
+}
+.pcp-key-names {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 9px 6px 0;
+  text-align: center;
+}
+
+/* ---- the slots: a volume for each ear, and the tape switch -------------------------------- */
+.pcp-slots {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px 18px;
+}
+.pcp-slot {
+  display: grid;
+  gap: 5px;
+}
+.pcp-slot-wide {
+  grid-column: 1 / -1;
+}
+.pcp-marks {
+  display: flex;
+  justify-content: space-between;
+}
+.pcp-slot input[type="range"] {
+  width: 100%;
+  --osc-primary: #0a1428;
+  --osc-muted: #0a1428;
+  --osc-track-size: 10px;
+  --osc-thumb: 26px;
+}
+.pcp-slot input[type="range"]::-webkit-slider-thumb {
+  width: 18px;
+  border: 0;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
+}
+.pcp-slot input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  border: 0;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
+}
+#pcp-tape-type::-webkit-slider-thumb {
+  width: 34px;
+}
+#pcp-tape-type::-moz-range-thumb {
+  width: 34px;
+}
+.pcp-batt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+#pcp-battery {
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 0;
+  background-color: rgba(0, 0, 0, 0);
+  background-image: linear-gradient(90deg, #ff3b30 0 20%, #f2d13a 20% 40%, #36d35a 40% 100%);
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000000 0 calc(10% - 3px), rgba(0, 0, 0, 0) calc(10% - 3px) 10%);
+  mask-image: repeating-linear-gradient(90deg, #000000 0 calc(10% - 3px), rgba(0, 0, 0, 0) calc(10% - 3px) 10%);
+}
+/* The bar is drawn the other way about: it covers the lamps that are out. */
+#pcp-battery::before {
+  right: 0;
+  left: var(--oscar-level);
+  width: auto;
+  background: #10213f;
+}
+#pcp-battery.oscar-peak::after {
+  display: none;
+}
+.pcp-small-print {
+  margin: 0;
+  color: #9fb2dc;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---- the leaflet that lists every address ---- */
+.pcp-manual {
+  padding: 26px 26px 22px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f6f1e1, #e9e0c6);
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(120, 90, 40, 0.16);
+  color: #2a2418;
+  transform: rotate(-1.2deg);
+  font-family: "Courier New", Courier, monospace;
+}
+.pcp-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.pcp-manual-title {
+  margin: 0 0 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.pcp-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.pcp-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+.pcp-manual-row {
+  display: grid;
+  gap: 1px;
+}
+.pcp-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.pcp-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.pcp-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.pcp-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ---- tablet: the leaflet goes under the player --------------------------------------------- */
+@media (max-width: 992px) {
+  .pcp {
+    grid-template-columns: minmax(0, 360px);
+    gap: 32px;
+    padding: 28px 20px 40px;
+  }
+  .pcp-manual {
+    transform: none;
+  }
+}
+
+/* ---- phone: the player is the screen ------------------------------------------------------- */
+@media (max-width: 480px) {
+  .pcp {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding: 12px 12px 28px;
+  }
+  .pcp-case {
+    gap: 14px;
+    padding: 16px 14px 18px;
+  }
+  .pcp-key {
+    min-height: 58px;
+    font-size: 16px;
+  }
+  .pcp-cap .pcp-key-hotline {
+    width: 72px;
+    min-height: 34px;
+  }
+  .pcp-slot input[type="range"] {
+    --osc-thumb: 32px;
+  }
+  .pcp-manual {
+    padding: 20px 16px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .pcp-reel {
+    animation: none !important;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="light">
+<div id="pcp" class="pcp" data-gjs-dmode="flow">
+  <section id="pcp-unit" class="pcp-unit" data-gjs-dmode="flow">
+    <div id="pcp-cap" class="pcp-cap" data-gjs-dmode="flow">
+      <div id="pcp-jacks-cell" data-gjs-dmode="flow">
+        <div id="pcp-jacks" class="pcp-jacks" data-gjs-dmode="flow"><span id="pcp-jack-a" class="pcp-jack" data-gjs-dmode="flow"></span><span id="pcp-jack-b" class="pcp-jack" data-gjs-dmode="flow"></span></div>
+      </div>
+      <span id="pcp-jacks-legend" class="pcp-legend" data-gjs-dmode="flow">Phones A &middot; B</span>
+      <div id="pcp-hotline-cell" data-gjs-dmode="flow">
+        <button id="pcp-hotline" class="pcp-key pcp-key-hotline" data-gjs-dmode="flow" data-gjs-message="/cassette/hotline" data-gjs-value-on="1" data-gjs-value-off="0">HOTLINE</button>
+      </div>
+    </div>
+
+    <div id="pcp-case" class="pcp-case" data-gjs-dmode="flow">
+      <div id="pcp-head" class="pcp-head" data-gjs-dmode="flow">
+        <h1 id="pcp-brand" class="pcp-brand" data-gjs-dmode="flow">OSCAR</h1>
+        <span id="pcp-model" class="pcp-model" data-gjs-dmode="flow">Stereo cassette player &middot; TPS-79</span>
+      </div>
+
+      <div id="pcp-door" class="pcp-door" data-gjs-dmode="flow">
+        <div id="pcp-tape" class="pcp-tape" data-gjs-dmode="flow">
+          <p id="pcp-tape-label" class="pcp-tape-label" data-gjs-dmode="flow">Side A &middot; Road mix, do not tape over</p>
+          <div id="pcp-tape-window" class="pcp-tape-window" data-gjs-dmode="flow">
+            <span id="pcp-reel-left" class="pcp-reel" data-gjs-dmode="flow"></span>
+            <span id="pcp-reel-right" class="pcp-reel" data-gjs-dmode="flow"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="pcp-transport" data-gjs-dmode="flow">
+        <div id="pcp-keys" class="pcp-keys" data-gjs-dmode="flow">
+          <button id="pcp-rew" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/rew" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
+          <button id="pcp-play" class="pcp-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cassette/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;</button>
+          <button id="pcp-ff" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/ff" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
+          <button id="pcp-stop" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/stop" data-gjs-value-on="1" data-gjs-value-off="0">&#9632;</button>
+        </div>
+        <div id="pcp-key-names" class="pcp-key-names" data-gjs-dmode="flow">
+          <span id="pcp-name-rew" class="pcp-legend" data-gjs-dmode="flow">Rew</span>
+          <span id="pcp-name-play" class="pcp-legend" data-gjs-dmode="flow">Play</span>
+          <span id="pcp-name-ff" class="pcp-legend" data-gjs-dmode="flow">FF</span>
+          <span id="pcp-name-stop" class="pcp-legend" data-gjs-dmode="flow">Stop</span>
+        </div>
+      </div>
+
+      <div id="pcp-slots" class="pcp-slots" data-gjs-dmode="flow">
+        <div id="pcp-volume-left-cell" class="pcp-slot" data-gjs-dmode="flow">
+          <span id="pcp-volume-left-legend" class="pcp-legend" data-gjs-dmode="flow">Volume L</span>
+          <input id="pcp-volume-left" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/cassette/volume/left" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.6" data-gjs-orientation="horizontal">
+        </div>
+        <div id="pcp-volume-right-cell" class="pcp-slot" data-gjs-dmode="flow">
+          <span id="pcp-volume-right-legend" class="pcp-legend" data-gjs-dmode="flow">Volume R</span>
+          <input id="pcp-volume-right" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/cassette/volume/right" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.6" data-gjs-orientation="horizontal">
+        </div>
+        <div id="pcp-tape-cell" class="pcp-slot pcp-slot-wide" data-gjs-dmode="flow">
+          <input id="pcp-tape-type" type="range" step="1" min="1" max="3" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/cassette/tape" data-gjs-min="1" data-gjs-max="3" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+          <div id="pcp-tape-marks" class="pcp-marks" data-gjs-dmode="flow"><span id="pcp-tape-normal" class="pcp-legend" data-gjs-dmode="flow">Normal</span><span id="pcp-tape-chrome" class="pcp-legend" data-gjs-dmode="flow">CrO2</span><span id="pcp-tape-metal" class="pcp-legend" data-gjs-dmode="flow">Metal</span></div>
+        </div>
+      </div>
+
+      <div id="pcp-batt" class="pcp-batt" data-gjs-dmode="flow">
+        <span id="pcp-batt-legend" class="pcp-legend" data-gjs-dmode="flow">Batt</span>
+        <div id="pcp-battery" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/cassette/battery" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.8" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+      </div>
+
+      <p id="pcp-small-print" class="pcp-small-print" data-gjs-dmode="flow">2 &times; AA &middot; Open Sound Control &middot; Be kind, rewind</p>
+    </div>
+  </section>
+
+  <aside id="pcp-manual" class="pcp-manual" data-gjs-dmode="flow">
+    <p id="pcp-manual-eyebrow" class="pcp-manual-eyebrow" data-gjs-dmode="flow">Owner's leaflet</p>
+    <h2 id="pcp-manual-title" class="pcp-manual-title" data-gjs-dmode="flow">Music, wherever you walk</h2>
+    <p id="pcp-manual-lead" class="pcp-manual-lead" data-gjs-dmode="flow">Each control sends OSC to the address below. Select one in the editor to aim it somewhere else.</p>
+    <dl id="pcp-manual-list" class="pcp-manual-list" data-gjs-dmode="flow">
+      <div id="pcp-manual-row-1" class="pcp-manual-row" data-gjs-dmode="flow">
+        <dt id="pcp-manual-key-1" class="pcp-manual-key" data-gjs-dmode="flow">PLAY</dt>
+        <dd id="pcp-manual-address-1" class="pcp-manual-address" data-gjs-dmode="flow">/cassette/play</dd>
+        <dd id="pcp-manual-note-1" class="pcp-manual-note" data-gjs-dmode="flow">It latches, as the real key did: 1 down, 0 up. The reels turn while it is down.</dd>
+      </div>
+      <div id="pcp-manual-row-2" class="pcp-manual-row" data-gjs-dmode="flow">
+        <dt id="pcp-manual-key-2" class="pcp-manual-key" data-gjs-dmode="flow">STOP, REW, FF</dt>
+        <dd id="pcp-manual-address-2" class="pcp-manual-address" data-gjs-dmode="flow">/cassette/stop  /cassette/rew  /cassette/ff</dd>
+        <dd id="pcp-manual-note-2" class="pcp-manual-note" data-gjs-dmode="flow">1 while held. The winding keys hurry the reels.</dd>
+      </div>
+      <div id="pcp-manual-row-3" class="pcp-manual-row" data-gjs-dmode="flow">
+        <dt id="pcp-manual-key-3" class="pcp-manual-key" data-gjs-dmode="flow">HOTLINE</dt>
+        <dd id="pcp-manual-address-3" class="pcp-manual-address" data-gjs-dmode="flow">/cassette/hotline</dd>
+        <dd id="pcp-manual-note-3" class="pcp-manual-note" data-gjs-dmode="flow">1 while held. On the real one it let you talk over the music.</dd>
+      </div>
+      <div id="pcp-manual-row-4" class="pcp-manual-row" data-gjs-dmode="flow">
+        <dt id="pcp-manual-key-4" class="pcp-manual-key" data-gjs-dmode="flow">VOLUME L, R</dt>
+        <dd id="pcp-manual-address-4" class="pcp-manual-address" data-gjs-dmode="flow">/cassette/volume/left  /cassette/volume/right</dd>
+        <dd id="pcp-manual-note-4" class="pcp-manual-note" data-gjs-dmode="flow">0 to 1. It had one for each ear.</dd>
+      </div>
+      <div id="pcp-manual-row-5" class="pcp-manual-row" data-gjs-dmode="flow">
+        <dt id="pcp-manual-key-5" class="pcp-manual-key" data-gjs-dmode="flow">TAPE</dt>
+        <dd id="pcp-manual-address-5" class="pcp-manual-address" data-gjs-dmode="flow">/cassette/tape</dd>
+        <dd id="pcp-manual-note-5" class="pcp-manual-note" data-gjs-dmode="flow">1 normal, 2 chrome, 3 metal, as a whole number.</dd>
+      </div>
+      <div id="pcp-manual-row-6" class="pcp-manual-row" data-gjs-dmode="flow">
+        <dt id="pcp-manual-key-6" class="pcp-manual-key" data-gjs-dmode="flow">BATT</dt>
+        <dd id="pcp-manual-address-6" class="pcp-manual-address" data-gjs-dmode="flow">/cassette/battery</dd>
+        <dd id="pcp-manual-note-6" class="pcp-manual-note" data-gjs-dmode="flow">This listens. Send 0 to 1 and the lamp strip fills.</dd>
+      </div>
+    </dl>
+    <p id="pcp-manual-foot" class="pcp-manual-foot" data-gjs-dmode="flow">Delete this leaflet from the layout when the player goes in a pocket.</p>
+  </aside>
+</div>
+</body>
+</html>

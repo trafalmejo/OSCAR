@@ -1,0 +1,535 @@
+<!doctype html>
+<html>
+<head>
+<title>Click Wheel Player, 2004</title>
+<!--
+  Click Wheel Player, 2004: white front, steel back, a grey display and one
+  wheel. A thousand songs, and no keys to speak of. Every control works,
+  the wheel reports where your thumb is, and the battery on the display
+  listens: send it OSC and it fills.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the controls take that style's colours instead.
+
+  How the wheel is made. OSCAR has no rotary control, and the wheel does not
+  need one: the ring is an XY pad made round, which sends where the thumb is
+  as x and y from -1 to 1. Whatever listens takes atan2(y, x) for the angle.
+  MENU, the two skip marks, PLAY and the centre are five OSCAR buttons laid
+  over the ring on the same grid, so a press on a mark goes to the button
+  and a press anywhere else goes to the ring.
+
+  OSCAR puts the class "toggle" on a button that is down. PLAY is a toggle,
+  and the case watches it with :has() to change the mark at the top left of
+  the display. Where a browser has no :has(), the mark stays a pause.
+
+  The scrub bar is an OSCAR slider, the playlist an OSCAR dropdown dressed
+  as a picked-out menu row, the battery an OSCAR meter with Data in on, and
+  HOLD a slider from 0 to 1 whose filled part is the orange.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the player fills the screen and the wheel grows.
+
+  OSC addresses:
+    /player/wheel     (x y, each -1 to 1)
+    /player/menu   /player/prev   /player/next   /player/select   (while held)
+    /player/play      (latching)
+    /player/position  (0 to 1)
+    /player/playlist  (1 to 4)
+    /player/hold      (0 or 1)
+    /player/battery   (this listens)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #b4d334;
+  --osc-foreground: #1f2a2e;
+  --osc-card: #ffffff;
+  --osc-muted: #dcdcdc;
+  --osc-accent: #ececec;
+  --osc-accent-foreground: #1f2a2e;
+  --osc-border: #b9b9b9;
+  --osc-input: #b9b9b9;
+  --osc-primary: #1f2a2e;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #2f7bf6;
+  --osc-radius: 10px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.cwp {
+  display: grid;
+  grid-template-columns: minmax(0, 310px) minmax(0, 340px);
+  justify-content: center;
+  align-items: center;
+  gap: 64px;
+  min-height: 100vh;
+  padding: 40px 24px;
+  /* The poster: one loud colour. */
+  background: linear-gradient(180deg, #c3df45, #a5c427);
+}
+
+/* ---- the player: white, and nothing on it that need not be ------------------------------ */
+.cwp-unit {
+  display: grid;
+  gap: 22px;
+  padding: 14px 22px 30px;
+  border-radius: 30px;
+  background: linear-gradient(100deg, #ffffff 0 60%, #f1f1f1 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.9),
+    inset 0 -8px 14px rgba(0, 0, 0, 0.07),
+    /* The steel back, just showing. */
+    0 3px 0 #c9ccd1,
+    0 5px 0 #9a9da3,
+    0 34px 40px -14px rgba(0, 0, 0, 0.45);
+  color: #1f2a2e;
+}
+.cwp-legend {
+  display: block;
+  color: #8d9296;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.cwp-top {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.cwp-jack {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #000000 0 38%, #c9ccd1 42% 100%);
+}
+/* HOLD: slide it across and the orange shows. */
+#cwp-hold {
+  width: 100%;
+  --osc-primary: #ff8a1f;
+  --osc-muted: #c9ccd1;
+  --osc-track-size: 12px;
+  --osc-thumb: 20px;
+  --osc-control-height: 20px;
+}
+#cwp-hold::-webkit-slider-thumb {
+  width: 30px;
+  border: 1px solid #9a9da3;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ffffff, #d9dce0);
+}
+#cwp-hold::-moz-range-thumb {
+  width: 30px;
+  border: 1px solid #9a9da3;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ffffff, #d9dce0);
+}
+
+/* ---- the display ------------------------------------------------------------------------- */
+.cwp-lcd {
+  display: grid;
+  gap: 7px;
+  padding: 0 0 10px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #c9d8d4, #b3c6c1);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 0 0 2px #6d7377, 0 0 0 3px #ffffff;
+  color: #1f2a2e;
+  font-family: "Chicago", "Geneva", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+.cwp-bar {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  padding: 5px 8px 4px;
+  border-bottom: 1px solid #1f2a2e;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+/* The play mark: a pause until PLAY is down. */
+.cwp-state {
+  text-align: left;
+  font-size: 10px;
+}
+.cwp-state-play {
+  display: none;
+}
+.cwp-unit:has(#cwp-play.toggle) .cwp-state-play {
+  display: block;
+}
+.cwp-unit:has(#cwp-play.toggle) .cwp-state-pause {
+  display: none;
+}
+#cwp-battery {
+  width: 30px;
+  height: 11px;
+  border: 1px solid #1f2a2e;
+  border-radius: 1px;
+  background-color: rgba(0, 0, 0, 0);
+  --osc-primary: #1f2a2e;
+}
+#cwp-battery.oscar-peak::after {
+  display: none;
+}
+.cwp-count {
+  padding: 0 10px;
+  font-size: 10px;
+}
+.cwp-song {
+  display: grid;
+  gap: 2px;
+  padding: 2px 10px 4px;
+  text-align: center;
+}
+.cwp-song-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.cwp-song-line {
+  font-size: 11px;
+}
+.cwp-scrub {
+  display: grid;
+  gap: 2px;
+  padding: 0 10px;
+}
+#cwp-position {
+  width: 100%;
+  --osc-primary: #1f2a2e;
+  --osc-muted: rgba(0, 0, 0, 0);
+  --osc-track-size: 10px;
+  --osc-thumb: 14px;
+  --osc-control-height: 16px;
+}
+#cwp-position::-webkit-slider-runnable-track {
+  border: 1px solid #1f2a2e;
+  border-radius: 0;
+}
+#cwp-position::-moz-range-track {
+  border: 1px solid #1f2a2e;
+  border-radius: 0;
+}
+#cwp-position::-webkit-slider-thumb {
+  margin-top: -3px;
+  border: 0;
+  border-radius: 0;
+  background: #1f2a2e;
+  transform: rotate(45deg) scale(0.75);
+}
+#cwp-position::-moz-range-thumb {
+  border: 0;
+  border-radius: 0;
+  background: #1f2a2e;
+  transform: rotate(45deg) scale(0.75);
+}
+.cwp-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+}
+/* The playlist: a menu row, picked out the way the menus did it. */
+#cwp-playlist {
+  width: calc(100% - 20px);
+  min-width: 0;
+  box-sizing: border-box;
+  height: 26px;
+  margin: 0 10px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background-color: #1f2a2e;
+  box-shadow: none;
+  color: #c9d8d4;
+  font-family: "Chicago", "Geneva", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---- the wheel ------------------------------------------------------------------------------- */
+/* The ring is OSCAR's XY pad, made round: it reports where the thumb is. The
+   four marks and the centre are buttons, laid over it on the same grid, so
+   a press on one goes to the button and a press anywhere else to the ring. */
+.cwp-wheel {
+  justify-self: center;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  width: min(100%, 236px);
+  aspect-ratio: 1;
+}
+#cwp-ring {
+  grid-area: 1 / 1 / 4 / 4;
+  width: 100%;
+  height: 100%;
+  border: 1px solid #c4c7cc;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #f4f5f6, #dfe1e4);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(0, 0, 0, 0.12);
+  cursor: grab;
+  --osc-thumb: 46px;
+}
+/* Where the thumb last was: a soft shadow, no more. */
+#cwp-ring::after {
+  border: 0;
+  background: radial-gradient(circle, rgba(31, 42, 46, 0.16), rgba(31, 42, 46, 0) 70%);
+  box-shadow: none;
+}
+.cwp-key {
+  position: relative;
+  place-self: center;
+  /* Small, and out at the rim, so most of the ring is still the ring. */
+  width: 76%;
+  min-height: 0;
+  height: 52%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0);
+  box-shadow: none;
+  color: #9a9da3;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  transition: none;
+}
+.cwp-key:hover {
+  background: rgba(0, 0, 0, 0);
+  color: #6d7377;
+}
+.cwp-key.toggle,
+.cwp-key.toggle:hover {
+  background: rgba(0, 0, 0, 0);
+  color: #1f2a2e;
+}
+.cwp-key-menu {
+  grid-area: 1 / 2;
+  align-self: start;
+  margin-top: 8%;
+}
+.cwp-key-prev {
+  grid-area: 2 / 1;
+  justify-self: start;
+  margin-left: 4%;
+}
+.cwp-key-next {
+  grid-area: 2 / 3;
+  justify-self: end;
+  margin-right: 4%;
+}
+.cwp-key-play {
+  grid-area: 3 / 2;
+  align-self: end;
+  margin-bottom: 8%;
+}
+.cwp-key-select,
+.cwp-key-select:hover {
+  grid-area: 2 / 2;
+  width: 100%;
+  height: 100%;
+  border: 1px solid #c4c7cc;
+  background: linear-gradient(180deg, #ffffff, #e6e8ea);
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.06);
+}
+.cwp-key-select.toggle,
+.cwp-key-select.toggle:hover {
+  background: linear-gradient(180deg, #d9dce0, #eceef0);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* ---- the leaflet that lists every address ---- */
+.cwp-manual {
+  padding: 30px 28px 24px;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 24px 40px -18px rgba(0, 0, 0, 0.4);
+  color: #1f2a2e;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.cwp-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.cwp-manual-title {
+  margin: 0 0 6px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.cwp-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(31, 42, 46, 0.2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.cwp-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+.cwp-manual-row {
+  display: grid;
+  gap: 1px;
+}
+.cwp-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.cwp-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.cwp-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.cwp-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(31, 42, 46, 0.2);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.cwp-manual-title {
+  font-weight: 300;
+  letter-spacing: -0.01em;
+}
+
+/* ---- tablet: the card goes under the player --------------------------------------------------- */
+@media (max-width: 992px) {
+  .cwp {
+    grid-template-columns: minmax(0, 330px);
+    gap: 36px;
+    padding: 28px 20px 40px;
+  }
+}
+
+/* ---- phone: the player is the screen, and the wheel grows to fit a thumb ------------------------- */
+@media (max-width: 480px) {
+  .cwp {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding: 12px 12px 28px;
+  }
+  .cwp-unit {
+    gap: 20px;
+    padding: 12px 18px 28px;
+  }
+  .cwp-song-title {
+    font-size: 16px;
+  }
+  .cwp-wheel {
+    width: min(100%, 280px);
+  }
+  .cwp-key {
+    font-size: 13px;
+  }
+  .cwp-manual {
+    padding: 22px 18px;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="light">
+<div id="cwp" class="cwp" data-gjs-dmode="flow">
+  <section id="cwp-unit" class="cwp-unit" data-gjs-dmode="flow">
+    <div id="cwp-top" class="cwp-top" data-gjs-dmode="flow">
+      <input id="cwp-hold" type="range" step="1" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/player/hold" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+      <span id="cwp-hold-legend" class="cwp-legend" data-gjs-dmode="flow">Hold</span>
+      <span id="cwp-jack" class="cwp-jack" data-gjs-dmode="flow"></span>
+    </div>
+
+    <div id="cwp-lcd" class="cwp-lcd" data-gjs-dmode="flow">
+      <div id="cwp-bar" class="cwp-bar" data-gjs-dmode="flow">
+        <div id="cwp-state" class="cwp-state" data-gjs-dmode="flow"><span id="cwp-state-pause" class="cwp-state-pause" data-gjs-dmode="flow">&#10074;&#10074;</span><span id="cwp-state-play" class="cwp-state-play" data-gjs-dmode="flow">&#9654;</span></div>
+        <span id="cwp-bar-title" data-gjs-dmode="flow">Now Playing</span>
+        <div id="cwp-battery" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/player/battery" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.8" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+      </div>
+      <span id="cwp-count" class="cwp-count" data-gjs-dmode="flow">1 of 1000</span>
+      <div id="cwp-song" class="cwp-song" data-gjs-dmode="flow">
+        <p id="cwp-song-title" class="cwp-song-title" data-gjs-dmode="flow">Open Sound Control</p>
+        <span id="cwp-song-artist" class="cwp-song-line" data-gjs-dmode="flow">OSCAR</span>
+        <span id="cwp-song-album" class="cwp-song-line" data-gjs-dmode="flow">A Thousand Songs</span>
+      </div>
+      <div id="cwp-scrub" class="cwp-scrub" data-gjs-dmode="flow">
+        <input id="cwp-position" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/player/position" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.35" data-gjs-orientation="horizontal">
+        <div id="cwp-times" class="cwp-times" data-gjs-dmode="flow"><span id="cwp-time-in" data-gjs-dmode="flow">1:21</span><span id="cwp-time-left" data-gjs-dmode="flow">-2:34</span></div>
+      </div>
+      <select id="cwp-playlist" class="oscar-dropdown" data-gjs-dmode="flow" data-gjs-message="/player/playlist" data-gjs-options="On-The-Go=1, Top 25 Most Played=2, Recently Added=3, Road Trip=4" data-gjs-value="1" data-gjs-arg-type="i"></select>
+    </div>
+
+    <div id="cwp-wheel" class="cwp-wheel" data-gjs-dmode="flow">
+      <div id="cwp-ring" class="oscar-xypad" data-gjs-dmode="flow" data-gjs-message="/player/wheel" data-gjs-min-x="-1" data-gjs-max-x="1" data-gjs-min-y="-1" data-gjs-max-y="1" data-gjs-x="0" data-gjs-y="0"></div>
+      <button id="cwp-menu" class="cwp-key cwp-key-menu" data-gjs-dmode="flow" data-gjs-message="/player/menu" data-gjs-value-on="1" data-gjs-value-off="0">MENU</button>
+      <button id="cwp-prev" class="cwp-key cwp-key-prev" data-gjs-dmode="flow" data-gjs-message="/player/prev" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
+      <button id="cwp-select" class="cwp-key cwp-key-select" data-gjs-dmode="flow" data-gjs-message="/player/select" data-gjs-value-on="1" data-gjs-value-off="0">&nbsp;</button>
+      <button id="cwp-next" class="cwp-key cwp-key-next" data-gjs-dmode="flow" data-gjs-message="/player/next" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
+      <button id="cwp-play" class="cwp-key cwp-key-play" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/player/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#10074;&#10074;</button>
+    </div>
+  </section>
+
+  <aside id="cwp-manual" class="cwp-manual" data-gjs-dmode="flow">
+    <p id="cwp-manual-eyebrow" class="cwp-manual-eyebrow" data-gjs-dmode="flow">Getting started</p>
+    <h2 id="cwp-manual-title" class="cwp-manual-title" data-gjs-dmode="flow">A thousand cues in your pocket</h2>
+    <p id="cwp-manual-lead" class="cwp-manual-lead" data-gjs-dmode="flow">Each control sends OSC to the address below. Select one in the editor to aim it somewhere else.</p>
+    <dl id="cwp-manual-list" class="cwp-manual-list" data-gjs-dmode="flow">
+      <div id="cwp-manual-row-1" class="cwp-manual-row" data-gjs-dmode="flow">
+        <dt id="cwp-manual-key-1" class="cwp-manual-key" data-gjs-dmode="flow">The wheel</dt>
+        <dd id="cwp-manual-address-1" class="cwp-manual-address" data-gjs-dmode="flow">/player/wheel</dd>
+        <dd id="cwp-manual-note-1" class="cwp-manual-note" data-gjs-dmode="flow">Two numbers, x then y, each from -1 to 1: where the thumb is on the wheel. The angle is atan2(y, x); turn that into volume, or a scroll, at the other end.</dd>
+      </div>
+      <div id="cwp-manual-row-2" class="cwp-manual-row" data-gjs-dmode="flow">
+        <dt id="cwp-manual-key-2" class="cwp-manual-key" data-gjs-dmode="flow">MENU, PREV, NEXT, centre</dt>
+        <dd id="cwp-manual-address-2" class="cwp-manual-address" data-gjs-dmode="flow">/player/menu  /player/prev  /player/next  /player/select</dd>
+        <dd id="cwp-manual-note-2" class="cwp-manual-note" data-gjs-dmode="flow">1 while held.</dd>
+      </div>
+      <div id="cwp-manual-row-3" class="cwp-manual-row" data-gjs-dmode="flow">
+        <dt id="cwp-manual-key-3" class="cwp-manual-key" data-gjs-dmode="flow">PLAY / PAUSE</dt>
+        <dd id="cwp-manual-address-3" class="cwp-manual-address" data-gjs-dmode="flow">/player/play</dd>
+        <dd id="cwp-manual-note-3" class="cwp-manual-note" data-gjs-dmode="flow">It latches: 1 playing, 0 paused. The display shows which.</dd>
+      </div>
+      <div id="cwp-manual-row-4" class="cwp-manual-row" data-gjs-dmode="flow">
+        <dt id="cwp-manual-key-4" class="cwp-manual-key" data-gjs-dmode="flow">Scrub bar</dt>
+        <dd id="cwp-manual-address-4" class="cwp-manual-address" data-gjs-dmode="flow">/player/position</dd>
+        <dd id="cwp-manual-note-4" class="cwp-manual-note" data-gjs-dmode="flow">0 to 1: how far through the song.</dd>
+      </div>
+      <div id="cwp-manual-row-5" class="cwp-manual-row" data-gjs-dmode="flow">
+        <dt id="cwp-manual-key-5" class="cwp-manual-key" data-gjs-dmode="flow">Playlist</dt>
+        <dd id="cwp-manual-address-5" class="cwp-manual-address" data-gjs-dmode="flow">/player/playlist</dd>
+        <dd id="cwp-manual-note-5" class="cwp-manual-note" data-gjs-dmode="flow">1 to 4, as a whole number.</dd>
+      </div>
+      <div id="cwp-manual-row-6" class="cwp-manual-row" data-gjs-dmode="flow">
+        <dt id="cwp-manual-key-6" class="cwp-manual-key" data-gjs-dmode="flow">HOLD</dt>
+        <dd id="cwp-manual-address-6" class="cwp-manual-address" data-gjs-dmode="flow">/player/hold</dd>
+        <dd id="cwp-manual-note-6" class="cwp-manual-note" data-gjs-dmode="flow">0 or 1, as a whole number.</dd>
+      </div>
+      <div id="cwp-manual-row-7" class="cwp-manual-row" data-gjs-dmode="flow">
+        <dt id="cwp-manual-key-7" class="cwp-manual-key" data-gjs-dmode="flow">Battery</dt>
+        <dd id="cwp-manual-address-7" class="cwp-manual-address" data-gjs-dmode="flow">/player/battery</dd>
+        <dd id="cwp-manual-note-7" class="cwp-manual-note" data-gjs-dmode="flow">This listens. Send 0 to 1 and the battery on the display fills.</dd>
+      </div>
+    </dl>
+    <p id="cwp-manual-foot" class="cwp-manual-foot" data-gjs-dmode="flow">Delete this card from the layout when the player goes in a pocket.</p>
+  </aside>
+</div>
+</body>
+</html>
