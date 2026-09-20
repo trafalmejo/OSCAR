@@ -69,7 +69,7 @@ jobs:
       - name: Check the MIDI driver was packaged
         shell: bash
         run: |
-          found=$(find dist -path '*app.asar.unpacked*' -name '*.node' | grep -i midi || true)
+          found=$(find release-builds -path '*app.asar.unpacked*' -name '*.node' | grep -i midi || true)
           echo "$found"
           test -n "$found"
 
