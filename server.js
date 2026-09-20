@@ -19,6 +19,7 @@ const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocke
 const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
+const { createSurfaces } = require("./lib/surfaces");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -408,6 +409,10 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => console.log("Editor disconnected (" + socket.id + ")"));
 });
 
+// Acting on a published surface with no browser showing it (lib/surfaces.js):
+// which widget and what state, never where to send.
+const surfaces = createSurfaces({ published, sendOSC, sendDMX, shared, io });
+
 // Last, so an extension finds everything it is handed already working.
 extensions.start({
   version: pkg.version,
@@ -416,6 +421,7 @@ extensions.start({
   settings,
   projectsDir: PROJECTS_DIR,
   lock,
+  surfaces,
   features: extensions.features(),
   log: console,
 });

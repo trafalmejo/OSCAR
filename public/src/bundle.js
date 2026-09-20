@@ -1588,7 +1588,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
-const { outgoing, routing } = require("./outgoing");
+const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { ARG_TYPES, isSendable, toNumber } = require("../osc-args");
@@ -1674,6 +1674,21 @@ const button = {
    * contract is at the top of index.js. Everything here is plain DOM, so
    * porting to another editor means providing that, not rewriting the button.
    */
+  /** How a state for drive() is asked for: on or off. */
+  driveInput: function () {
+    return { kind: "on" };
+  },
+
+  /**
+   * What putting the button in this state sends, with no element and no
+   * finger: { state: { on }, message }, or null for a state it cannot take.
+   * See `drive` in lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    if (!state || typeof state.on !== "boolean") return null;
+    return { state: { on: state.on }, message: resolve(asCtx(config), state.on) };
+  },
+
   attach: function (el, ctx) {
     let on = false;
     // What the rig says a momentary button is doing while no finger is on it.
@@ -2332,7 +2347,7 @@ const {
   dmxChecks,
   sendsDmx,
 } = require("./fields");
-const { outgoing, routing } = require("./outgoing");
+const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { refusal, checkArgType, levelOf } = require("./typed");
@@ -2449,6 +2464,21 @@ const dropdown = {
       return values(config.options).concat([config.value]);
     }),
   }),
+
+  /** How a state for drive() is asked for: one of the rows. */
+  driveInput: function (config) {
+    return { kind: "choice", options: parseOptions(config.options) };
+  },
+
+  /**
+   * What picking this row sends: { state: { value }, message }, or null for
+   * a value the list does not offer. See `drive` in lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    const value = text(state && state.value);
+    if (!offers(parseOptions(config.options), value)) return null;
+    return { state: { value: value }, message: outgoing(routing(asCtx(config)), value, levelOf(value)) };
+  },
 
   attach: function (el, ctx) {
     // Whether the last thing to touch the list was a key, and whether a pick
@@ -3196,6 +3226,21 @@ module.exports = { incoming, follow };
  *                 whose settings name image files: called at export, where
  *                 read(path) gives a data: URI for a file that can travel
  *                 inside the page, or null
+ *   drive(config, state) -> { state, message } | null   (optional) what putting
+ *                 the widget in `state` sends, worked out with no element
+ *                 and no gesture, for a host that acts on a surface without
+ *                 showing it: a schedule, or a message from somewhere that
+ *                 may only say "this widget, this value". `state` has the
+ *                 shape the widget shares ({ on }, { value }); what comes
+ *                 back is that state as the widget would keep it (clamped,
+ *                 on its step) and the message from outgoing(), which may be
+ *                 null for a widget that is switched off. Null altogether
+ *                 means the widget cannot take that state. Pure: it sends
+ *                 nothing and stores nothing.
+ *   driveInput(config) -> { kind, ... }   goes with drive(): how its state is
+ *                 asked for, so a panel can offer the right control without
+ *                 knowing the widget. { kind: "on" }, { kind: "value", min,
+ *                 max, step } or { kind: "choice", options: [{ label, value }] }.
  *   block         { label, category, icon } for the palette
  *   defaults      every setting and its starting value
  *   fields        the settings panel, in order; see fields.js
@@ -4134,7 +4179,7 @@ const {
   dmxChecks,
   sendsDmx,
 } = require("./fields");
-const { outgoing, routing } = require("./outgoing");
+const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { commitOn, refusal, checkArgType, levelOf, dmxRange } = require("./typed");
@@ -4227,6 +4272,27 @@ const numberInput = {
       return [config.value];
     }),
   }),
+
+  /** How a state for drive() is asked for: a number, and the range it is held to. */
+  driveInput: function (config) {
+    const min = toNumber(config.min);
+    const max = toNumber(config.max);
+    const step = toNumber(config.step);
+    return { kind: "value", min: min, max: max, step: step !== null && step > 0 ? step : null };
+  },
+
+  /**
+   * What typing this number sends: { state: { value }, message }, moved to
+   * the nearest number the box would accept, or null for one it would refuse
+   * even then. See `drive` in lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    const asked = toNumber(state && state.value);
+    if (asked === null) return null;
+    const value = nearest(config, asked);
+    if (complaintAbout(config, value)) return null;
+    return { state: { value: value }, message: resolve(asCtx(config), value) };
+  },
 
   attach: function (el, ctx) {
     const entry = commitOn(el, function (raw) {
@@ -4592,6 +4658,15 @@ function only(config, protocol) {
  * routing half of a panel is read the same way for all of them. Keys a widget
  * does not have read as undefined, which outgoing() treats as OSC only.
  */
+/** Settings held as a plain object, read the way a widget reads a host. For drive(). */
+function asCtx(config) {
+  return {
+    get: function (key) {
+      return config ? config[key] : undefined;
+    },
+  };
+}
+
 function routing(ctx) {
   return {
     enabled: ctx.get("enabled"),
@@ -4611,7 +4686,7 @@ function routing(ctx) {
   };
 }
 
-module.exports = { outgoing, only, routing };
+module.exports = { outgoing, only, routing, asCtx };
 
 },{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":7,"../serial-target":12,"./fields":18}],25:[function(require,module,exports){
 "use strict";
@@ -4718,7 +4793,7 @@ const {
   dmxDefaults,
   dmxChecks,
 } = require("./fields");
-const { outgoing, routing } = require("./outgoing");
+const { outgoing, routing, asCtx } = require("./outgoing");
 const { follow } = require("./incoming");
 const { share, onShared } = require("./shared");
 const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
@@ -4789,6 +4864,26 @@ const slider = {
     max: checkNumber("Max"),
     value: checkValue,
   }),
+
+  /** How a state for drive() is asked for: a number, and the range it is held to. */
+  driveInput: function (config) {
+    const min = toNumber(config.min);
+    const max = toNumber(config.max);
+    const step = toNumber(config.step);
+    return { kind: "value", min: min, max: max, step: step !== null && step > 0 ? step : null };
+  },
+
+  /**
+   * What moving the thumb here sends: { state: { value }, message }, the
+   * value kept inside the range as a received one is. See `drive` in
+   * lib/widgets/index.js.
+   */
+  drive: function (config, state) {
+    const asked = toNumber(state && state.value);
+    if (asked === null) return null;
+    const value = within(asked, config.min, config.max);
+    return { state: { value: value }, message: resolve(asCtx(config), value) };
+  },
 
   attach: function (el, ctx) {
     // True from the pointer landing on the thumb until it lifts. The network

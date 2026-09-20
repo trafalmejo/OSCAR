@@ -75,6 +75,7 @@ window.OSCAR.ready(function (oscar) {
 | `settings` | `get(key)`, `set(key, value)`, kept across restarts. Prefix keys with the extension's name |
 | `projectsDir` | where projects are kept; a place for the extension's own files |
 | `lock` | `isLocked()`, `setLocked(value)` |
+| `surfaces` | the published surfaces: `list()`, `widgets(id)`, and `drive(id, widgetId, state)`, which puts one widget in one state. The caller never says where that goes: the destination, encoding and range come from the surface as published. Use this, not raw OSC, for anything acting on a rig: a schedule, or an instruction from somewhere untrusted |
 | `features` | the resolved switches |
 | `log` | `log`, `error` |
 | `onShutdown(fn)` | run `fn` when OSCAR quits. It may return a promise; OSCAR waits up to two seconds |
