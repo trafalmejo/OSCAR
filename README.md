@@ -561,7 +561,12 @@ There is nothing to switch on: flash `tools/arduino/oscar_wifi`, read the
 address it prints, and type it into the widget's **Ip** and **Port**.
 
 **A board on a USB cable** (Uno, Nano, Mega, Leonardo, Pico) has no address,
-so OSCAR opens the serial port for you:
+so OSCAR opens the serial port for you.
+
+> The Serial panel is switched off in this version while it is tested on
+> real boards (`SERIAL` in `lib/features.js`). The steps below describe it
+> as it works once that is on. A board with Wi-Fi or Ethernet, above, is not
+> affected.
 
 1. Flash `tools/arduino/oscar_serial`.
 2. In the editor, open the **Serial** panel (the USB icon in the toolbar),

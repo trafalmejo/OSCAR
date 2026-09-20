@@ -1357,8 +1357,9 @@ function initGrape(ipServer, socketPort) {
 
   // ---- serial -------------------------------------------------------------
   // The panel is its own script (oscar_serial.js); it adds its own button
-  // here, between the lock and About.
-  if (typeof oscar_serial === "function") {
+  // here, between the lock and About. Not offered while the feature is off
+  // (lib/features.js), which also spares the server its two-second poll.
+  if (features.SERIAL && typeof oscar_serial === "function") {
     oscar_serial({
       panels: pn,
       openModal: function () {
