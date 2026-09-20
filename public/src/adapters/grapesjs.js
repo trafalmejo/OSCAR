@@ -10,6 +10,7 @@
 var { WIDGETS } = require("../../../lib/widgets");
 var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
 var features = require("../../../lib/features");
+var { midiSource } = require("../../../lib/widgets/midi-source");
 var { exportAttributes } = require("../../../lib/export/config");
 
 /**
@@ -330,16 +331,58 @@ function contextFor(view, editor) {
     };
   }
 
+  // A state handed to the widget, from wherever, with the doors shut.
+  var adopt = function (deliver) {
+    adopting++;
+    try {
+      deliver();
+    } finally {
+      adopting--;
+    }
+  };
+  var sources = [];
   if (editor.onSharedState) {
-    ctx.onShared = function (fn) {
+    sources.push(function (fn) {
       return editor.onSharedState(model.getId(), function (state) {
-        adopting++;
-        try {
+        adopt(function () {
           fn(state);
-        } finally {
-          adopting--;
-        }
+        });
       });
+    });
+  }
+  // A MIDI controller reaches the widget the same way, here in the editor's
+  // canvas too, so a knob can be seen to work the moment it has been learned.
+  var definition = byType(model.get("type"));
+  var fromMidi = midiSource(
+    editor,
+    definition,
+    model.getId(),
+    function () {
+      return configOf(model, definition);
+    },
+    function () {
+      return { value: model.get("value"), x: model.get("x"), y: model.get("y"), on: view.el.classList.contains("toggle") };
+    },
+    adopt,
+    function (changed) {
+      var event = "change:enabled change:midiListen change:midiInPort";
+      model.on(event, changed);
+      return function () {
+        model.off(event, changed);
+      };
+    }
+  );
+  if (fromMidi) sources.push(fromMidi);
+  if (sources.length) {
+    ctx.onShared = function (fn) {
+      var stops = sources.map(function (source) {
+        return source(fn);
+      });
+      return function () {
+        stops.forEach(function (stop) {
+          stop();
+        });
+      };
     };
   }
 

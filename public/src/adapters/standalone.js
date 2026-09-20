@@ -22,6 +22,7 @@
 
 var { readWidget, WIDGET_SELECTOR } = require("../../../lib/export/config");
 var { readHost, readPort } = require("../../../lib/export/connection");
+var { midiSource } = require("../../../lib/widgets/midi-source");
 
 /**
  * Where OSCAR's bridge is: { host, port }, or { error }.
@@ -120,8 +121,9 @@ function connected(bridge) {
  * @param {string|null} id the element's id: the widget's name on the wire
  * @param {Function} [onDropped] called for each message dropped because the
  *        bridge was away
+ * @param {object} [definition] the widget's definition, for what MIDI does to it
  */
-function contextFor(el, config, bridge, id, onDropped) {
+function contextFor(el, config, bridge, id, onDropped, definition) {
   var delivering = 0;
   var adopting = 0;
 
@@ -212,16 +214,49 @@ function contextFor(el, config, bridge, id, onDropped) {
     };
   }
 
+  // A state handed to the widget, from wherever, with the doors shut.
+  var adopt = function (deliver) {
+    adopting++;
+    try {
+      deliver();
+    } finally {
+      adopting--;
+    }
+  };
+  var sources = [];
   if (id && bridge.onSharedState) {
-    ctx.onShared = function (fn) {
+    sources.push(function (fn) {
       return bridge.onSharedState(id, function (state) {
-        adopting++;
-        try {
+        adopt(function () {
           fn(state);
-        } finally {
-          adopting--;
-        }
+        });
       });
+    });
+  }
+  // A MIDI controller reaches the widget the same way (lib/widgets/midi-source.js).
+  var fromMidi = midiSource(
+    bridge,
+    definition,
+    id,
+    function () {
+      return config;
+    },
+    function () {
+      return { value: config.value, x: config.x, y: config.y, on: el.classList.contains("toggle") };
+    },
+    adopt
+  );
+  if (fromMidi) sources.push(fromMidi);
+  if (sources.length) {
+    ctx.onShared = function (fn) {
+      var stops = sources.map(function (source) {
+        return source(fn);
+      });
+      return function () {
+        stops.forEach(function (stop) {
+          stop();
+        });
+      };
     };
   }
 
@@ -266,7 +301,7 @@ function attachAll(root, bridge, onDropped) {
 
     var id = (typeof el.getAttribute === "function" && el.getAttribute("id")) || null;
     try {
-      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id, onDropped)));
+      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id, onDropped, widget.definition)));
     } catch (err) {
       // One control that cannot start must not take the surface with it.
       inert++;

@@ -276,3 +276,87 @@ test("Learn hears the next thing played on any port, keeps it from the widgets, 
   assert.strictEqual(learned[2], null);
   assert.deepStrictEqual(midi.status().listening, ["Launchpad"]);
 });
+
+// ---- a page follows, and sends nothing on -----------------------------------------------------------
+
+const { midiSource } = require("../lib/widgets/midi-source");
+const standalone = require("../public/src/adapters/standalone");
+
+/** What oscar_socket.js builds, as far as MIDI goes: play(heard, port) delivers a message. */
+function midiHost() {
+  const host = { listeners: [], wanted: {}, shared: [], sent: [] };
+  host.onMidiIn = (fn) => {
+    host.listeners.push(fn);
+    return () => { host.listeners = host.listeners.filter((other) => other !== fn); };
+  };
+  host.wantMidi = (key, part) => {
+    if (part === null) delete host.wanted[key];
+    else host.wanted[key] = part;
+  };
+  host.shareState = (id, state, how) => host.shared.push([id, state, how]);
+  host.sendOSC = (...args) => host.sent.push(args);
+  host.play = (heard, port) => host.listeners.slice().forEach((fn) => fn(heard, port));
+  return host;
+}
+
+test("MIDI's Data in is OSC's: the widget follows the knob, and what came in is never sent out", () => {
+  const slider = byName["oscar-slider"];
+  const config = Object.assign({}, slider.defaults, { min: 0, max: 100, midiListen: true, midiNumber: 7, midiEnabled: true, dmxEnabled: true });
+  const host = midiHost();
+  const el = { classList: { contains: () => false, add() {}, remove() {} } };
+  const ctx = standalone.contextFor(el, config, host, "master", null, slider);
+
+  const states = [];
+  let answered = null;
+  const stop = ctx.onShared((state) => {
+    states.push(state);
+    // A widget that tried to send what it was handed is refused by the host.
+    ctx.send({ ip: "10.0.0.2", port: 7000, address: "/master", args: [] });
+    answered = host.sent.length;
+  });
+
+  host.play({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "nanoKONTROL2");
+  assert.deepStrictEqual(states, [{ value: 50 }]);
+  assert.strictEqual(answered, 0, "not as OSC, not as DMX, not as MIDI");
+  assert.deepStrictEqual(host.shared, [["master", { value: 50 }, { heard: true }]], "kept for a device that joins later; nobody is told, since every page heard it");
+
+  host.play({ type: "cc", channel: 1, number: 8, unit: 1 }, "nanoKONTROL2");
+  assert.strictEqual(states.length, 1, "somebody else's knob");
+
+  stop();
+  host.play({ type: "cc", channel: 1, number: 7, unit: 1 }, "x");
+  assert.strictEqual(states.length, 1);
+  assert.deepStrictEqual(host.wanted, {}, "and the port is no longer asked for");
+});
+
+test("a page asks only for the inputs its widgets listen on, and keeps that up to date as they are edited", () => {
+  const slider = byName["oscar-slider"];
+  const host = midiHost();
+  const config = Object.assign({}, slider.defaults, { midiListen: false, midiInPort: " Launchpad " });
+  let changed = null;
+  const source = midiSource(host, slider, "fader", () => config, () => ({}), (deliver) => deliver(), (fn) => { changed = fn; return () => {}; });
+  source(() => {});
+  assert.deepStrictEqual(host.wanted, {}, "Data in is off: no port is taken from anyone");
+
+  config.midiListen = true;
+  changed();
+  assert.deepStrictEqual(host.wanted, { fader: "Launchpad" });
+  config.midiInPort = "";
+  changed();
+  assert.deepStrictEqual(host.wanted, { fader: "" }, "every port");
+  config.enabled = false;
+  changed();
+  assert.deepStrictEqual(host.wanted, {}, "the master switch makes it deaf");
+
+  // A widget with no MIDI section, and a host that cannot hear, get nothing.
+  assert.strictEqual(midiSource(host, byName["oscar-meter"], "m", () => ({}), null, (d) => d()), null);
+  assert.strictEqual(midiSource({}, slider, "f", () => config, null, (d) => d()), null);
+});
+
+test("sending onward is a switch, and it is off", () => {
+  const features = require("../lib/features");
+  assert.strictEqual(features.MIDI_BRIDGE, false);
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.match(server, /if \(features\.MIDI_BRIDGE\) surfaces\.hearMidi\(/, "the server drives published widgets only with the switch on");
+  assert.match(server, /io\.emit\("midi:in", \{ heard, port \}\);/, "and tells the pages either way");
+});

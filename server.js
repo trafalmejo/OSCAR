@@ -16,6 +16,7 @@ const { buildMessage, isPort } = require("./lib/osc-message");
 const { receiver: oscReceiver, listenOn, atMostOncePer, parse: parseOsc } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
 const { createMidi } = require("./lib/midi");
+const features = require("./lib/features");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket } = require("./lib/dmx");
 const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
@@ -427,6 +428,17 @@ io.on("connection", (socket) => {
     }
   });
 
+  // The MIDI inputs this page's widgets listen on: parts of names, "" for all.
+  socket.on("midi:want", (parts) => {
+    const list = Array.isArray(parts) ? parts.filter((part) => typeof part === "string" && part.length <= 200).slice(0, 64) : [];
+    if (list.length) midiWanted.set(socket.id, list);
+    else midiWanted.delete(socket.id);
+    listenForMidi();
+  });
+  socket.on("disconnect", () => {
+    if (midiWanted.delete(socket.id)) listenForMidi();
+  });
+
   // Learn: the next thing anybody plays, for the editor to fill a widget's
   // MIDI settings from. It names the hardware, so it is for whoever may edit.
   socket.on("midi:learn", () => {
@@ -468,23 +480,37 @@ io.on("connection", (socket) => {
 // which widget and what state, never where to send.
 const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io });
 
-// MIDI in. A controller works a widget as a hand would, and it is done here,
-// once, not by each tablet showing the surface (lib/widgets/midi-in.js). Only
-// the ports the published widgets name are opened, and they are asked after
-// again every few seconds, which is also how a surface published a moment ago
-// starts being listened for.
+// MIDI in. What arrives is handed to every page, as incoming OSC is, and the
+// widgets that listen for it follow (lib/widgets/midi-in.js). Nothing is sent
+// on, unless MIDI_BRIDGE is on (lib/features.js): then a knob is a hand, and
+// the sending is done here, once, for the widgets of published surfaces.
 midi.onMessage((heard, port) => {
-  surfaces.hearMidi(heard, port).catch((err) => console.error("MIDI in: " + reason(err)));
+  io.emit("midi:in", { heard, port });
+  if (features.MIDI_BRIDGE) surfaces.hearMidi(heard, port).catch((err) => console.error("MIDI in: " + reason(err)));
 });
+
+// Only the inputs somebody wants are opened: on Windows an input belongs to
+// whoever opened it first. Each page says which ones its widgets listen on
+// ("midi:want", below); with the bridge on, the published surfaces count too,
+// asked after every few seconds so one published a moment ago is noticed.
+const midiWanted = new Map(); // socket id -> parts of port names
+let publishedWant = [];
 function listenForMidi() {
-  surfaces
-    .midiPorts()
-    .then((parts) => midi.listenFor(parts))
-    .catch((err) => console.error("MIDI in: " + reason(err)));
+  const parts = new Set(publishedWant);
+  for (const wanted of midiWanted.values()) for (const part of wanted) parts.add(part);
+  midi.listenFor(Array.from(parts));
 }
-if (midi.supported) {
-  listenForMidi();
-  setInterval(listenForMidi, 3000).unref();
+if (midi.supported && features.MIDI_BRIDGE) {
+  const askPublished = () =>
+    surfaces
+      .midiPorts()
+      .then((parts) => {
+        publishedWant = parts;
+        listenForMidi();
+      })
+      .catch((err) => console.error("MIDI in: " + reason(err)));
+  askPublished();
+  setInterval(askPublished, 3000).unref();
 }
 
 // Last, so an extension finds everything it is handed already working.

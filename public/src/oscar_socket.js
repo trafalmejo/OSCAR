@@ -60,6 +60,58 @@ function oscar_socket(editor, options) {
     editor.socket.emit("midi", request);
   };
 
+  // MIDI coming in, offered to every widget as incoming OSC is, and for the
+  // same reason: any of them might be listening for it.
+  var midiListeners = [];
+
+  editor.socket.on("midi:in", function (message) {
+    if (!message || !message.heard) return;
+    midiListeners.slice().forEach(function (fn) {
+      try {
+        fn(message.heard, message.port);
+      } catch (err) {
+        console.warn("A widget mishandled an incoming MIDI message:", err && err.message);
+      }
+    });
+  });
+
+  /** Subscribe to every note, controller, program and bend: fn(heard, port). Returns an unsubscribe function. */
+  editor.onMidiIn = function (fn) {
+    midiListeners.push(fn);
+    return function () {
+      midiListeners = midiListeners.filter(function (other) {
+        return other !== fn;
+      });
+    };
+  };
+
+  // OSCAR only opens the MIDI inputs somebody wants: on Windows an input
+  // belongs to whoever opened it first. So this page says which ones its
+  // widgets listen on: a part of a name, "" for every port, per widget.
+  var midiWanted = {};
+  var midiWantTimer = null;
+
+  function sayMidiWanted() {
+    midiWantTimer = null;
+    if (!editor.socket) return;
+    var parts = [];
+    Object.keys(midiWanted).forEach(function (key) {
+      if (parts.indexOf(midiWanted[key]) === -1) parts.push(midiWanted[key]);
+    });
+    editor.socket.emit("midi:want", parts);
+  }
+
+  /** `part` is the widget's In port ("" for every port), or null when it has stopped listening. */
+  editor.wantMidi = function (key, part) {
+    if (part === null || part === undefined) delete midiWanted[key];
+    else midiWanted[key] = String(part);
+    // One message for a whole surface attaching, not one per widget.
+    if (!midiWantTimer) midiWantTimer = setTimeout(sayMidiWanted, 0);
+  };
+
+  // A server that restarted has forgotten what this page wanted.
+  editor.socket.on("connect", sayMidiWanted);
+
   /**
    * Learn: the next note, controller, program or bend anybody plays.
    * fn({ port, type, channel, number }) or fn({ error }). Returns a way to
