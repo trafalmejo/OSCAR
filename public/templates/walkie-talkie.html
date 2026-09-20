@@ -16,7 +16,9 @@
     the layout when dragged instead of being pulled out of it.
   - data-osc-style="own" on <body> says the page brings its own look, and the
     first rule sets the colour tokens for it. Pick another widget style in
-    the editor and the controls take that style's colours instead.
+    the editor and the whole object is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
 
   Why it is a good first look at OSCAR's button. PUSH TO TALK is momentary,
   the way every OSCAR button starts out: 1 while a finger is down, 0 when it
@@ -61,6 +63,8 @@
   --osc-radius: 8px;
   --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
+
+/* A canvas tarpaulin. */
 .wkt {
   display: grid;
   grid-template-columns: minmax(0, 330px) minmax(0, 380px);
@@ -69,7 +73,8 @@
   gap: 56px;
   min-height: 100vh;
   padding: 40px 24px 48px;
-  /* A canvas tarpaulin. */
+}
+[data-osc-style="own"] .wkt {
   background:
     repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.08) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
     repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
@@ -80,6 +85,7 @@
 .wkt-set {
   display: grid;
 }
+
 .wkt-crown {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) 34px 26px;
@@ -88,81 +94,108 @@
   height: 120px;
   padding: 0 26px;
 }
+
 .wkt-antenna {
   height: 100%;
   border-radius: 9px 9px 2px 2px;
+}
+[data-osc-style="own"] .wkt-antenna {
   background: linear-gradient(90deg, #2c2c2a, #111110 60%, #000000);
   box-shadow: inset 2px 0 0 rgba(255, 255, 255, 0.12);
 }
+
 .wkt-knob {
   height: 24px;
   border-radius: 4px 4px 0 0;
+}
+[data-osc-style="own"] .wkt-knob {
   background: repeating-linear-gradient(90deg, #3a3a37 0 2px, #161614 2px 4px);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.15);
 }
+
 .wkt-knob-small {
   height: 16px;
 }
+
+/* The rubber bumper round the case. */
 .wkt-body {
   display: grid;
   gap: 14px;
   padding: 18px 20px 22px;
   border-radius: 18px 18px 26px 26px;
+}
+[data-osc-style="own"] .wkt-body {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 12%, rgba(0, 0, 0, 0) 86%, rgba(0, 0, 0, 0.4)),
     linear-gradient(180deg, #34382e, #23261f 60%, #181a15);
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.13),
     inset 0 -6px 10px rgba(0, 0, 0, 0.6),
-    /* The rubber bumper round the case. */
+    
     0 0 0 4px #0f100c,
     0 30px 40px -12px rgba(0, 0, 0, 0.75);
 }
+
 .wkt-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+
 .wkt-brand {
   margin: 0;
-  color: #e6e2d0;
   font-size: 17px;
   font-style: italic;
   font-weight: 800;
   letter-spacing: 0.22em;
   line-height: 1;
 }
+[data-osc-style="own"] .wkt-brand {
+  color: #e6e2d0;
+}
+
 .wkt-lamps {
   display: flex;
   align-items: center;
   gap: 6px;
 }
+
 .wkt-legend {
   display: block;
-  color: #c9c5b0;
   font-size: 8.5px;
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1.2;
   text-transform: uppercase;
 }
+[data-osc-style="own"] .wkt-legend {
+  color: #c9c5b0;
+}
+
 .wkt-lamp {
   width: 9px;
   height: 9px;
   border-radius: 50%;
+}
+[data-osc-style="own"] .wkt-lamp {
   background: #3a1210;
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
 }
+
 .wkt-lamp-rx {
-  background: #12301a;
   margin-left: 6px;
 }
+[data-osc-style="own"] .wkt-lamp-rx {
+  background: #12301a;
+}
+
 /* On the air while the big key is down; listening while MON is on. */
-.wkt-body:has(#wkt-ptt.toggle) .wkt-lamp-tx {
+[data-osc-style="own"] .wkt-body:has(#wkt-ptt.toggle) .wkt-lamp-tx {
   background: #ff3b30;
   box-shadow: 0 0 8px 2px rgba(255, 59, 48, 0.85);
 }
-.wkt-body:has(#wkt-monitor.toggle) .wkt-lamp-rx {
+
+[data-osc-style="own"] .wkt-body:has(#wkt-monitor.toggle) .wkt-lamp-rx {
   background: #36d35a;
   box-shadow: 0 0 8px 2px rgba(54, 211, 90, 0.8);
 }
@@ -175,99 +208,120 @@
   gap: 6px 12px;
   padding: 10px 12px;
   border-radius: 6px;
+}
+[data-osc-style="own"] .wkt-lcd {
   background: linear-gradient(180deg, #9aa88a, #b3c0a0);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55), 0 0 0 3px #0b0c08, 0 1px 0 3px rgba(255, 255, 255, 0.12);
   color: #1a2414;
   font-family: "Courier New", Courier, monospace;
 }
-.wkt-lcd .wkt-legend {
+
+[data-osc-style="own"] .wkt-lcd .wkt-legend {
   color: #1a2414;
 }
+
 .wkt-flags {
   grid-column: 1 / -1;
   display: flex;
   justify-content: space-between;
 }
+
 /* A flag that is not showing is still faintly there, as on real glass. */
 .wkt-flag {
-  color: rgba(26, 36, 20, 0.16);
+  opacity: 0.16;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
+
 .wkt-body:has(#wkt-ptt.toggle) .wkt-flag-tx,
 .wkt-body:has(#wkt-monitor.toggle) .wkt-flag-mon,
 .wkt-body:has(#wkt-beep.toggle) .wkt-flag-beep {
-  color: #1a2414;
+  opacity: 1;
 }
+
 /* SCAN blinks while it is on. The timing waits here; the case names the animation. */
 .wkt-flag-scan {
   animation: none 0.8s steps(1) infinite;
 }
+
 .wkt-body:has(#wkt-scan.toggle) .wkt-flag-scan {
-  color: #1a2414;
+  opacity: 1;
   animation-name: wkt-blink;
 }
+
 @keyframes wkt-blink {
-  50% { color: rgba(26, 36, 20, 0.16); }
+  50% { opacity: 0.16; }
 }
+
+/* OSCAR's dropdown has a least width, wider than this display. */
 #wkt-channel {
   width: 100%;
-  /* OSCAR's dropdown has a least width, wider than this display. */
   min-width: 0;
   box-sizing: border-box;
   height: 46px;
   padding: 0 8px;
-  border: 0;
   border-radius: 3px;
-  background-color: rgba(26, 36, 20, 0.08);
-  box-shadow: none;
-  color: #1a2414;
-  font-family: "Courier New", Courier, monospace;
   font-size: 32px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
+[data-osc-style="own"] #wkt-channel {
+  border: 0;
+  background-color: rgba(26, 36, 20, 0.08);
+  box-shadow: none;
+  color: #1a2414;
+  font-family: "Courier New", Courier, monospace;
+}
+
 #wkt-callsign {
   grid-column: 1 / -1;
   width: 100%;
   box-sizing: border-box;
   height: 30px;
   padding: 0 8px;
-  border: 0;
-  border-bottom: 2px dotted rgba(26, 36, 20, 0.5);
   border-radius: 0;
-  background-color: rgba(0, 0, 0, 0);
-  box-shadow: none;
-  color: #1a2414;
-  font-family: "Courier New", Courier, monospace;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-#wkt-callsign::placeholder {
+[data-osc-style="own"] #wkt-callsign {
+  border: 0;
+  border-bottom: 2px dotted rgba(26, 36, 20, 0.5);
+  background-color: rgba(0, 0, 0, 0);
+  box-shadow: none;
+  color: #1a2414;
+  font-family: "Courier New", Courier, monospace;
+}
+
+[data-osc-style="own"] #wkt-callsign::placeholder {
   color: rgba(26, 36, 20, 0.45);
 }
+
 /* Five bars, each taller than the last. */
 #wkt-signal {
   width: 100%;
   height: 16px;
-  border: 0;
   border-radius: 0;
+  clip-path: polygon(0 70%, 100% 0, 100% 100%, 0 100%);
+}
+[data-osc-style="own"] #wkt-signal {
+  border: 0;
   background-color: rgba(0, 0, 0, 0);
   background-image: linear-gradient(90deg, #1a2414, #1a2414);
   -webkit-mask-image: repeating-linear-gradient(90deg, #000000 0 calc(20% - 4px), rgba(0, 0, 0, 0) calc(20% - 4px) 20%);
   mask-image: repeating-linear-gradient(90deg, #000000 0 calc(20% - 4px), rgba(0, 0, 0, 0) calc(20% - 4px) 20%);
-  clip-path: polygon(0 70%, 100% 0, 100% 100%, 0 100%);
 }
-#wkt-signal::before {
+
+[data-osc-style="own"] #wkt-signal::before {
   right: 0;
   left: var(--oscar-level);
   width: auto;
   background: #a3b092;
 }
-#wkt-signal.oscar-peak::after {
+
+[data-osc-style="own"] #wkt-signal.oscar-peak::after {
   display: none;
 }
 
@@ -277,9 +331,12 @@
   gap: 6px;
   padding: 6px 18px;
 }
+
 .wkt-slot {
   height: 5px;
   border-radius: 3px;
+}
+[data-osc-style="own"] .wkt-slot {
   background: #0b0c08;
   box-shadow: inset 0 1px 2px #000000, 0 1px 0 rgba(255, 255, 255, 0.09);
 }
@@ -290,30 +347,38 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
+
 .wkt-key {
   width: 100%;
   min-height: 38px;
   padding: 0 4px;
-  border: 0;
   border-radius: 7px;
-  background: linear-gradient(180deg, #5d6152, #43473a 55%, #363a2e);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 0 0 2px #0b0c08, 0 3px 0 2px #0b0c08;
-  color: #ece8d6;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   transition: none;
 }
-.wkt-key:hover {
+[data-osc-style="own"] .wkt-key {
+  border: 0;
+  background: linear-gradient(180deg, #5d6152, #43473a 55%, #363a2e);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 0 0 2px #0b0c08, 0 3px 0 2px #0b0c08;
+  color: #ece8d6;
+}
+
+[data-osc-style="own"] .wkt-key:hover {
   background: linear-gradient(180deg, #676b5b, #4b4f41 55%, #3d4134);
   color: #ffffff;
 }
+
 .wkt-key.toggle,
 .wkt-key.toggle:hover {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] .wkt-key.toggle,
+[data-osc-style="own"] .wkt-key.toggle:hover {
   background: linear-gradient(180deg, #2f3228, #3c4033);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 0 0 2px #0b0c08, 0 1px 0 2px #0b0c08;
   color: #f07c1e;
-  transform: translateY(2px);
 }
 
 /* ---- the two wheels, as slots ---------------------------------------------------------------- */
@@ -322,24 +387,30 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
 }
+
 .wkt-wheel {
   display: grid;
   gap: 5px;
 }
+
 .wkt-wheel input[type="range"] {
   width: 100%;
+}
+[data-osc-style="own"] .wkt-wheel input[type="range"] {
   --osc-primary: #0b0c08;
   --osc-muted: #0b0c08;
   --osc-track-size: 10px;
   --osc-thumb: 26px;
 }
-.wkt-wheel input[type="range"]::-webkit-slider-thumb {
+
+[data-osc-style="own"] .wkt-wheel input[type="range"]::-webkit-slider-thumb {
   width: 20px;
   border: 0;
   border-radius: 4px;
   background: repeating-linear-gradient(90deg, #d8d4c0 0 3px, #8b8874 3px 5px);
 }
-.wkt-wheel input[type="range"]::-moz-range-thumb {
+
+[data-osc-style="own"] .wkt-wheel input[type="range"]::-moz-range-thumb {
   width: 20px;
   border: 0;
   border-radius: 4px;
@@ -347,57 +418,70 @@
 }
 
 /* ---- the key that matters ---------------------------------------------------------------------- */
+/* A finger held here should talk, not scroll the page or call up a menu. */
 .wkt-key-ptt {
   min-height: 96px;
   border-radius: 12px;
+  font-size: 17px;
+  letter-spacing: 0.16em;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+[data-osc-style="own"] .wkt-key-ptt {
   background:
     repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px),
     linear-gradient(180deg, #f59a3c, #f07c1e 50%, #c45f0e);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), inset 0 -3px 0 rgba(0, 0, 0, 0.3), 0 0 0 3px #0b0c08, 0 5px 0 3px #0b0c08;
   color: #1a1204;
-  font-size: 17px;
-  letter-spacing: 0.16em;
-  /* A finger held here should talk, not scroll the page or call up a menu. */
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
 }
-.wkt-key-ptt:hover {
+
+[data-osc-style="own"] .wkt-key-ptt:hover {
   background:
     repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px),
     linear-gradient(180deg, #f8a74f, #f38a2f 50%, #cc6712);
   color: #000000;
 }
+
 .wkt-key-ptt.toggle,
 .wkt-key-ptt.toggle:hover {
+  transform: translateY(4px);
+}
+[data-osc-style="own"] .wkt-key-ptt.toggle,
+[data-osc-style="own"] .wkt-key-ptt.toggle:hover {
   background:
     repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px),
     linear-gradient(180deg, #c45f0e, #e06f16);
   box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.55), 0 0 0 3px #0b0c08, 0 1px 0 3px #0b0c08;
   color: #1a1204;
-  transform: translateY(4px);
 }
+
 .wkt-small-print {
   margin: 0;
-  color: #8b8874;
   font-size: 8px;
   letter-spacing: 0.14em;
   text-align: center;
   text-transform: uppercase;
+}
+[data-osc-style="own"] .wkt-small-print {
+  color: #8b8874;
 }
 
 /* ---- the field card that lists every address ------------------------------------------------------ */
 .wkt-manual {
   margin-top: 120px;
   padding: 26px 26px 22px;
-  border: 2px solid #2a2418;
   border-radius: 2px;
+  transform: rotate(1deg);
+}
+[data-osc-style="own"] .wkt-manual {
+  border: 2px solid #2a2418;
   background: linear-gradient(180deg, #d9cfa6, #c7bc90);
   box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(80, 70, 30, 0.2);
   color: #2a2418;
   font-family: "Courier New", Courier, monospace;
-  transform: rotate(1deg);
 }
+
 .wkt-manual-eyebrow {
   margin: 0 0 4px;
   font-size: 10px;
@@ -405,6 +489,7 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+
 .wkt-manual-title {
   margin: 0 0 6px;
   font-size: 22px;
@@ -413,43 +498,84 @@
   line-height: 1.15;
   text-transform: uppercase;
 }
+
 .wkt-manual-lead {
   margin: 0 0 16px;
   padding-bottom: 12px;
-  border-bottom: 2px solid #2a2418;
   font-size: 12px;
   line-height: 1.55;
 }
+[data-osc-style="own"] .wkt-manual-lead {
+  border-bottom: 2px solid #2a2418;
+}
+
 .wkt-manual-list {
   display: grid;
   gap: 11px;
   margin: 0;
 }
+
 .wkt-manual-row {
   display: grid;
   gap: 1px;
 }
+
 .wkt-manual-key {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
+
 .wkt-manual-address {
   margin: 0;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
 .wkt-manual-note {
   margin: 0;
   font-size: 11px;
   opacity: 0.75;
 }
+
 .wkt-manual-foot {
   margin: 16px 0 0;
   padding-top: 10px;
-  border-top: 2px solid #2a2418;
   font-size: 10px;
   line-height: 1.5;
+}
+[data-osc-style="own"] .wkt-manual-foot {
+  border-top: 2px solid #2a2418;
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .wkt {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .wkt-body,
+body:not([data-osc-style="own"]) .wkt-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .wkt-lcd {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .wkt-antenna,
+body:not([data-osc-style="own"]) .wkt-knob,
+body:not([data-osc-style="own"]) .wkt-slot {
+  background: var(--osc-border);
+}
+body:not([data-osc-style="own"]) .wkt-lamp {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .wkt-body:has(#wkt-ptt.toggle) .wkt-lamp-tx,
+body:not([data-osc-style="own"]) .wkt-body:has(#wkt-monitor.toggle) .wkt-lamp-rx {
+  border-color: var(--osc-primary);
+  background: var(--osc-primary);
 }
 
 /* ---- tablet: the card goes under the handset --------------------------------------------------------- */
@@ -459,6 +585,7 @@
     gap: 32px;
     padding: 24px 20px 40px;
   }
+
   .wkt-manual {
     margin-top: 0;
     transform: none;
@@ -472,29 +599,37 @@
     gap: 24px;
     padding: 10px 12px 28px;
   }
+
   /* No room to wave an aerial about: it is pushed down. */
   .wkt-crown {
     height: 44px;
   }
+
   .wkt-body {
     gap: 12px;
     padding: 16px 16px 20px;
   }
+
   .wkt-grille {
     gap: 5px;
   }
+
   .wkt-slot:nth-child(n + 5) {
     display: none;
   }
+
   .wkt-key {
     min-height: 44px;
   }
+
   .wkt-key-ptt {
     min-height: 120px;
   }
-  .wkt-wheel input[type="range"] {
+
+  [data-osc-style="own"] .wkt-wheel input[type="range"] {
     --osc-thumb: 32px;
   }
+
   .wkt-manual {
     padding: 20px 16px;
   }
@@ -506,6 +641,7 @@
     animation: none !important;
   }
 }
+
 </style>
 </head>
 <body data-osc-style="own" data-osc-appearance="dark">

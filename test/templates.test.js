@@ -181,6 +181,45 @@ test("the Showcase follows a picked widget style: outside its own tokens, no col
   assert.deepStrictEqual(fixed, [], "colours that would not change with the style");
 });
 
+// Every rule in a stylesheet as [selector, body], media queries opened up.
+function rulesOf(css) {
+  const rules = [];
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf("{", i);
+    if (open === -1) break;
+    let depth = 1;
+    let close = open + 1;
+    for (; depth; close++) depth += text[close] === "{" ? 1 : text[close] === "}" ? -1 : 0;
+    const selector = text.slice(i, open).trim();
+    const body = text.slice(open + 1, close - 1);
+    if (/^@media/.test(selector)) rules.push(...rulesOf(body));
+    else rules.push([selector, body]);
+    i = close;
+  }
+  return rules;
+}
+
+test("a template that starts on Page's own can still be given a widget style: its fixed colours are for \"own\" alone", () => {
+  const OWN = '[data-osc-style="own"]';
+  let checked = 0;
+  for (const file of fs.readdirSync(DIR).filter((name) => name.endsWith(".html"))) {
+    const html = fs.readFileSync(path.join(DIR, file), "utf8");
+    if (!/<body data-osc-style="own"/.test(html)) continue;
+    checked++;
+    const css = /<style>([\s\S]*?)<\/style>/.exec(html)[1];
+    for (const [selector, body] of rulesOf(css)) {
+      if (selector === OWN || /^@font-face/.test(selector)) continue;
+      if (!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(body)) continue;
+      // A comma inside :has() or :not() is not the end of a selector.
+      const each = selector.split(/,(?![^(]*\))/).map((part) => part.trim());
+      for (const part of each) assert.ok(part.startsWith(OWN), file + ": " + part + " fixes a colour under every style");
+    }
+  }
+  assert.ok(checked >= 8, "the Showcase and the seven objects");
+});
+
 // ---- reading a template in the editor -----------------------------------------
 
 function element(tagName, text, attrs) {

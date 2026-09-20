@@ -16,7 +16,9 @@
     the layout when dragged instead of being pulled out of it.
   - data-osc-style="own" on <body> says the page brings its own look, and the
     first rule sets the colour tokens for it. Pick another widget style in
-    the editor and the controls take that style's colours instead.
+    the editor and the whole object is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
 
   OSCAR puts the class "toggle" on a button that is down. PLAY is a toggle,
   so it latches like the real key, and the case watches it with :has(): the
@@ -54,6 +56,8 @@
   --osc-radius: 6px;
   --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
+
+/* A bus seat, 1979. */
 .pcp {
   display: grid;
   grid-template-columns: minmax(0, 340px) minmax(0, 360px);
@@ -62,7 +66,8 @@
   gap: 56px;
   min-height: 100vh;
   padding: 40px 24px;
-  /* A bus seat, 1979. */
+}
+[data-osc-style="own"] .pcp {
   background:
     repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
     repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
@@ -73,8 +78,11 @@
 .pcp-unit {
   display: grid;
   border-radius: 12px;
+}
+[data-osc-style="own"] .pcp-unit {
   box-shadow: 0 3px 0 #0a1428, 0 30px 40px -12px rgba(0, 0, 0, 0.7);
 }
+
 .pcp-cap {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -82,12 +90,15 @@
   gap: 14px;
   padding: 12px 16px;
   border-radius: 12px 12px 0 0;
+}
+[data-osc-style="own"] .pcp-cap {
   background:
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
     linear-gradient(180deg, #e2e2df, #a8a8a5);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 0 rgba(0, 0, 0, 0.3);
   color: #1c1c1e;
 }
+
 .pcp-legend {
   display: block;
   font-size: 8.5px;
@@ -96,73 +107,95 @@
   line-height: 1.2;
   text-transform: uppercase;
 }
+
 .pcp-jacks {
   display: flex;
   gap: 8px;
 }
+
 .pcp-jack {
   width: 16px;
   height: 16px;
   border-radius: 50%;
+}
+[data-osc-style="own"] .pcp-jack {
   background: radial-gradient(circle, #000000 0 35%, #d8b84a 38% 60%, #55555b 63% 100%);
 }
+
 /* The orange key everyone remembers. */
 .pcp-cap .pcp-key-hotline {
   width: 58px;
   min-height: 26px;
   padding: 0;
-  border: 0;
   border-radius: 4px;
-  background: linear-gradient(180deg, #ff8a3c, #f26a1b 55%, #c44f0c);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 0 2px #55555b, 0 3px 0 2px #3a3a3f;
-  color: #2a1204;
   font-size: 7.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   transition: none;
 }
-.pcp-cap .pcp-key-hotline:hover {
+[data-osc-style="own"] .pcp-cap .pcp-key-hotline {
+  border: 0;
+  background: linear-gradient(180deg, #ff8a3c, #f26a1b 55%, #c44f0c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 0 2px #55555b, 0 3px 0 2px #3a3a3f;
+  color: #2a1204;
+}
+
+[data-osc-style="own"] .pcp-cap .pcp-key-hotline:hover {
   background: linear-gradient(180deg, #ff9a54, #f57a2d 55%, #cc5812);
   color: #000000;
 }
+
 .pcp-cap .pcp-key-hotline.toggle,
 .pcp-cap .pcp-key-hotline.toggle:hover {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] .pcp-cap .pcp-key-hotline.toggle,
+[data-osc-style="own"] .pcp-cap .pcp-key-hotline.toggle:hover {
   background: linear-gradient(180deg, #c44f0c, #e0621a);
   box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5), 0 0 0 2px #55555b, 0 1px 0 2px #3a3a3f;
   color: #2a1204;
-  transform: translateY(2px);
 }
+
 .pcp-case {
   display: grid;
   gap: 16px;
   padding: 18px 18px 20px;
   border-radius: 0 0 12px 12px;
+}
+[data-osc-style="own"] .pcp-case {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 14%, rgba(0, 0, 0, 0) 86%, rgba(0, 0, 0, 0.3)),
     linear-gradient(180deg, #3560a6, #2c4f8a 60%, #223f70);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), inset 0 -5px 8px rgba(0, 0, 0, 0.35);
   color: #e9eefb;
 }
+
 .pcp-head {
   display: flex;
   justify-content: space-between;
   align-items: end;
 }
+
 .pcp-brand {
   margin: 0;
-  color: #ffffff;
   font-size: 19px;
   font-style: italic;
   font-weight: 800;
   letter-spacing: 0.2em;
   line-height: 1;
 }
+[data-osc-style="own"] .pcp-brand {
+  color: #ffffff;
+}
+
 .pcp-model {
-  color: #c9d6f2;
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+[data-osc-style="own"] .pcp-model {
+  color: #c9d6f2;
 }
 
 /* ---- the door, the tape behind it ------------------------------------------------- */
@@ -171,55 +204,73 @@
   gap: 8px;
   padding: 12px;
   border-radius: 8px;
+}
+[data-osc-style="own"] .pcp-door {
   background: linear-gradient(155deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 36%), linear-gradient(180deg, #1a2f57, #10213f);
   box-shadow: inset 0 0 0 2px #0a1428, inset 0 0 0 3px rgba(255, 255, 255, 0.2), 0 1px 0 rgba(255, 255, 255, 0.25);
 }
+
 .pcp-tape {
   display: grid;
   gap: 8px;
   padding: 9px 12px 12px;
   border-radius: 5px;
+}
+[data-osc-style="own"] .pcp-tape {
   background: linear-gradient(180deg, #f4efe0, #e0d8c0);
   color: #2a2418;
 }
+
 .pcp-tape-label {
   margin: 0;
   padding-bottom: 4px;
-  border-bottom: 2px solid #f26a1b;
-  font-family: "Courier New", Courier, monospace;
   font-size: 12px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
+[data-osc-style="own"] .pcp-tape-label {
+  border-bottom: 2px solid #f26a1b;
+  font-family: "Courier New", Courier, monospace;
+}
+
 .pcp-tape-window {
   display: flex;
   justify-content: space-around;
   align-items: center;
   padding: 8px 10%;
   border-radius: 18px;
+}
+[data-osc-style="own"] .pcp-tape-window {
   background: linear-gradient(180deg, #33261c, #1c140e);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
 }
+
 .pcp-reel {
   width: 44px;
   height: 44px;
   border-radius: 50%;
+  animation: pcp-turn 2.4s linear infinite paused;
+}
+[data-osc-style="own"] .pcp-reel {
   background:
     radial-gradient(circle, #1c140e 0 22%, rgba(0, 0, 0, 0) 23%),
     conic-gradient(#f4f1e8 0 8%, #8d8d8a 8% 16.6%, #f4f1e8 16.6% 25%, #8d8d8a 25% 33.3%, #f4f1e8 33.3% 41.6%, #8d8d8a 41.6% 50%, #f4f1e8 50% 58.3%, #8d8d8a 58.3% 66.6%, #f4f1e8 66.6% 75%, #8d8d8a 75% 83.3%, #f4f1e8 83.3% 91.6%, #8d8d8a 91.6% 100%);
   box-shadow: 0 0 0 7px #4a3525;
-  animation: pcp-turn 2.4s linear infinite paused;
 }
+
 @keyframes pcp-turn {
   to { transform: rotate(-360deg); }
 }
+
 .pcp-case:has(#pcp-play.toggle) .pcp-reel {
   animation-play-state: running;
 }
+
 .pcp-case:has(#pcp-ff.toggle) .pcp-reel {
   animation-duration: 0.5s;
   animation-play-state: running;
 }
+
 .pcp-case:has(#pcp-rew.toggle) .pcp-reel {
   animation-duration: 0.5s;
   animation-direction: reverse;
@@ -233,31 +284,42 @@
   gap: 6px;
   padding: 6px;
   border-radius: 8px;
+}
+[data-osc-style="own"] .pcp-keys {
   background: #0a1428;
 }
+
 .pcp-key {
   width: 100%;
   min-height: 48px;
   padding: 0;
-  border: 0;
   border-radius: 4px;
-  background: linear-gradient(180deg, #e6e6e2, #bdbdb9 70%, #9b9b97);
-  box-shadow: inset 0 1px 0 #ffffff, 0 4px 0 #5a5a57;
-  color: #1c1c1e;
   font-size: 14px;
   transition: none;
 }
-.pcp-key:hover {
+[data-osc-style="own"] .pcp-key {
+  border: 0;
+  background: linear-gradient(180deg, #e6e6e2, #bdbdb9 70%, #9b9b97);
+  box-shadow: inset 0 1px 0 #ffffff, 0 4px 0 #5a5a57;
+  color: #1c1c1e;
+}
+
+[data-osc-style="own"] .pcp-key:hover {
   background: linear-gradient(180deg, #f2f2ee, #c9c9c5 70%, #a6a6a2);
   color: #000000;
 }
+
 .pcp-key.toggle,
 .pcp-key.toggle:hover {
+  transform: translateY(3px);
+}
+[data-osc-style="own"] .pcp-key.toggle,
+[data-osc-style="own"] .pcp-key.toggle:hover {
   background: linear-gradient(180deg, #a9a9a5, #bdbdb9);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 #5a5a57;
   color: #f26a1b;
-  transform: translateY(3px);
 }
+
 .pcp-key-names {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -272,87 +334,109 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px 18px;
 }
+
 .pcp-slot {
   display: grid;
   gap: 5px;
 }
+
 .pcp-slot-wide {
   grid-column: 1 / -1;
 }
+
 .pcp-marks {
   display: flex;
   justify-content: space-between;
 }
+
 .pcp-slot input[type="range"] {
   width: 100%;
+}
+[data-osc-style="own"] .pcp-slot input[type="range"] {
   --osc-primary: #0a1428;
   --osc-muted: #0a1428;
   --osc-track-size: 10px;
   --osc-thumb: 26px;
 }
-.pcp-slot input[type="range"]::-webkit-slider-thumb {
+
+[data-osc-style="own"] .pcp-slot input[type="range"]::-webkit-slider-thumb {
   width: 18px;
   border: 0;
   border-radius: 3px;
   background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
 }
-.pcp-slot input[type="range"]::-moz-range-thumb {
+
+[data-osc-style="own"] .pcp-slot input[type="range"]::-moz-range-thumb {
   width: 18px;
   border: 0;
   border-radius: 3px;
   background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
 }
-#pcp-tape-type::-webkit-slider-thumb {
+
+[data-osc-style="own"] #pcp-tape-type::-webkit-slider-thumb {
   width: 34px;
 }
-#pcp-tape-type::-moz-range-thumb {
+
+[data-osc-style="own"] #pcp-tape-type::-moz-range-thumb {
   width: 34px;
 }
+
 .pcp-batt {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
 }
+
 #pcp-battery {
   width: 100%;
   height: 8px;
-  border: 0;
   border-radius: 0;
+}
+[data-osc-style="own"] #pcp-battery {
+  border: 0;
   background-color: rgba(0, 0, 0, 0);
   background-image: linear-gradient(90deg, #ff3b30 0 20%, #f2d13a 20% 40%, #36d35a 40% 100%);
   -webkit-mask-image: repeating-linear-gradient(90deg, #000000 0 calc(10% - 3px), rgba(0, 0, 0, 0) calc(10% - 3px) 10%);
   mask-image: repeating-linear-gradient(90deg, #000000 0 calc(10% - 3px), rgba(0, 0, 0, 0) calc(10% - 3px) 10%);
 }
+
 /* The bar is drawn the other way about: it covers the lamps that are out. */
-#pcp-battery::before {
+[data-osc-style="own"] #pcp-battery::before {
   right: 0;
   left: var(--oscar-level);
   width: auto;
   background: #10213f;
 }
-#pcp-battery.oscar-peak::after {
+
+[data-osc-style="own"] #pcp-battery.oscar-peak::after {
   display: none;
 }
+
 .pcp-small-print {
   margin: 0;
-  color: #9fb2dc;
   font-size: 8px;
   letter-spacing: 0.14em;
   text-align: center;
   text-transform: uppercase;
+}
+[data-osc-style="own"] .pcp-small-print {
+  color: #9fb2dc;
 }
 
 /* ---- the leaflet that lists every address ---- */
 .pcp-manual {
   padding: 26px 26px 22px;
   border-radius: 2px;
+  transform: rotate(-1.2deg);
+}
+[data-osc-style="own"] .pcp-manual {
   background: linear-gradient(180deg, #f6f1e1, #e9e0c6);
   box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(120, 90, 40, 0.16);
   color: #2a2418;
-  transform: rotate(-1.2deg);
   font-family: "Courier New", Courier, monospace;
 }
+
 .pcp-manual-eyebrow {
   margin: 0 0 4px;
   font-size: 10px;
@@ -360,50 +444,94 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+
 .pcp-manual-title {
   margin: 0 0 6px;
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 23px;
   font-weight: 700;
   line-height: 1.15;
 }
+[data-osc-style="own"] .pcp-manual-title {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
 .pcp-manual-lead {
   margin: 0 0 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
   font-size: 12px;
   line-height: 1.55;
 }
+[data-osc-style="own"] .pcp-manual-lead {
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+}
+
 .pcp-manual-list {
   display: grid;
   gap: 11px;
   margin: 0;
 }
+
 .pcp-manual-row {
   display: grid;
   gap: 1px;
 }
+
 .pcp-manual-key {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
+
 .pcp-manual-address {
   margin: 0;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
 .pcp-manual-note {
   margin: 0;
   font-size: 11px;
   opacity: 0.72;
 }
+
 .pcp-manual-foot {
   margin: 16px 0 0;
   padding-top: 10px;
-  border-top: 1px solid rgba(42, 36, 24, 0.4);
   font-size: 10px;
   line-height: 1.5;
+}
+[data-osc-style="own"] .pcp-manual-foot {
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .pcp {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .pcp-cap,
+body:not([data-osc-style="own"]) .pcp-case,
+body:not([data-osc-style="own"]) .pcp-tape,
+body:not([data-osc-style="own"]) .pcp-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .pcp-door,
+body:not([data-osc-style="own"]) .pcp-keys,
+body:not([data-osc-style="own"]) .pcp-tape-window {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .pcp-reel {
+  border: 3px dashed var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .pcp-jack {
+  border: 2px solid var(--osc-border);
+  background: var(--osc-background);
+}
+body:not([data-osc-style="own"]) .pcp-model {
+  color: var(--osc-primary);
 }
 
 /* ---- tablet: the leaflet goes under the player --------------------------------------------- */
@@ -413,6 +541,7 @@
     gap: 32px;
     padding: 28px 20px 40px;
   }
+
   .pcp-manual {
     transform: none;
   }
@@ -425,21 +554,26 @@
     gap: 24px;
     padding: 12px 12px 28px;
   }
+
   .pcp-case {
     gap: 14px;
     padding: 16px 14px 18px;
   }
+
   .pcp-key {
     min-height: 58px;
     font-size: 16px;
   }
+
   .pcp-cap .pcp-key-hotline {
     width: 72px;
     min-height: 34px;
   }
-  .pcp-slot input[type="range"] {
+
+  [data-osc-style="own"] .pcp-slot input[type="range"] {
     --osc-thumb: 32px;
   }
+
   .pcp-manual {
     padding: 20px 16px;
   }
@@ -451,6 +585,7 @@
     animation: none !important;
   }
 }
+
 </style>
 </head>
 <body data-osc-style="own" data-osc-appearance="light">
@@ -484,9 +619,9 @@
 
       <div id="pcp-transport" data-gjs-dmode="flow">
         <div id="pcp-keys" class="pcp-keys" data-gjs-dmode="flow">
-          <button id="pcp-rew" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/rew" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
-          <button id="pcp-play" class="pcp-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cassette/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;</button>
-          <button id="pcp-ff" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/ff" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
+          <button id="pcp-rew" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/rew" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#xFE0E;&#9664;&#xFE0E;</button>
+          <button id="pcp-play" class="pcp-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/cassette/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#xFE0E;</button>
+          <button id="pcp-ff" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/ff" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#xFE0E;&#9654;&#xFE0E;</button>
           <button id="pcp-stop" class="pcp-key" data-gjs-dmode="flow" data-gjs-message="/cassette/stop" data-gjs-value-on="1" data-gjs-value-off="0">&#9632;</button>
         </div>
         <div id="pcp-key-names" class="pcp-key-names" data-gjs-dmode="flow">

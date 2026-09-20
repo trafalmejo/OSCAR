@@ -16,7 +16,9 @@
     the layout when dragged instead of being pulled out of it.
   - data-osc-style="own" on <body> says the page brings its own look, and the
     first rule sets the colour tokens for it. Pick another widget style in
-    the editor and the controls take that style's colours instead.
+    the editor and the whole object is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
 
   How it moves. OSCAR puts the class "toggle" on a button that is down. REC,
   PLAY and PAUSE are toggles, so they latch like the real keys. The case
@@ -60,6 +62,8 @@
   --osc-radius: 6px;
   --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
+
+/* A bedroom wall, late. */
 .bbx {
   display: grid;
   grid-template-columns: minmax(0, 860px) minmax(0, 300px);
@@ -68,7 +72,8 @@
   gap: 48px;
   min-height: 100vh;
   padding: 48px 24px;
-  /* A bedroom wall, late. */
+}
+[data-osc-style="own"] .bbx {
   background: radial-gradient(120% 80% at 50% 0%, #3b2f52, #17151c 70%);
 }
 
@@ -76,21 +81,27 @@
 .bbx-unit {
   display: grid;
 }
+
 .bbx-handle {
   justify-self: center;
   width: 62%;
   height: 46px;
   margin-bottom: -6px;
+  border-radius: 22px 22px 0 0;
+}
+[data-osc-style="own"] .bbx-handle {
   border: 12px solid #1b1b1e;
   border-bottom: 0;
-  border-radius: 22px 22px 0 0;
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12), 0 -2px 0 #000000;
 }
+
 .bbx-body {
   display: grid;
   gap: 14px;
   padding: 16px;
   border-radius: 14px;
+}
+[data-osc-style="own"] .bbx-body {
   background:
     repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
     linear-gradient(180deg, #d4d4d1, #a9a9a6 50%, #8d8d8a);
@@ -101,6 +112,7 @@
     0 30px 34px -14px rgba(0, 0, 0, 0.8);
   color: #1c1c1e;
 }
+
 .bbx-legend {
   display: block;
   font-size: 8.5px;
@@ -118,101 +130,130 @@
   align-items: stretch;
   gap: 14px;
 }
+
 .bbx-panel {
   display: grid;
   align-content: center;
   gap: 8px;
   padding: 12px 14px;
   border-radius: 8px;
+}
+[data-osc-style="own"] .bbx-panel {
   background: linear-gradient(180deg, #232326, #18181a);
   box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.55);
   color: #d9d5c8;
 }
+
 .bbx-plate {
   justify-items: center;
 }
+
 .bbx-brand {
   margin: 0;
-  color: #ffffff;
   font-size: 22px;
   font-style: italic;
   font-weight: 800;
   letter-spacing: 0.2em;
   line-height: 1;
 }
+[data-osc-style="own"] .bbx-brand {
+  color: #ffffff;
+}
+
 .bbx-model {
-  color: #f2b632;
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
+[data-osc-style="own"] .bbx-model {
+  color: #f2b632;
+}
+
 .bbx-stripes {
   width: 100%;
   height: 8px;
   border-radius: 2px;
+}
+[data-osc-style="own"] .bbx-stripes {
   background: linear-gradient(180deg, #e23b2e 0 25%, #f2842a 25% 50%, #f2b632 50% 75%, #3aa6a0 75% 100%);
 }
+
 .bbx-slides {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px 18px;
 }
+
 .bbx-slide {
   display: grid;
   gap: 5px;
 }
+
 .bbx-marks {
   display: flex;
   justify-content: space-between;
 }
+
 /* Every slider on the unit is a slot with a ridged cap, drawn from the
    slider's own tokens and its thumb. */
-.bbx-slide input[type="range"],
-.bbx-eq-cell input[type="range"] {
+[data-osc-style="own"] .bbx-slide input[type="range"],
+[data-osc-style="own"] .bbx-eq-cell input[type="range"] {
   --osc-primary: #000000;
   --osc-muted: #000000;
   --osc-track-size: 8px;
   --osc-thumb: 24px;
 }
+
 .bbx-slide input[type="range"] {
   width: 100%;
 }
-.bbx-slide input[type="range"]::-webkit-slider-thumb {
+
+[data-osc-style="own"] .bbx-slide input[type="range"]::-webkit-slider-thumb {
   width: 16px;
   border: 0;
   border-radius: 3px;
   background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
 }
-.bbx-slide input[type="range"]::-moz-range-thumb {
+
+[data-osc-style="own"] .bbx-slide input[type="range"]::-moz-range-thumb {
   width: 16px;
   border: 0;
   border-radius: 3px;
   background: repeating-linear-gradient(90deg, #e1e1dd 0 3px, #8e8e8a 3px 4px);
 }
-#bbx-function::-webkit-slider-thumb {
+
+[data-osc-style="own"] #bbx-function::-webkit-slider-thumb {
   width: 30px;
 }
-#bbx-function::-moz-range-thumb {
+
+[data-osc-style="own"] #bbx-function::-moz-range-thumb {
   width: 30px;
 }
+
 .bbx-eq {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px 10px;
 }
+
 .bbx-eq-title {
   grid-column: 1 / -1;
+}
+[data-osc-style="own"] .bbx-eq-title {
   color: #f2b632;
 }
+
 .bbx-eq-cell {
   display: grid;
   justify-items: center;
   gap: 5px;
 }
+
 .bbx-eq-cell input[type="range"] {
   width: 28px;
   height: 92px;
 }
-.bbx-eq-cell input[type="range"]::-webkit-slider-thumb {
+
+[data-osc-style="own"] .bbx-eq-cell input[type="range"]::-webkit-slider-thumb {
   width: 24px;
   height: 12px;
   margin-left: -8px;
@@ -220,7 +261,8 @@
   border-radius: 2px;
   background: linear-gradient(180deg, #e1e1dd 0 40%, #e23b2e 40% 60%, #b9b9b5 60%);
 }
-.bbx-eq-cell input[type="range"]::-moz-range-thumb {
+
+[data-osc-style="own"] .bbx-eq-cell input[type="range"]::-moz-range-thumb {
   width: 24px;
   height: 12px;
   border: 0;
@@ -236,6 +278,8 @@
   align-items: stretch;
   gap: 14px;
 }
+
+/* Punched steel. */
 .bbx-speaker {
   display: grid;
   align-content: center;
@@ -243,41 +287,53 @@
   gap: 12px;
   padding: 14px;
   border-radius: 10px;
-  /* Punched steel. */
+}
+[data-osc-style="own"] .bbx-speaker {
   background:
     radial-gradient(circle, #000000 1.2px, rgba(0, 0, 0, 0) 1.6px) 0 0 / 6px 6px,
     linear-gradient(180deg, #3a3a3e, #232326);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.55);
 }
+
 .bbx-speaker-left {
   grid-area: left;
 }
+
 .bbx-speaker-right {
   grid-area: right;
 }
+
 .bbx-tweeter {
   width: 26%;
   aspect-ratio: 1;
   border-radius: 50%;
+}
+[data-osc-style="own"] .bbx-tweeter {
   background: radial-gradient(circle, #d9d9d5 0 18%, #2a2a2d 20% 55%, #0c0c0d 57% 100%);
   box-shadow: 0 0 0 3px #b9b9b5, 0 0 0 4px #000000;
 }
+
 .bbx-cone {
   width: 88%;
   aspect-ratio: 1;
   border-radius: 50%;
+}
+[data-osc-style="own"] .bbx-cone {
   background:
     radial-gradient(circle, #e8e8e4 0 9%, #8d8d8a 10% 12%, #1c1c1e 13% 30%, #2c2c30 31% 46%, #1c1c1e 47% 62%, #2c2c30 63% 78%, #0c0c0d 79% 100%);
   box-shadow: 0 0 0 5px #c4c4c0, 0 0 0 6px #000000, 0 4px 10px 4px rgba(0, 0, 0, 0.6);
 }
+
 /* The cones move while the tape plays. */
 .bbx-body:has(#bbx-play.toggle):not(:has(#bbx-pause.toggle)) .bbx-cone {
   animation: bbx-thump 0.5s ease-out infinite;
 }
+
 @keyframes bbx-thump {
   0% { transform: scale(1.035); }
   100% { transform: scale(1); }
 }
+
 .bbx-centre {
   grid-area: centre;
   display: grid;
@@ -290,10 +346,13 @@
   display: grid;
   padding: 6px 12px 4px;
   border-radius: 6px;
+}
+[data-osc-style="own"] .bbx-dial {
   background: linear-gradient(180deg, #0e1a1c, #15292b);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.15), 0 1px 0 rgba(255, 255, 255, 0.55);
   color: #bfe9e2;
 }
+
 .bbx-dial-head {
   display: flex;
   justify-content: space-between;
@@ -301,6 +360,7 @@
   font-weight: 700;
   letter-spacing: 0.16em;
 }
+
 .bbx-scale {
   grid-area: 2 / 1;
   display: flex;
@@ -308,28 +368,35 @@
   align-items: start;
   height: 34px;
   padding-top: 2px;
-  background: repeating-linear-gradient(90deg, rgba(191, 233, 226, 0.55) 0 1px, rgba(0, 0, 0, 0) 1px 5%) 0 100% / 100% 9px no-repeat;
   font-size: 10px;
   font-weight: 700;
 }
+[data-osc-style="own"] .bbx-scale {
+  background: repeating-linear-gradient(90deg, rgba(191, 233, 226, 0.55) 0 1px, rgba(0, 0, 0, 0) 1px 5%) 0 100% / 100% 9px no-repeat;
+}
+
 /* The slider lies over the scale, all of it clear but its thumb, the needle. */
 #bbx-tuning {
   grid-area: 2 / 1;
   width: 100%;
+}
+[data-osc-style="own"] #bbx-tuning {
   --osc-primary: rgba(0, 0, 0, 0);
   --osc-muted: rgba(0, 0, 0, 0);
   --osc-track-size: 34px;
   --osc-thumb: 34px;
   --osc-control-height: 34px;
 }
-#bbx-tuning::-webkit-slider-thumb {
+
+[data-osc-style="own"] #bbx-tuning::-webkit-slider-thumb {
   width: 3px;
   border: 0;
   border-radius: 0;
   background: #ff3b30;
   box-shadow: 0 0 6px 1px rgba(255, 59, 48, 0.8);
 }
-#bbx-tuning::-moz-range-thumb {
+
+[data-osc-style="own"] #bbx-tuning::-moz-range-thumb {
   width: 3px;
   border: 0;
   border-radius: 0;
@@ -345,23 +412,29 @@
   gap: 5px 8px;
   padding: 8px 12px;
   border-radius: 6px;
+}
+[data-osc-style="own"] .bbx-levels {
   background: #101012;
   box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.55);
   color: #d9d5c8;
 }
+
+/* Cut into twelve lamps. */
 .bbx-levels .oscar-meter {
   width: 100%;
   height: 10px;
-  border: 0;
   border-radius: 0;
+}
+[data-osc-style="own"] .bbx-levels .oscar-meter {
+  border: 0;
   background-color: rgba(0, 0, 0, 0);
   background-image: linear-gradient(90deg, #36d35a 0 60%, #f2d13a 60% 82%, #ff3b30 82% 100%);
-  /* Cut into twelve lamps. */
   -webkit-mask-image: repeating-linear-gradient(90deg, #000000 0 calc(100% / 12 - 3px), rgba(0, 0, 0, 0) calc(100% / 12 - 3px) calc(100% / 12));
   mask-image: repeating-linear-gradient(90deg, #000000 0 calc(100% / 12 - 3px), rgba(0, 0, 0, 0) calc(100% / 12 - 3px) calc(100% / 12));
 }
+
 /* The bar is drawn the other way about: it covers the lamps that are out. */
-.bbx-levels .oscar-meter::before {
+[data-osc-style="own"] .bbx-levels .oscar-meter::before {
   right: 0;
   left: var(--oscar-level);
   width: auto;
@@ -374,60 +447,79 @@
   gap: 8px;
   padding: 10px;
   border-radius: 8px;
+}
+[data-osc-style="own"] .bbx-deck {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 38%), linear-gradient(180deg, #26262a, #121214);
   box-shadow: inset 0 0 0 2px #000000, inset 0 0 0 3px rgba(255, 255, 255, 0.18), 0 1px 0 rgba(255, 255, 255, 0.55);
 }
+
 .bbx-tape {
   display: grid;
   gap: 6px;
   padding: 7px 10px 9px;
   border-radius: 4px;
+}
+[data-osc-style="own"] .bbx-tape {
   background: linear-gradient(180deg, #efe7d2, #ddd3b8);
   color: #2a2418;
 }
+
 .bbx-tape-label {
   margin: 0;
   padding-bottom: 3px;
-  border-bottom: 1px solid #e23b2e;
-  font-family: "Courier New", Courier, monospace;
   font-size: 11px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
+[data-osc-style="own"] .bbx-tape-label {
+  border-bottom: 1px solid #e23b2e;
+  font-family: "Courier New", Courier, monospace;
+}
+
 .bbx-tape-window {
   display: flex;
   justify-content: space-around;
   align-items: center;
   padding: 5px 8%;
   border-radius: 14px;
+}
+[data-osc-style="own"] .bbx-tape-window {
   background: linear-gradient(180deg, #33261c, #1c140e);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
 }
+
 .bbx-reel {
   width: 34px;
   height: 34px;
   border-radius: 50%;
+  animation: bbx-turn 2.4s linear infinite paused;
+}
+[data-osc-style="own"] .bbx-reel {
   background:
     radial-gradient(circle, #1c140e 0 22%, rgba(0, 0, 0, 0) 23%),
     conic-gradient(#f4f1e8 0 8%, #8d8d8a 8% 16.6%, #f4f1e8 16.6% 25%, #8d8d8a 25% 33.3%, #f4f1e8 33.3% 41.6%, #8d8d8a 41.6% 50%, #f4f1e8 50% 58.3%, #8d8d8a 58.3% 66.6%, #f4f1e8 66.6% 75%, #8d8d8a 75% 83.3%, #f4f1e8 83.3% 91.6%, #8d8d8a 91.6% 100%);
   box-shadow: 0 0 0 5px #4a3525;
-  animation: bbx-turn 2.4s linear infinite paused;
 }
+
 @keyframes bbx-turn {
   to { transform: rotate(-360deg); }
 }
+
 /* PLAY turns the reels, PAUSE holds them, and the two winding keys hurry them
    for as long as they are held. */
 .bbx-body:has(#bbx-play.toggle) .bbx-reel {
   animation-play-state: running;
 }
+
 .bbx-body:has(#bbx-pause.toggle) .bbx-reel {
   animation-play-state: paused;
 }
+
 .bbx-body:has(#bbx-ff.toggle) .bbx-reel {
   animation-duration: 0.5s;
   animation-play-state: running;
 }
+
 .bbx-body:has(#bbx-rew.toggle) .bbx-reel {
   animation-duration: 0.5s;
   animation-direction: reverse;
@@ -441,82 +533,106 @@
   gap: 4px;
   padding: 5px 5px 8px;
   border-radius: 6px;
+}
+[data-osc-style="own"] .bbx-keys {
   background: #0c0c0d;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
 }
+
 .bbx-key {
   width: 100%;
   min-height: 46px;
   padding: 0;
-  border: 0;
   border-radius: 2px 2px 5px 5px;
-  background: linear-gradient(180deg, #e6e6e2, #bdbdb9 70%, #9b9b97);
-  box-shadow: inset 0 1px 0 #ffffff, 0 4px 0 #5a5a57;
-  color: #1c1c1e;
   font-size: 13px;
   transition: none;
 }
-.bbx-key:hover {
+[data-osc-style="own"] .bbx-key {
+  border: 0;
+  background: linear-gradient(180deg, #e6e6e2, #bdbdb9 70%, #9b9b97);
+  box-shadow: inset 0 1px 0 #ffffff, 0 4px 0 #5a5a57;
+  color: #1c1c1e;
+}
+
+[data-osc-style="own"] .bbx-key:hover {
   background: linear-gradient(180deg, #f2f2ee, #c9c9c5 70%, #a6a6a2);
   color: #000000;
 }
+
 .bbx-key.toggle,
 .bbx-key.toggle:hover {
+  transform: translateY(3px);
+}
+[data-osc-style="own"] .bbx-key.toggle,
+[data-osc-style="own"] .bbx-key.toggle:hover {
   background: linear-gradient(180deg, #a9a9a5, #bdbdb9);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 #5a5a57;
   color: #1c1c1e;
-  transform: translateY(3px);
 }
-.bbx-key-rec,
-.bbx-key-rec:hover {
+
+[data-osc-style="own"] .bbx-key-rec,
+[data-osc-style="own"] .bbx-key-rec:hover {
   color: #c4261c;
 }
-.bbx-key-rec.toggle,
-.bbx-key-rec.toggle:hover {
+
+[data-osc-style="own"] .bbx-key-rec.toggle,
+[data-osc-style="own"] .bbx-key-rec.toggle:hover {
   background: linear-gradient(180deg, #c4261c, #e23b2e);
   color: #ffffff;
 }
+
 .bbx-key-names {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
   padding: 9px 5px 0;
 }
+
 .bbx-key-power {
   width: 44px;
   min-height: 44px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #4a4a4f, #232326 65%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 0 2px #000000, 0 3px 0 2px #000000;
-  color: #8d8d8a;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.06em;
 }
-.bbx-key-power:hover {
+[data-osc-style="own"] .bbx-key-power {
+  background: radial-gradient(circle at 35% 30%, #4a4a4f, #232326 65%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 0 2px #000000, 0 3px 0 2px #000000;
+  color: #8d8d8a;
+}
+
+[data-osc-style="own"] .bbx-key-power:hover {
   background: radial-gradient(circle at 35% 30%, #56565b, #2a2a2e 65%);
   color: #ffffff;
 }
+
 .bbx-key-power.toggle,
 .bbx-key-power.toggle:hover {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] .bbx-key-power.toggle,
+[data-osc-style="own"] .bbx-key-power.toggle:hover {
   background: radial-gradient(circle at 35% 30%, #3a3a3f, #1c1c1e 65%);
   box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7), 0 0 0 2px #000000, 0 1px 0 2px #000000;
   color: #ff3b30;
   text-shadow: 0 0 6px rgba(255, 59, 48, 0.9);
-  transform: translateY(2px);
 }
 
 /* ---- the inlay card that lists every address ------------------------------------------------ */
 .bbx-manual {
   padding: 22px 20px 18px;
-  border-left: 14px solid #e23b2e;
   border-radius: 2px;
+  transform: rotate(-1.4deg);
+}
+[data-osc-style="own"] .bbx-manual {
+  border-left: 14px solid #e23b2e;
   background: linear-gradient(180deg, #f4f1e8, #e6e0cf);
   box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.8);
   color: #2a2418;
   font-family: "Courier New", Courier, monospace;
-  transform: rotate(-1.4deg);
 }
+
 .bbx-manual-eyebrow {
   margin: 0 0 4px;
   font-size: 10px;
@@ -524,50 +640,103 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+
 .bbx-manual-title {
   margin: 0 0 6px;
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 23px;
   font-weight: 700;
   line-height: 1.15;
 }
+[data-osc-style="own"] .bbx-manual-title {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
 .bbx-manual-lead {
   margin: 0 0 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
   font-size: 12px;
   line-height: 1.55;
 }
+[data-osc-style="own"] .bbx-manual-lead {
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+}
+
 .bbx-manual-list {
   display: grid;
   gap: 10px;
   margin: 0;
 }
+
 .bbx-manual-row {
   display: grid;
   gap: 1px;
 }
+
 .bbx-manual-key {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
+
 .bbx-manual-address {
   margin: 0;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
 .bbx-manual-note {
   margin: 0;
   font-size: 11px;
   opacity: 0.72;
 }
+
 .bbx-manual-foot {
   margin: 14px 0 0;
   padding-top: 10px;
-  border-top: 1px solid rgba(42, 36, 24, 0.4);
   font-size: 10px;
   line-height: 1.5;
+}
+[data-osc-style="own"] .bbx-manual-foot {
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .bbx {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .bbx-handle {
+  border: 10px solid var(--osc-border);
+  border-bottom: 0;
+}
+body:not([data-osc-style="own"]) .bbx-body,
+body:not([data-osc-style="own"]) .bbx-tape,
+body:not([data-osc-style="own"]) .bbx-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .bbx-panel,
+body:not([data-osc-style="own"]) .bbx-speaker,
+body:not([data-osc-style="own"]) .bbx-dial,
+body:not([data-osc-style="own"]) .bbx-levels,
+body:not([data-osc-style="own"]) .bbx-deck,
+body:not([data-osc-style="own"]) .bbx-keys,
+body:not([data-osc-style="own"]) .bbx-tape-window {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .bbx-tweeter,
+body:not([data-osc-style="own"]) .bbx-cone {
+  border: 2px solid var(--osc-border);
+  background: var(--osc-background);
+}
+body:not([data-osc-style="own"]) .bbx-reel {
+  border: 3px dashed var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .bbx-eq-title,
+body:not([data-osc-style="own"]) .bbx-model {
+  color: var(--osc-primary);
 }
 
 /* ---- tablet: the card goes under the unit ----------------------------------------------------- */
@@ -577,15 +746,19 @@
     gap: 28px;
     padding: 28px 16px 40px;
   }
+
   .bbx-top {
     grid-template-columns: auto minmax(0, 1fr);
   }
+
   .bbx-eq {
     grid-column: 1 / -1;
   }
+
   .bbx-eq-cell input[type="range"] {
     height: 84px;
   }
+
   .bbx-manual {
     transform: none;
   }
@@ -597,55 +770,71 @@
     gap: 20px;
     padding: 12px 8px 28px;
   }
+
   .bbx-handle {
     height: 30px;
+  }
+  [data-osc-style="own"] .bbx-handle {
     border-width: 9px;
   }
+
   .bbx-body {
     gap: 10px;
     padding: 10px;
   }
+
   .bbx-top {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
   }
+
   .bbx-plate {
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     justify-items: start;
     gap: 4px 12px;
   }
+
   .bbx-plate .bbx-key-power {
     grid-row: 1 / span 3;
   }
+
   .bbx-slides {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+
   .bbx-slide-function {
     grid-column: 1 / -1;
   }
-  .bbx-slide input[type="range"] {
+
+  [data-osc-style="own"] .bbx-slide input[type="range"] {
     --osc-thumb: 30px;
   }
+
   .bbx-face {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas: "centre centre" "left right";
     gap: 10px;
   }
+
   .bbx-speaker {
     grid-template-columns: auto;
     padding: 10px;
   }
+
   .bbx-tweeter {
     display: none;
   }
+
   .bbx-cone {
     width: 70%;
   }
+
   .bbx-key {
     min-height: 54px;
     font-size: 15px;
   }
+
   .bbx-manual {
     padding: 18px 16px;
   }
@@ -653,11 +842,13 @@
 
 /* ---- for anyone who has asked for less motion ---- */
 @media (prefers-reduced-motion: reduce) {
+
   .bbx-reel,
   .bbx-cone {
     animation: none !important;
   }
 }
+
 </style>
 </head>
 <body data-osc-style="own" data-osc-appearance="dark">
@@ -757,9 +948,9 @@
           <div id="bbx-transport" data-gjs-dmode="flow">
             <div id="bbx-keys" class="bbx-keys" data-gjs-dmode="flow">
               <button id="bbx-rec" class="bbx-key bbx-key-rec" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/rec" data-gjs-value-on="1" data-gjs-value-off="0">&#9679;</button>
-              <button id="bbx-play" class="bbx-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;</button>
-              <button id="bbx-rew" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/rew" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
-              <button id="bbx-ff" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/ff" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
+              <button id="bbx-play" class="bbx-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#xFE0E;</button>
+              <button id="bbx-rew" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/rew" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#xFE0E;&#9664;&#xFE0E;</button>
+              <button id="bbx-ff" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/ff" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#xFE0E;&#9654;&#xFE0E;</button>
               <button id="bbx-stop" class="bbx-key" data-gjs-dmode="flow" data-gjs-message="/boombox/stop" data-gjs-value-on="1" data-gjs-value-off="0">&#9632;</button>
               <button id="bbx-pause" class="bbx-key" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/boombox/pause" data-gjs-value-on="1" data-gjs-value-off="0">&#10074;&#10074;</button>
             </div>

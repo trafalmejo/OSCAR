@@ -16,7 +16,9 @@
     the layout when dragged instead of being pulled out of it.
   - data-osc-style="own" on <body> says the page brings its own look, and the
     first rule sets the colour tokens for it. Pick another widget style in
-    the editor and the controls take that style's colours instead.
+    the editor and the whole object is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
 
   How the wheel is made. OSCAR has no rotary control, and the wheel does not
   need one: the ring is an XY pad made round, which sends where the thumb is
@@ -62,6 +64,8 @@
   --osc-radius: 10px;
   --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
+
+/* The poster: one loud colour. */
 .cwp {
   display: grid;
   grid-template-columns: minmax(0, 310px) minmax(0, 340px);
@@ -70,63 +74,79 @@
   gap: 64px;
   min-height: 100vh;
   padding: 40px 24px;
-  /* The poster: one loud colour. */
+}
+[data-osc-style="own"] .cwp {
   background: linear-gradient(180deg, #c3df45, #a5c427);
 }
 
 /* ---- the player: white, and nothing on it that need not be ------------------------------ */
+/* The steel back, just showing. */
 .cwp-unit {
   display: grid;
   gap: 22px;
   padding: 14px 22px 30px;
   border-radius: 30px;
+}
+[data-osc-style="own"] .cwp-unit {
   background: linear-gradient(100deg, #ffffff 0 60%, #f1f1f1 100%);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.9),
     inset 0 -8px 14px rgba(0, 0, 0, 0.07),
-    /* The steel back, just showing. */
+    
     0 3px 0 #c9ccd1,
     0 5px 0 #9a9da3,
     0 34px 40px -14px rgba(0, 0, 0, 0.45);
   color: #1f2a2e;
 }
+
 .cwp-legend {
   display: block;
-  color: #8d9296;
   font-size: 8.5px;
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1.2;
   text-transform: uppercase;
 }
+[data-osc-style="own"] .cwp-legend {
+  color: #8d9296;
+}
+
 .cwp-top {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
 }
+
 .cwp-jack {
   width: 14px;
   height: 14px;
   border-radius: 50%;
+}
+[data-osc-style="own"] .cwp-jack {
   background: radial-gradient(circle, #000000 0 38%, #c9ccd1 42% 100%);
 }
+
 /* HOLD: slide it across and the orange shows. */
 #cwp-hold {
   width: 100%;
+}
+[data-osc-style="own"] #cwp-hold {
   --osc-primary: #ff8a1f;
   --osc-muted: #c9ccd1;
   --osc-track-size: 12px;
   --osc-thumb: 20px;
   --osc-control-height: 20px;
 }
-#cwp-hold::-webkit-slider-thumb {
+
+[data-osc-style="own"] #cwp-hold::-webkit-slider-thumb {
   width: 30px;
   border: 1px solid #9a9da3;
   border-radius: 4px;
   background: linear-gradient(180deg, #ffffff, #d9dce0);
 }
-#cwp-hold::-moz-range-thumb {
+
+[data-osc-style="own"] #cwp-hold::-moz-range-thumb {
   width: 30px;
   border: 1px solid #9a9da3;
   border-radius: 4px;
@@ -139,105 +159,132 @@
   gap: 7px;
   padding: 0 0 10px;
   border-radius: 6px;
+  overflow: hidden;
+}
+[data-osc-style="own"] .cwp-lcd {
   background: linear-gradient(180deg, #c9d8d4, #b3c6c1);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 0 0 2px #6d7377, 0 0 0 3px #ffffff;
   color: #1f2a2e;
   font-family: "Chicago", "Geneva", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  overflow: hidden;
 }
+
 .cwp-bar {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) 34px;
   align-items: center;
   padding: 5px 8px 4px;
-  border-bottom: 1px solid #1f2a2e;
   font-size: 12px;
   font-weight: 700;
   text-align: center;
 }
+[data-osc-style="own"] .cwp-bar {
+  border-bottom: 1px solid #1f2a2e;
+}
+
 /* The play mark: a pause until PLAY is down. */
 .cwp-state {
   text-align: left;
   font-size: 10px;
 }
+
 .cwp-state-play {
   display: none;
 }
+
 .cwp-unit:has(#cwp-play.toggle) .cwp-state-play {
   display: block;
 }
+
 .cwp-unit:has(#cwp-play.toggle) .cwp-state-pause {
   display: none;
 }
+
 #cwp-battery {
   width: 30px;
   height: 11px;
-  border: 1px solid #1f2a2e;
   border-radius: 1px;
+}
+[data-osc-style="own"] #cwp-battery {
+  border: 1px solid #1f2a2e;
   background-color: rgba(0, 0, 0, 0);
   --osc-primary: #1f2a2e;
 }
-#cwp-battery.oscar-peak::after {
+
+[data-osc-style="own"] #cwp-battery.oscar-peak::after {
   display: none;
 }
+
 .cwp-count {
   padding: 0 10px;
   font-size: 10px;
 }
+
 .cwp-song {
   display: grid;
   gap: 2px;
   padding: 2px 10px 4px;
   text-align: center;
 }
+
 .cwp-song-title {
   margin: 0;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
 }
+
 .cwp-song-line {
   font-size: 11px;
 }
+
 .cwp-scrub {
   display: grid;
   gap: 2px;
   padding: 0 10px;
 }
+
 #cwp-position {
   width: 100%;
+}
+[data-osc-style="own"] #cwp-position {
   --osc-primary: #1f2a2e;
   --osc-muted: rgba(0, 0, 0, 0);
   --osc-track-size: 10px;
   --osc-thumb: 14px;
   --osc-control-height: 16px;
 }
-#cwp-position::-webkit-slider-runnable-track {
+
+[data-osc-style="own"] #cwp-position::-webkit-slider-runnable-track {
   border: 1px solid #1f2a2e;
   border-radius: 0;
 }
-#cwp-position::-moz-range-track {
+
+[data-osc-style="own"] #cwp-position::-moz-range-track {
   border: 1px solid #1f2a2e;
   border-radius: 0;
 }
-#cwp-position::-webkit-slider-thumb {
+
+[data-osc-style="own"] #cwp-position::-webkit-slider-thumb {
   margin-top: -3px;
   border: 0;
   border-radius: 0;
   background: #1f2a2e;
   transform: rotate(45deg) scale(0.75);
 }
-#cwp-position::-moz-range-thumb {
+
+[data-osc-style="own"] #cwp-position::-moz-range-thumb {
   border: 0;
   border-radius: 0;
   background: #1f2a2e;
   transform: rotate(45deg) scale(0.75);
 }
+
 .cwp-times {
   display: flex;
   justify-content: space-between;
   font-size: 10px;
 }
+
 /* The playlist: a menu row, picked out the way the menus did it. */
 #cwp-playlist {
   width: calc(100% - 20px);
@@ -246,14 +293,16 @@
   height: 26px;
   margin: 0 10px;
   padding: 0 8px;
-  border: 0;
   border-radius: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+[data-osc-style="own"] #cwp-playlist {
+  border: 0;
   background-color: #1f2a2e;
   box-shadow: none;
   color: #c9d8d4;
   font-family: "Chicago", "Geneva", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 /* ---- the wheel ------------------------------------------------------------------------------- */
@@ -268,81 +317,99 @@
   width: min(100%, 236px);
   aspect-ratio: 1;
 }
+
 #cwp-ring {
   grid-area: 1 / 1 / 4 / 4;
   width: 100%;
   height: 100%;
-  border: 1px solid #c4c7cc;
   border-radius: 50%;
+  cursor: grab;
+}
+[data-osc-style="own"] #cwp-ring {
+  border: 1px solid #c4c7cc;
   background: linear-gradient(180deg, #f4f5f6, #dfe1e4);
   box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(0, 0, 0, 0.12);
-  cursor: grab;
   --osc-thumb: 46px;
 }
+
 /* Where the thumb last was: a soft shadow, no more. */
-#cwp-ring::after {
+[data-osc-style="own"] #cwp-ring::after {
   border: 0;
   background: radial-gradient(circle, rgba(31, 42, 46, 0.16), rgba(31, 42, 46, 0) 70%);
   box-shadow: none;
 }
+
+/* Small, and out at the rim, so most of the ring is still the ring. */
 .cwp-key {
   position: relative;
   place-self: center;
-  /* Small, and out at the rim, so most of the ring is still the ring. */
   width: 76%;
   min-height: 0;
   height: 52%;
   padding: 0;
-  border: 0;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0);
-  box-shadow: none;
-  color: #9a9da3;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   transition: none;
 }
-.cwp-key:hover {
+[data-osc-style="own"] .cwp-key {
+  border: 0;
+  background: rgba(0, 0, 0, 0);
+  box-shadow: none;
+  color: #9a9da3;
+}
+
+[data-osc-style="own"] .cwp-key:hover {
   background: rgba(0, 0, 0, 0);
   color: #6d7377;
 }
-.cwp-key.toggle,
-.cwp-key.toggle:hover {
+
+[data-osc-style="own"] .cwp-key.toggle,
+[data-osc-style="own"] .cwp-key.toggle:hover {
   background: rgba(0, 0, 0, 0);
   color: #1f2a2e;
 }
+
 .cwp-key-menu {
   grid-area: 1 / 2;
   align-self: start;
   margin-top: 8%;
 }
+
 .cwp-key-prev {
   grid-area: 2 / 1;
   justify-self: start;
   margin-left: 4%;
 }
+
 .cwp-key-next {
   grid-area: 2 / 3;
   justify-self: end;
   margin-right: 4%;
 }
+
 .cwp-key-play {
   grid-area: 3 / 2;
   align-self: end;
   margin-bottom: 8%;
 }
+
 .cwp-key-select,
 .cwp-key-select:hover {
   grid-area: 2 / 2;
   width: 100%;
   height: 100%;
+}
+[data-osc-style="own"] .cwp-key-select,
+[data-osc-style="own"] .cwp-key-select:hover {
   border: 1px solid #c4c7cc;
   background: linear-gradient(180deg, #ffffff, #e6e8ea);
   box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.06);
 }
-.cwp-key-select.toggle,
-.cwp-key-select.toggle:hover {
+
+[data-osc-style="own"] .cwp-key-select.toggle,
+[data-osc-style="own"] .cwp-key-select.toggle:hover {
   background: linear-gradient(180deg, #d9dce0, #eceef0);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.18);
 }
@@ -351,11 +418,14 @@
 .cwp-manual {
   padding: 30px 28px 24px;
   border-radius: 14px;
+}
+[data-osc-style="own"] .cwp-manual {
   background: #ffffff;
   box-shadow: 0 24px 40px -18px rgba(0, 0, 0, 0.4);
   color: #1f2a2e;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
+
 .cwp-manual-eyebrow {
   margin: 0 0 4px;
   font-size: 10px;
@@ -363,55 +433,92 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+
 .cwp-manual-title {
   margin: 0 0 6px;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 23px;
   font-weight: 700;
   line-height: 1.15;
 }
+[data-osc-style="own"] .cwp-manual-title {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
 .cwp-manual-lead {
   margin: 0 0 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(31, 42, 46, 0.2);
   font-size: 12px;
   line-height: 1.55;
 }
+[data-osc-style="own"] .cwp-manual-lead {
+  border-bottom: 1px solid rgba(31, 42, 46, 0.2);
+}
+
 .cwp-manual-list {
   display: grid;
   gap: 11px;
   margin: 0;
 }
+
 .cwp-manual-row {
   display: grid;
   gap: 1px;
 }
+
 .cwp-manual-key {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
+
 .cwp-manual-address {
   margin: 0;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
 .cwp-manual-note {
   margin: 0;
   font-size: 11px;
   opacity: 0.72;
 }
+
 .cwp-manual-foot {
   margin: 16px 0 0;
   padding-top: 10px;
-  border-top: 1px solid rgba(31, 42, 46, 0.2);
   font-size: 10px;
   line-height: 1.5;
+}
+[data-osc-style="own"] .cwp-manual-foot {
+  border-top: 1px solid rgba(31, 42, 46, 0.2);
 }
 
 .cwp-manual-title {
   font-weight: 300;
   letter-spacing: -0.01em;
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .cwp {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .cwp-unit,
+body:not([data-osc-style="own"]) .cwp-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .cwp-lcd {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .cwp-bar {
+  border-bottom: 1px solid var(--osc-border);
+}
+body:not([data-osc-style="own"]) .cwp-jack {
+  border: 2px solid var(--osc-border);
+  background: var(--osc-background);
 }
 
 /* ---- tablet: the card goes under the player --------------------------------------------------- */
@@ -430,23 +537,29 @@
     gap: 24px;
     padding: 12px 12px 28px;
   }
+
   .cwp-unit {
     gap: 20px;
     padding: 12px 18px 28px;
   }
+
   .cwp-song-title {
     font-size: 16px;
   }
+
   .cwp-wheel {
     width: min(100%, 280px);
   }
+
   .cwp-key {
     font-size: 13px;
   }
+
   .cwp-manual {
     padding: 22px 18px;
   }
 }
+
 </style>
 </head>
 <body data-osc-style="own" data-osc-appearance="light">
@@ -460,7 +573,7 @@
 
     <div id="cwp-lcd" class="cwp-lcd" data-gjs-dmode="flow">
       <div id="cwp-bar" class="cwp-bar" data-gjs-dmode="flow">
-        <div id="cwp-state" class="cwp-state" data-gjs-dmode="flow"><span id="cwp-state-pause" class="cwp-state-pause" data-gjs-dmode="flow">&#10074;&#10074;</span><span id="cwp-state-play" class="cwp-state-play" data-gjs-dmode="flow">&#9654;</span></div>
+        <div id="cwp-state" class="cwp-state" data-gjs-dmode="flow"><span id="cwp-state-pause" class="cwp-state-pause" data-gjs-dmode="flow">&#10074;&#10074;</span><span id="cwp-state-play" class="cwp-state-play" data-gjs-dmode="flow">&#9654;&#xFE0E;</span></div>
         <span id="cwp-bar-title" data-gjs-dmode="flow">Now Playing</span>
         <div id="cwp-battery" class="oscar-meter " data-gjs-dmode="flow" data-gjs-message="/player/battery" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.8" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
       </div>
@@ -480,10 +593,10 @@
     <div id="cwp-wheel" class="cwp-wheel" data-gjs-dmode="flow">
       <div id="cwp-ring" class="oscar-xypad" data-gjs-dmode="flow" data-gjs-message="/player/wheel" data-gjs-min-x="-1" data-gjs-max-x="1" data-gjs-min-y="-1" data-gjs-max-y="1" data-gjs-x="0" data-gjs-y="0"></div>
       <button id="cwp-menu" class="cwp-key cwp-key-menu" data-gjs-dmode="flow" data-gjs-message="/player/menu" data-gjs-value-on="1" data-gjs-value-off="0">MENU</button>
-      <button id="cwp-prev" class="cwp-key cwp-key-prev" data-gjs-dmode="flow" data-gjs-message="/player/prev" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#9664;</button>
+      <button id="cwp-prev" class="cwp-key cwp-key-prev" data-gjs-dmode="flow" data-gjs-message="/player/prev" data-gjs-value-on="1" data-gjs-value-off="0">&#9664;&#xFE0E;&#9664;&#xFE0E;</button>
       <button id="cwp-select" class="cwp-key cwp-key-select" data-gjs-dmode="flow" data-gjs-message="/player/select" data-gjs-value-on="1" data-gjs-value-off="0">&nbsp;</button>
-      <button id="cwp-next" class="cwp-key cwp-key-next" data-gjs-dmode="flow" data-gjs-message="/player/next" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#9654;</button>
-      <button id="cwp-play" class="cwp-key cwp-key-play" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/player/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#10074;&#10074;</button>
+      <button id="cwp-next" class="cwp-key cwp-key-next" data-gjs-dmode="flow" data-gjs-message="/player/next" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#xFE0E;&#9654;&#xFE0E;</button>
+      <button id="cwp-play" class="cwp-key cwp-key-play" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/player/play" data-gjs-value-on="1" data-gjs-value-off="0">&#9654;&#xFE0E;&#10074;&#10074;</button>
     </div>
   </section>
 
