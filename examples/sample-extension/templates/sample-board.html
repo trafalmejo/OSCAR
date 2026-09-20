@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head>
+<title>Sample Board (from an extension)</title>
+<style>
+.sample { display: grid; gap: 12px; padding: 24px; }
+@media (max-width: 992px) { .sample { padding: 16px; } }
+@media (max-width: 480px) { .sample { padding: 12px; } }
+</style>
+</head>
+<body data-osc-style="default" data-osc-appearance="dark">
+<div id="sample" class="sample" data-gjs-dmode="flow">
+  <button id="sample-go" data-gjs-dmode="flow" data-gjs-message="/sample/go">Go</button>
+</div>
+</body>
+</html>

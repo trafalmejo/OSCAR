@@ -18,6 +18,7 @@ const { portsFromEnv } = require("./lib/ports");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket } = require("./lib/dmx");
 const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
+const { extensionIds, loadExtensions } = require("./lib/extensions");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -85,6 +86,10 @@ const updates = createUpdateChecker({
   enabled: process.env.OSCAR_NO_UPDATE_CHECK !== "1",
 });
 
+// Whatever has been added to this OSCAR (lib/extensions.js). Usually nothing.
+const extensions = loadExtensions(extensionIds(process.env));
+extensions.mount(app, express.static);
+
 // What a bug report always needs: which OSCAR, on what, run how.
 function diagnostics() {
   return {
@@ -97,6 +102,8 @@ function diagnostics() {
     // "My Arduino does nothing" is unanswerable without knowing whether this
     // build can open a port at all, and whether it thinks it has one.
     serial: serial.status(),
+    // Behaviour nobody can reproduce is sometimes an extension's.
+    extensions: extensions.list(),
   };
 }
 
@@ -168,6 +175,7 @@ app.use(
     serial,
     published,
     templatesDir: path.join(__dirname, "public", "templates"),
+    extensions,
   })
 );
 
@@ -400,6 +408,18 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => console.log("Editor disconnected (" + socket.id + ")"));
 });
 
+// Last, so an extension finds everything it is handed already working.
+extensions.start({
+  version: pkg.version,
+  app,
+  io,
+  settings,
+  projectsDir: PROJECTS_DIR,
+  lock,
+  features: extensions.features(),
+  log: console,
+});
+
 const httpServer = app.listen(HTTP_PORT, () => {
   console.log("");
   console.log("  OSCAR is running.");
@@ -412,6 +432,9 @@ const httpServer = app.listen(HTTP_PORT, () => {
   if (oscInLine) console.log(oscInLine);
   if (dmxLine) console.log(dmxLine);
   if (serialLine) console.log(serialLine);
+  for (const extension of extensions.list()) {
+    console.log("  Extension:            " + extension.name + (extension.version ? " " + extension.version : ""));
+  }
   if (lock.isLocked()) {
     console.log("");
     console.log("  LOCKED: other devices can use the controls but not edit.");
@@ -453,8 +476,10 @@ function shutdown() {
   // The channels are handed back before the socket goes, so the zero frames
   // and sACN's terminated packets actually leave; the fallback exit below
   // bounds how long an unreachable node can hold that up.
-  const letGo = DMX_HOLD_ON_EXIT ? Promise.resolve(dmx.close()) : dmx.stopAll();
-  letGo.then(() => dmxSocket.close());
+  const released = DMX_HOLD_ON_EXIT ? Promise.resolve(dmx.close()) : dmx.stopAll();
+  released.then(() => dmxSocket.close());
+  // Extensions get the same bounded wait the rig does.
+  const letGo = Promise.all([released, extensions.stop()]);
   httpServer.close(() => letGo.then(() => process.exit(0)));
   setTimeout(() => process.exit(0), 2000).unref();
 }

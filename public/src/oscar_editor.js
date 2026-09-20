@@ -50,6 +50,16 @@ var editor = {};
 // One browserify bundle serves both the editor and the preview page, so each
 // entry point only boots when its own container is on the page.
 if (document.getElementById("gjs")) {
+  // Extensions' scripts run as soon as this file has, which is before the
+  // editor has finished loading. They wait here; see the end of this block.
+  var extensionsWaiting = [];
+  window.OSCAR = {
+    api: 1,
+    ready: function (fn) {
+      if (typeof fn === "function") extensionsWaiting.push(fn);
+    },
+  };
+
   // Ask the server which address it is reachable on, so new widgets default to
   // an IP that other devices on the network can actually talk to.
   fetch("/connection")
@@ -105,6 +115,13 @@ function environmentReport() {
     // Whether this build can open a serial port at all is the first question
     // a "my Arduino does nothing" report raises. The port name stays out.
     "Serial:     " + (info.serial ? (info.serial.supported ? info.serial.state : "not in this build") : "?"),
+    // Behaviour nobody else sees is sometimes an extension's (lib/extensions.js).
+    "Extensions: " +
+      ((info.extensions || [])
+        .map(function (e) {
+          return e.name + (e.version ? " " + e.version : "");
+        })
+        .join(", ") || "none"),
     "Browser:    " + navigator.userAgent,
   ];
   return lines.join("\n");
@@ -1456,6 +1473,58 @@ function initGrape(ipServer, socketPort) {
     "open-layers": "Layers",
     "open-blocks": "Blocks",
   });
+
+  // ---- extensions ----------------------------------------------------------
+  // What an extension's editor script is handed (lib/extensions.js), through
+  // window.OSCAR.ready(function (oscar) { ... }). Kept small on purpose: every
+  // name here is a promise to code OSCAR cannot see, and api goes up when one
+  // of them changes shape.
+  var oscarApi = {
+    api: 1,
+    /** The GrapesJS editor, for everything not wrapped below. */
+    editor: editor,
+    /** The feature switches as they stand; see lib/features.js. */
+    features: features,
+    /**
+     * A button at the end of the top toolbar.
+     * { id, title, iconPath (the d of a 24x24 SVG path), run(editor) }
+     */
+    addToolbarButton: function (button) {
+      if (!button || !button.id || typeof button.run !== "function") {
+        throw new Error("A toolbar button needs an id and a run function");
+      }
+      if (pn.getButton("options", button.id)) return;
+      var title = String(button.title || button.id);
+      pn.addButton("options", {
+        id: button.id,
+        label:
+          '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="' +
+          String(button.iconPath || "").replace(/[^\w\s.,-]/g, "") +
+          '"/></svg>',
+        command: function () {
+          button.run(editor);
+        },
+        // Tooltips are drawn from data-tooltip; a title as well would show twice.
+        attributes: { "data-tooltip": title, "data-tooltip-pos": "bottom", "aria-label": title },
+      });
+    },
+    /** Open OSCAR's modal on an element of the extension's own. */
+    openModal: function (title, content) {
+      modal.open({ title: title, content: content, attributes: { class: "modal-login" } });
+    },
+  };
+
+  // One extension throwing must not cost the others, or the editor, anything.
+  function runExtension(fn) {
+    try {
+      fn(oscarApi);
+    } catch (err) {
+      console.error("An OSCAR extension failed in the editor:", err);
+    }
+  }
+  oscarApi.ready = runExtension;
+  window.OSCAR = oscarApi;
+  extensionsWaiting.splice(0).forEach(runExtension);
 
   // Anything else that still carries a title (modal contents, for instance).
   var titles = document.querySelectorAll("*[title]");

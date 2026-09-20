@@ -10,6 +10,8 @@ const { markServed } = require("../lib/published");
 // Where an export finds its runtime, and the only folder it may inline from.
 const PUBLIC_DIR = require("path").join(__dirname, "..", "public");
 const { listTemplates } = require("../lib/templates");
+const { none: noExtensions } = require("../lib/extensions");
+const { embedJson } = require("../lib/export/document");
 
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
@@ -38,8 +40,18 @@ module.exports = function createRouter({
   exportFiles,
   published,
   templatesDir,
+  extensions,
 }) {
   const router = express.Router();
+
+  // What an extension adds to a page (lib/extensions.js): the feature
+  // switches as they stand, and for the editor, the files to load after
+  // OSCAR's own. With no extensions this is the defaults and two empty lists.
+  function pageData(withAssets) {
+    const found = extensions || noExtensions();
+    const assets = withAssets ? found.editorAssets() : { scripts: [], styles: [] };
+    return { oscarFeatures: embedJson(found.features()), extensionScripts: assets.scripts, extensionStyles: assets.styles };
+  }
 
   // ---- locked mode --------------------------------------------------------
   // When OSCAR is locked, the control surface stays open to the network and
@@ -66,7 +78,7 @@ module.exports = function createRouter({
   router.get("/", (req, res) => {
     // Send a locked-out visitor to the control surface rather than an error.
     if (isLocked() && !isLocal(req)) return res.redirect("/preview");
-    res.render("index");
+    res.render("index", pageData(true));
   });
 
   // Is OSCAR locked, and may this device change that?
@@ -84,7 +96,7 @@ module.exports = function createRouter({
     lock.setLocked(!!(req.body && req.body.locked));
     res.json({ locked: isLocked() });
   });
-  router.get("/preview", (req, res) => res.render("preview"));
+  router.get("/preview", (req, res) => res.render("preview", pageData(false)));
 
   // Where the browser should reach OSCAR. The OSC bridge does not always
   // listen on 8081 -- OSCAR_SOCKET_PORT moves it, and a second instance on the
@@ -290,7 +302,10 @@ module.exports = function createRouter({
   router.get("/projects", editorOnly, async (req, res) => {
     try {
       // Templates come first and are always there; see lib/templates.js.
-      const templates = templatesDir ? await listTemplates(templatesDir) : [];
+      let templates = templatesDir ? await listTemplates(templatesDir) : [];
+      for (const source of extensions ? extensions.templateSources() : []) {
+        templates = templates.concat(await listTemplates(source.dir, source));
+      }
       res.json(templates.concat(await store.list()));
     } catch (err) {
       console.error("Could not list projects:", err.message);

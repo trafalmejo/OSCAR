@@ -50,9 +50,14 @@
     <%- include('partials/export') %>
 
     <!-- OSCAR component types, registered as grapesjs plugins by name. -->
+    <script>window.OSCAR_FEATURES = <%- oscarFeatures %>;</script>
     <script src="src/oscar_socket.js"></script>
     <script src="src/oscar_ip.js"></script>
     <script src="src/oscar_serial.js"></script>
     <script src="src/bundle.js"></script>
+    <!-- Extensions (lib/extensions.js), after OSCAR's own: they start with window.OSCAR.ready(fn). -->
+    <% extensionStyles.forEach(function (href) { %><link rel="stylesheet" href="<%= href %>" />
+    <% }) %><% extensionScripts.forEach(function (src) { %><script src="<%= src %>"></script>
+    <% }) %>
   </body>
 </html>

@@ -23,6 +23,8 @@ function assetRefs(template) {
   for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
     const ref = m[1];
     if (/^(https?:)?\/\//.test(ref) || ref.startsWith("data:")) continue;
+    // Filled in when the page is served: an extension's files (lib/extensions.js).
+    if (ref.includes("<%")) continue;
     refs.push(ref);
   }
   return refs;
