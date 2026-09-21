@@ -7,6 +7,10 @@ oscar-macos
 oscar-win.exe
 .DS_Store
 
+# Extensions copied in to be built into an installer (lib/extensions.js).
+# They live in repositories of their own, and are never part of this one.
+/extensions/
+
 # Projects saved by a local OSCAR instance
 projects/
 

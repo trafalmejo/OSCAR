@@ -90,7 +90,8 @@ const updates = createUpdateChecker({
 });
 
 // Whatever has been added to this OSCAR (lib/extensions.js). Usually nothing.
-const extensions = loadExtensions(extensionIds(process.env));
+// The folder is where whoever builds an installer puts what it should carry.
+const extensions = loadExtensions(extensionIds(process.env, path.join(__dirname, "extensions")));
 extensions.mount(app, express.static);
 
 // What a bug report always needs: which OSCAR, on what, run how.

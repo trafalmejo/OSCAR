@@ -71,7 +71,8 @@
       "server.js",
       "lib/**/*",
       "routes/**/*",
-      "public/**/*"
+      "public/**/*",
+      "extensions/**/*"
     ],
     "win": {
       "target": [

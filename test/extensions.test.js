@@ -221,7 +221,8 @@ test("with no extensions the pages are as they were, give or take the switches",
 test("nothing in OSCAR names an extension: the dependency runs one way", () => {
   // The optional list in lib/extensions.js is the single place a name appears.
   const offenders = [];
-  const skip = new Set(["node_modules", ".git", "dist", "docs", "projects", "test", "examples"]);
+  // extensions/ is where one is copied to be built into an installer: not OSCAR's, and ignored by git.
+  const skip = new Set(["node_modules", ".git", "dist", "docs", "projects", "test", "examples", "extensions", "release-builds"]);
   (function walk(dir) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (skip.has(entry.name)) continue;
@@ -234,4 +235,28 @@ test("nothing in OSCAR names an extension: the dependency runs one way", () => {
     }
   })(ROOT);
   assert.deepStrictEqual(offenders, []);
+});
+
+test("an extension put in the folder beside OSCAR is found, which is how one gets into an installer", () => {
+  const { bundled } = require("../lib/extensions");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-bundled-"));
+  fs.mkdirSync(path.join(dir, "zeta"));
+  fs.writeFileSync(path.join(dir, "zeta", "package.json"), "{}");
+  fs.mkdirSync(path.join(dir, "alpha"));
+  fs.writeFileSync(path.join(dir, "alpha", "package.json"), "{}");
+  fs.mkdirSync(path.join(dir, "notes"));
+  fs.writeFileSync(path.join(dir, "README.md"), "not a folder");
+
+  assert.deepStrictEqual(bundled(dir), [
+    { id: path.join(dir, "alpha"), optional: true },
+    { id: path.join(dir, "zeta"), optional: true },
+  ], "by name, and only folders that are packages");
+  assert.deepStrictEqual(bundled(path.join(dir, "nowhere")), [], "no folder is plain OSCAR, not an error");
+
+  const ids = extensionIds({}, dir).map((entry) => entry.id);
+  assert.ok(ids.includes(path.join(dir, "alpha")) && ids.includes(path.join(dir, "zeta")));
+  // Asked for by path as well: loaded once.
+  const twice = extensionIds({ OSCAR_EXTENSIONS: path.join(dir, "alpha") }, dir).filter((entry) => entry.id === path.join(dir, "alpha"));
+  assert.strictEqual(twice.length, 1);
+  assert.deepStrictEqual(extensionIds({ OSCAR_NO_EXTENSIONS: "1" }, dir), [], "bare means bare");
 });

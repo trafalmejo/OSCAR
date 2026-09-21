@@ -87,3 +87,14 @@ Extensions cannot add widgets. A widget has to be in both the editor bundle and 
 ## Changing the API
 
 Everything above is a promise to code OSCAR cannot see. When any of it changes shape, raise `API` in `lib/extensions.js` and `api` in `public/src/oscar_editor.js`. Extensions written for the old number are then refused with a clear message, rather than half-working.
+
+## Getting an extension into an installer
+
+OSCAR does not depend on any extension, so none is installed with it. To build an installer that carries one, copy it into `extensions/` first:
+
+```
+node scripts/bundle-extension.js ../some-extension
+npm run dist:win
+```
+
+Every sub-folder of `extensions/` that has a `package.json` is loaded on start, as an optional extension: one that will not load is reported and OSCAR carries on. The folder is ignored by git, and `node scripts/bundle-extension.js --clear` empties it, after which the next installer is plain OSCAR. Only what the extension's `files` list names is copied. It must have no dependencies of its own.
