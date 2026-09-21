@@ -186,7 +186,16 @@ function contextFor(el, config, bridge, id, onDropped, definition) {
     // optional in the contract and the widgets check for it.
   };
 
-  if (bridge.onOscIn) {
+  // A widget OSCAR follows the rig for (it can say what a message does to it:
+  // `hear`) is handed the state through onShared and does not read the
+  // message as well. A page opened from disk, which OSCAR knows nothing of,
+  // still reads it for itself.
+  var followedForIt = bridge.followed && definition && typeof definition.hear === "function";
+  if (followedForIt) {
+    ctx.onOsc = function () {
+      return function () {};
+    };
+  } else if (bridge.onOscIn) {
     ctx.onOsc = function (fn) {
       return bridge.onOscIn(function (message) {
         delivering++;
@@ -410,6 +419,10 @@ function start(env) {
 
   var label = where.host + ":" + where.port;
   var bridge = env.connect(where.host, where.port);
+  // A page OSCAR serves is a published surface, and OSCAR follows the rig for
+  // those itself: what a message does to a widget is worked out once, there,
+  // and every device is told the state, as it is told of a hand on a button.
+  bridge.followed = !!env.served;
   // Moves made since the bridge was last there, which it never got.
   var dropped = 0;
   var wired = attachAll(doc, bridge, function () {

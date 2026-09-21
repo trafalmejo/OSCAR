@@ -1916,6 +1916,18 @@ const button = {
     return { state: { on: state.on }, message: resolve(asCtx(config), state.on) };
   },
 
+  /**
+   * The state an incoming OSC message puts this widget in, or null for one
+   * it cannot act on. Pure, so OSCAR can follow the rig for a published
+   * surface and say the state to every device, a phone across the internet
+   * included (lib/surfaces.js). attach() reads a message the same way where
+   * there is a page and no OSCAR that knows it: the editor, a file on disk.
+   */
+  hear: function (config, values) {
+    const next = asEdge(asCtx(config), values && values[0]);
+    return next === null ? null : { on: next };
+  },
+
   attach: function (el, ctx) {
     let on = false;
     // What the rig says a momentary button is doing while no finger is on it.
@@ -2308,6 +2320,18 @@ const colour = {
     if (rgb === null) return null;
     const hex = toHex(rgb);
     return { state: { value: hex }, message: resolve(asCtx(config), hex) };
+  },
+
+  /**
+   * The state an incoming OSC message puts this widget in, or null for one
+   * it cannot act on. Pure, so OSCAR can follow the rig for a published
+   * surface and say the state to every device, a phone across the internet
+   * included (lib/surfaces.js). attach() reads a message the same way where
+   * there is a page and no OSCAR that knows it: the editor, a file on disk.
+   */
+  hear: function (config, values) {
+    const hex = fromWire(values || [], config.scale);
+    return hex === null ? null : { value: hex };
   },
 
   attach: function (el, ctx) {
@@ -2730,6 +2754,19 @@ const dropdown = {
     const value = text(state && state.value);
     if (!offers(parseOptions(config.options), value)) return null;
     return { state: { value: value }, message: outgoing(routing(asCtx(config)), value, levelOf(value)) };
+  },
+
+  /**
+   * The state an incoming OSC message puts this widget in, or null for one
+   * it cannot act on. Pure, so OSCAR can follow the rig for a published
+   * surface and say the state to every device, a phone across the internet
+   * included (lib/surfaces.js). attach() reads a message the same way where
+   * there is a page and no OSCAR that knows it: the editor, a file on disk.
+   */
+  hear: function (config, values) {
+    const value = values && values[0];
+    if (value === null || value === undefined || typeof value === "object") return null;
+    return offers(parseOptions(config.options), String(value)) ? { value: String(value) } : null;
   },
 
   attach: function (el, ctx) {
@@ -4943,6 +4980,20 @@ const numberInput = {
     return { state: { value: value }, message: resolve(asCtx(config), value) };
   },
 
+  /**
+   * The state an incoming OSC message puts this widget in, or null for one
+   * it cannot act on. Pure, so OSCAR can follow the rig for a published
+   * surface and say the state to every device, a phone across the internet
+   * included (lib/surfaces.js). attach() reads a message the same way where
+   * there is a page and no OSCAR that knows it: the editor, a file on disk.
+   */
+  hear: function (config, values) {
+    const value = toNumber(values && values[0]);
+    if (value === null) return null;
+    const fitted = nearest(settings(asCtx(config)), value);
+    return complaintAbout(settings(asCtx(config)), fitted) ? null : { value: fitted };
+  },
+
   attach: function (el, ctx) {
     const entry = commitOn(el, function (raw) {
       const value = toNumber(raw);
@@ -5557,6 +5608,18 @@ const slider = {
     return { state: { value: value }, message: resolve(asCtx(config), value) };
   },
 
+  /**
+   * The state an incoming OSC message puts this widget in, or null for one
+   * it cannot act on. Pure, so OSCAR can follow the rig for a published
+   * surface and say the state to every device, a phone across the internet
+   * included (lib/surfaces.js). attach() reads a message the same way where
+   * there is a page and no OSCAR that knows it: the editor, a file on disk.
+   */
+  hear: function (config, values) {
+    const value = toNumber(values && values[0]);
+    return value === null ? null : { value: within(value, config.min, config.max) };
+  },
+
   attach: function (el, ctx) {
     // True from the pointer landing on the thumb until it lifts. The network
     // is ignored for as long as it is: a value arriving mid-drag would snatch
@@ -5825,6 +5888,19 @@ const textInput = {
     if (raw === null || !raw.trim() || raw.length > MAX_DRIVEN) return null;
     if (refusal(config.argType || "s", raw)) return null;
     return { state: { value: raw }, message: outgoing(routing(asCtx(config)), raw) };
+  },
+
+  /**
+   * The state an incoming OSC message puts this widget in, or null for one
+   * it cannot act on. Pure, so OSCAR can follow the rig for a published
+   * surface and say the state to every device, a phone across the internet
+   * included (lib/surfaces.js). attach() reads a message the same way where
+   * there is a page and no OSCAR that knows it: the editor, a file on disk.
+   */
+  hear: function (config, values) {
+    const value = values && values[0];
+    if (value === null || value === undefined || typeof value === "object") return null;
+    return { value: text(value) };
   },
 
   attach: function (el, ctx) {
@@ -6268,6 +6344,34 @@ const xypad = {
     if (x === null || y === null) return null;
     const values = { x: within(x, config.minX, config.maxX), y: within(y, config.minY, config.maxY) };
     return { state: values, messages: resolveAll(asCtx(config), values) };
+  },
+
+  /**
+   * The state an incoming OSC message puts this widget in, or null for one
+   * it cannot act on. Pure, so OSCAR can follow the rig for a published
+   * surface and say the state to every device, a phone across the internet
+   * included (lib/surfaces.js). attach() reads a message the same way where
+   * there is a page and no OSCAR that knows it: the editor, a file on disk.
+   */
+  hear: function (config, values, address) {
+    if (config.sendMode === "two") {
+      const value = toNumber(values && values[0]);
+      if (value === null) return null;
+      // One axis a message; the record keeps the other (SharedState merges).
+      return address === config.message + "/x"
+        ? { x: within(value, config.minX, config.maxX) }
+        : { y: within(value, config.minY, config.maxY) };
+    }
+    const x = toNumber(values && values[0]);
+    const y = toNumber(values && values[1]);
+    // Half a position is no position.
+    if (x === null || y === null) return null;
+    return { x: within(x, config.minX, config.maxX), y: within(y, config.minY, config.maxY) };
+  },
+
+  /** The addresses the pad answers to: its own, or one an axis. */
+  hearAddresses: function (config) {
+    return config.sendMode === "two" ? [config.message + "/x", config.message + "/y"] : config.message;
   },
 
   attach: function (el, ctx) {

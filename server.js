@@ -117,13 +117,15 @@ function diagnostics() {
 
 // Up here for the reason the serial cable is: diagnostics() is handed to the
 // router, and reads this.
-// An OSC message from outside: every page is told, so the widgets that follow
-// it move. And if anybody is watching the states -- a surface made public, whose
-// phones cannot hear the rig -- it is followed here as well (lib/surfaces.js).
+// An OSC message from outside. For the published surfaces OSCAR works out what
+// it does to each widget itself and says the state to every device, as it says
+// a hand on a button (lib/surfaces.js): one reading, the same everywhere, a
+// phone across the internet included. The raw message still goes to every
+// page, for the editor's canvas and the widgets OSCAR cannot yet follow for.
 // `surfaces` is made further down; nothing arrives before it is.
 function heardOsc(message) {
   io.emit("osc:in", message);
-  if (surfaces && surfaces.watched()) surfaces.hearOsc(message).catch((err) => console.error("OSC in: " + reason(err)));
+  if (surfaces) surfaces.hearOsc(message).catch((err) => console.error("OSC in: " + reason(err)));
 }
 
 const MIDI_EVENTS = { open: "sending to", closed: "let go of", listening: "listening to", deaf: "stopped listening to" };

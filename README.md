@@ -200,6 +200,12 @@ in two-message mode), and a toggle button lights up and adopts the state, so
 the next press sends the opposite edge. A momentary button only lights up,
 because its state is your finger's.
 
+On a published surface OSCAR reads the message once and tells every device the
+result, the same way it tells them about a finger on a button. So every tablet
+shows the same thing, one that opens the surface later shows where the rig left
+it, and it works with no device looking at all. The media browser is the one
+exception: each page reads the message for itself.
+
 You do not have to type the address. Click **Learn** on the title of the
 widget's OSC section, then send a message from your software (move the thing you
 want the widget to follow). The widget takes the address of the first message
