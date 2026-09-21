@@ -241,3 +241,15 @@ test("an OSCAR started without anywhere to publish says so instead of failing", 
     { noStore: true }
   );
 });
+
+test("whoever keeps a copy elsewhere is told of a publish, and a listener that throws spoils nothing", async () => {
+  const store = new PublishedStore(fs.mkdtempSync(path.join(os.tmpdir(), "oscar-published-")));
+  const told = [];
+  store.onSaved(() => { throw new Error("mine"); });
+  const stop = store.onSaved((id) => told.push(id));
+  assert.deepStrictEqual(await store.save("Lobby", "<p>one</p>"), { id: "lobby", replaced: false });
+  await store.save("Lobby", "<p>two</p>");
+  stop();
+  await store.save("Lobby", "<p>three</p>");
+  assert.deepStrictEqual(told, ["lobby", "lobby"]);
+});
