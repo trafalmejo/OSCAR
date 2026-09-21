@@ -117,6 +117,15 @@ function diagnostics() {
 
 // Up here for the reason the serial cable is: diagnostics() is handed to the
 // router, and reads this.
+// An OSC message from outside: every page is told, so the widgets that follow
+// it move. And if anybody is watching the states -- a surface made public, whose
+// phones cannot hear the rig -- it is followed here as well (lib/surfaces.js).
+// `surfaces` is made further down; nothing arrives before it is.
+function heardOsc(message) {
+  io.emit("osc:in", message);
+  if (surfaces && surfaces.watched()) surfaces.hearOsc(message).catch((err) => console.error("OSC in: " + reason(err)));
+}
+
 const MIDI_EVENTS = { open: "sending to", closed: "let go of", listening: "listening to", deaf: "stopped listening to" };
 const midi = createMidi({
   onEvent: (event, name) => console.log("MIDI: " + MIDI_EVENTS[event] + " " + name),
@@ -156,7 +165,7 @@ const serialLink = new SerialLink({
   // way the network does: a meter with Listen on can show a potentiometer.
   onMessage: (packet) => {
     const message = parseOsc(packet);
-    if (message) io.emit("osc:in", message);
+    if (message) heardOsc(message);
   },
   // A sketch that also Serial.println()s down the same line produces one of
   // these per line it prints.
@@ -245,7 +254,7 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
   port.open();
   // Software that answers to the port a request came from sends its reply
   // here, not to the OSC-in port; a widget following the rig hears both.
-  listenOn(port, (message) => io.emit("osc:in", message));
+  listenOn(port, (message) => heardOsc(message));
 }
 
 /**
@@ -361,7 +370,7 @@ function announceOscIn(line) {
 const oscIn = oscReceiver({
   port: OSC_IN_PORT,
   UDPPort: osc.UDPPort,
-  onMessage: (message) => io.emit("osc:in", message),
+  onMessage: (message) => heardOsc(message),
   onReady: () => announceOscIn("  Listening for OSC on:  UDP " + OSC_IN_PORT),
   onError: (err) => {
     // A port that cannot be opened must not take OSCAR down with it. The
@@ -487,6 +496,8 @@ const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared,
 // the sending is done here, once, for the widgets of published surfaces.
 midi.onMessage((heard, port, first) => {
   io.emit("midi:in", { heard, port, first });
+  // Followed here too while anybody is watching the states, as OSC is (heardOsc).
+  if (!features.MIDI_BRIDGE && surfaces.watched()) surfaces.followMidi(heard, port, first).catch((err) => console.error("MIDI in: " + reason(err)));
   if (features.MIDI_BRIDGE) surfaces.hearMidi(heard, port, first).catch((err) => console.error("MIDI in: " + reason(err)));
 });
 
@@ -501,10 +512,11 @@ function listenForMidi() {
   for (const wanted of midiWanted.values()) for (const part of wanted) parts.add(part);
   midi.listenFor(Array.from(parts));
 }
-if (midi.supported && features.MIDI_BRIDGE) {
+if (midi.supported) {
+  // The published widgets' ports count while the bridge is on, or while
+  // somebody is watching the states; otherwise only the open pages' do.
   const askPublished = () =>
-    surfaces
-      .midiPorts()
+    (features.MIDI_BRIDGE ? surfaces.midiPorts() : surfaces.watched() ? surfaces.followedMidiPorts() : Promise.resolve([]))
       .then((parts) => {
         publishedWant = parts;
         listenForMidi();

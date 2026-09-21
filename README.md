@@ -444,6 +444,10 @@ start. Min and Max are the scale, the bar is horizontal or vertical from its
 Orientation setting, and Value is where it sits until the first reading
 arrives, so you can see the layout before anything is feeding it.
 
+A level can also come from a MIDI controller: the meter's **MIDI** section has
+Data in, the port, channel, type and number, and **Learn**, and no Data out.
+The controller's 0 to 127 is laid across Min to Max.
+
 **Peak hold** keeps a marker at the highest recent reading for that many
 seconds (`0` turns it off). A reading at or above the marker moves it up at
 once; when the hold has passed the marker falls back onto the bar on its own,

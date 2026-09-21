@@ -352,7 +352,7 @@ test("a page asks only for the inputs its widgets listen on, and keeps that up t
   assert.deepStrictEqual(host.wanted, {}, "the master switch makes it deaf");
 
   // A widget with no MIDI section, and a host that cannot hear, get nothing.
-  assert.strictEqual(midiSource(host, byName["oscar-meter"], "m", () => ({}), null, (d) => d()), null);
+  assert.strictEqual(midiSource(host, byName["oscar-text-input"], "t", () => ({}), null, (d) => d()), null);
   assert.strictEqual(midiSource({}, slider, "f", () => config, null, (d) => d()), null);
 });
 

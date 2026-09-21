@@ -411,7 +411,7 @@ test("the meter takes Orientation from the shared fields, not from another widge
   const path = require("node:path");
   const source = fs.readFileSync(path.join(__dirname, "../../lib/widgets/meter.js"), "utf8");
   const required = source.match(/require\("\.\/[^"]+"\)/g) || [];
-  assert.deepStrictEqual(required.sort(), ['require("./fields")', 'require("./incoming")']);
+  assert.deepStrictEqual(required.sort(), ['require("./fields")', 'require("./incoming")', 'require("./midi-fields")', 'require("./shared")']);
 
   const fields = require("../../lib/widgets/fields");
   const orientation = meter.fields.find((f) => f.key === "orientation");

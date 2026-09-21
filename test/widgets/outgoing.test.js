@@ -250,7 +250,7 @@ test("each direction of a section has its own light, on only when it would reall
 
   // A direction the widget does not have has no light: DMX never listens,
   // a meter never sends, a text box has no DMX section at all.
-  assert.deepStrictEqual(sectionStatus(meter.fields, meter.defaults), { osc: { in: true } });
+  assert.deepStrictEqual(sectionStatus(meter.fields, meter.defaults), { osc: { in: true }, midi: { in: false } }, "a meter follows, over OSC or MIDI, and sends over neither");
   assert.deepStrictEqual(sectionStatus(textInput.fields, textInput.defaults), { osc: { in: false, out: true } });
   assert.deepStrictEqual(sectionStatus(null, null), {});
 

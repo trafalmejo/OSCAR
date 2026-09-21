@@ -72,7 +72,8 @@ test("Learn is offered on the sections that can be taught, for a widget that has
   assert.strictEqual(panel("oscar-slider", {}, {}).button("osc"), null, "an editor with no way to hear offers nothing");
   const meter = panel("oscar-meter", {}, { onOscIn: ears.onOscIn, learnMidi: () => () => {} });
   assert.strictEqual(meter.button("osc").textContent, "Learn", "a meter only follows, which is all Learn needs");
-  assert.strictEqual(meter.button("midi"), null, "and it has no MIDI section");
+  assert.strictEqual(meter.button("midi").textContent, "Learn", "from a controller too");
+  assert.strictEqual(panel("oscar-text-input", {}, { onOscIn: ears.onOscIn, learnMidi: () => () => {} }).button("midi"), null, "a widget with no MIDI section is offered none");
 });
 
 test("OSC Learn takes the address of the next message, turns Data in on, and stops listening", () => {

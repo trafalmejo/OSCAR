@@ -3020,7 +3020,11 @@ function sectionStatus(fields, config) {
   if (Object.keys(osc).length) status.osc = osc;
 
   if (has("dmxEnabled")) status.dmx = { out: master && sendsDmx(config) };
-  if (has("midiEnabled")) status.midi = { in: master && isListening(config), out: master && sendsMidi(config) };
+  // Each direction the widget has: a meter listens to MIDI and cannot send it.
+  const midi = {};
+  if (has("midiListen")) midi.in = master && isListening(config);
+  if (has("midiEnabled")) midi.out = master && sendsMidi(config);
+  if (Object.keys(midi).length) status.midi = midi;
   return status;
 }
 
@@ -4241,6 +4245,8 @@ module.exports = {
 
 const { field, enabled, oscFields, checkMessage, checkNumber, ORIENTATIONS } = require("./fields");
 const { follow } = require("./incoming");
+const { onShared } = require("./shared");
+const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
 const { toNumber } = require("../osc-args");
 const { unitOf } = require("../dmx/levels");
 
@@ -4302,7 +4308,7 @@ const meter = {
       'M3,9V15H21V9H3M5,11H13V13H5V11M16,11H18V13H16V11Z"/></svg>',
   },
 
-  defaults: {
+  defaults: Object.assign({
     enabled: true,
     message: "/meter1",
     // A meter exists to follow something; unlike a control, there is nothing
@@ -4314,7 +4320,7 @@ const meter = {
     orientation: "horizontal",
     // Seconds a peak stays marked. 0 turns the marker off.
     peakHold: 0,
-  },
+  }, midiDefaults("cc")),
 
   fields: [
     enabled(),
@@ -4325,15 +4331,38 @@ const meter = {
     field("value", "Value", "number", { step: "any" }),
     field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
     field("peakHold", "Peak hold (s)", "number", { min: 0, step: "any" }),
+    // A level can come from a controller as well as from software: Data in,
+    // and no way out, as for OSC.
+    ...midiFields({ sends: false }),
   ],
 
-  checks: {
+  /**
+   * What the meter shows, for whoever has to place a level on it with no
+   * page to ask: MIDI coming in (midi-in.js). It cannot be driven, so it has
+   * no driveInput; this says the same thing.
+   */
+  followInput: function (config) {
+    return { kind: "value", min: toNumber(config.min), max: toNumber(config.max) };
+  },
+
+  /**
+   * The state an incoming OSC message puts the meter in: { value }, or null
+   * for a reading that cannot be read, which holds the last one. Pure, so the
+   * server can follow the rig on behalf of a phone that never hears it
+   * (lib/surfaces.js). attach() below does the same for a page that does.
+   */
+  hear: function (config, values) {
+    const value = toNumber(values && values[0]);
+    return value === null ? null : { value: value };
+  },
+
+  checks: Object.assign({
     message: checkMessage,
     min: checkNumber("Min"),
     max: checkNumber("Max"),
     value: checkNumber("Value"),
     peakHold: checkPeakHold,
-  },
+  }, midiChecks(1, { sends: false })),
 
   attach: function (el, ctx) {
     // The reading the marker sits at, in the meter's own units, and when it
@@ -4463,6 +4492,13 @@ const meter = {
     // follow() reads Enabled and Listen for every message, so a disabled
     // meter is deaf and holds its last reading rather than dropping to zero.
     const stopOsc = follow(ctx, adopt);
+    // A level that reached this page some other way: a MIDI controller, or,
+    // on a phone across the internet, OSCAR passing on what the rig said
+    // because the phone cannot hear the rig itself. The same reading, taken
+    // the same way.
+    const stopShared = onShared(ctx, function (state) {
+      if (state && state.value !== undefined) adopt([state.value]);
+    });
 
     return function detach() {
       // A marker left to fall after its element is gone would paint onto
@@ -4471,6 +4507,7 @@ const meter = {
       if (stop) stop();
       if (stopRewrite) stopRewrite();
       if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
     };
   },
 };
@@ -4483,7 +4520,7 @@ function checkPeakHold(value) {
 
 module.exports = { meter, PEAK_CLASS };
 
-},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20}],24:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./shared":30}],24:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4526,17 +4563,22 @@ const NUMBER_HINT =
   "The controller or note number, 0 to 127. A widget with several values uses the numbers that follow: " +
   "a pad set to 20 sends X on 20 and Y on 21. Program change and pitch bend do not use it.";
 
-function midiFields() {
+/**
+ * @param {{sends?: boolean}} [options] `sends: false` for a widget that only
+ *        follows, a meter: Data in and the port to listen on, and no way out.
+ */
+function midiFields(options) {
   const only = { section: "midi" };
+  const sends = !(options && options.sends === false);
   return [
     field("midiListen", "Data in", "checkbox", Object.assign({ hint: DATA_IN_HINT }, only)),
-    field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)),
+    sends ? field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)) : null,
     field("midiInPort", "In port", "select", Object.assign({ options: IN_PORTS, hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
-    field("midiPort", "Out port", "select", Object.assign({ options: OUT_PORTS, hint: PORT_HINT, source: "midi-outputs" }, only)),
+    sends ? field("midiPort", "Out port", "select", Object.assign({ options: OUT_PORTS, hint: PORT_HINT, source: "midi-outputs" }, only)) : null,
     field("midiChannel", "Channel", "number", Object.assign({ min: 1, max: CHANNELS }, only)),
     field("midiType", "Type", "select", Object.assign({ options: TYPES }, only)),
     field("midiNumber", "Number", "number", Object.assign({ min: 0, max: MAX_DATA, hint: NUMBER_HINT }, only)),
-  ];
+  ].filter(Boolean);
 }
 
 /** @param {string} [type] what suits the widget: "note" for a button, "program" for a list */
@@ -4570,9 +4612,12 @@ function checkPort(value) {
   return typeof value === "string" && value.length <= 200 ? null : "A MIDI port is named in at most 200 characters";
 }
 
-/** The validators that go with midiFields(). */
-function midiChecks(values) {
-  return { midiInPort: checkPort, midiPort: checkPort, midiChannel: checkChannel, midiType: checkType, midiNumber: checkNumber(values) };
+/** The validators that go with midiFields(); `options` as given to it. */
+function midiChecks(values, options) {
+  const checks = { midiInPort: checkPort, midiChannel: checkChannel, midiType: checkType, midiNumber: checkNumber(values) };
+  // A check for a setting the widget does not have is a check nothing runs.
+  if (!(options && options.sends === false)) checks.midiPort = checkPort;
+  return checks;
 }
 
 module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiChecks: midiChecks };
@@ -4612,9 +4657,20 @@ const { midiIndex } = require("../midi/spec");
 
 const VALUES = { position: 2, colour: 3 };
 
+/**
+ * The kind of thing a widget shows, and its range. A control says so with
+ * driveInput(), which is also how it is driven. A widget that only follows, a
+ * meter, cannot be driven, and says the same with followInput().
+ */
+function inputOf(definition, config) {
+  if (!definition) return null;
+  const describe = typeof definition.driveInput === "function" ? definition.driveInput : definition.followInput;
+  return typeof describe === "function" ? describe(config || {}) : null;
+}
+
 /** How many values a widget listens for, on as many numbers in a row. */
 function valuesOf(definition, config) {
-  const input = definition && typeof definition.driveInput === "function" ? definition.driveInput(config || {}) : null;
+  const input = inputOf(definition, config);
   return (input && VALUES[input.kind]) || 1;
 }
 
@@ -4643,8 +4699,7 @@ function rgbOf(hex) {
  * @returns {object|null} a state for definition.drive(), or null to leave the widget alone
  */
 function stateFromMidi(definition, config, heard, index, current) {
-  if (!definition || typeof definition.driveInput !== "function") return null;
-  const input = definition.driveInput(config);
+  const input = inputOf(definition, config);
   if (!input || !heard) return null;
   const now = current || {};
 
@@ -4707,7 +4762,7 @@ function followMidi(definition, read, showing) {
   };
 }
 
-module.exports = { stateFromMidi: stateFromMidi, valuesOf: valuesOf, followMidi: followMidi };
+module.exports = { stateFromMidi: stateFromMidi, valuesOf: valuesOf, followMidi: followMidi, inputOf: inputOf };
 
 },{"../midi/spec":6,"../osc-args":8}],26:[function(require,module,exports){
 "use strict";

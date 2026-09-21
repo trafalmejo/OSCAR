@@ -205,8 +205,13 @@ test("every widget that can drive DMX can send MIDI, off by default, with the ki
     "oscar-dropdown": "program",
     "oscar-number-input": "cc",
   });
-  // A widget with no level to send has no MIDI section.
-  for (const widget of WIDGETS.filter((w) => !w.dmx)) assert.ok(!widget.fields.some((f) => f.section === "midi"), widget.name);
+  // A widget with no level to send cannot send MIDI. One that only follows,
+  // the meter, has the way in and nothing else; the rest have no MIDI section.
+  for (const widget of WIDGETS.filter((w) => !w.dmx)) {
+    const keys = widget.fields.filter((f) => f.section === "midi").map((f) => f.key);
+    assert.deepStrictEqual(keys, widget.name === "oscar-meter" ? ["midiListen", "midiInPort", "midiChannel", "midiType", "midiNumber"] : [], widget.name);
+    assert.strictEqual(widget.checks.midiPort, undefined, widget.name + " has no Out port to check");
+  }
 });
 
 test("the settings panel refuses what the wire would refuse", () => {
@@ -322,8 +327,8 @@ test("the dropdown of the selected widget is redrawn when a port is plugged in, 
   assert.strictEqual(redrawn, 2);
 
   // A widget with no port settings is left alone.
-  const meter = { get: (k) => (k === "type" ? "oscar-meter" : undefined), set: () => { redrawn = 99; } };
-  suggest("midi-inputs", [], { getSelected: () => meter });
+  const text = { get: (k) => (k === "type" ? "oscar-text-input" : undefined), set: () => { redrawn = 99; } };
+  suggest("midi-inputs", [], { getSelected: () => text });
   assert.strictEqual(redrawn, 2);
 });
 
