@@ -263,6 +263,7 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
 var features = require("../../lib/features");
+var welcome = require("./first_run");
 
 var oscarExport = require("./export_dialog");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -280,6 +281,9 @@ function postJSON(url, body) {
 }
 
 function initGrape(ipServer, socketPort, oscInPort) {
+  // Asked before the editor starts: starting it writes the first autosave.
+  var firstRun = welcome.isFirstRun(window.localStorage);
+
   editor = grapesjs.init({
     // GrapesJS fetches Font Awesome from a CDN by default, which fails without
     // a word at a venue with no internet. The few icons it still draws that
@@ -355,7 +359,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       stepsBeforeSave: 1,
       // A key distinct from 0.16's `gjs-*` entries, so a browser that ran an
       // older OSCAR ignores that data instead of half-loading it.
-      options: { local: { key: "oscarProject" } },
+      options: { local: { key: welcome.AUTOSAVE_KEY } },
       // Stamp the autosave the same way saved files are stamped, and never
       // let editor state into it.
       onStore: function (data) {
@@ -1019,6 +1023,23 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.getWrapper().setAttributes({});
     editor.setComponents(html);
     editor.UndoManager.clear();
+  }
+
+  // Somebody opening OSCAR for the first time is shown the Showcase, where
+  // every widget works, not an empty canvas (first_run.js).
+  if (firstRun) {
+    editor.onReady(function () {
+      welcome.openWelcome({
+        fetch: function (url) {
+          return fetch(url);
+        },
+        load: loadTemplate,
+        // Anything already on the canvas is somebody's, however quick they were.
+        untouched: function () {
+          return editor.getWrapper().components().length === 0;
+        },
+      });
+    });
   }
 
   // ---- preview mode ------------------------------------------------------

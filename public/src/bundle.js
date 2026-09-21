@@ -21271,6 +21271,75 @@ function install(editor, options) {
 module.exports = { install: install, fileStem: fileStem };
 
 },{"../../lib/published-address":12,"./adapters/grapesjs":39,"qrcode-generator":38}],41:[function(require,module,exports){
+"use strict";
+
+/**
+ * What somebody sees the first time they open OSCAR: the Showcase, a surface
+ * where every widget works, not an empty canvas and a toolbar of icons.
+ *
+ * "The first time" means this browser has never held an OSCAR canvas. The
+ * canvas autosaves into the browser (see storageManager in oscar_editor.js),
+ * so from the first edit on there is an autosave and this never happens
+ * again: not after the canvas has been cleared on purpose, and not after an
+ * autosave was set aside for being unreadable or from a newer OSCAR. Those
+ * people have been here before, and an empty canvas is what they are owed.
+ *
+ * It has to be asked before the editor starts, because starting it is what
+ * writes the first autosave.
+ */
+
+/** The template opened on a first run. Anything else in public/templates would do. */
+var WELCOME = "templates/oscar-showcase.html";
+
+/** The key the canvas autosaves under. */
+var AUTOSAVE_KEY = "oscarProject";
+
+/**
+ * @param {Storage} storage the browser's localStorage, or anything shaped like it
+ * @returns {boolean} false when it cannot be told: better an empty canvas
+ *          than a template loaded over somebody's work
+ */
+function isFirstRun(storage) {
+  try {
+    return !!storage && storage.getItem(AUTOSAVE_KEY) === null;
+  } catch (err) {
+    // Storage that throws when read (a private window, a locked-down kiosk).
+    return false;
+  }
+}
+
+/**
+ * Open the welcome template. Quietly: nobody asked for it, so there is no
+ * "Loaded successfully", and if it cannot be fetched the canvas stays empty
+ * and nothing is said.
+ *
+ * @param {object} deps
+ * @param {(url: string) => Promise<Response>} deps.fetch
+ * @param {(html: string) => void} deps.load what Load uses to open a template
+ * @param {() => boolean} [deps.untouched] whether the canvas is still as it
+ *        started; checked after the fetch, in case somebody was quick
+ * @returns {Promise<boolean>} whether it was opened
+ */
+function openWelcome(deps) {
+  return deps
+    .fetch(WELCOME)
+    .then(function (res) {
+      if (!res.ok) throw new Error("status " + res.status);
+      return res.text();
+    })
+    .then(function (html) {
+      if (deps.untouched && !deps.untouched()) return false;
+      deps.load(html);
+      return true;
+    })
+    .catch(function () {
+      return false;
+    });
+}
+
+module.exports = { isFirstRun: isFirstRun, openWelcome: openWelcome, WELCOME: WELCOME, AUTOSAVE_KEY: AUTOSAVE_KEY };
+
+},{}],42:[function(require,module,exports){
 window.$ = $ = window.jQuery = require("jquery");
 
 // jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
@@ -21536,6 +21605,7 @@ var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
 var features = require("../../lib/features");
+var welcome = require("./first_run");
 
 var oscarExport = require("./export_dialog");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -21553,6 +21623,9 @@ function postJSON(url, body) {
 }
 
 function initGrape(ipServer, socketPort, oscInPort) {
+  // Asked before the editor starts: starting it writes the first autosave.
+  var firstRun = welcome.isFirstRun(window.localStorage);
+
   editor = grapesjs.init({
     // GrapesJS fetches Font Awesome from a CDN by default, which fails without
     // a word at a venue with no internet. The few icons it still draws that
@@ -21628,7 +21701,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       stepsBeforeSave: 1,
       // A key distinct from 0.16's `gjs-*` entries, so a browser that ran an
       // older OSCAR ignores that data instead of half-loading it.
-      options: { local: { key: "oscarProject" } },
+      options: { local: { key: welcome.AUTOSAVE_KEY } },
       // Stamp the autosave the same way saved files are stamped, and never
       // let editor state into it.
       onStore: function (data) {
@@ -22294,6 +22367,23 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.UndoManager.clear();
   }
 
+  // Somebody opening OSCAR for the first time is shown the Showcase, where
+  // every widget works, not an empty canvas (first_run.js).
+  if (firstRun) {
+    editor.onReady(function () {
+      welcome.openWelcome({
+        fetch: function (url) {
+          return fetch(url);
+        },
+        load: loadTemplate,
+        // Anything already on the canvas is somebody's, however quick they were.
+        untouched: function () {
+          return editor.getWrapper().components().length === 0;
+        },
+      });
+    });
+  }
+
   // ---- preview mode ------------------------------------------------------
   // GrapesJS's preview hides the panels but leaves components draggable in
   // absolute mode, so dragging a button in preview pulls it apart.
@@ -22851,7 +22941,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./export_dialog":40,"./pages":43,"jquery":37,"jquery-confirm":36}],42:[function(require,module,exports){
+},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./export_dialog":40,"./first_run":41,"./pages":44,"jquery":37,"jquery-confirm":36}],43:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
@@ -23021,7 +23111,7 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./pages":43,"jquery":37}],43:[function(require,module,exports){
+},{"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./pages":44,"jquery":37}],44:[function(require,module,exports){
 /**
  * Multiple pages: what the editor and the control surface have in common.
  *
@@ -23302,4 +23392,4 @@ module.exports = {
   pageTabs: pageTabs,
 };
 
-},{"../../lib/features":4,"../../lib/project-format":10}]},{},[42,41]);
+},{"../../lib/features":4,"../../lib/project-format":10}]},{},[43,42]);

@@ -28,6 +28,8 @@ These builds aren't code signed, so your system warns you the first time. On
 Windows, click *More info* then *Run anyway*. On macOS, right-click the app and
 choose *Open*.
 
+The first time OSCAR is opened in a browser, the canvas shows the **Showcase** template, where every widget works, so there is something to try straight away. After that the canvas is whatever you left on it, including empty. It is a template like any other: open **Load** to get it back, or to start from another.
+
 ## Keep in touch
 
 [**Sign up to the OSCAR mailing list**](https://forms.gle/1pGiDJDh3jur8Tq68) to
