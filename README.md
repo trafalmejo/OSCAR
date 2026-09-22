@@ -418,7 +418,7 @@ and carry a card listing its addresses: the **Resolume Video Desk** (a clip
 grid, layer strips, crossfader, master, tempo; Resolume's own addresses, port
 7000) and the **QLab Stage Manager's Desk** (GO, STOP, PANIC, playhead and a
 cue sheet; QLab's own addresses, port 53000, every key a bare address sent
-once) and the **TouchDesigner Parameter Rack** (parameters out, an audio level and a sensor back in, with the two-CHOP recipe on its card; an OSC In CHOP listens on port 10000; it wears the Sci-fi HUD style rather than a look of its own). **Big Thumb** puts one control on each screen of a phone, the size of a
+once) and the **TouchDesigner Parameter Rack** (parameters out, an audio level and a sensor back in, with the two-CHOP recipe on its card; an OSC In CHOP listens on port 10000; next to it in `public/templates/` is `touchdesigner-parameter-rack.py`, a script that builds the whole demo network inside TouchDesigner in one go, so the picture moves and the two meters read something; it wears the Sci-fi HUD style rather than a look of its own). **Big Thumb** puts one control on each screen of a phone, the size of a
 hand. The rest are objects to play with: a boombox, a walkie-talkie, an arcade
 cabinet, a cassette player, a CD player, a click-wheel player, a turntable and
 a TV remote. A template that is built for one program has been written from

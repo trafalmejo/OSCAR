@@ -11,6 +11,9 @@
   right is the two-CHOP recipe: OSC In (port 10000 by default; every widget
   here already sends to 10000, so only the IP is yours to set) for what OSCAR
   sends, OSC Out for what comes back, which is the part people get wrong.
+  Next to this file is touchdesigner-parameter-rack.py, the demo patch: a
+  script that builds the whole network inside TouchDesigner in one go, so the
+  picture moves and the two meters read something with nothing to wire.
 
   This template wears a widget style rather than a look of its own: it starts
   on Sci-fi HUD, and every colour in it is a token, so the picker in the top
@@ -252,6 +255,9 @@ body:not([data-osc-style="own"]) .tdr-block {
 body:not([data-osc-style="own"]) .tdr-name {
   color: var(--osc-foreground);
 }
+body:not([data-osc-style="own"]) .tdr-manual-link {
+  color: var(--osc-primary);
+}
 
 @media (max-width: 992px) {
   .tdr {
@@ -386,6 +392,7 @@ body:not([data-osc-style="own"]) .tdr-name {
         <dd id="tdr-manual-note-7" class="tdr-manual-note" data-gjs-dmode="flow">Name the channels td/audio/level and td/sensor/distance, 0 to 1, and the two meters follow them.</dd>
       </div>
     </dl>
+    <p id="tdr-manual-patch" class="tdr-manual-foot" data-gjs-dmode="flow"><strong id="tdr-manual-patch-title" data-gjs-dmode="flow">The demo patch, one file:</strong> <a id="tdr-manual-patch-link" class="tdr-manual-link" href="templates/touchdesigner-parameter-rack.py" download data-gjs-dmode="flow">touchdesigner-parameter-rack.py</a>. Drag it into TouchDesigner, right-click the DAT it becomes, Run Script. It builds a picture driven by everything here, sends the microphone's level and a stand-in sensor back, and the two meters move.</p>
     <p id="tdr-manual-foot" class="tdr-manual-foot" data-gjs-dmode="flow">Tick "Data in" on any fader and it follows the channel of the same name coming back, so a parameter animated inside TouchDesigner shows here too.</p>
   </aside>
 </div>
