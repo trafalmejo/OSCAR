@@ -1,0 +1,493 @@
+<!doctype html>
+<html>
+<head>
+<title>Big Thumb</title>
+<!--
+  Big Thumb: one control a screen, each the size of a hand. A fader, a GO
+  button, a pad, a colour, a level and four scene keys, mounted in a wooden
+  case on brushed-steel plates with leather straps. On a phone the case
+  becomes a strip: one control fills the screen, and a swipe snaps to the
+  next, so a tired operator in the dark never has to aim. On a tablet two sit
+  side by side, on a desk all six.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the case is redrawn in that style's colours: every rule
+    that paints is written for "own" alone, and a short set of rules further
+    down, made of tokens only, dresses it for the others.
+
+  Rename the addresses to whatever your software listens for; /big/... are
+  placeholders. The fader and the level have Data in on, so they follow what
+  the rig sends back.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries.
+
+  OSC addresses:
+    /big/master (0 to 1)   /big/go (1 held, 0 let go)   /big/position (x y, 0 to 1)
+    /big/colour (r g b, 0 to 1)   /big/level (in: 0 to 1)   /big/scene/1 ... /big/scene/4 (1 on, 0 off)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #1d1410;
+  --osc-foreground: #f1e6d2;
+  --osc-card: #2b1d15;
+  --osc-muted: #3a2a1f;
+  --osc-accent: #c99a4b;
+  --osc-accent-foreground: #1d1410;
+  --osc-border: #14100c;
+  --osc-input: #14100c;
+  --osc-primary: #d9a441;
+  --osc-primary-foreground: #1d1410;
+  --osc-ring: #e8c274;
+  --osc-radius: 14px;
+  --osc-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --osc-thumb: 64px;
+  --osc-track-size: 22px;
+  --osc-control-height: 64px;
+}
+
+/* ---- the strip: one panel a screen on a phone, a case of six on a desk ---- */
+.bt {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+  min-height: 100vh;
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+[data-osc-style="own"] .bt {
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.05), transparent 45%),
+    radial-gradient(rgba(0, 0, 0, 0.28) 1px, transparent 1.4px) 0 0 / 5px 5px,
+    linear-gradient(160deg, #3a241a, #221510 60%, #17100c);
+}
+
+/* A panel: a wooden frame, a leather strap across the top, a brushed plate inside. */
+.bt-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 46vh;
+  padding: 14px;
+  border-radius: 22px;
+  box-sizing: border-box;
+}
+
+[data-osc-style="own"] .bt-panel {
+  border: 1px solid #1a110c;
+  background:
+    repeating-linear-gradient(94deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(255, 255, 255, 0.03) 2px 5px, rgba(0, 0, 0, 0.06) 5px 9px, rgba(255, 220, 160, 0.05) 9px 13px),
+    linear-gradient(180deg, #8a5a33, #6b4324 50%, #55331b);
+  box-shadow: inset 0 2px 0 rgba(255, 230, 190, 0.28), inset 0 -3px 0 rgba(0, 0, 0, 0.45), 0 18px 40px rgba(0, 0, 0, 0.55);
+}
+
+.bt-strap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 8px 12px;
+  padding: 12px 18px;
+  border-radius: 12px;
+}
+
+[data-osc-style="own"] .bt-strap {
+  border: 2px dashed rgba(230, 200, 150, 0.35);
+  outline: 4px solid #2a1912;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #3d261b, #2a1912);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+.bt-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .bt-name {
+  color: #d8b77c;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 235, 200, 0.15);
+}
+
+.bt-count {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+[data-osc-style="own"] .bt-count {
+  color: rgba(216, 183, 124, 0.6);
+}
+
+.bt-plate {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border-radius: 14px;
+}
+
+[data-osc-style="own"] .bt-plate {
+  border: 1px solid #1c1a18;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #6e6a66, #4d4946 45%, #5a5652 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Four screws, one a corner. */
+.bt-plate {
+  position: relative;
+}
+
+[data-osc-style="own"] .bt-plate {
+  background-image:
+    radial-gradient(circle at 12px 12px, #2b2926 4px, #8c8884 4.5px, transparent 6px),
+    radial-gradient(circle at calc(100% - 12px) 12px, #2b2926 4px, #8c8884 4.5px, transparent 6px),
+    radial-gradient(circle at 12px calc(100% - 12px), #2b2926 4px, #8c8884 4.5px, transparent 6px),
+    radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), #2b2926 4px, #8c8884 4.5px, transparent 6px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #6e6a66, #4d4946 45%, #5a5652 100%);
+}
+
+.bt-hint {
+  margin: 12px 8px 0;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .bt-hint {
+  color: rgba(241, 230, 210, 0.55);
+}
+
+/* ---- the controls, each the size of a hand ---- */
+.bt-fader {
+  width: 110px;
+  height: 46vh;
+  min-height: 260px;
+}
+
+[data-osc-style="own"] .bt-fader::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #1a1816, #2a2825 50%, #1a1816);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+[data-osc-style="own"] .bt-fader::-moz-range-track {
+  background: linear-gradient(90deg, #1a1816, #2a2825 50%, #1a1816);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+[data-osc-style="own"] .bt-fader::-webkit-slider-thumb {
+  border: 1px solid #111;
+  border-radius: 8px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.25) 0 2px, transparent 2px 6px), linear-gradient(180deg, #9a9590, #5b5753);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 14px rgba(0, 0, 0, 0.6);
+}
+
+[data-osc-style="own"] .bt-fader::-moz-range-thumb {
+  border: 1px solid #111;
+  border-radius: 8px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.25) 0 2px, transparent 2px 6px), linear-gradient(180deg, #9a9590, #5b5753);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 14px rgba(0, 0, 0, 0.6);
+}
+
+/* GO: a leather-topped brass mushroom. */
+.bt-go {
+  width: min(64vw, 280px);
+  height: min(64vw, 280px);
+  padding: 0;
+  border-radius: 50%;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+}
+
+.bt-go {
+  transition: transform 0.06s, box-shadow 0.06s;
+}
+[data-osc-style="own"] .bt-go {
+  border: 10px solid #7a5a2c;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    radial-gradient(circle at 35% 30%, #4a2f22, #2a1912 70%);
+  color: #e6c688;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.9);
+  box-shadow: inset 0 0 0 4px #c9a25a, inset 0 -18px 30px rgba(0, 0, 0, 0.5), 0 14px 0 #4d3a1c, 0 24px 40px rgba(0, 0, 0, 0.6);
+}
+
+[data-osc-style="own"] .bt-go:hover {
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    radial-gradient(circle at 35% 30%, #54382a, #2a1912 70%);
+  color: #f2d79b;
+}
+
+.bt-go.toggle {
+  transform: translateY(10px);
+}
+[data-osc-style="own"] .bt-go.toggle {
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    radial-gradient(circle at 35% 30%, #6a4a2c, #3b261a 70%);
+  color: #fff0c8;
+  box-shadow: inset 0 0 0 4px #e0bb6c, inset 0 -8px 20px rgba(0, 0, 0, 0.5), 0 4px 0 #4d3a1c, 0 10px 20px rgba(0, 0, 0, 0.6);
+}
+
+.bt-pad {
+  width: min(74vw, 46vh, 360px);
+  height: min(74vw, 46vh, 360px);
+  border-radius: 18px;
+}
+
+[data-osc-style="own"] .bt-pad {
+  border: 6px solid #2a1912;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05)) center / 100% 1px no-repeat,
+    linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05)) center / 1px 100% no-repeat,
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(160deg, #3d261b, #23150f);
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.7), 0 2px 0 rgba(255, 230, 190, 0.15);
+}
+
+[data-osc-style="own"] .bt-pad::after {
+  border: 2px solid #1d1410;
+  background: radial-gradient(circle at 35% 30%, #efd9a6, #b98b3f 70%);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+
+.bt-colour {
+  width: min(74vw, 320px);
+  height: 190px;
+  border-radius: 18px;
+}
+
+[data-osc-style="own"] .bt-colour {
+  border: 6px solid #2a1912;
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.7), 0 2px 0 rgba(255, 230, 190, 0.15);
+}
+
+/* LEVEL: a wide window with a brass needle-line for the peak. */
+.bt-meter {
+  width: min(84vw, 420px);
+  height: 64px;
+  border-radius: 10px;
+}
+
+[data-osc-style="own"] .bt-meter {
+  border: 4px solid #2a1912;
+  background: linear-gradient(180deg, #1a1816, #0f0e0d);
+  box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.9), 0 2px 0 rgba(255, 230, 190, 0.15);
+}
+
+[data-osc-style="own"] .bt-meter::before {
+  background: linear-gradient(90deg, #6d8f3a 0%, #c9b04a 60%, #d9a441 80%, #c8452f 100%);
+  background-size: min(84vw, 420px) 100%;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+}
+
+[data-osc-style="own"] .bt-meter.oscar-peak::after {
+  background: #f2d79b;
+  box-shadow: 0 0 6px #f2d79b;
+}
+
+/* SCENES: four leather keys with brass rims. */
+.bt-scenes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  width: min(80vw, 380px);
+}
+
+.bt-scene {
+  height: min(20vh, 120px);
+  min-height: 84px;
+  padding: 0;
+  border-radius: 16px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+
+[data-osc-style="own"] .bt-scene {
+  border: 3px solid #7a5a2c;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #3d261b, #2a1912);
+  color: #d8b77c;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 0 #4d3a1c, 0 12px 20px rgba(0, 0, 0, 0.5);
+}
+
+[data-osc-style="own"] .bt-scene:hover {
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #4a2f22, #2a1912);
+  color: #e6c688;
+}
+
+.bt-scene.toggle {
+  transform: translateY(4px);
+}
+[data-osc-style="own"] .bt-scene.toggle {
+  border-color: #e0bb6c;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.2) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #d9a441, #b98b3f);
+  color: #1d1410;
+  text-shadow: 0 1px 0 rgba(255, 235, 200, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 2px 0 #4d3a1c, 0 6px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .bt {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .bt-panel {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+}
+body:not([data-osc-style="own"]) .bt-strap {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .bt-plate {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-background);
+}
+body:not([data-osc-style="own"]) .bt-name {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .bt-count,
+body:not([data-osc-style="own"]) .bt-hint {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .bt {
+  --osc-thumb: 56px;
+  --osc-track-size: 18px;
+  --osc-control-height: 64px;
+}
+
+/* Tablet: two a row. */
+@media (max-width: 992px) {
+  .bt {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    padding: 20px;
+  }
+}
+
+/* Phone: one control a screen, and the strip snaps from one to the next. */
+@media (max-width: 480px) {
+  .bt {
+    display: block;
+    height: 100vh;
+    padding: 0;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bt-panel {
+    min-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  .bt-fader {
+    height: 58vh;
+  }
+
+  .bt-name {
+    font-size: 16px;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="bt" class="bt" data-gjs-dmode="flow">
+  <section id="bt-panel-master" class="bt-panel" data-gjs-dmode="flow">
+    <header id="bt-master-strap" class="bt-strap" data-gjs-dmode="flow">
+      <h2 id="bt-master-name" class="bt-name" data-gjs-dmode="flow">Master</h2>
+      <p id="bt-master-count" class="bt-count" data-gjs-dmode="flow">1 / 6</p>
+    </header>
+    <div id="bt-master-plate" class="bt-plate" data-gjs-dmode="flow">
+      <input id="bt-master" class="bt-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/big/master" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical" data-gjs-listen="true">
+    </div>
+    <p id="bt-master-hint" class="bt-hint" data-gjs-dmode="flow">Slide. The whole hand, not a fingertip.</p>
+  </section>
+  <section id="bt-panel-go" class="bt-panel" data-gjs-dmode="flow">
+    <header id="bt-go-strap" class="bt-strap" data-gjs-dmode="flow">
+      <h2 id="bt-go-name" class="bt-name" data-gjs-dmode="flow">Go</h2>
+      <p id="bt-go-count" class="bt-count" data-gjs-dmode="flow">2 / 6</p>
+    </header>
+    <div id="bt-go-plate" class="bt-plate" data-gjs-dmode="flow">
+      <button id="bt-go" class="bt-key bt-go" data-gjs-dmode="flow" data-gjs-message="/big/go" data-gjs-value-on="1" data-gjs-value-off="0">GO</button>
+    </div>
+    <p id="bt-go-hint" class="bt-hint" data-gjs-dmode="flow">Press and hold. 1 while it is down.</p>
+  </section>
+  <section id="bt-panel-position" class="bt-panel" data-gjs-dmode="flow">
+    <header id="bt-position-strap" class="bt-strap" data-gjs-dmode="flow">
+      <h2 id="bt-position-name" class="bt-name" data-gjs-dmode="flow">Position</h2>
+      <p id="bt-position-count" class="bt-count" data-gjs-dmode="flow">3 / 6</p>
+    </header>
+    <div id="bt-position-plate" class="bt-plate" data-gjs-dmode="flow">
+      <div id="bt-position" class="oscar-xypad bt-pad" data-gjs-dmode="flow" data-gjs-message="/big/position" data-gjs-min-x="0" data-gjs-max-x="1" data-gjs-min-y="0" data-gjs-max-y="1" data-gjs-x="0.5" data-gjs-y="0.5"></div>
+    </div>
+    <p id="bt-position-hint" class="bt-hint" data-gjs-dmode="flow">Drag anywhere on the leather.</p>
+  </section>
+  <section id="bt-panel-colour" class="bt-panel" data-gjs-dmode="flow">
+    <header id="bt-colour-strap" class="bt-strap" data-gjs-dmode="flow">
+      <h2 id="bt-colour-name" class="bt-name" data-gjs-dmode="flow">Colour</h2>
+      <p id="bt-colour-count" class="bt-count" data-gjs-dmode="flow">4 / 6</p>
+    </header>
+    <div id="bt-colour-plate" class="bt-plate" data-gjs-dmode="flow">
+      <input id="bt-colour" class="bt-colour" type="color" data-gjs-dmode="flow" data-gjs-message="/big/colour" data-gjs-value="#d9a441" data-gjs-format="rgb" data-gjs-scale="unit">
+    </div>
+    <p id="bt-colour-hint" class="bt-hint" data-gjs-dmode="flow">Tap to pick. Sent as red, green, blue, 0 to 1.</p>
+  </section>
+  <section id="bt-panel-level" class="bt-panel" data-gjs-dmode="flow">
+    <header id="bt-level-strap" class="bt-strap" data-gjs-dmode="flow">
+      <h2 id="bt-level-name" class="bt-name" data-gjs-dmode="flow">Level</h2>
+      <p id="bt-level-count" class="bt-count" data-gjs-dmode="flow">5 / 6</p>
+    </header>
+    <div id="bt-level-plate" class="bt-plate" data-gjs-dmode="flow">
+      <div id="bt-level" class="oscar-meter bt-meter" data-gjs-dmode="flow" data-gjs-message="/big/level" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.4" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+    </div>
+    <p id="bt-level-hint" class="bt-hint" data-gjs-dmode="flow">Shows what the rig sends to /big/level.</p>
+  </section>
+  <section id="bt-panel-scenes" class="bt-panel" data-gjs-dmode="flow">
+    <header id="bt-scenes-strap" class="bt-strap" data-gjs-dmode="flow">
+      <h2 id="bt-scenes-name" class="bt-name" data-gjs-dmode="flow">Scenes</h2>
+      <p id="bt-scenes-count" class="bt-count" data-gjs-dmode="flow">6 / 6</p>
+    </header>
+    <div id="bt-scenes-plate" class="bt-plate" data-gjs-dmode="flow">
+      <div id="bt-scenes" class="bt-scenes" data-gjs-dmode="flow">
+        <button id="bt-scene-1" class="bt-key bt-scene" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/big/scene/1" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 1</button>
+        <button id="bt-scene-2" class="bt-key bt-scene" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/big/scene/2" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 2</button>
+        <button id="bt-scene-3" class="bt-key bt-scene" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/big/scene/3" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 3</button>
+        <button id="bt-scene-4" class="bt-key bt-scene" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/big/scene/4" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 4</button>
+      </div>
+    </div>
+    <p id="bt-scenes-hint" class="bt-hint" data-gjs-dmode="flow">Tap to switch on. Tap again to switch off.</p>
+  </section>
+</div>
+</body>
+</html>

@@ -1,0 +1,657 @@
+<!doctype html>
+<html>
+<head>
+<title>QLab Stage Manager's Desk</title>
+<!--
+  QLab Stage Manager's Desk: a prompt desk in wood, a leather pad with a big
+  green GO and a red STOP, brass keys for PAUSE, RESUME, PREV, NEXT and
+  RESET, a PANIC bar, a brass lamp that lights while any key is down, and a
+  paper cue sheet with a START key for each of eight cues. The card on the
+  right lists every address.
+
+  Every address is QLab's own (QLab 4 and 5). QLab listens for OSC on port
+  53000 with nothing to switch on. In OSCAR, set each widget's IP to the Mac
+  running QLab and its port to 53000; select every widget at once and set
+  them together. If the workspace has a passcode, QLab wants /connect with
+  it first; leave the passcode off for a control surface, or send it once
+  from a text box.
+
+  Every key here sends its address bare, with no argument, and only once,
+  when it is pressed: /go with an argument would be read as a cue number,
+  and /go twice would go twice. That is the button's Argument type "none"
+  with Value OFF left blank, which is what OSCAR does when a key is let go
+  and there is nothing to say.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the desk is redrawn in that style's colours: every rule
+    that paints is written for "own" alone, and a short set of rules further
+    down, made of tokens only, dresses it for the others.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries.
+
+  OSC addresses:
+    /go   /stop   /pause   /resume   /playhead/previous   /playhead/next   /reset   /panic
+    /cue/1/start ... /cue/8/start
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #22170f;
+  --osc-foreground: #efe4cf;
+  --osc-card: #2f2018;
+  --osc-muted: #3c2a1f;
+  --osc-accent: #b89055;
+  --osc-accent-foreground: #1c130d;
+  --osc-border: #120c08;
+  --osc-input: #120c08;
+  --osc-primary: #3fae5a;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #e2b25a;
+  --osc-radius: 12px;
+  --osc-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --osc-control-height: 56px;
+}
+
+/* ---- the desk, seen from the stage manager's stool ---- */
+.qsm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  min-height: 100vh;
+  padding: 36px;
+  box-sizing: border-box;
+}
+
+[data-osc-style="own"] .qsm {
+  background:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, 0.12) 0 2px, rgba(255, 255, 255, 0.03) 2px 5px, rgba(0, 0, 0, 0.06) 5px 9px, rgba(255, 220, 160, 0.04) 9px 14px),
+    linear-gradient(180deg, #5a3a22, #3d2716 55%, #2a1a0e);
+}
+
+/* The leather pad the controls sit on, with its stitched edge. */
+.qsm-pad {
+  display: grid;
+  grid-template-rows: auto auto auto auto;
+  gap: 22px;
+  padding: 26px;
+  border-radius: 22px;
+}
+
+.qsm-pad {
+  outline-offset: -2px;
+}
+[data-osc-style="own"] .qsm-pad {
+  border: 2px dashed rgba(230, 200, 150, 0.32);
+  outline: 8px solid #2a1912;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(160deg, #3f291d, #2a1912 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 22px 50px rgba(0, 0, 0, 0.6);
+}
+
+.qsm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.qsm-brand {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .qsm-brand {
+  color: #d8b77c;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.qsm-model {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .qsm-model {
+  color: rgba(216, 183, 124, 0.6);
+}
+
+/* The lamp: brass, lit while anything is held. */
+.qsm-lamp {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+[data-osc-style="own"] .qsm-lamp {
+  border: 3px solid #a8823f;
+  background: radial-gradient(circle at 35% 30%, #4a3a20, #1c130d 70%);
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+[data-osc-style="own"] .qsm-pad:has(.qsm-btn.toggle) .qsm-lamp {
+  background: radial-gradient(circle at 35% 30%, #fff1b0, #e2b25a 60%, #a8823f);
+  box-shadow: 0 0 16px #e2b25a, 0 0 4px #fff1b0;
+}
+
+/* ---- the two mushrooms ---- */
+.qsm-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+  justify-items: center;
+}
+
+.qsm-mushroom {
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 900;
+  letter-spacing: 0.26em;
+  text-indent: 0.26em;
+  transition: transform 0.06s, box-shadow 0.06s;
+}
+
+.qsm-go {
+  width: min(44vw, 280px);
+  height: min(44vw, 280px);
+  font-size: 40px;
+}
+
+[data-osc-style="own"] .qsm-go {
+  border: 8px solid #b28f45;
+  background: radial-gradient(circle at 35% 28%, #5fd47c, #2f9a4a 55%, #1f6f34);
+  color: #f4fff5;
+  text-shadow: 0 -2px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 -20px 30px rgba(0, 0, 0, 0.35), inset 0 6px 10px rgba(255, 255, 255, 0.25), 0 16px 0 #16472a, 0 26px 40px rgba(0, 0, 0, 0.6);
+}
+
+[data-osc-style="own"] .qsm-go:hover {
+  background: radial-gradient(circle at 35% 28%, #6fe08a, #35a852 55%, #227a3a);
+  color: #ffffff;
+}
+
+.qsm-go.toggle {
+  transform: translateY(12px);
+}
+[data-osc-style="own"] .qsm-go.toggle {
+  background: radial-gradient(circle at 35% 28%, #8ff0a6, #45bd63 55%, #2b8a44);
+  color: #ffffff;
+  box-shadow: inset 0 -8px 20px rgba(0, 0, 0, 0.35), inset 0 6px 10px rgba(255, 255, 255, 0.35), 0 4px 0 #16472a, 0 10px 20px rgba(0, 0, 0, 0.6), 0 0 40px rgba(95, 212, 124, 0.6);
+}
+
+.qsm-stop {
+  width: min(32vw, 190px);
+  height: min(32vw, 190px);
+  font-size: 22px;
+}
+
+[data-osc-style="own"] .qsm-stop {
+  border: 7px solid #b28f45;
+  background: radial-gradient(circle at 35% 28%, #f06a5a, #c53b2c 55%, #8c261c);
+  color: #fff3f0;
+  text-shadow: 0 -2px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 -16px 24px rgba(0, 0, 0, 0.35), inset 0 5px 8px rgba(255, 255, 255, 0.25), 0 12px 0 #56150e, 0 20px 32px rgba(0, 0, 0, 0.6);
+}
+
+[data-osc-style="own"] .qsm-stop:hover {
+  background: radial-gradient(circle at 35% 28%, #f77c6c, #d24535 55%, #962b20);
+  color: #ffffff;
+}
+
+.qsm-stop.toggle {
+  transform: translateY(9px);
+}
+[data-osc-style="own"] .qsm-stop.toggle {
+  background: radial-gradient(circle at 35% 28%, #ff9a8c, #e0503f 55%, #a83224);
+  color: #ffffff;
+  box-shadow: inset 0 -6px 16px rgba(0, 0, 0, 0.35), inset 0 5px 8px rgba(255, 255, 255, 0.35), 0 3px 0 #56150e, 0 8px 16px rgba(0, 0, 0, 0.6), 0 0 36px rgba(240, 106, 90, 0.6);
+}
+
+/* ---- the row of brass-rimmed keys ---- */
+.qsm-keys {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.qsm-key {
+  min-height: 60px;
+  padding: 0 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+[data-osc-style="own"] .qsm-key {
+  border: 2px solid #8a6a30;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #4a3224, #30201a);
+  color: #dcc08a;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 0 #4d3a1c, 0 10px 18px rgba(0, 0, 0, 0.5);
+}
+
+[data-osc-style="own"] .qsm-key:hover {
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #57392a, #35241c);
+  color: #f0d9a8;
+}
+
+.qsm-key.toggle {
+  transform: translateY(4px);
+}
+[data-osc-style="own"] .qsm-key.toggle {
+  border-color: #e2b25a;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.2) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #e2b25a, #b28f45);
+  color: #1c130d;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 0 #4d3a1c, 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+.qsm-key-panic {
+  grid-column: 1 / -1;
+}
+
+[data-osc-style="own"] .qsm-key-panic {
+  border-color: #b23a2c;
+  color: #f0a08f;
+}
+
+[data-osc-style="own"] .qsm-key-panic.toggle {
+  border-color: #f06a5a;
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.2) 0.8px, transparent 1.3px) 0 0 / 4px 4px,
+    linear-gradient(180deg, #f06a5a, #c53b2c);
+  color: #fff3f0;
+  text-shadow: none;
+}
+
+/* ---- the cue sheet: paper clipped to the desk ---- */
+.qsm-sheet {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 34px 28px 28px;
+  border-radius: 4px;
+  transform: rotate(-0.6deg);
+}
+
+[data-osc-style="own"] .qsm-sheet {
+  background:
+    repeating-linear-gradient(180deg, transparent 0 31px, rgba(60, 90, 140, 0.18) 31px 32px),
+    linear-gradient(180deg, #f6efd9, #ece2c6);
+  color: #2a2418;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 14px 30px rgba(0, 0, 0, 0.5);
+}
+
+.qsm-clip {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  width: 120px;
+  height: 26px;
+  margin-left: -60px;
+  border-radius: 6px 6px 3px 3px;
+}
+
+[data-osc-style="own"] .qsm-clip {
+  background: linear-gradient(180deg, #3a3a3a, #161616);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 6px 10px rgba(0, 0, 0, 0.5);
+}
+
+.qsm-sheet-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+[data-osc-style="own"] .qsm-sheet-title,
+[data-osc-style="own"] .qsm-sheet-sub,
+[data-osc-style="own"] .qsm-cue-label {
+  font-family: "Courier New", Courier, monospace;
+}
+
+.qsm-sheet-sub {
+  margin: -8px 0 4px;
+  font-size: 12px;
+}
+
+[data-osc-style="own"] .qsm-sheet-sub {
+  color: rgba(42, 36, 24, 0.7);
+}
+
+.qsm-cues {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.qsm-cue {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.qsm-cue-label {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.qsm-standby {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+[data-osc-style="own"] .qsm-standby {
+  border: 2px solid #2a2418;
+  background: #f6efd9;
+  color: #2a2418;
+  box-shadow: 2px 2px 0 #2a2418;
+}
+
+[data-osc-style="own"] .qsm-standby:hover {
+  background: #fff8e4;
+  color: #2a2418;
+}
+
+.qsm-standby.toggle {
+  transform: translate(2px, 2px);
+}
+[data-osc-style="own"] .qsm-standby.toggle {
+  background: #3fae5a;
+  color: #ffffff;
+  box-shadow: 0 0 0 #2a2418;
+}
+
+/* ---- the leaflet that lists every address ---- */
+.qsm-manual {
+  padding: 24px;
+  border-radius: 6px;
+  transform: rotate(0.5deg);
+}
+[data-osc-style="own"] .qsm-manual {
+  background:
+    repeating-linear-gradient(180deg, transparent 0 31px, rgba(60, 90, 140, 0.14) 31px 32px),
+    linear-gradient(180deg, #f6efd9, #ece2c6);
+  color: #2a2418;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 14px 30px rgba(0, 0, 0, 0.5);
+  font-family: "Courier New", Courier, monospace;
+}
+
+.qsm-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.qsm-manual-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+[data-osc-style="own"] .qsm-manual-title {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.qsm-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+[data-osc-style="own"] .qsm-manual-lead {
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+.qsm-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+
+.qsm-manual-row {
+  display: grid;
+  gap: 1px;
+}
+
+.qsm-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.qsm-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.qsm-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.qsm-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+[data-osc-style="own"] .qsm-manual-foot {
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .qsm {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .qsm-pad,
+body:not([data-osc-style="own"]) .qsm-sheet,
+body:not([data-osc-style="own"]) .qsm-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .qsm-brand,
+body:not([data-osc-style="own"]) .qsm-model,
+body:not([data-osc-style="own"]) .qsm-sheet-sub {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .qsm-lamp,
+body:not([data-osc-style="own"]) .qsm-clip {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .qsm-pad:has(.qsm-btn.toggle) .qsm-lamp {
+  background: var(--osc-primary);
+}
+
+/* Tablet: the sheet goes under the pad. */
+@media (max-width: 992px) {
+  .qsm {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 22px;
+  }
+}
+
+/* Phone: GO fills the width, STOP under it, keys two a row, cues one a row. */
+@media (max-width: 480px) {
+  .qsm {
+    padding: 12px;
+    gap: 22px;
+  }
+
+  .qsm-pad {
+    padding: 18px;
+  }
+
+  .qsm-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .qsm-go {
+    width: min(70vw, 260px);
+    height: min(70vw, 260px);
+  }
+
+  .qsm-stop {
+    width: 150px;
+    height: 150px;
+  }
+
+  .qsm-keys {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .qsm-cues {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .qsm-sheet {
+    transform: none;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="qsm" class="qsm" data-gjs-dmode="flow">
+  <section id="qsm-pad" class="qsm-pad" data-gjs-dmode="flow">
+    <header id="qsm-head" class="qsm-head" data-gjs-dmode="flow">
+      <h1 id="qsm-brand" class="qsm-brand" data-gjs-dmode="flow">OSCAR</h1>
+      <p id="qsm-model" class="qsm-model" data-gjs-dmode="flow">Stage Manager's Desk &middot; for QLab</p>
+      <span id="qsm-lamp" class="qsm-lamp" data-gjs-dmode="flow"></span>
+    </header>
+
+    <div id="qsm-main" class="qsm-main" data-gjs-dmode="flow">
+      <button id="qsm-go" class="qsm-btn qsm-mushroom qsm-go" data-gjs-dmode="flow" data-gjs-message="/go" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">GO</button>
+      <button id="qsm-stop" class="qsm-btn qsm-mushroom qsm-stop" data-gjs-dmode="flow" data-gjs-message="/stop" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">STOP</button>
+    </div>
+
+    <div id="qsm-keys" class="qsm-keys" data-gjs-dmode="flow">
+      <button id="qsm-pause" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/pause" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">PAUSE</button>
+      <button id="qsm-resume" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/resume" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">RESUME</button>
+      <button id="qsm-prev" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/playhead/previous" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">&#9664;&#xFE0E; PREV</button>
+      <button id="qsm-next" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/playhead/next" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">NEXT &#9654;&#xFE0E;</button>
+      <button id="qsm-reset" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/reset" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">RESET</button>
+      <button id="qsm-panic" class="qsm-btn qsm-key qsm-key-panic" data-gjs-dmode="flow" data-gjs-message="/panic" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">PANIC</button>
+    </div>
+
+    <div id="qsm-sheet" class="qsm-sheet" data-gjs-dmode="flow">
+      <span id="qsm-clip" class="qsm-clip" data-gjs-dmode="flow"></span>
+      <h2 id="qsm-sheet-title" class="qsm-sheet-title" data-gjs-dmode="flow">Cue sheet</h2>
+      <p id="qsm-sheet-sub" class="qsm-sheet-sub" data-gjs-dmode="flow">Rename these to your own cues. Each START fires that cue number.</p>
+      <div id="qsm-cues" class="qsm-cues" data-gjs-dmode="flow">
+      <div id="qsm-cue-1" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-1" class="qsm-cue-label" data-gjs-dmode="flow">Q1 &middot; House to half</p>
+        <button id="qsm-standby-1" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/1/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      <div id="qsm-cue-2" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-2" class="qsm-cue-label" data-gjs-dmode="flow">Q2 &middot; House out, preset</p>
+        <button id="qsm-standby-2" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/2/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      <div id="qsm-cue-3" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-3" class="qsm-cue-label" data-gjs-dmode="flow">Q3 &middot; Lights up, music in</p>
+        <button id="qsm-standby-3" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/3/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      <div id="qsm-cue-4" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-4" class="qsm-cue-label" data-gjs-dmode="flow">Q4 &middot; Video wall on</p>
+        <button id="qsm-standby-4" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/4/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      <div id="qsm-cue-5" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-5" class="qsm-cue-label" data-gjs-dmode="flow">Q5 &middot; Thunder</p>
+        <button id="qsm-standby-5" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/5/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      <div id="qsm-cue-6" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-6" class="qsm-cue-label" data-gjs-dmode="flow">Q6 &middot; Blackout</p>
+        <button id="qsm-standby-6" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/6/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      <div id="qsm-cue-7" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-7" class="qsm-cue-label" data-gjs-dmode="flow">Q7 &middot; Curtain call</p>
+        <button id="qsm-standby-7" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/7/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      <div id="qsm-cue-8" class="qsm-cue" data-gjs-dmode="flow">
+        <p id="qsm-cue-label-8" class="qsm-cue-label" data-gjs-dmode="flow">Q8 &middot; House up</p>
+        <button id="qsm-standby-8" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/8/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+      </div>
+      </div>
+    </div>
+  </section>
+
+  <aside id="qsm-manual" class="qsm-manual" data-gjs-dmode="flow">
+    <p id="qsm-manual-eyebrow" class="qsm-manual-eyebrow" data-gjs-dmode="flow">Quick reference</p>
+    <h2 id="qsm-manual-title" class="qsm-manual-title" data-gjs-dmode="flow">QLab over OSC</h2>
+    <p id="qsm-manual-lead" class="qsm-manual-lead" data-gjs-dmode="flow">QLab listens on port 53000; nothing to switch on. Set every widget here to the Mac running QLab, port 53000. Every key sends its address bare, once, when pressed.</p>
+    <dl id="qsm-manual-list" class="qsm-manual-list" data-gjs-dmode="flow">
+      <div id="qsm-manual-row-1" class="qsm-manual-row" data-gjs-dmode="flow">
+        <dt id="qsm-manual-key-1" class="qsm-manual-key" data-gjs-dmode="flow">GO</dt>
+        <dd id="qsm-manual-address-1" class="qsm-manual-address" data-gjs-dmode="flow">/go</dd>
+        <dd id="qsm-manual-note-1" class="qsm-manual-note" data-gjs-dmode="flow">Sent once, bare, when pressed: the next cue in the list goes. Nothing is sent when it is let go.</dd>
+      </div>
+      <div id="qsm-manual-row-2" class="qsm-manual-row" data-gjs-dmode="flow">
+        <dt id="qsm-manual-key-2" class="qsm-manual-key" data-gjs-dmode="flow">STOP</dt>
+        <dd id="qsm-manual-address-2" class="qsm-manual-address" data-gjs-dmode="flow">/stop</dd>
+        <dd id="qsm-manual-note-2" class="qsm-manual-note" data-gjs-dmode="flow">Stops everything, bare, once.</dd>
+      </div>
+      <div id="qsm-manual-row-3" class="qsm-manual-row" data-gjs-dmode="flow">
+        <dt id="qsm-manual-key-3" class="qsm-manual-key" data-gjs-dmode="flow">PAUSE / RESUME</dt>
+        <dd id="qsm-manual-address-3" class="qsm-manual-address" data-gjs-dmode="flow">/pause  /resume</dd>
+        <dd id="qsm-manual-note-3" class="qsm-manual-note" data-gjs-dmode="flow">Bare, once each.</dd>
+      </div>
+      <div id="qsm-manual-row-4" class="qsm-manual-row" data-gjs-dmode="flow">
+        <dt id="qsm-manual-key-4" class="qsm-manual-key" data-gjs-dmode="flow">PREV / NEXT</dt>
+        <dd id="qsm-manual-address-4" class="qsm-manual-address" data-gjs-dmode="flow">/playhead/previous  /playhead/next</dd>
+        <dd id="qsm-manual-note-4" class="qsm-manual-note" data-gjs-dmode="flow">Moves the playhead. Bare, once each.</dd>
+      </div>
+      <div id="qsm-manual-row-5" class="qsm-manual-row" data-gjs-dmode="flow">
+        <dt id="qsm-manual-key-5" class="qsm-manual-key" data-gjs-dmode="flow">RESET</dt>
+        <dd id="qsm-manual-address-5" class="qsm-manual-address" data-gjs-dmode="flow">/reset</dd>
+        <dd id="qsm-manual-note-5" class="qsm-manual-note" data-gjs-dmode="flow">Resets the workspace: the playhead to the top, every cue stopped.</dd>
+      </div>
+      <div id="qsm-manual-row-6" class="qsm-manual-row" data-gjs-dmode="flow">
+        <dt id="qsm-manual-key-6" class="qsm-manual-key" data-gjs-dmode="flow">PANIC</dt>
+        <dd id="qsm-manual-address-6" class="qsm-manual-address" data-gjs-dmode="flow">/panic</dd>
+        <dd id="qsm-manual-note-6" class="qsm-manual-note" data-gjs-dmode="flow">Fades everything out over the workspace's panic time. Twice, quickly, is a hard stop.</dd>
+      </div>
+      <div id="qsm-manual-row-7" class="qsm-manual-row" data-gjs-dmode="flow">
+        <dt id="qsm-manual-key-7" class="qsm-manual-key" data-gjs-dmode="flow">START Qn</dt>
+        <dd id="qsm-manual-address-7" class="qsm-manual-address" data-gjs-dmode="flow">/cue/n/start</dd>
+        <dd id="qsm-manual-note-7" class="qsm-manual-note" data-gjs-dmode="flow">Starts that cue number, wherever the playhead is. The number is in the address, so no argument.</dd>
+      </div>
+    </dl>
+    <p id="qsm-manual-foot" class="qsm-manual-foot" data-gjs-dmode="flow">A workspace with a passcode wants /connect &lt;passcode&gt; first. QLab replies on port 53001; nothing here listens, because a GO button has no state to follow.</p>
+  </aside>
+</div>
+</body>
+</html>

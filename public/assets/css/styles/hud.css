@@ -1,0 +1,158 @@
+/*
+ * HUD: a widget style for OSCAR.
+ *
+ * A head-up display: thin lines on near-black, corner brackets instead of
+ * boxes, a monospace readout in capitals, cyan for what is live and amber for
+ * what is armed. Light is the same instrument on a pale panel.
+ *
+ * The first part is the tokens, as every style has. The second is what makes
+ * it a HUD -- the brackets, a sweep along the meter, a crosshair on the pad --
+ * written for this style alone ([data-osc-style="hud"]) and drawn from the
+ * tokens above, so no other style and no widget rule is touched. The brackets
+ * are four small gradients in the background, one per corner, so nothing
+ * needs a pseudo-element the widgets already use.
+ *
+ * Chosen for a surface by data-osc-style on its body.
+ * lib/widget-styles.js lists the styles that exist.
+ */
+
+@layer oscar.tokens, oscar.widgets;
+
+@layer oscar.tokens {
+  [data-osc-style="hud"] {
+    --osc-radius: 2px;
+    --osc-font: "SF Mono", "Cascadia Mono", Consolas, "Roboto Mono", "DejaVu Sans Mono", monospace;
+    --osc-letter-spacing: 0.1em;
+    --osc-background: #eef4f7;
+    --osc-foreground: #0d2a3a;
+    --osc-card: #f7fafc;
+    --osc-muted: #dde8ee;
+    --osc-accent: #c2600a;
+    --osc-accent-foreground: #ffffff;
+    --osc-border: #6fa0b6;
+    --osc-input: #6fa0b6;
+    --osc-primary: #0a7ea4;
+    --osc-primary-foreground: #ffffff;
+    --osc-ring: #c2600a;
+    --osc-shadow-xs: 0 0 0 1px color-mix(in srgb, #0a7ea4 12%, transparent);
+    --osc-shadow-sm: 0 0 0 1px color-mix(in srgb, #0a7ea4 25%, transparent), 0 0 10px color-mix(in srgb, #0a7ea4 20%, transparent);
+  }
+
+  [data-osc-style="hud"][data-osc-appearance="dark"] {
+    --osc-background: #050a0f;
+    --osc-foreground: #a8ecff;
+    --osc-card: #08121a;
+    --osc-muted: #0b1620;
+    --osc-accent: #ffb547;
+    --osc-accent-foreground: #1a1002;
+    --osc-border: #1f5a70;
+    --osc-input: #1f5a70;
+    --osc-primary: #35d4ff;
+    --osc-primary-foreground: #03131b;
+    --osc-ring: #ffb547;
+    --osc-shadow-xs: 0 0 0 1px color-mix(in srgb, #35d4ff 15%, transparent);
+    --osc-shadow-sm: 0 0 0 1px color-mix(in srgb, #35d4ff 30%, transparent), 0 0 14px color-mix(in srgb, #35d4ff 25%, transparent);
+  }
+}
+
+@layer oscar.widgets {
+  /* Corner brackets: a 2px line, 10px long, in each corner, and no full box. */
+  [data-osc-style="hud"] button {
+    --hud-corner: linear-gradient(var(--osc-primary), var(--osc-primary));
+    border-color: color-mix(in srgb, var(--osc-border) 45%, transparent);
+    background-color: transparent;
+    background-image: var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner);
+    background-repeat: no-repeat;
+    background-size: 10px 2px, 2px 10px, 10px 2px, 2px 10px, 10px 2px, 2px 10px, 10px 2px, 2px 10px;
+    background-position: left top, left top, right top, right top, left bottom, left bottom, right bottom, right bottom;
+    color: var(--osc-primary);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  [data-osc-style="hud"] button:hover {
+    --hud-corner: linear-gradient(var(--osc-accent), var(--osc-accent));
+    border-color: var(--osc-accent);
+    background-color: color-mix(in srgb, var(--osc-accent) 12%, transparent);
+    color: var(--osc-accent);
+  }
+
+  /* Armed: filled, with the brackets in the fill's own text colour. */
+  [data-osc-style="hud"] button.toggle,
+  [data-osc-style="hud"] button.toggle:hover {
+    --hud-corner: linear-gradient(var(--osc-primary-foreground), var(--osc-primary-foreground));
+    border-color: var(--osc-primary);
+    background-color: var(--osc-primary);
+    color: var(--osc-primary-foreground);
+    box-shadow: var(--osc-shadow-sm);
+  }
+
+  /* The slider is a thin scale with a square thumb. */
+  [data-osc-style="hud"] input[type="range"]::-webkit-slider-thumb {
+    border-radius: 2px;
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+  }
+
+  [data-osc-style="hud"] input[type="range"]::-moz-range-thumb {
+    border-radius: 2px;
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+  }
+
+  /* The meter is segmented, and a sweep runs along it while it shows anything. */
+  [data-osc-style="hud"] .oscar-meter {
+    border-color: color-mix(in srgb, var(--osc-border) 70%, transparent);
+    background-color: var(--osc-muted);
+    background-image: repeating-linear-gradient(90deg, transparent 0 6px, var(--osc-background) 6px 8px);
+  }
+
+  [data-osc-style="hud"] .oscar-meter[orient="vertical"] {
+    background-image: repeating-linear-gradient(0deg, transparent 0 6px, var(--osc-background) 6px 8px);
+  }
+
+  [data-osc-style="hud"] .oscar-meter::before {
+    background: repeating-linear-gradient(90deg, var(--osc-primary) 0 6px, transparent 6px 8px);
+  }
+
+  [data-osc-style="hud"] .oscar-meter[orient="vertical"]::before {
+    background: repeating-linear-gradient(0deg, var(--osc-primary) 0 6px, transparent 6px 8px);
+  }
+
+  [data-osc-style="hud"] .oscar-meter.oscar-peak::after {
+    background: var(--osc-accent);
+  }
+
+  /* A crosshair under the cursor, and brackets in the corners. */
+  [data-osc-style="hud"] .oscar-xypad {
+    --hud-corner: linear-gradient(var(--osc-primary), var(--osc-primary));
+    border-color: color-mix(in srgb, var(--osc-border) 60%, transparent);
+    background-color: var(--osc-card);
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--osc-border) 45%, transparent), color-mix(in srgb, var(--osc-border) 45%, transparent)),
+      linear-gradient(color-mix(in srgb, var(--osc-border) 45%, transparent), color-mix(in srgb, var(--osc-border) 45%, transparent)),
+      var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner), var(--hud-corner);
+    background-repeat: no-repeat;
+    background-size: 100% 1px, 1px 100%, 14px 2px, 2px 14px, 14px 2px, 2px 14px, 14px 2px, 2px 14px, 14px 2px, 2px 14px;
+    background-position: center, center, left top, left top, right top, right top, left bottom, left bottom, right bottom, right bottom;
+  }
+
+  [data-osc-style="hud"] .oscar-xypad::after {
+    border-radius: 2px;
+    box-shadow: var(--osc-shadow-sm), 0 0 0 6px color-mix(in srgb, var(--osc-primary) 15%, transparent);
+  }
+
+  [data-osc-style="hud"] .oscar-text-input,
+  [data-osc-style="hud"] .oscar-number-input,
+  [data-osc-style="hud"] .oscar-dropdown {
+    text-transform: uppercase;
+    border-color: color-mix(in srgb, var(--osc-border) 60%, transparent);
+    background-color: var(--osc-card);
+    box-shadow: inset 0 -2px 0 var(--osc-primary);
+  }
+
+  [data-osc-style="hud"] input[type="color"] {
+    border-radius: 2px;
+    box-shadow: var(--osc-shadow-sm);
+  }
+}

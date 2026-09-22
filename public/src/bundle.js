@@ -1633,7 +1633,9 @@ module.exports = { PLACEMENTS, moveAfter, arrange };
  *
  * A style is a set of token values (--osc-*) in public/assets/css/styles/<id>.css,
  * light and dark, converted from a tweakcn preset. The widgets in toggle.css
- * draw only from those tokens, so a style never touches a widget rule.
+ * draw only from those tokens, so a style never touches a widget rule. A
+ * style with a look of its own (neon, hud) may add rules for its own
+ * attribute alone, drawn from its tokens; those never reach another style.
  *
  * A surface records its choice as two attributes on its body, which travel with
  * the project to the preview and every tablet:
@@ -1649,6 +1651,8 @@ const STYLES = [
   { id: "cyberpunk", label: "Cyberpunk", fonts: ["outfit"] },
   { id: "supabase", label: "Supabase", fonts: ["outfit"] },
   { id: "tangerine", label: "Tangerine", fonts: ["inter"] },
+  { id: "neon", label: "Neon", fonts: [] },
+  { id: "hud", label: "Sci-fi HUD", fonts: [] },
 ];
 
 /**
@@ -1882,7 +1886,7 @@ const button = {
     .concat([
       field("mode", "Mode", "select", { options: MODES }),
       field("valueOn", "Value ON", "text"),
-      field("valueOff", "Value OFF", "text"),
+      field("valueOff", "Value OFF", "text", { hint: "Leave it blank and the button says nothing when it is let go: for software whose /go takes no argument and must not hear it twice." }),
       field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
@@ -1891,7 +1895,7 @@ const button = {
 
   checks: Object.assign({}, connectionChecks(), dmxChecks(1), midiChecks(1), {
     valueOn: checkValue,
-    valueOff: checkValue,
+    valueOff: checkValueOff,
   }),
 
   /**
@@ -2105,8 +2109,13 @@ function trimmed(value) {
   return value === null || value === undefined ? "" : String(value).trim();
 }
 
-/** The message for one edge, or null if it cannot or should not be sent. */
+/**
+ * The message for one edge, or null if it cannot or should not be sent. A
+ * blank Value OFF is a button that says nothing on the way up, on any
+ * protocol: /go to a cue list takes no argument, and would go twice.
+ */
 function resolve(ctx, on) {
+  if (!on && trimmed(ctx.get("valueOff")) === "") return null;
   return outgoing(routing(ctx), on ? ctx.get("valueOn") : ctx.get("valueOff"), on ? 1 : 0);
 }
 
@@ -2118,6 +2127,11 @@ function checkValue(value, config) {
   const argType = (config && config.argType) || "f";
   if (isSendable(argType, value)) return null;
   return 'The value "' + value + '" cannot be sent as ' + argType;
+}
+
+/** Value OFF may also be blank: nothing is sent on release. */
+function checkValueOff(value, config) {
+  return trimmed(value) === "" ? null : checkValue(value, config);
 }
 
 module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };

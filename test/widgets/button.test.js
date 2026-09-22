@@ -461,3 +461,13 @@ test("detaching stops the button following the other devices", () => {
   assert.ok(!ctx.classes || !ctx.classes.toggle);
   assert.strictEqual(ctx.listening(), 0);
 });
+
+test("a blank Value OFF is a button that says nothing on the way up: /go, once", () => {
+  const { el, ctx } = mount(button, { message: "/go", valueOn: "1", valueOff: "", argType: "none" });
+  el.fire("pointerdown");
+  el.fire("pointerup");
+  assert.deepStrictEqual(ctx.sent.map((m) => [m.address, m.args]), [["/go", []]]);
+  assert.strictEqual(button.checks.valueOff("", { argType: "f" }), null, "and the panel allows it");
+  assert.strictEqual(button.checks.valueOff("  ", { argType: "i" }), null);
+  assert.notStrictEqual(button.checks.valueOff("abc", { argType: "f" }), null, "anything else is still judged");
+});

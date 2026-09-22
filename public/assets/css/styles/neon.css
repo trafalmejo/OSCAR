@@ -1,0 +1,167 @@
+/*
+ * Neon: a widget style for OSCAR.
+ *
+ * Every control is a neon tube on a dark wall: a thin bright outline with
+ * its glow on the wall behind it, and a filled, brighter tube when it is on.
+ * Light is the same sign in a lit shop window, where a tube reads as a bright
+ * line and the glow is faint.
+ *
+ * The first part is the tokens, as every style has. The second is what makes
+ * it neon -- glow and a flicker as a tube comes on -- written for this style
+ * alone ([data-osc-style="neon"]), so no other style and no widget rule is
+ * touched. Everything there is drawn from the tokens above it.
+ *
+ * Chosen for a surface by data-osc-style on its body.
+ * lib/widget-styles.js lists the styles that exist.
+ */
+
+@layer oscar.tokens, oscar.widgets;
+
+@layer oscar.tokens {
+  [data-osc-style="neon"] {
+    --osc-radius: 999px;
+    --osc-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --osc-letter-spacing: 0.08em;
+    --osc-background: #f6f1fb;
+    --osc-foreground: #2a1638;
+    --osc-card: #ffffff;
+    --osc-muted: #ebe3f4;
+    --osc-accent: #00b7c7;
+    --osc-accent-foreground: #ffffff;
+    --osc-border: #d63fbf;
+    --osc-input: #d63fbf;
+    --osc-primary: #d63fbf;
+    --osc-primary-foreground: #ffffff;
+    --osc-ring: #00b7c7;
+    --osc-shadow-xs: 0 0 6px color-mix(in srgb, #d63fbf 35%, transparent);
+    --osc-shadow-sm: 0 0 10px color-mix(in srgb, #d63fbf 45%, transparent), 0 0 2px color-mix(in srgb, #d63fbf 60%, transparent);
+  }
+
+  [data-osc-style="neon"][data-osc-appearance="dark"] {
+    --osc-background: #07060c;
+    --osc-foreground: #fbf3ff;
+    --osc-card: #100c1c;
+    --osc-muted: #17122a;
+    --osc-accent: #22f2ff;
+    --osc-accent-foreground: #04131a;
+    --osc-border: #ff3ee0;
+    --osc-input: #ff3ee0;
+    --osc-primary: #ff3ee0;
+    --osc-primary-foreground: #fff6fd;
+    --osc-ring: #22f2ff;
+    --osc-shadow-xs: 0 0 8px color-mix(in srgb, #ff3ee0 55%, transparent), 0 0 24px color-mix(in srgb, #ff3ee0 25%, transparent);
+    --osc-shadow-sm: 0 0 14px color-mix(in srgb, #ff3ee0 70%, transparent), 0 0 40px color-mix(in srgb, #ff3ee0 35%, transparent);
+  }
+}
+
+@layer oscar.widgets {
+  /* A tube: the outline is the light, the inside is the wall. */
+  [data-osc-style="neon"] button {
+    border-width: 2px;
+    background-color: transparent;
+    color: var(--osc-primary);
+    font-weight: 700;
+    text-transform: uppercase;
+    text-shadow: 0 0 6px color-mix(in srgb, var(--osc-primary) 70%, transparent), 0 0 18px color-mix(in srgb, var(--osc-primary) 35%, transparent);
+    box-shadow: var(--osc-shadow-xs), inset 0 0 8px color-mix(in srgb, var(--osc-primary) 25%, transparent);
+  }
+
+  [data-osc-style="neon"] button:hover {
+    border-color: var(--osc-accent);
+    background-color: transparent;
+    color: var(--osc-accent);
+    text-shadow: 0 0 6px color-mix(in srgb, var(--osc-accent) 70%, transparent), 0 0 18px color-mix(in srgb, var(--osc-accent) 35%, transparent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--osc-accent) 55%, transparent), 0 0 24px color-mix(in srgb, var(--osc-accent) 25%, transparent), inset 0 0 8px color-mix(in srgb, var(--osc-accent) 25%, transparent);
+  }
+
+  /* On: the tube at full, and the flicker of one striking. */
+  [data-osc-style="neon"] button.toggle,
+  [data-osc-style="neon"] button.toggle:hover {
+    border-color: var(--osc-primary);
+    background-color: var(--osc-primary);
+    color: var(--osc-primary-foreground);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--osc-primary-foreground) 80%, transparent);
+    box-shadow: var(--osc-shadow-sm), inset 0 0 12px color-mix(in srgb, var(--osc-primary-foreground) 35%, transparent);
+    animation: oscar-neon-strike 0.45s steps(1, end) 1;
+  }
+
+  @keyframes oscar-neon-strike {
+    0% { opacity: 0.35; }
+    12% { opacity: 1; }
+    22% { opacity: 0.45; }
+    30% { opacity: 1; }
+    52% { opacity: 0.8; }
+    60% { opacity: 1; }
+    100% { opacity: 1; }
+  }
+
+  /* The slider's lit part and its thumb glow; the empty track is the wall. */
+  [data-osc-style="neon"] input[type="range"]::-webkit-slider-runnable-track {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--osc-primary) 45%, transparent);
+  }
+
+  [data-osc-style="neon"] input[type="range"]::-webkit-slider-thumb {
+    border-width: 2px;
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+  }
+
+  [data-osc-style="neon"] input[type="range"]::-moz-range-track {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--osc-primary) 45%, transparent);
+  }
+
+  [data-osc-style="neon"] input[type="range"]::-moz-range-thumb {
+    border-width: 2px;
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+  }
+
+  /* A meter is a tube that fills: the bar glows, and its end is the brightest point. */
+  [data-osc-style="neon"] .oscar-meter {
+    border-color: color-mix(in srgb, var(--osc-primary) 45%, transparent);
+    box-shadow: inset 0 0 10px color-mix(in srgb, var(--osc-primary) 15%, transparent);
+  }
+
+  [data-osc-style="neon"] .oscar-meter::before {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--osc-primary) 60%, transparent), var(--osc-primary));
+    box-shadow: 0 0 12px var(--osc-primary), 0 0 28px color-mix(in srgb, var(--osc-primary) 45%, transparent);
+  }
+
+  [data-osc-style="neon"] .oscar-meter[orient="vertical"]::before {
+    background: linear-gradient(0deg, color-mix(in srgb, var(--osc-primary) 60%, transparent), var(--osc-primary));
+  }
+
+  [data-osc-style="neon"] .oscar-meter.oscar-peak::after {
+    background: var(--osc-accent);
+    box-shadow: 0 0 8px var(--osc-accent);
+  }
+
+  /* The pad's outline and cursor are tubes too. */
+  [data-osc-style="neon"] .oscar-xypad {
+    border-width: 2px;
+    border-color: var(--osc-primary);
+    background-color: transparent;
+    box-shadow: var(--osc-shadow-xs), inset 0 0 14px color-mix(in srgb, var(--osc-primary) 18%, transparent);
+  }
+
+  [data-osc-style="neon"] .oscar-xypad::after {
+    border-width: 2px;
+    background-color: var(--osc-background);
+    box-shadow: var(--osc-shadow-sm);
+  }
+
+  [data-osc-style="neon"] .oscar-text-input,
+  [data-osc-style="neon"] .oscar-number-input,
+  [data-osc-style="neon"] .oscar-dropdown,
+  [data-osc-style="neon"] input[type="color"] {
+    border-width: 2px;
+    box-shadow: var(--osc-shadow-xs);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-osc-style="neon"] button.toggle,
+    [data-osc-style="neon"] button.toggle:hover {
+      animation: none;
+    }
+  }
+}

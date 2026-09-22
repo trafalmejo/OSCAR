@@ -1,0 +1,814 @@
+<!doctype html>
+<html>
+<head>
+<title>Resolume Video Desk</title>
+<!--
+  Resolume Video Desk: a clip grid of three layers by six columns, each clip
+  a little screen that lights up and scans while it is held; a strip a layer
+  with CLEAR, BYPASS, SOLO and the opacity; column triggers across the top;
+  and a lower deck with the crossfader as a T-bar, the master, tempo with TAP
+  and RESYNC, and PANIC. The card on the right lists every address.
+
+  Every address is Resolume Arena's and Avenue's own (version 6 and 7). In
+  Resolume, open Preferences > OSC, switch OSC Input on, and note the port
+  (7000 unless you changed it). In OSCAR, set each widget's IP to the
+  computer running Resolume and its port to that number; select every widget
+  at once and set them together. Resolume echoes what changes if OSC Output
+  is on and pointed at OSCAR's IP and listening port, and then the opacity,
+  crossfader and master faders here follow the ones on screen.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the desk is redrawn in that style's colours: every rule
+    that paints is written for "own" alone, and a short set of rules further
+    down, made of tokens only, dresses it for the others.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone each layer's strip sits above its clips, three a row.
+
+  OSC addresses:
+    /composition/layers/L/clips/C/connect   /composition/columns/C/connect
+    /composition/layers/L/video/opacity   /composition/layers/L/clear   /bypassed   /solo
+    /composition/crossfader/phase   /composition/master
+    /composition/tempocontroller/tempo   /tempotap   /resync   /composition/disconnectall
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #101215;
+  --osc-foreground: #d7dde3;
+  --osc-card: #191c21;
+  --osc-muted: #23272e;
+  --osc-accent: #19e6c8;
+  --osc-accent-foreground: #041311;
+  --osc-border: #05070a;
+  --osc-input: #05070a;
+  --osc-primary: #19e6c8;
+  --osc-primary-foreground: #041311;
+  --osc-ring: #ffb020;
+  --osc-radius: 6px;
+  --osc-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --osc-thumb: 34px;
+  --osc-track-size: 10px;
+}
+
+/* ---- the desk ---- */
+.rvd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+  min-height: 100vh;
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+[data-osc-style="own"] .rvd {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(25, 230, 200, 0.08), transparent 50%),
+    linear-gradient(180deg, #0c0e11, #07080a);
+}
+
+.rvd-desk {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 16px;
+}
+
+[data-osc-style="own"] .rvd-desk {
+  border: 1px solid #000;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #2b2f36, #1a1d22 40%, #15181c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.rvd-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 4px 8px;
+}
+
+.rvd-brand {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .rvd-brand {
+  color: #9aa3ad;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.rvd-model {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .rvd-model {
+  color: #5e6771;
+}
+
+/* ---- the grid: a strip a layer, a screen a clip ---- */
+.rvd-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.rvd-columns {
+  display: grid;
+  grid-template-columns: 150px repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rvd-columns-label {
+  align-self: center;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .rvd-columns-label {
+  color: #5e6771;
+}
+
+.rvd-column {
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+[data-osc-style="own"] .rvd-column {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #3a3f47, #262a30);
+  color: #b8c0c9;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 2px 0 #0b0c0e;
+}
+
+[data-osc-style="own"] .rvd-column:hover {
+  background: linear-gradient(180deg, #454b54, #2d3238);
+  color: #e6ebf0;
+}
+
+[data-osc-style="own"] .rvd-column.toggle {
+  border-color: #19e6c8;
+  background: linear-gradient(180deg, #19e6c8, #0fb9a1);
+  color: #041311;
+  box-shadow: 0 0 14px rgba(25, 230, 200, 0.6);
+}
+
+.rvd-layer {
+  display: grid;
+  grid-template-columns: 150px repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.rvd-strip {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+[data-osc-style="own"] .rvd-strip {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #1c1f24, #14161a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.rvd-layer-name {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .rvd-layer-name {
+  color: #8f99a3;
+}
+
+.rvd-strip-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.rvd-small {
+  min-height: 28px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+[data-osc-style="own"] .rvd-small {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #33383f, #22262b);
+  color: #aab3bc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 0 #0b0c0e;
+}
+
+[data-osc-style="own"] .rvd-small:hover {
+  background: linear-gradient(180deg, #3e444c, #2a2f35);
+  color: #e6ebf0;
+}
+
+[data-osc-style="own"] .rvd-small-clear.toggle {
+  background: linear-gradient(180deg, #ff6b57, #d3402d);
+  color: #2a0b06;
+  box-shadow: 0 0 12px rgba(255, 107, 87, 0.6);
+}
+
+[data-osc-style="own"] .rvd-small-bypass.toggle {
+  background: linear-gradient(180deg, #ffb020, #d98d0a);
+  color: #2a1a02;
+  box-shadow: 0 0 12px rgba(255, 176, 32, 0.6);
+}
+
+[data-osc-style="own"] .rvd-small-solo.toggle {
+  background: linear-gradient(180deg, #19e6c8, #0fb9a1);
+  color: #041311;
+  box-shadow: 0 0 12px rgba(25, 230, 200, 0.6);
+}
+
+.rvd-opacity {
+  align-self: end;
+  width: 100%;
+  margin: 4px 0 0;
+}
+
+/* A clip: a small screen in a bezel. Held, it lights and its scanline runs. */
+.rvd-clip {
+  position: relative;
+  min-height: 74px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  overflow: hidden;
+}
+
+[data-osc-style="own"] .rvd-clip {
+  border: 3px solid #0b0d10;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 40%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0 1px, transparent 1px 3px),
+    radial-gradient(rgba(255, 255, 255, 0.05) 0.8px, transparent 1.2px) 0 0 / 3px 3px,
+    linear-gradient(160deg, #1f2b33, #0f151a);
+  color: rgba(200, 225, 235, 0.55);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.8), 0 3px 0 #000;
+}
+
+[data-osc-style="own"] .rvd-clip:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09), transparent 40%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0 1px, transparent 1px 3px),
+    radial-gradient(rgba(255, 255, 255, 0.07) 0.8px, transparent 1.2px) 0 0 / 3px 3px,
+    linear-gradient(160deg, #27353f, #131b21);
+  color: rgba(220, 240, 248, 0.85);
+}
+
+[data-osc-style="own"] .rvd-clip.toggle {
+  border-color: #19e6c8;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 40%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.25) 0 1px, transparent 1px 3px),
+    linear-gradient(160deg, #1cc9b0, #0a6a5c);
+  color: #e9fffb;
+  box-shadow: 0 0 22px rgba(25, 230, 200, 0.7), inset 0 0 18px rgba(0, 0, 0, 0.3), 0 3px 0 #000;
+}
+
+.rvd-clip-scan {
+  position: absolute;
+  top: -20%;
+  right: 0;
+  left: 0;
+  height: 20%;
+  animation: none 1.6s linear infinite;
+  pointer-events: none;
+}
+
+[data-osc-style="own"] .rvd-clip-scan {
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+}
+
+.rvd-clip.toggle .rvd-clip-scan {
+  animation-name: rvd-scan;
+}
+
+@keyframes rvd-scan {
+  from { top: -20%; }
+  to { top: 100%; }
+}
+
+/* ---- the lower deck: T-bar, master, tempo ---- */
+.rvd-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 18px;
+  align-items: end;
+  padding-top: 8px;
+}
+
+.rvd-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+}
+
+[data-osc-style="own"] .rvd-block {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #1c1f24, #14161a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.rvd-block-name {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .rvd-block-name {
+  color: #8f99a3;
+}
+
+.rvd-ab {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+
+[data-osc-style="own"] .rvd-ab {
+  color: #5e6771;
+}
+
+/* The T-bar: a wide track and a tall metal handle. */
+.rvd-crossfader {
+  width: 100%;
+}
+[data-osc-style="own"] .rvd-crossfader {
+  --osc-thumb: 44px;
+  --osc-track-size: 14px;
+}
+
+[data-osc-style="own"] .rvd-crossfader::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #ffb020, #23272e 20%, #23272e 80%, #19e6c8);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+[data-osc-style="own"] .rvd-crossfader::-moz-range-track {
+  background: linear-gradient(90deg, #ffb020, #23272e 20%, #23272e 80%, #19e6c8);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+[data-osc-style="own"] .rvd-crossfader::-webkit-slider-thumb {
+  border: 1px solid #000;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.3) 0 2px, transparent 2px 5px), linear-gradient(180deg, #a8adb4, #5f656d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 12px rgba(0, 0, 0, 0.7);
+}
+
+[data-osc-style="own"] .rvd-crossfader::-moz-range-thumb {
+  border: 1px solid #000;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.3) 0 2px, transparent 2px 5px), linear-gradient(180deg, #a8adb4, #5f656d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 12px rgba(0, 0, 0, 0.7);
+}
+
+.rvd-master {
+  justify-self: center;
+  width: 44px;
+  height: 150px;
+}
+
+.rvd-tempo {
+  width: 220px;
+}
+
+.rvd-tempo-keys {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.rvd-deckkey {
+  min-height: 40px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+[data-osc-style="own"] .rvd-deckkey {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #3a3f47, #262a30);
+  color: #b8c0c9;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 0 #0b0c0e;
+}
+
+[data-osc-style="own"] .rvd-deckkey:hover {
+  background: linear-gradient(180deg, #454b54, #2d3238);
+  color: #e6ebf0;
+}
+
+.rvd-deckkey.toggle {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] .rvd-deckkey.toggle {
+  background: linear-gradient(180deg, #ffb020, #d98d0a);
+  color: #2a1a02;
+  box-shadow: 0 0 14px rgba(255, 176, 32, 0.6), 0 1px 0 #0b0c0e;
+}
+
+[data-osc-style="own"] .rvd-deckkey-panic.toggle {
+  background: linear-gradient(180deg, #ff6b57, #d3402d);
+  color: #2a0b06;
+  box-shadow: 0 0 14px rgba(255, 107, 87, 0.6), 0 1px 0 #0b0c0e;
+}
+
+/* ---- the leaflet that lists every address ---- */
+.rvd-manual {
+  padding: 22px;
+  border-radius: 12px;
+}
+[data-osc-style="own"] .rvd-manual {
+  border: 1px solid #000;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 40%),
+    linear-gradient(180deg, #23272e, #191c21);
+  color: #c9d1d9;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 16px 40px rgba(0, 0, 0, 0.5);
+  font-family: "Courier New", Courier, monospace;
+}
+
+.rvd-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.rvd-manual-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+[data-osc-style="own"] .rvd-manual-title {
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.rvd-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+[data-osc-style="own"] .rvd-manual-lead {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.rvd-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+
+.rvd-manual-row {
+  display: grid;
+  gap: 1px;
+}
+
+.rvd-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.rvd-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.rvd-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.rvd-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+[data-osc-style="own"] .rvd-manual-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .rvd {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .rvd-desk,
+body:not([data-osc-style="own"]) .rvd-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+}
+body:not([data-osc-style="own"]) .rvd-strip,
+body:not([data-osc-style="own"]) .rvd-block {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .rvd-brand,
+body:not([data-osc-style="own"]) .rvd-layer-name,
+body:not([data-osc-style="own"]) .rvd-block-name {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .rvd-model,
+body:not([data-osc-style="own"]) .rvd-columns-label,
+body:not([data-osc-style="own"]) .rvd-ab {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .rvd {
+  --osc-thumb: 30px;
+  --osc-track-size: 10px;
+}
+
+/* Tablet: the card goes under the desk, clips get a little smaller. */
+@media (max-width: 992px) {
+  .rvd {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px;
+  }
+
+  .rvd-columns,
+  .rvd-layer {
+    grid-template-columns: 120px repeat(6, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .rvd-clip {
+    min-height: 60px;
+  }
+
+  .rvd-deck {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .rvd-block-tempo {
+    grid-column: 1 / -1;
+  }
+
+  .rvd-tempo {
+    width: 100%;
+  }
+}
+
+/* Phone: the strip sits above its clips, three a row, and the deck stacks. */
+@media (max-width: 480px) {
+  .rvd {
+    padding: 10px;
+  }
+
+  .rvd-desk {
+    padding: 12px;
+  }
+
+  .rvd-columns {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .rvd-columns-label {
+    display: none;
+  }
+
+  .rvd-column {
+    padding: 0;
+    min-height: 32px;
+  }
+
+  .rvd-layer {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .rvd-strip {
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+  }
+
+  .rvd-strip-keys {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(3, 60px);
+    justify-content: end;
+  }
+
+  .rvd-opacity {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .rvd-clip {
+    min-height: 64px;
+  }
+
+  .rvd-deck {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rvd-master {
+    width: 100%;
+    height: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rvd-clip-scan {
+    animation: none;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="rvd" class="rvd" data-gjs-dmode="flow">
+  <section id="rvd-desk" class="rvd-desk" data-gjs-dmode="flow">
+    <header id="rvd-head" class="rvd-head" data-gjs-dmode="flow">
+      <h1 id="rvd-brand" class="rvd-brand" data-gjs-dmode="flow">OSCAR</h1>
+      <p id="rvd-model" class="rvd-model" data-gjs-dmode="flow">Video Desk &middot; for Resolume Arena and Avenue</p>
+    </header>
+
+    <div id="rvd-grid" class="rvd-grid" data-gjs-dmode="flow">
+      <div id="rvd-columns" class="rvd-columns" data-gjs-dmode="flow">
+        <p id="rvd-columns-label" class="rvd-columns-label" data-gjs-dmode="flow">Columns</p>
+    <button id="rvd-column-1" class="rvd-key rvd-column" data-gjs-dmode="flow" data-gjs-message="/composition/columns/1/connect" data-gjs-value-on="1" data-gjs-value-off="0">COL 1</button>
+    <button id="rvd-column-2" class="rvd-key rvd-column" data-gjs-dmode="flow" data-gjs-message="/composition/columns/2/connect" data-gjs-value-on="1" data-gjs-value-off="0">COL 2</button>
+    <button id="rvd-column-3" class="rvd-key rvd-column" data-gjs-dmode="flow" data-gjs-message="/composition/columns/3/connect" data-gjs-value-on="1" data-gjs-value-off="0">COL 3</button>
+    <button id="rvd-column-4" class="rvd-key rvd-column" data-gjs-dmode="flow" data-gjs-message="/composition/columns/4/connect" data-gjs-value-on="1" data-gjs-value-off="0">COL 4</button>
+    <button id="rvd-column-5" class="rvd-key rvd-column" data-gjs-dmode="flow" data-gjs-message="/composition/columns/5/connect" data-gjs-value-on="1" data-gjs-value-off="0">COL 5</button>
+    <button id="rvd-column-6" class="rvd-key rvd-column" data-gjs-dmode="flow" data-gjs-message="/composition/columns/6/connect" data-gjs-value-on="1" data-gjs-value-off="0">COL 6</button>
+      </div>
+  <div id="rvd-layer-3" class="rvd-layer" data-gjs-dmode="flow">
+    <div id="rvd-strip-3" class="rvd-strip" data-gjs-dmode="flow">
+      <h3 id="rvd-layer-name-3" class="rvd-layer-name" data-gjs-dmode="flow">Layer 3</h3>
+      <div id="rvd-strip-keys-3" class="rvd-strip-keys" data-gjs-dmode="flow">
+        <button id="rvd-clear-3" class="rvd-key rvd-small rvd-small-clear" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/clear" data-gjs-value-on="1" data-gjs-value-off="0">CLR</button>
+        <button id="rvd-bypass-3" class="rvd-key rvd-small rvd-small-bypass" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/composition/layers/3/bypassed" data-gjs-value-on="1" data-gjs-value-off="0">BYP</button>
+        <button id="rvd-solo-3" class="rvd-key rvd-small rvd-small-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/composition/layers/3/solo" data-gjs-value-on="1" data-gjs-value-off="0">SOLO</button>
+      </div>
+      <input id="rvd-opacity-3" class="rvd-opacity" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/video/opacity" data-gjs-min="0" data-gjs-max="1" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-listen="true">
+    </div>
+    <button id="rvd-l3-c1" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/clips/1/connect" data-gjs-value-on="1" data-gjs-value-off="0">1<span id="rvd-l3-c1-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l3-c2" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/clips/2/connect" data-gjs-value-on="1" data-gjs-value-off="0">2<span id="rvd-l3-c2-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l3-c3" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/clips/3/connect" data-gjs-value-on="1" data-gjs-value-off="0">3<span id="rvd-l3-c3-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l3-c4" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/clips/4/connect" data-gjs-value-on="1" data-gjs-value-off="0">4<span id="rvd-l3-c4-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l3-c5" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/clips/5/connect" data-gjs-value-on="1" data-gjs-value-off="0">5<span id="rvd-l3-c5-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l3-c6" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/3/clips/6/connect" data-gjs-value-on="1" data-gjs-value-off="0">6<span id="rvd-l3-c6-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+  </div>
+  <div id="rvd-layer-2" class="rvd-layer" data-gjs-dmode="flow">
+    <div id="rvd-strip-2" class="rvd-strip" data-gjs-dmode="flow">
+      <h3 id="rvd-layer-name-2" class="rvd-layer-name" data-gjs-dmode="flow">Layer 2</h3>
+      <div id="rvd-strip-keys-2" class="rvd-strip-keys" data-gjs-dmode="flow">
+        <button id="rvd-clear-2" class="rvd-key rvd-small rvd-small-clear" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/clear" data-gjs-value-on="1" data-gjs-value-off="0">CLR</button>
+        <button id="rvd-bypass-2" class="rvd-key rvd-small rvd-small-bypass" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/composition/layers/2/bypassed" data-gjs-value-on="1" data-gjs-value-off="0">BYP</button>
+        <button id="rvd-solo-2" class="rvd-key rvd-small rvd-small-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/composition/layers/2/solo" data-gjs-value-on="1" data-gjs-value-off="0">SOLO</button>
+      </div>
+      <input id="rvd-opacity-2" class="rvd-opacity" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/video/opacity" data-gjs-min="0" data-gjs-max="1" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-listen="true">
+    </div>
+    <button id="rvd-l2-c1" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/clips/1/connect" data-gjs-value-on="1" data-gjs-value-off="0">1<span id="rvd-l2-c1-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l2-c2" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/clips/2/connect" data-gjs-value-on="1" data-gjs-value-off="0">2<span id="rvd-l2-c2-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l2-c3" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/clips/3/connect" data-gjs-value-on="1" data-gjs-value-off="0">3<span id="rvd-l2-c3-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l2-c4" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/clips/4/connect" data-gjs-value-on="1" data-gjs-value-off="0">4<span id="rvd-l2-c4-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l2-c5" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/clips/5/connect" data-gjs-value-on="1" data-gjs-value-off="0">5<span id="rvd-l2-c5-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l2-c6" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/2/clips/6/connect" data-gjs-value-on="1" data-gjs-value-off="0">6<span id="rvd-l2-c6-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+  </div>
+  <div id="rvd-layer-1" class="rvd-layer" data-gjs-dmode="flow">
+    <div id="rvd-strip-1" class="rvd-strip" data-gjs-dmode="flow">
+      <h3 id="rvd-layer-name-1" class="rvd-layer-name" data-gjs-dmode="flow">Layer 1</h3>
+      <div id="rvd-strip-keys-1" class="rvd-strip-keys" data-gjs-dmode="flow">
+        <button id="rvd-clear-1" class="rvd-key rvd-small rvd-small-clear" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/clear" data-gjs-value-on="1" data-gjs-value-off="0">CLR</button>
+        <button id="rvd-bypass-1" class="rvd-key rvd-small rvd-small-bypass" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/composition/layers/1/bypassed" data-gjs-value-on="1" data-gjs-value-off="0">BYP</button>
+        <button id="rvd-solo-1" class="rvd-key rvd-small rvd-small-solo" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/composition/layers/1/solo" data-gjs-value-on="1" data-gjs-value-off="0">SOLO</button>
+      </div>
+      <input id="rvd-opacity-1" class="rvd-opacity" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/video/opacity" data-gjs-min="0" data-gjs-max="1" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-listen="true">
+    </div>
+    <button id="rvd-l1-c1" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/clips/1/connect" data-gjs-value-on="1" data-gjs-value-off="0">1<span id="rvd-l1-c1-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l1-c2" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/clips/2/connect" data-gjs-value-on="1" data-gjs-value-off="0">2<span id="rvd-l1-c2-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l1-c3" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/clips/3/connect" data-gjs-value-on="1" data-gjs-value-off="0">3<span id="rvd-l1-c3-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l1-c4" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/clips/4/connect" data-gjs-value-on="1" data-gjs-value-off="0">4<span id="rvd-l1-c4-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l1-c5" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/clips/5/connect" data-gjs-value-on="1" data-gjs-value-off="0">5<span id="rvd-l1-c5-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+    <button id="rvd-l1-c6" class="rvd-key rvd-clip" data-gjs-dmode="flow" data-gjs-message="/composition/layers/1/clips/6/connect" data-gjs-value-on="1" data-gjs-value-off="0">6<span id="rvd-l1-c6-scan" class="rvd-clip-scan" data-gjs-dmode="flow"></span></button>
+  </div>
+    </div>
+
+    <div id="rvd-deck" class="rvd-deck" data-gjs-dmode="flow">
+      <div id="rvd-block-cross" class="rvd-block rvd-block-cross" data-gjs-dmode="flow">
+        <h3 id="rvd-block-cross-name" class="rvd-block-name" data-gjs-dmode="flow">Crossfader</h3>
+        <input id="rvd-crossfader" class="rvd-crossfader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/composition/crossfader/phase" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.5" data-gjs-orientation="horizontal" data-gjs-listen="true">
+        <div id="rvd-ab" class="rvd-ab" data-gjs-dmode="flow"><span id="rvd-a" data-gjs-dmode="flow">A</span><span id="rvd-b" data-gjs-dmode="flow">B</span></div>
+      </div>
+      <div id="rvd-block-master" class="rvd-block rvd-block-master" data-gjs-dmode="flow">
+        <h3 id="rvd-block-master-name" class="rvd-block-name" data-gjs-dmode="flow">Master</h3>
+        <input id="rvd-master" class="rvd-master" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/composition/master" data-gjs-min="0" data-gjs-max="1" data-gjs-value="1" data-gjs-orientation="vertical" data-gjs-listen="true">
+      </div>
+      <div id="rvd-block-tempo" class="rvd-block rvd-block-tempo" data-gjs-dmode="flow">
+        <h3 id="rvd-block-tempo-name" class="rvd-block-name" data-gjs-dmode="flow">Tempo</h3>
+        <input id="rvd-tempo" class="rvd-tempo" type="range" step="1" min="60" max="200" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/composition/tempocontroller/tempo" data-gjs-min="60" data-gjs-max="200" data-gjs-value="120" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+        <div id="rvd-tempo-keys" class="rvd-tempo-keys" data-gjs-dmode="flow">
+          <button id="rvd-tap" class="rvd-key rvd-deckkey" data-gjs-dmode="flow" data-gjs-message="/composition/tempocontroller/tempotap" data-gjs-value-on="1" data-gjs-value-off="0">TAP</button>
+          <button id="rvd-resync" class="rvd-key rvd-deckkey" data-gjs-dmode="flow" data-gjs-message="/composition/tempocontroller/resync" data-gjs-value-on="1" data-gjs-value-off="0">RESYNC</button>
+        </div>
+        <button id="rvd-panic" class="rvd-key rvd-deckkey rvd-key-panic" data-gjs-dmode="flow" data-gjs-message="/composition/disconnectall" data-gjs-value-on="1" data-gjs-value-off="0">PANIC: DISCONNECT ALL</button>
+      </div>
+    </div>
+  </section>
+
+  <aside id="rvd-manual" class="rvd-manual" data-gjs-dmode="flow">
+    <p id="rvd-manual-eyebrow" class="rvd-manual-eyebrow" data-gjs-dmode="flow">Quick reference</p>
+    <h2 id="rvd-manual-title" class="rvd-manual-title" data-gjs-dmode="flow">Resolume over OSC</h2>
+    <p id="rvd-manual-lead" class="rvd-manual-lead" data-gjs-dmode="flow">Preferences &gt; OSC in Resolume: Input on, port 7000. Set every widget here to that computer and port. Output on, at OSCAR's IP and listening port, and the faders follow Resolume.</p>
+    <dl id="rvd-manual-list" class="rvd-manual-list" data-gjs-dmode="flow">
+      <div id="rvd-manual-row-1" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-1" class="rvd-manual-key" data-gjs-dmode="flow">Clips</dt>
+        <dd id="rvd-manual-address-1" class="rvd-manual-address" data-gjs-dmode="flow">/composition/layers/L/clips/C/connect</dd>
+        <dd id="rvd-manual-note-1" class="rvd-manual-note" data-gjs-dmode="flow">1 while the screen is held. L is the layer, C the column. Add rows and columns by copying a strip.</dd>
+      </div>
+      <div id="rvd-manual-row-2" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-2" class="rvd-manual-key" data-gjs-dmode="flow">Columns</dt>
+        <dd id="rvd-manual-address-2" class="rvd-manual-address" data-gjs-dmode="flow">/composition/columns/C/connect</dd>
+        <dd id="rvd-manual-note-2" class="rvd-manual-note" data-gjs-dmode="flow">1 while held: every clip in that column starts.</dd>
+      </div>
+      <div id="rvd-manual-row-3" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-3" class="rvd-manual-key" data-gjs-dmode="flow">Opacity</dt>
+        <dd id="rvd-manual-address-3" class="rvd-manual-address" data-gjs-dmode="flow">/composition/layers/L/video/opacity</dd>
+        <dd id="rvd-manual-note-3" class="rvd-manual-note" data-gjs-dmode="flow">0 to 1. Data in is on, so the fader follows what Resolume shows.</dd>
+      </div>
+      <div id="rvd-manual-row-4" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-4" class="rvd-manual-key" data-gjs-dmode="flow">CLR / BYP / SOLO</dt>
+        <dd id="rvd-manual-address-4" class="rvd-manual-address" data-gjs-dmode="flow">/composition/layers/L/clear  /bypassed  /solo</dd>
+        <dd id="rvd-manual-note-4" class="rvd-manual-note" data-gjs-dmode="flow">CLR sends 1 while held. BYP and SOLO are toggles: 1 on, 0 off.</dd>
+      </div>
+      <div id="rvd-manual-row-5" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-5" class="rvd-manual-key" data-gjs-dmode="flow">Crossfader</dt>
+        <dd id="rvd-manual-address-5" class="rvd-manual-address" data-gjs-dmode="flow">/composition/crossfader/phase</dd>
+        <dd id="rvd-manual-note-5" class="rvd-manual-note" data-gjs-dmode="flow">0 is A, 1 is B. Follows Resolume.</dd>
+      </div>
+      <div id="rvd-manual-row-6" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-6" class="rvd-manual-key" data-gjs-dmode="flow">Master</dt>
+        <dd id="rvd-manual-address-6" class="rvd-manual-address" data-gjs-dmode="flow">/composition/master</dd>
+        <dd id="rvd-manual-note-6" class="rvd-manual-note" data-gjs-dmode="flow">0 to 1. Follows Resolume.</dd>
+      </div>
+      <div id="rvd-manual-row-7" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-7" class="rvd-manual-key" data-gjs-dmode="flow">Tempo</dt>
+        <dd id="rvd-manual-address-7" class="rvd-manual-address" data-gjs-dmode="flow">/composition/tempocontroller/tempo</dd>
+        <dd id="rvd-manual-note-7" class="rvd-manual-note" data-gjs-dmode="flow">BPM, 60 to 200, sent whole.</dd>
+      </div>
+      <div id="rvd-manual-row-8" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-8" class="rvd-manual-key" data-gjs-dmode="flow">TAP / RESYNC</dt>
+        <dd id="rvd-manual-address-8" class="rvd-manual-address" data-gjs-dmode="flow">/composition/tempocontroller/tempotap  /resync</dd>
+        <dd id="rvd-manual-note-8" class="rvd-manual-note" data-gjs-dmode="flow">1 while held.</dd>
+      </div>
+      <div id="rvd-manual-row-9" class="rvd-manual-row" data-gjs-dmode="flow">
+        <dt id="rvd-manual-key-9" class="rvd-manual-key" data-gjs-dmode="flow">PANIC</dt>
+        <dd id="rvd-manual-address-9" class="rvd-manual-address" data-gjs-dmode="flow">/composition/disconnectall</dd>
+        <dd id="rvd-manual-note-9" class="rvd-manual-note" data-gjs-dmode="flow">1 while held: every clip stops.</dd>
+      </div>
+    </dl>
+    <p id="rvd-manual-foot" class="rvd-manual-foot" data-gjs-dmode="flow">Resolume echoes a clip's state as well, but a clip is a key, not a fader: what it shows is your finger's. Layer 3 is on top, as in Resolume.</p>
+  </aside>
+</div>
+</body>
+</html>

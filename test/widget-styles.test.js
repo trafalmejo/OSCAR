@@ -12,7 +12,7 @@ const read = (rel) => fs.readFileSync(path.join(CSS, rel), "utf8");
 
 test("the styles on offer are the ones asked for, with unique ids", () => {
   const ids = styles.STYLES.map((s) => s.id);
-  assert.deepStrictEqual(ids, ["default", "amber-minimal", "cyberpunk", "supabase", "tangerine"]);
+  assert.deepStrictEqual(ids, ["default", "amber-minimal", "cyberpunk", "supabase", "tangerine", "neon", "hud"]);
   assert.strictEqual(new Set(ids).size, ids.length);
   assert.ok(styles.isStyle(styles.DEFAULT_STYLE));
   assert.ok(styles.isAppearance(styles.DEFAULT_APPEARANCE));
@@ -136,4 +136,32 @@ test("a page can keep its own look: a choice in the picker with no file behind i
   const css = read("styles/default.css");
   assert.ok(css.includes('[data-osc-style="own"]'));
   assert.ok(css.includes('[data-osc-style="own"][data-osc-appearance="dark"]'));
+});
+
+test("a style with a look of its own keeps it to itself: every rule it adds is for its own attribute", () => {
+  let looked = 0;
+  for (const { id } of styles.STYLES) {
+    const css = read("styles/" + id + ".css");
+    const widgets = /@layer oscar\.widgets \{([\s\S]*)\n\}/.exec(css);
+    if (!widgets) continue;
+    looked++;
+    const body = widgets[1]
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      // A keyframes block is steps, not selectors; a media query wraps selectors, which are read as if it were not there.
+      .replace(/@keyframes[^{]*\{[\s\S]*?\}\s*\}/g, "}")
+      .replace(/@media[^{]*\{/g, "}");
+    // A selector list: what stands between a closing brace (or the start) and the next opening one.
+    const selectors = [...body.matchAll(/(?:^|\})\s*([^@{}]+?)\s*\{/g)].map((m) => m[1].trim());
+    assert.ok(selectors.length > 0, id);
+    const own = '[data-osc-style="' + id + '"]';
+    for (const list of selectors) {
+      for (const selector of list.split(",")) assert.ok(selector.trim().startsWith(own), id + ": " + selector);
+    }
+    // And no colour of its own outside the tokens: everything is drawn from them.
+    const fixed = widgets[1].split("\n").filter((line) => /#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(line));
+    assert.deepStrictEqual(fixed, [], id);
+    // Anything that moves stands still for someone who asked for less motion.
+    if (/@keyframes/.test(widgets[1])) assert.match(widgets[1], /prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
+  }
+  assert.deepStrictEqual(looked, 2, "neon and hud");
 });

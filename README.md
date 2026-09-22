@@ -174,7 +174,7 @@ message in the settings panel (the gear icon).
 
 | Widget | Sends |
 | --- | --- |
-| **Button** | `max` when pressed, `0` on release. As a toggle, it alternates |
+| **Button** | its Value ON when pressed, its Value OFF on release. As a toggle, it alternates. Leave Value OFF blank and it says nothing on release: software whose `/go` takes no argument must not hear it twice |
 | **Slider** | its value as it moves, with optional inverted range |
 | **XY Pad** | both values at once — `/pad 30 70` — or as `/pad/x` and `/pad/y` |
 
@@ -409,6 +409,27 @@ can copy, back up and share them however you like.
 > **Note for OSCAR 1.x users:** the old online accounts at
 > `account.createwithoscar.com` no longer exist. OSCAR now stores everything on
 > your own machine, and no longer asks you to log in.
+
+### Templates and widget styles
+
+**Load** also lists the templates OSCAR ships with: whole surfaces to start
+from, every control on them live. Some are built for one piece of software
+and carry a card listing its addresses: the **Resolume Video Desk** (a clip
+grid, layer strips, crossfader, master, tempo; Resolume's own addresses, port
+7000) and the **QLab Stage Manager's Desk** (GO, STOP, PANIC, playhead and a
+cue sheet; QLab's own addresses, port 53000, every key a bare address sent
+once). **Big Thumb** puts one control on each screen of a phone, the size of a
+hand. The rest are objects to play with: a boombox, a walkie-talkie, an arcade
+cabinet, a cassette player, a CD player, a click-wheel player, a turntable and
+a TV remote. A template that is built for one program has been written from
+that program's documentation; if you have it, try it and tell us what moved.
+
+The **widget style** picker in the top bar dresses every control at once:
+Default, Amber Minimal, Cyberpunk, Supabase, Tangerine, **Neon** (every
+control a lit tube, with the flicker of one striking) and **Sci-fi HUD**
+(corner brackets, a segmented meter, a crosshair on the pad), each light or
+dark. A template that brings its own look is listed as *Page's own*; pick a
+style and it is redrawn in that style's colours.
 
 ## How it works
 
