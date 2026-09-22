@@ -21596,9 +21596,10 @@ var ICONS = {
   // out, so its arrow points up. Import, beside it, brings code in and keeps
   // the arrow down that GrapesJS gives it. The two used to be the same icon.
   upload: "M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z",
-  // OSCAR's jellyfish, drawn as the rest are: one colour, a bell and three
-  // tentacles. About wears it.
-  jellyfish: "M12,2.5A8.5,7.5 0 0,0 3.5,10V12.5H20.5V10A8.5,7.5 0 0,0 12,2.5ZM6.5,14.5H8.5V18.5A1,1 0 0,1 6.5,18.5ZM11,14.5H13V20.5A1,1 0 0,1 11,20.5ZM15.5,14.5H17.5V18.5A1,1 0 0,1 15.5,18.5Z",
+  // OSCAR's own mark, traced from assets/css/logo.png (the jellyfish, not the
+  // word under it) with its strokes thickened to the weight the other icons
+  // draw at. About wears it.
+  jellyfish: "M12.2,8.4L12.2,9.4L12.7,9.8L13.6,9.4L14.4,9.8L15.1,9.3L14.9,8.3L13.9,7.6ZM8.1,8.8L8.1,9.3L8.8,9.8L9.4,9.4L10.4,9.8L10.9,9.4L10.9,8.4L9.8,7.6L8.8,7.9ZM10.4,1L7.9,2L6,3.8L4.1,7.5L4.3,10.4L6,12.7L6,16.9L5,18.5L5,19.5L6,20.2L6.8,19.9L7.8,18.7L8.1,17.5L8.4,20L9.8,20.4L10.4,19.9L10.6,13.2L10.8,18.7L11.4,19.2L12.4,19L12.7,18.7L12.9,13.2L13.1,22.2L14.4,22.8L15.2,22.2L15.2,13.4L15.6,13.2L17,14.9L18,15.4L18.9,15.4L19.7,14.7L19.5,13.7L17.9,12.6L17.9,11.9L19,10.3L19.2,7.6L17.9,4.6L16.1,2.5L13.6,1.2ZM7.8,5.1L9.1,3.8L10.6,3.2L12.6,3.2L14.2,3.8L15.6,5.1L17,8.3L16.7,9.9L15.2,11.1L10.9,10.8L8.6,11.3L7.3,10.8L6.5,9.6L6.3,8.3Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
   pages:
     "M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M19,21H8V7H19V21Z",
