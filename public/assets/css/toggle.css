@@ -32,6 +32,21 @@
 }
 
 @layer oscar.widgets {
+  /* A phone flashes a translucent blue box over whatever is tapped. Not on a
+     control: a button has its own pressed look, and a fader's thumb is under
+     a finger that is watching the value, not the box. */
+  button,
+  input[type="range"],
+  input[type="color"],
+  .oscar-xypad,
+  .oscar-meter,
+  .oscar-text-input,
+  .oscar-number-input,
+  .oscar-dropdown,
+  .oscar-media-browser {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   /* ---- button ------------------------------------------------------------ */
   /* Off is shadcn's outline button; on is its default, filled button. */
 
