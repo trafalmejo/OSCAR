@@ -147,7 +147,7 @@ clamp.outputConnectors[0].connect(audio)
 # The sensor: a slow wave standing in for one. Put your own CHOP here.
 lfo = demo.create(lfoCHOP, 'sensor_stand_in')
 lfo.par.frequency = 0.1
-lfo.par.amplitude = 0.5
+lfo.par.amp = 0.5
 lfo.par.offset = 0.5
 lfo.nodeX, lfo.nodeY = -800, -600
 sensor = demo.create(renameCHOP, 'sensor')
