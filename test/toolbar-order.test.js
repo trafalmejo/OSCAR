@@ -63,3 +63,15 @@ test("Publish and Import are told apart by their arrows: out is up, in is down",
   // The preset's Import icon, which stays as GrapesJS draws it.
   assert.notStrictEqual(upload[1], "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z");
 });
+
+test("an extension's button can be placed beside one of OSCAR's, and taken away again", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
+  assert.match(src, /function arrangeToolbar\(placements\)/);
+  assert.match(src, /toolbarOrder\.arrange\(ids, placements\)/);
+  assert.match(src, /if \(button\.after\) arrangeToolbar\(\[\{ id: button\.id, after: String\(button\.after\) \}\]\);/);
+  assert.match(src, /removeToolbarButton: function \(id\)/);
+  // A placement for a button that is there moves only that one.
+  assert.deepStrictEqual(arrange(["a", "open-styles", "b", "ext"], [{ id: "ext", after: "open-styles" }]), ["a", "open-styles", "ext", "b"]);
+});

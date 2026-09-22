@@ -1475,7 +1475,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // Every button exists by now. GrapesJS can only append, so the ones that
   // belong elsewhere are moved: in the panel's own list and on the page
   // together, because retitle() below pairs the two by position.
-  (function arrangeToolbar() {
+  /**
+   * Put the toolbar's buttons in the order lib/toolbar-order.js states, or,
+   * given placements, move those alone: an extension's button that belongs
+   * beside one of OSCAR's, added long after the toolbar was drawn.
+   */
+  function arrangeToolbar(placements) {
     var panel = pn.getPanel("options");
     var row = document.querySelector(".gjs-pn-options .gjs-pn-buttons");
     if (!panel || !row) return;
@@ -1489,7 +1494,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = toolbarOrder.arrange(ids);
+    var wanted = toolbarOrder.arrange(ids, placements);
 
     wanted.forEach(function (id) {
       row.appendChild(els[ids.indexOf(id)]);
@@ -1502,7 +1507,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }),
       { silent: true }
     );
-  })();
+  }
+  arrangeToolbar();
 
   function retitle(panelId, labels) {
     var panel = pn.getPanel(panelId);
@@ -1563,8 +1569,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
     /** The feature switches as they stand; see lib/features.js. */
     features: features,
     /**
-     * A button at the end of the top toolbar.
-     * { id, title, iconPath (the d of a 24x24 SVG path), run(editor) }
+     * A button in the top toolbar: at the end, or straight after one of
+     * OSCAR's own (`after`, a button id such as "open-styles").
+     * { id, title, iconPath (the d of a 24x24 SVG path), run(editor), after? }
      */
     addToolbarButton: function (button) {
       if (!button || !button.id || typeof button.run !== "function") {
@@ -1584,6 +1591,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         // Tooltips are drawn from data-tooltip; a title as well would show twice.
         attributes: { "data-tooltip": title, "data-tooltip-pos": "bottom", "aria-label": title },
       });
+      if (button.after) arrangeToolbar([{ id: button.id, after: String(button.after) }]);
+    },
+    /** Take a button of the extension's own out of the toolbar again: one that is only for some accounts. */
+    removeToolbarButton: function (id) {
+      if (!pn.getButton("options", id)) return;
+      if (typeof pn.removeButton === "function") pn.removeButton("options", id);
     },
     /** Open OSCAR's modal on an element of the extension's own. */
     openModal: function (title, content) {
