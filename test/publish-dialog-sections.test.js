@@ -57,3 +57,10 @@ test("About has the same kind of place, ahead of OSCAR's own words, behind OSCAR
   assert.match(editor, /setModal\("About OSCAR", "info-panel"\)/);
   assert.ok(!/icon\("help"\)/.test(editor), "the question mark is retired");
 });
+
+test("the note about several pages is only for a project with Pages on", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /var pages = features\.PAGES \? editor\.Pages\.getAll\(\)\.length : 1;/);
+  const showcase = read("public/templates/oscar-showcase.html");
+  assert.ok(!/osh-feature-pages|A page per room/.test(showcase), "the Showcase does not advertise a feature that is off");
+});

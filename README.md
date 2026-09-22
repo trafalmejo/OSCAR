@@ -723,6 +723,10 @@ and Safari and Firefox do not have it at all.
 
 ## Multiple pages
 
+> Pages are switched off in this version (`PAGES` in `lib/features.js`) while
+> publishing and export learn to carry every page. The editor shows one page,
+> and a project saved with several shows its first.
+
 A surface can hold more than one page: a page per fixture group, per scene,
 or per operator. In the editor, the **Pages** button in the top bar lists
 them. Click a name to open that page, **Rename** or **Delete** it from its

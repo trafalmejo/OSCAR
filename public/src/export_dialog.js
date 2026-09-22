@@ -17,6 +17,7 @@
 
 var { exportSnapshot } = require("./adapters/grapesjs");
 var { surfaceAddress } = require("../../lib/published-address");
+var features = require("../../lib/features");
 // Draws the code for a published surface's address. Bundled, like everything
 // else here: OSCAR runs at venues with no internet.
 var qrcode = require("qrcode-generator");
@@ -204,7 +205,9 @@ function install(editor, options) {
     latest = null;
     nameField.value = fileStem((options.projectName && options.projectName()) || "");
 
-    var pages = editor.Pages.getAll().length;
+    // A project saved while Pages was on may still hold several; with the
+    // feature off only the first is ever shown, so there is nothing to say.
+    var pages = features.PAGES ? editor.Pages.getAll().length : 1;
     pageCount.textContent = String(pages);
     pagesBox.style.display = pages > 1 ? "block" : "none";
 
