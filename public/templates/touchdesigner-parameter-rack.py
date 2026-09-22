@@ -22,7 +22,7 @@
 #   picture    Noise TOP -> HSV Adjust -> Feedback, driven by the four faders;
 #              a Circle TOP at the pad's position in the colour picker's colour;
 #              the three scene keys pick the noise type.
-#   audio      Audio Device In -> Analyze (RMS) -> Lag -> Math: 0 to 1.
+#   audio      Audio Device In -> Analyze (RMS) -> Lag -> Math -> Limit: 0 to 1.
 #   sensor     an LFO standing in for a sensor. Replace it with yours.
 #   oscout     OSC Out CHOP to OSCAR: /td/audio/level and /td/sensor/distance,
 #              which the rack's two meters follow.
@@ -130,15 +130,19 @@ lag.nodeX, lag.nodeY = -400, -400
 analyze.outputConnectors[0].connect(lag)
 gain = demo.create(mathCHOP, 'gain')
 gain.par.gain = 6
-gain.par.tolow, gain.par.tohigh = 0, 1
-gain.par.torange = True
 gain.nodeX, gain.nodeY = -200, -400
 lag.outputConnectors[0].connect(gain)
+clamp = demo.create(limitCHOP, 'clamp')
+clamp.par.type = 'clamp'
+clamp.par.min = 0
+clamp.par.max = 1
+clamp.nodeX, clamp.nodeY = -100, -400
+gain.outputConnectors[0].connect(clamp)
 audio = demo.create(renameCHOP, 'audio')
 audio.par.renamefrom = '*'
 audio.par.renameto = 'td/audio/level'
 audio.nodeX, audio.nodeY = 0, -400
-gain.outputConnectors[0].connect(audio)
+clamp.outputConnectors[0].connect(audio)
 
 # The sensor: a slow wave standing in for one. Put your own CHOP here.
 lfo = demo.create(lfoCHOP, 'sensor_stand_in')
