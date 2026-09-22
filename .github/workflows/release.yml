@@ -109,8 +109,8 @@ jobs:
         run: |
           asar=$(find release-builds -name app.asar | head -1)
           test -n "$asar"
-          # Windows lists the archive with backslashes.
-          npx --yes @electron/asar list "$asar" | tr '\' '/' | grep -q "^/extensions/pro/package.json$" && echo "Pro is in $asar"
+          # Windows lists the archive with backslashes, so the separator is not named. grep reads it all: -q would cut the pipe short and fail it.
+          npx --yes @electron/asar list "$asar" | grep -E '^.extensions.pro.package[.]json$' > /dev/null && echo "Pro is in $asar"
 
       # Keeps the installers available from the run even if publishing is
       # skipped (for example on a workflow_dispatch dry run).
