@@ -104,6 +104,9 @@ function install(editor, options) {
           latest: latest,
           refresh: refreshPublished,
           show: showAddress,
+          onUnpublish: function (guard) {
+            section.guard = guard;
+          },
         });
       } catch (err) {
         console.error("A section of the Publish dialog failed:", err);
@@ -192,11 +195,45 @@ function install(editor, options) {
           remove.textContent = "Unpublish";
           remove.setAttribute("aria-label", "Unpublish " + page.id);
           remove.onclick = function () {
-            remove.disabled = true;
-            fetch("/published/" + encodeURIComponent(page.id), { method: "DELETE" }).then(function () {
-              if (link.href === addressOf(page.path)) resultBox.style.display = "none";
-              refreshPublished();
+            // A section may have a reason to think twice (the surface is
+            // public on the internet, say), and something to do first.
+            var warnings = sections
+              .map(function (section) {
+                return typeof section.guard === "function" ? section.guard(page.id) : null;
+              })
+              .filter(Boolean);
+            var unpublish = function () {
+              remove.disabled = true;
+              fetch("/published/" + encodeURIComponent(page.id), { method: "DELETE" }).then(function () {
+                if (link.href === addressOf(page.path)) resultBox.style.display = "none";
+                refreshPublished();
+              });
+            };
+            if (!warnings.length) return unpublish();
+            var reasons = warnings.map(function (w) {
+              return w.reason;
             });
+            var proceed = function () {
+              Promise.all(
+                warnings.map(function (w) {
+                  return typeof w.first === "function" ? w.first() : null;
+                })
+              ).then(unpublish, function (err) {
+                say(errorBox, (err && err.message) || "That could not be done.");
+              });
+            };
+            if (window.$ && typeof window.$.confirm === "function") {
+              window.$.confirm({
+                title: "Still on the internet",
+                content: reasons.join(" "),
+                buttons: {
+                  confirm: { text: "Take it off the internet and unpublish", btnClass: "btn-red", action: proceed },
+                  cancel: { text: "Keep it published" },
+                },
+              });
+            } else if (window.confirm(reasons.join(" ") + " Take it off the internet and unpublish?")) {
+              proceed();
+            }
           };
           row.appendChild(remove);
           publishedList.appendChild(row);
@@ -320,7 +357,8 @@ function install(editor, options) {
     editor.Modal.open({
       title: "Publish your interface",
       content: container,
-      attributes: { class: "modal-login" },
+      // Wider than the other dialogs: two lists side by side, a row each.
+      attributes: { class: "modal-login modal-publish" },
     });
   }
 
@@ -382,8 +420,11 @@ function install(editor, options) {
      * of what is published, every time the dialog opens and every time what is
      * published changes. `view` is { surfaces: [{ id, path, address }], latest:
      * the id just published from here or null, refresh(), show(address,
-     * status) }: show puts an address in the dialog's own box, with its code
-     * and Copy, as a published surface's is shown. Drawing again replaces
+     * status), onUnpublish(guard) }: show puts an address in the dialog's own
+     * box, with its code and Copy, as a published surface's is shown; guard(id)
+     * is asked before a surface is unpublished and answers null, or { reason,
+     * first() } -- a reason to think twice, put to the person, and what to do
+     * first if they go on (first returns a promise). Drawing again replaces
      * what the box held; the extension keeps any state it needs.
      */
     addSection: function (draw) {

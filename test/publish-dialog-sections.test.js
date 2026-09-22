@@ -27,6 +27,19 @@ test("the dialog keeps a box for extensions, after the list of what is published
   const dialog = read("public/src/export_dialog.js");
   assert.match(dialog, /show: showAddress,/, "a section can put an address in the box");
   assert.match(dialog, /navigator\.clipboard\.writeText\(link\.href\)/);
+  // Each list opens with a line of about the same length, so their rows sit level.
+  assert.match(markup, /class="oscar-published-lead"/);
+  assert.match(dialog, /class: "modal-login modal-publish"/);
+});
+
+test("before a surface is unpublished, a section may give a reason to think twice, and something to do first", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /onUnpublish: function \(guard\) \{\s*section\.guard = guard;/);
+  assert.match(dialog, /section\.guard\(page\.id\)/);
+  assert.match(dialog, /if \(!warnings\.length\) return unpublish\(\);/, "with no reason, no question");
+  assert.match(dialog, /text: "Take it off the internet and unpublish"/);
+  assert.match(dialog, /text: "Keep it published"/);
+  assert.match(dialog, /typeof w\.first === "function" \? w\.first\(\) : null/);
 });
 
 test("a file is downloaded from a published surface's own row, through a window of its own that gives the dialog back", () => {
