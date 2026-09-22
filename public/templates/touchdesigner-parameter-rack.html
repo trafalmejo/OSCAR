@@ -1,0 +1,392 @@
+<!doctype html>
+<html>
+<head>
+<title>TouchDesigner Parameter Rack</title>
+<!--
+  TouchDesigner Parameter Rack: the shape most TouchDesigner control needs.
+  A few named parameters out (four faders, a position, a colour, three scene
+  triggers, a caption) and a few readings back in (an audio level and a
+  sensor, each a meter). Every TouchDesigner patch is different, so nothing
+  here is named after a node: rename the addresses to yours. The card on the
+  right is the two-CHOP recipe: OSC In for what OSCAR sends, OSC Out for what
+  comes back, which is the part people get wrong.
+
+  This template wears a widget style rather than a look of its own: it starts
+  on Sci-fi HUD, and every colour in it is a token, so the picker in the top
+  bar redraws it whole in any other style.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with one OSCAR addition: data-gjs-* attributes hold each
+  widget's settings (data-gjs-message is its OSC address) and
+  data-gjs-dmode="flow", which makes a part move through the layout when
+  dragged instead of being pulled out of it.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries.
+
+  OSC addresses:
+    /td/speed  /td/scale  /td/hue  /td/feedback   /td/position (x y)   /td/colour (r g b)
+    /td/scene/1 .. 3   /td/caption (string)
+    in: /td/audio/level   /td/sensor/distance
+-->
+<style>
+.tdr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+  min-height: 100vh;
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+.tdr-rack {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 6px;
+}
+
+.tdr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+}
+
+.tdr-brand {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.tdr-model {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.tdr-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.tdr-block {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px;
+  border-radius: 4px;
+}
+
+.tdr-block-wide {
+  grid-column: span 2;
+}
+
+.tdr-name {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.tdr-addr {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  opacity: 0.7;
+}
+
+.tdr-fader {
+  width: 100%;
+}
+
+.tdr-pad {
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 1;
+  height: auto;
+  justify-self: center;
+}
+
+.tdr-colour {
+  align-self: start;
+  width: 100%;
+  height: 72px;
+}
+
+.tdr-scenes {
+  display: grid;
+  align-self: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tdr-scene {
+  min-height: 56px;
+  padding: 0 8px;
+}
+
+.tdr-meter {
+  width: 100%;
+  height: 28px;
+}
+
+.tdr-caption {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ---- the leaflet that lists every address ---- */
+.tdr-manual {
+  padding: 22px;
+  border-radius: 6px;
+}
+[data-osc-style="own"] .tdr-manual {
+  font-family: var(--osc-font);
+}
+
+.tdr-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.tdr-manual-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+[data-osc-style="own"] .tdr-manual-title {
+  font-family: var(--osc-font);
+}
+
+.tdr-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+[data-osc-style="own"] .tdr-manual-lead {
+  border-bottom: 1px solid var(--osc-border);
+}
+
+.tdr-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+
+.tdr-manual-row {
+  display: grid;
+  gap: 1px;
+}
+
+.tdr-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.tdr-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.tdr-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.tdr-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+[data-osc-style="own"] .tdr-manual-foot {
+  border-top: 1px solid var(--osc-border);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .tdr {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+  font-family: var(--osc-font);
+}
+body:not([data-osc-style="own"]) .tdr-rack,
+body:not([data-osc-style="own"]) .tdr-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .tdr-head {
+  border-bottom: 1px solid var(--osc-border);
+}
+body:not([data-osc-style="own"]) .tdr-brand {
+  color: var(--osc-primary);
+}
+body:not([data-osc-style="own"]) .tdr-model,
+body:not([data-osc-style="own"]) .tdr-addr {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .tdr-block {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .tdr-name {
+  color: var(--osc-foreground);
+}
+
+@media (max-width: 992px) {
+  .tdr {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px;
+  }
+
+  .tdr-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .tdr {
+    padding: 10px;
+  }
+
+  .tdr-rack {
+    padding: 12px;
+  }
+
+  .tdr-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tdr-block-wide {
+    grid-column: auto;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="hud" data-osc-appearance="dark">
+<div id="tdr" class="tdr" data-gjs-dmode="flow">
+  <section id="tdr-rack" class="tdr-rack" data-gjs-dmode="flow">
+    <header id="tdr-head" class="tdr-head" data-gjs-dmode="flow">
+      <h1 id="tdr-brand" class="tdr-brand" data-gjs-dmode="flow">OSCAR</h1>
+      <p id="tdr-model" class="tdr-model" data-gjs-dmode="flow">Parameter Rack &middot; for TouchDesigner &middot; OSC both ways</p>
+    </header>
+  <div id="tdr-row-1" class="tdr-row" data-gjs-dmode="flow">
+    <div id="tdr-block-speed" class="tdr-block" data-gjs-dmode="flow">
+      <h3 id="tdr-name-speed" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-speed" data-gjs-dmode="flow">Speed</span><span id="tdr-addr-speed" class="tdr-addr" data-gjs-dmode="flow">/td/speed</span></h3>
+      <input id="tdr-speed" class="tdr-fader" type="range" step="0.01" min="0" max="2" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/speed" data-gjs-min="0" data-gjs-max="2" data-gjs-value="1" data-gjs-orientation="horizontal">
+    </div>
+    <div id="tdr-block-scale" class="tdr-block" data-gjs-dmode="flow">
+      <h3 id="tdr-name-scale" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-scale" data-gjs-dmode="flow">Scale</span><span id="tdr-addr-scale" class="tdr-addr" data-gjs-dmode="flow">/td/scale</span></h3>
+      <input id="tdr-scale" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/scale" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.5" data-gjs-orientation="horizontal">
+    </div>
+    <div id="tdr-block-hue" class="tdr-block" data-gjs-dmode="flow">
+      <h3 id="tdr-name-hue" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-hue" data-gjs-dmode="flow">Hue</span><span id="tdr-addr-hue" class="tdr-addr" data-gjs-dmode="flow">/td/hue</span></h3>
+      <input id="tdr-hue" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/hue" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.2" data-gjs-orientation="horizontal">
+    </div>
+    <div id="tdr-block-feedback" class="tdr-block" data-gjs-dmode="flow">
+      <h3 id="tdr-name-feedback" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-feedback" data-gjs-dmode="flow">Feedback</span><span id="tdr-addr-feedback" class="tdr-addr" data-gjs-dmode="flow">/td/feedback</span></h3>
+      <input id="tdr-feedback" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/feedback" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.65" data-gjs-orientation="horizontal">
+    </div>
+  </div>
+  <div id="tdr-row-2" class="tdr-row" data-gjs-dmode="flow">
+    <div id="tdr-block-position" class="tdr-block tdr-block-wide" data-gjs-dmode="flow">
+      <h3 id="tdr-name-position" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-position" data-gjs-dmode="flow">Position</span><span id="tdr-addr-position" class="tdr-addr" data-gjs-dmode="flow">/td/position  x y</span></h3>
+      <div id="tdr-position" class="oscar-xypad tdr-pad" data-gjs-dmode="flow" data-gjs-message="/td/position" data-gjs-min-x="-1" data-gjs-max-x="1" data-gjs-min-y="-1" data-gjs-max-y="1" data-gjs-x="0" data-gjs-y="0"></div>
+    </div>
+    <div id="tdr-block-colour" class="tdr-block" data-gjs-dmode="flow">
+      <h3 id="tdr-name-colour" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-colour" data-gjs-dmode="flow">Colour</span><span id="tdr-addr-colour" class="tdr-addr" data-gjs-dmode="flow">/td/colour  r g b</span></h3>
+      <input id="tdr-colour" class="tdr-colour" type="color" data-gjs-dmode="flow" data-gjs-message="/td/colour" data-gjs-value="#35d4ff" data-gjs-format="rgb" data-gjs-scale="unit">
+    </div>
+    <div id="tdr-block-scenes" class="tdr-block" data-gjs-dmode="flow">
+      <h3 id="tdr-name-scenes" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-scenes" data-gjs-dmode="flow">Scene</span><span id="tdr-addr-scenes" class="tdr-addr" data-gjs-dmode="flow">/td/scene/1 .. 3</span></h3>
+      <div id="tdr-scenes" class="tdr-scenes" data-gjs-dmode="flow">
+        <button id="tdr-scene-1" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-message="/td/scene/1" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 1</button>
+        <button id="tdr-scene-2" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-message="/td/scene/2" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 2</button>
+        <button id="tdr-scene-3" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-message="/td/scene/3" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 3</button>
+      </div>
+    </div>
+  </div>
+  <div id="tdr-row-3" class="tdr-row" data-gjs-dmode="flow">
+    <div id="tdr-block-audio" class="tdr-block tdr-block-wide" data-gjs-dmode="flow">
+      <h3 id="tdr-name-audio" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-audio" data-gjs-dmode="flow">Audio level, in</span><span id="tdr-addr-audio" class="tdr-addr" data-gjs-dmode="flow">/td/audio/level</span></h3>
+      <div id="tdr-audio" class="oscar-meter tdr-meter" data-gjs-dmode="flow" data-gjs-message="/td/audio/level" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.3" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+    </div>
+    <div id="tdr-block-sensor" class="tdr-block tdr-block-wide" data-gjs-dmode="flow">
+      <h3 id="tdr-name-sensor" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-sensor" data-gjs-dmode="flow">Sensor, in</span><span id="tdr-addr-sensor" class="tdr-addr" data-gjs-dmode="flow">/td/sensor/distance</span></h3>
+      <div id="tdr-sensor" class="oscar-meter tdr-meter" data-gjs-dmode="flow" data-gjs-message="/td/sensor/distance" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.7" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
+    </div>
+  </div>
+  <div id="tdr-row-4" class="tdr-row" data-gjs-dmode="flow">
+    <div id="tdr-block-caption" class="tdr-block tdr-block-wide" data-gjs-dmode="flow">
+      <h3 id="tdr-name-caption" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-caption" data-gjs-dmode="flow">Caption</span><span id="tdr-addr-caption" class="tdr-addr" data-gjs-dmode="flow">/td/caption  s</span></h3>
+      <input id="tdr-caption" type="text" class="oscar-text-input tdr-caption" data-gjs-dmode="flow" data-gjs-message="/td/caption" data-gjs-value="HELLO WORLD" data-gjs-arg-type="s">
+    </div>
+  </div>
+  </section>
+
+  <aside id="tdr-manual" class="tdr-manual" data-gjs-dmode="flow">
+    <p id="tdr-manual-eyebrow" class="tdr-manual-eyebrow" data-gjs-dmode="flow">Quick reference</p>
+    <h2 id="tdr-manual-title" class="tdr-manual-title" data-gjs-dmode="flow">Two CHOPs</h2>
+    <p id="tdr-manual-lead" class="tdr-manual-lead" data-gjs-dmode="flow">An OSC In CHOP hears everything here as channels named after the addresses. An OSC Out CHOP, pointed at OSCAR's IP and listening port, sends channels back, and the meters follow them.</p>
+    <dl id="tdr-manual-list" class="tdr-manual-list" data-gjs-dmode="flow">
+      <div id="tdr-manual-row-1" class="tdr-manual-row" data-gjs-dmode="flow">
+        <dt id="tdr-manual-key-1" class="tdr-manual-key" data-gjs-dmode="flow">OSC In CHOP</dt>
+        <dd id="tdr-manual-address-1" class="tdr-manual-address" data-gjs-dmode="flow">Network Port: the port every widget here sends to</dd>
+        <dd id="tdr-manual-note-1" class="tdr-manual-note" data-gjs-dmode="flow">One channel per address: td/speed, td/scale, td/position/x ... Wire them to your parameters with a Select or an Export.</dd>
+      </div>
+      <div id="tdr-manual-row-2" class="tdr-manual-row" data-gjs-dmode="flow">
+        <dt id="tdr-manual-key-2" class="tdr-manual-key" data-gjs-dmode="flow">Faders</dt>
+        <dd id="tdr-manual-address-2" class="tdr-manual-address" data-gjs-dmode="flow">/td/speed  /td/scale  /td/hue  /td/feedback</dd>
+        <dd id="tdr-manual-note-2" class="tdr-manual-note" data-gjs-dmode="flow">Floats. Speed runs 0 to 2, the rest 0 to 1.</dd>
+      </div>
+      <div id="tdr-manual-row-3" class="tdr-manual-row" data-gjs-dmode="flow">
+        <dt id="tdr-manual-key-3" class="tdr-manual-key" data-gjs-dmode="flow">Position</dt>
+        <dd id="tdr-manual-address-3" class="tdr-manual-address" data-gjs-dmode="flow">/td/position</dd>
+        <dd id="tdr-manual-note-3" class="tdr-manual-note" data-gjs-dmode="flow">Two floats, x then y, -1 to 1. Two channels in the CHOP.</dd>
+      </div>
+      <div id="tdr-manual-row-4" class="tdr-manual-row" data-gjs-dmode="flow">
+        <dt id="tdr-manual-key-4" class="tdr-manual-key" data-gjs-dmode="flow">Colour</dt>
+        <dd id="tdr-manual-address-4" class="tdr-manual-address" data-gjs-dmode="flow">/td/colour</dd>
+        <dd id="tdr-manual-note-4" class="tdr-manual-note" data-gjs-dmode="flow">Three floats, r g b, 0 to 1.</dd>
+      </div>
+      <div id="tdr-manual-row-5" class="tdr-manual-row" data-gjs-dmode="flow">
+        <dt id="tdr-manual-key-5" class="tdr-manual-key" data-gjs-dmode="flow">Scenes</dt>
+        <dd id="tdr-manual-address-5" class="tdr-manual-address" data-gjs-dmode="flow">/td/scene/1 .. /td/scene/3</dd>
+        <dd id="tdr-manual-note-5" class="tdr-manual-note" data-gjs-dmode="flow">1 while held, 0 let go: an edge to trigger on.</dd>
+      </div>
+      <div id="tdr-manual-row-6" class="tdr-manual-row" data-gjs-dmode="flow">
+        <dt id="tdr-manual-key-6" class="tdr-manual-key" data-gjs-dmode="flow">Caption</dt>
+        <dd id="tdr-manual-address-6" class="tdr-manual-address" data-gjs-dmode="flow">/td/caption</dd>
+        <dd id="tdr-manual-note-6" class="tdr-manual-note" data-gjs-dmode="flow">A string. An OSC In DAT reads it; a CHOP does not carry text.</dd>
+      </div>
+      <div id="tdr-manual-row-7" class="tdr-manual-row" data-gjs-dmode="flow">
+        <dt id="tdr-manual-key-7" class="tdr-manual-key" data-gjs-dmode="flow">OSC Out CHOP</dt>
+        <dd id="tdr-manual-address-7" class="tdr-manual-address" data-gjs-dmode="flow">Network Address: OSCAR's IP. Port: its listening port</dd>
+        <dd id="tdr-manual-note-7" class="tdr-manual-note" data-gjs-dmode="flow">Name the channels td/audio/level and td/sensor/distance, 0 to 1, and the two meters follow them.</dd>
+      </div>
+    </dl>
+    <p id="tdr-manual-foot" class="tdr-manual-foot" data-gjs-dmode="flow">Tick "Data in" on any fader and it follows the channel of the same name coming back, so a parameter animated inside TouchDesigner shows here too.</p>
+  </aside>
+</div>
+</body>
+</html>
