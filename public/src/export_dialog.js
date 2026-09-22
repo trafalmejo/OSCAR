@@ -70,6 +70,7 @@ function install(editor, options) {
   var qrBox = document.getElementById("publish-qr");
   var statusLine = document.getElementById("publish-status");
   var link = document.getElementById("publish-link");
+  var copyButton = document.getElementById("publish-copy");
   var publishedBox = document.getElementById("published-box");
   var publishedList = document.getElementById("published-list");
   var extrasBox = document.getElementById("publish-extras");
@@ -102,6 +103,7 @@ function install(editor, options) {
           }),
           latest: latest,
           refresh: refreshPublished,
+          show: showAddress,
         });
       } catch (err) {
         console.error("A section of the Publish dialog failed:", err);
@@ -109,19 +111,38 @@ function install(editor, options) {
     });
   }
 
-  function showPublished(path, replaced) {
-    var address = addressOf(path);
-    statusLine.textContent = replaced ? "Published again, at the same address:" : "Published. Open it at:";
+  /**
+   * The one box for an address: its code, the link, and Copy. Both lists
+   * below show their addresses here, a published surface's on the network
+   * and, from an extension, wherever else it is reachable.
+   */
+  function showAddress(address, status) {
+    statusLine.textContent = status;
     link.textContent = address;
     link.href = address;
-    // Drawn by the library from an address OSCAR built; nothing a person typed
-    // reaches it except the name, which has been reduced to a-z, 0-9 and "-".
+    // Drawn by the library from an address OSCAR or an extension built;
+    // nothing a person typed reaches it except a name, reduced to a-z, 0-9 and "-".
     var code = qrcode(0, "M");
     code.addData(address);
     code.make();
     qrBox.innerHTML = code.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    copyButton.textContent = "Copy the link";
     resultBox.style.display = "flex";
   }
+
+  function showPublished(path, replaced) {
+    showAddress(addressOf(path), replaced ? "Published again, at the same address:" : "Published. Open it at:");
+  }
+
+  copyButton.onclick = function () {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(link.href).then(function () {
+      copyButton.textContent = "Copied";
+      setTimeout(function () {
+        copyButton.textContent = "Copy the link";
+      }, 1500);
+    });
+  };
 
   function refreshPublished() {
     return fetch("/published")
@@ -138,7 +159,10 @@ function install(editor, options) {
           open.target = "_blank";
           open.rel = "noopener";
           open.href = addressOf(page.path);
-          open.textContent = addressOf(page.path);
+          // The name, as the row beside it shows; the whole address is in the box above, from QR.
+          open.textContent = page.id;
+          open.title = addressOf(page.path);
+          open.className = "o-link oscar-published-name";
           row.appendChild(open);
 
           var qr = document.createElement("button");
@@ -357,8 +381,10 @@ function install(editor, options) {
      * box of the extension's own, under the publish result and above the list
      * of what is published, every time the dialog opens and every time what is
      * published changes. `view` is { surfaces: [{ id, path, address }], latest:
-     * the id just published from here or null, refresh() }. Drawing again
-     * replaces what the box held; the extension keeps any state it needs.
+     * the id just published from here or null, refresh(), show(address,
+     * status) }: show puts an address in the dialog's own box, with its code
+     * and Copy, as a published surface's is shown. Drawing again replaces
+     * what the box held; the extension keeps any state it needs.
      */
     addSection: function (draw) {
       if (typeof draw !== "function") throw new Error("A section of the Publish dialog is a draw function");

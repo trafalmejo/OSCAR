@@ -226,8 +226,52 @@
 .oscar-publish-section:empty {
   display: none;
 }
-.oscar-publish-section {
+
+/* The two lists side by side, each with the same rows: an address or a
+   name, then its buttons. One alone takes the whole width; a narrow dialog
+   stacks them. */
+.oscar-publish-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+  align-items: start;
   margin-top: 16px;
+}
+.oscar-publish-columns .oscar-published {
+  margin-top: 0;
+}
+.oscar-publish-extras:not(:has(.oscar-publish-section:not(:empty))) {
+  display: none;
+}
+.oscar-published-list .oscar-published-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oscar-published-list .oscar-published-state {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--o-border-strong);
+  border-radius: 999px;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+}
+.oscar-published-list .oscar-published-state[data-state="valid"] {
+  border-color: #2fa36b;
+  color: #4cc38a;
+}
+.oscar-published-list .oscar-published-state[data-state="grace"] {
+  border-color: #c98a1b;
+  color: #f1a10d;
+}
+.oscar-publish-copy {
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--o-text-xs);
 }
 
 /* What an extension adds to About, ahead of OSCAR's own words. */

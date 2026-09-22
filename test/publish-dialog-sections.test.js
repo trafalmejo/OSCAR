@@ -20,6 +20,13 @@ test("the dialog keeps a box for extensions, after the list of what is published
   assert.ok(result < list && list < extras);
   assert.match(markup, /Publish on the local network/);
   assert.match(markup, /Published on the local network/);
+  // Side by side, and the one box above serves both: code, link, Copy.
+  const columns = markup.indexOf('class="oscar-publish-columns"');
+  assert.ok(columns !== -1 && columns < list && extras < markup.indexOf("</div>", extras) );
+  assert.ok(markup.indexOf('id="publish-copy"') !== -1 && markup.indexOf('id="publish-copy"') < columns);
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /show: showAddress,/, "a section can put an address in the box");
+  assert.match(dialog, /navigator\.clipboard\.writeText\(link\.href\)/);
 });
 
 test("a file is downloaded from a published surface's own row, through a window of its own that gives the dialog back", () => {

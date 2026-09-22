@@ -40,17 +40,22 @@
         <span id="publish-status" class="oscar-publish-status"></span>
         <a id="publish-link" class="o-link oscar-publish-link" target="_blank" rel="noopener"></a>
         <span class="oscar-export-hint">Scan it with the phone's camera, or type the address.</span>
+        <button id="publish-copy" class="o-btn oscar-publish-copy" type="button">Copy the link</button>
       </div>
     </div>
 
-    <div id="published-box" class="oscar-published" style="display: none;">
-      <div class="oscar-published-title">Published on the local network</div>
-      <ul id="published-list" class="oscar-published-list"></ul>
-    </div>
+    <!-- Side by side: what is published here, and, from an extension, what
+         else it can be (reachable from the internet). Both lists show their
+         addresses in the one box above, with its code and its Copy. -->
+    <div class="oscar-publish-columns">
+      <div id="published-box" class="oscar-published" style="display: none;">
+        <div class="oscar-published-title">Published on the local network</div>
+        <ul id="published-list" class="oscar-published-list"></ul>
+      </div>
 
-    <!-- Where an extension adds to the dialog: what else a published surface
-         can be, such as reachable from the internet. Empty in OSCAR itself. -->
-    <div id="publish-extras" class="oscar-publish-extras"></div>
+      <!-- Where an extension adds to the dialog. Empty in OSCAR itself. -->
+      <div id="publish-extras" class="oscar-publish-extras"></div>
+    </div>
 
     <!-- Opened from a published surface's Download button, in place of the
          dialog: a file cannot ask where OSCAR is, so it is told here. -->
