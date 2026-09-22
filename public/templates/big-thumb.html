@@ -55,12 +55,14 @@
   --osc-control-height: 64px;
 }
 
+/* A phone's address bar comes and goes; dvh follows it, vh is the fallback for a browser without it. */
 /* ---- the strip: a case of six on a desk, a gallery flipped left and right on anything smaller ---- */
 .bt {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 28px;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 28px;
   box-sizing: border-box;
 }
@@ -77,6 +79,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 46vh;
+  min-height: 46dvh;
   min-width: 0;
   padding: 14px;
   border-radius: 22px;
@@ -201,6 +204,7 @@
 .bt-fader {
   width: 110px;
   height: 46vh;
+  height: 46dvh;
   min-height: 260px;
 }
 
@@ -274,6 +278,7 @@
 
 .bt-pad {
   width: min(100%, 74vw, 46vh, 360px);
+  width: min(100%, 74vw, 46dvh, 360px);
   height: auto;
   aspect-ratio: 1 / 1;
   border-radius: 18px;
@@ -346,6 +351,7 @@
 
 .bt-scene {
   height: min(20vh, 120px);
+  height: min(20dvh, 120px);
   min-height: 84px;
   padding: 0;
   border-radius: 16px;
@@ -425,6 +431,7 @@ body:not([data-osc-style="own"]) .bt {
     align-items: stretch;
     gap: 0;
     height: 100vh;
+    height: 100dvh;
     min-height: 0;
     padding: 0;
     overflow-x: auto;
@@ -467,6 +474,7 @@ body:not([data-osc-style="own"]) .bt {
 
   .bt-fader {
     height: 52vh;
+    height: 52dvh;
   }
 
   .bt-scene {
