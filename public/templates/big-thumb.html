@@ -5,10 +5,11 @@
 <!--
   Big Thumb: one control a screen, each the size of a hand. A fader, a GO
   button, a pad, a colour, a level and four scene keys, mounted in a wooden
-  case on brushed-steel plates with leather straps. On a phone the case
-  becomes a strip: one control fills the screen, and a swipe snaps to the
-  next, so a tired operator in the dark never has to aim. On a tablet two sit
-  side by side, on a desk all six.
+  case on brushed-steel plates with leather straps. On a phone or a tablet
+  the case becomes a gallery: one control fills the screen, and a swipe left
+  or right snaps to the next, so a tired operator in the dark never has to
+  aim. Six dots under each panel, and the "n / 6" on its strap, say where you
+  are. On a desk all six sit in the case together.
 
   Open it from Load, or paste this whole file into Import. It is ordinary
   HTML and CSS with two OSCAR additions:
@@ -54,7 +55,7 @@
   --osc-control-height: 64px;
 }
 
-/* ---- the strip: one panel a screen on a phone, a case of six on a desk ---- */
+/* ---- the strip: a case of six on a desk, a gallery flipped left and right on anything smaller ---- */
 .bt {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -74,8 +75,9 @@
 /* A panel: a wooden frame, a leather strap across the top, a brushed plate inside. */
 .bt-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 46vh;
+  min-width: 0;
   padding: 14px;
   border-radius: 22px;
   box-sizing: border-box;
@@ -133,9 +135,13 @@
 
 .bt-plate {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
+  min-width: 0;
+  min-height: 0;
   padding: 24px;
   border-radius: 14px;
+  overflow: hidden;
 }
 
 [data-osc-style="own"] .bt-plate {
@@ -173,6 +179,24 @@
   color: rgba(241, 230, 210, 0.55);
 }
 
+/* Six dots, this panel's one filled: there is more to the side. Only in the gallery. */
+.bt-dots {
+  display: none;
+  margin: 10px 8px 0;
+  font-size: 15px;
+  line-height: 1;
+  letter-spacing: 0.45em;
+  text-align: center;
+  text-indent: 0.45em;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-osc-style="own"] .bt-dots {
+  color: rgba(216, 183, 124, 0.8);
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.8);
+}
+
 /* ---- the controls, each the size of a hand ---- */
 .bt-fader {
   width: 110px;
@@ -206,8 +230,9 @@
 
 /* GO: a leather-topped brass mushroom. */
 .bt-go {
-  width: min(64vw, 280px);
-  height: min(64vw, 280px);
+  width: min(100%, 64vw, 280px);
+  height: auto;
+  aspect-ratio: 1 / 1;
   padding: 0;
   border-radius: 50%;
   font-size: 34px;
@@ -248,8 +273,9 @@
 }
 
 .bt-pad {
-  width: min(74vw, 46vh, 360px);
-  height: min(74vw, 46vh, 360px);
+  width: min(100%, 74vw, 46vh, 360px);
+  height: auto;
+  aspect-ratio: 1 / 1;
   border-radius: 18px;
 }
 
@@ -270,7 +296,8 @@
 }
 
 .bt-colour {
-  width: min(74vw, 320px);
+  width: 100%;
+  max-width: 320px;
   height: 190px;
   border-radius: 18px;
 }
@@ -282,7 +309,8 @@
 
 /* LEVEL: a wide window with a brass needle-line for the peak. */
 .bt-meter {
-  width: min(84vw, 420px);
+  width: 100%;
+  max-width: 420px;
   height: 64px;
   border-radius: 10px;
 }
@@ -293,9 +321,12 @@
   box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.9), 0 2px 0 rgba(255, 230, 190, 0.15);
 }
 
+/* The bar spans the whole window and is clipped to the level, so the green-to-red
+   scale is always the full width of the meter, whatever width the meter is. */
 [data-osc-style="own"] .bt-meter::before {
+  width: 100%;
+  clip-path: inset(0 calc(100% - var(--oscar-level, 0%)) 0 0);
   background: linear-gradient(90deg, #6d8f3a 0%, #c9b04a 60%, #d9a441 80%, #c8452f 100%);
-  background-size: min(84vw, 420px) 100%;
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
 }
 
@@ -307,9 +338,10 @@
 /* SCENES: four leather keys with brass rims. */
 .bt-scenes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
-  width: min(80vw, 380px);
+  width: 100%;
+  max-width: 380px;
 }
 
 .bt-scene {
@@ -352,6 +384,9 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 2px 0 #4d3a1c, 0 6px 12px rgba(0, 0, 0, 0.5);
 }
 
+/* Tablet and phone: a gallery. The six panels stand in a row, one fills the
+   screen, and a swipe left or right snaps to the next. Six dots under each
+   say where you are. */
 /* ---- under any other widget style: the same object, in that style's colours ---- */
 body:not([data-osc-style="own"]) .bt {
   background: var(--osc-background);
@@ -373,7 +408,8 @@ body:not([data-osc-style="own"]) .bt-name {
   color: var(--osc-foreground);
 }
 body:not([data-osc-style="own"]) .bt-count,
-body:not([data-osc-style="own"]) .bt-hint {
+body:not([data-osc-style="own"]) .bt-hint,
+body:not([data-osc-style="own"]) .bt-dots {
   color: var(--osc-foreground);
 }
 body:not([data-osc-style="own"]) .bt {
@@ -382,40 +418,60 @@ body:not([data-osc-style="own"]) .bt {
   --osc-control-height: 64px;
 }
 
-/* Tablet: two a row. */
 @media (max-width: 992px) {
   .bt {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 20px;
-    padding: 20px;
-  }
-}
-
-/* Phone: one control a screen, and the strip snaps from one to the next. */
-@media (max-width: 480px) {
-  .bt {
-    display: block;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
     height: 100vh;
+    min-height: 0;
     padding: 0;
-    overflow-y: auto;
-    scroll-snap-type: y mandatory;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  [data-osc-style="own"] .bt::-webkit-scrollbar {
+    display: none;
   }
 
   .bt-panel {
-    min-height: 100vh;
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     margin: 0;
     border-radius: 0;
     scroll-snap-align: start;
     scroll-snap-stop: always;
   }
 
-  .bt-fader {
-    height: 58vh;
+  .bt-dots {
+    display: block;
+  }
+}
+
+/* Phone: the same gallery, with smaller lettering. */
+@media (max-width: 480px) {
+  .bt-strap {
+    padding: 10px 14px;
   }
 
   .bt-name {
     font-size: 16px;
+  }
+
+  .bt-fader {
+    height: 52vh;
+  }
+
+  .bt-scene {
+    font-size: 15px;
+    letter-spacing: 0.12em;
   }
 }
 
@@ -432,6 +488,7 @@ body:not([data-osc-style="own"]) .bt {
       <input id="bt-master" class="bt-fader" type="range" step="0.01" min="0" max="1" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/big/master" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.75" data-gjs-orientation="vertical" data-gjs-listen="true">
     </div>
     <p id="bt-master-hint" class="bt-hint" data-gjs-dmode="flow">Slide. The whole hand, not a fingertip.</p>
+    <p id="bt-master-dots" class="bt-dots" data-gjs-dmode="flow" aria-hidden="true">● ○ ○ ○ ○ ○</p>
   </section>
   <section id="bt-panel-go" class="bt-panel" data-gjs-dmode="flow">
     <header id="bt-go-strap" class="bt-strap" data-gjs-dmode="flow">
@@ -442,6 +499,7 @@ body:not([data-osc-style="own"]) .bt {
       <button id="bt-go" class="bt-key bt-go" data-gjs-dmode="flow" data-gjs-message="/big/go" data-gjs-value-on="1" data-gjs-value-off="0">GO</button>
     </div>
     <p id="bt-go-hint" class="bt-hint" data-gjs-dmode="flow">Press and hold. 1 while it is down.</p>
+    <p id="bt-go-dots" class="bt-dots" data-gjs-dmode="flow" aria-hidden="true">○ ● ○ ○ ○ ○</p>
   </section>
   <section id="bt-panel-position" class="bt-panel" data-gjs-dmode="flow">
     <header id="bt-position-strap" class="bt-strap" data-gjs-dmode="flow">
@@ -452,6 +510,7 @@ body:not([data-osc-style="own"]) .bt {
       <div id="bt-position" class="oscar-xypad bt-pad" data-gjs-dmode="flow" data-gjs-message="/big/position" data-gjs-min-x="0" data-gjs-max-x="1" data-gjs-min-y="0" data-gjs-max-y="1" data-gjs-x="0.5" data-gjs-y="0.5"></div>
     </div>
     <p id="bt-position-hint" class="bt-hint" data-gjs-dmode="flow">Drag anywhere on the leather.</p>
+    <p id="bt-position-dots" class="bt-dots" data-gjs-dmode="flow" aria-hidden="true">○ ○ ● ○ ○ ○</p>
   </section>
   <section id="bt-panel-colour" class="bt-panel" data-gjs-dmode="flow">
     <header id="bt-colour-strap" class="bt-strap" data-gjs-dmode="flow">
@@ -462,6 +521,7 @@ body:not([data-osc-style="own"]) .bt {
       <input id="bt-colour" class="bt-colour" type="color" data-gjs-dmode="flow" data-gjs-message="/big/colour" data-gjs-value="#d9a441" data-gjs-format="rgb" data-gjs-scale="unit">
     </div>
     <p id="bt-colour-hint" class="bt-hint" data-gjs-dmode="flow">Tap to pick. Sent as red, green, blue, 0 to 1.</p>
+    <p id="bt-colour-dots" class="bt-dots" data-gjs-dmode="flow" aria-hidden="true">○ ○ ○ ● ○ ○</p>
   </section>
   <section id="bt-panel-level" class="bt-panel" data-gjs-dmode="flow">
     <header id="bt-level-strap" class="bt-strap" data-gjs-dmode="flow">
@@ -472,6 +532,7 @@ body:not([data-osc-style="own"]) .bt {
       <div id="bt-level" class="oscar-meter bt-meter" data-gjs-dmode="flow" data-gjs-message="/big/level" data-gjs-listen="true" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.4" data-gjs-orientation="horizontal" data-gjs-peak-hold="1.5"></div>
     </div>
     <p id="bt-level-hint" class="bt-hint" data-gjs-dmode="flow">Shows what the rig sends to /big/level.</p>
+    <p id="bt-level-dots" class="bt-dots" data-gjs-dmode="flow" aria-hidden="true">○ ○ ○ ○ ● ○</p>
   </section>
   <section id="bt-panel-scenes" class="bt-panel" data-gjs-dmode="flow">
     <header id="bt-scenes-strap" class="bt-strap" data-gjs-dmode="flow">
@@ -487,6 +548,7 @@ body:not([data-osc-style="own"]) .bt {
       </div>
     </div>
     <p id="bt-scenes-hint" class="bt-hint" data-gjs-dmode="flow">Tap to switch on. Tap again to switch off.</p>
+    <p id="bt-scenes-dots" class="bt-dots" data-gjs-dmode="flow" aria-hidden="true">○ ○ ○ ○ ○ ●</p>
   </section>
 </div>
 </body>
