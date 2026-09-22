@@ -1346,7 +1346,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // ---- export ------------------------------------------------------------
   // Distinct from "See code" beside it, which is GrapesJS's own view of the
   // markup and cannot send anything. This one produces a file that does.
-  oscarExport.install(editor, {
+  var publishDialog = oscarExport.install(editor, {
     host: ipServer,
     port: socketPort,
     projectName: function () {
@@ -1573,6 +1573,15 @@ function initGrape(ipServer, socketPort, oscInPort) {
     /** Open OSCAR's modal on an element of the extension's own. */
     openModal: function (title, content) {
       modal.open({ title: title, content: content, attributes: { class: "modal-login" } });
+    },
+    /**
+     * Add to the Publish dialog, under what was just published: for what
+     * else a published surface can become. See addSection in export_dialog.js.
+     */
+    publishDialog: {
+      addSection: function (draw) {
+        if (publishDialog) publishDialog.addSection(draw);
+      },
     },
   };
 

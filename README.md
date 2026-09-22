@@ -772,7 +772,9 @@ code to scan. It asks for a name and nothing else. This is the way onto a
 Publishing under the same name again replaces the page and keeps its address,
 the dialog lists what is published and unpublishes it, and a published page
 stays reachable while OSCAR is locked. It finds OSCAR by the address it was
-opened at, so it keeps working if the computer's IP address changes. Unlike
+opened at, so it keeps working if the computer's IP address changes. With
+OSCAR Pro the same dialog also offers to make a published surface public on
+the internet, for phones that are not on your network. Unlike
 `/preview`, which always shows the last push from the editor, a published
 page stays as it was until you publish it again.
 

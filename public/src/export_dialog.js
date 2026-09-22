@@ -81,12 +81,39 @@ function install(editor, options) {
   var link = document.getElementById("publish-link");
   var publishedBox = document.getElementById("published-box");
   var publishedList = document.getElementById("published-list");
+  var extrasBox = document.getElementById("publish-extras");
+  // What an extension adds to the dialog (addSection below): each gets a box
+  // of its own in #publish-extras and is asked to draw whenever the dialog
+  // opens or what is published changes.
+  var sections = [];
+  var latest = null; // the id of the surface published from this dialog, most recently
+  var known = []; // the published surfaces, as GET /published last said
   // The address other devices reach OSCAR on, as GET /connection last said.
   var lanHost = "";
 
   /** Where a published surface is opened from another device. */
   function addressOf(path) {
     return surfaceAddress(lanHost || window.location.hostname, window.location.port || 80, path);
+  }
+
+  /**
+   * Ask every section to draw itself. A section that throws loses only its
+   * own box; the dialog and the other sections go on.
+   */
+  function drawSections() {
+    sections.forEach(function (section) {
+      try {
+        section.draw(section.box, {
+          surfaces: known.map(function (page) {
+            return { id: page.id, path: page.path, address: addressOf(page.path) };
+          }),
+          latest: latest,
+          refresh: refreshPublished,
+        });
+      } catch (err) {
+        console.error("A section of the Publish dialog failed:", err);
+      }
+    });
   }
 
   function showPublished(path, replaced) {
@@ -110,7 +137,8 @@ function install(editor, options) {
       })
       .then(function (pages) {
         publishedList.textContent = "";
-        (Array.isArray(pages) ? pages : []).forEach(function (page) {
+        known = Array.isArray(pages) ? pages : [];
+        known.forEach(function (page) {
           var row = document.createElement("li");
           var open = document.createElement("a");
           open.className = "o-link";
@@ -147,9 +175,12 @@ function install(editor, options) {
           publishedList.appendChild(row);
         });
         publishedBox.style.display = publishedList.children.length ? "block" : "none";
+        drawSections();
       })
       .catch(function () {
         publishedBox.style.display = "none";
+        known = [];
+        drawSections();
       });
   }
 
@@ -170,6 +201,7 @@ function install(editor, options) {
   function open() {
     say(errorBox, "");
     say(noteBox, "");
+    latest = null;
     nameField.value = fileStem((options.projectName && options.projectName()) || "");
 
     var pages = editor.Pages.getAll().length;
@@ -255,6 +287,7 @@ function install(editor, options) {
         });
       })
       .then(function (answer) {
+        latest = answer.id;
         showPublished(answer.path, answer.replaced);
         if (answer.linked && answer.linked.length) {
           say(noteBox, "Too large to embed, so these are loaded from OSCAR as the page opens: " + answer.linked.join(", "));
@@ -311,6 +344,24 @@ function install(editor, options) {
   };
 
   editor.Commands.add("oscar-export", open);
+
+  return {
+    /**
+     * Let an extension add to the dialog. `draw(box, view)` is called with a
+     * box of the extension's own, under the publish result and above the list
+     * of what is published, every time the dialog opens and every time what is
+     * published changes. `view` is { surfaces: [{ id, path, address }], latest:
+     * the id just published from here or null, refresh() }. Drawing again
+     * replaces what the box held; the extension keeps any state it needs.
+     */
+    addSection: function (draw) {
+      if (typeof draw !== "function") throw new Error("A section of the Publish dialog is a draw function");
+      var box = document.createElement("div");
+      box.className = "oscar-publish-section";
+      if (extrasBox) extrasBox.appendChild(box);
+      sections.push({ draw: draw, box: box });
+    },
+  };
 }
 
 module.exports = { install: install, fileStem: fileStem };

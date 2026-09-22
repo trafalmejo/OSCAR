@@ -220,3 +220,12 @@
 .oscar-export-advanced[open] > summary {
   margin-bottom: 12px;
 }
+
+/* What an extension adds to the dialog (publish-extras): one box a section,
+   only drawn when there is one, so OSCAR itself shows nothing here. */
+.oscar-publish-section:empty {
+  display: none;
+}
+.oscar-publish-section {
+  margin-top: 16px;
+}
