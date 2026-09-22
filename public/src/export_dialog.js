@@ -193,6 +193,23 @@ function install(editor, options) {
   var pagesBox = document.getElementById("export-pages");
   var pageCount = document.getElementById("export-page-count");
   var button = document.getElementById("export-button");
+  var pageField = document.getElementById("export-page-field");
+  var pageSelect = document.getElementById("export-page");
+
+  /** The choice of page for the file: every page by name, the first chosen. Hidden for a project with one. */
+  function offerPages() {
+    var all = editor.Pages.getAll();
+    pageSelect.textContent = "";
+    all.forEach(function (page, index) {
+      var option = document.createElement("option");
+      option.value = String(index);
+      var name = typeof page.getName === "function" ? page.getName() : "";
+      option.textContent = name || "Page " + (index + 1);
+      pageSelect.appendChild(option);
+    });
+    pageSelect.value = "0";
+    pageField.style.display = all.length > 1 ? "block" : "none";
+  }
 
   function say(box, message) {
     box.textContent = message;
@@ -210,6 +227,7 @@ function install(editor, options) {
     var pages = features.PAGES ? editor.Pages.getAll().length : 1;
     pageCount.textContent = String(pages);
     pagesBox.style.display = pages > 1 ? "block" : "none";
+    offerPages();
 
     // Asked for now rather than remembered from when the editor loaded: a
     // laptop that has changed network since then has a new address, and the
@@ -254,6 +272,8 @@ function install(editor, options) {
   function request(needsAddress) {
     var host = (hostField.value || "").trim();
     var port = (portField.value || "").trim();
+    // A published surface is the first page; a file is whichever was chosen.
+    var pageIndex = needsAddress ? Number(pageSelect.value) || 0 : 0;
 
     say(errorBox, "");
     say(noteBox, "");
@@ -263,7 +283,7 @@ function install(editor, options) {
       if (!port) return say(errorBox, "Say which port OSCAR's bridge is on."), null;
     }
 
-    var snapshot = exportSnapshot(editor);
+    var snapshot = exportSnapshot(editor, pageIndex);
     return {
       method: "POST",
       headers: { "Content-Type": "application/json" },

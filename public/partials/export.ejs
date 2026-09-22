@@ -31,7 +31,7 @@
     <div id="export-note" class="oscar-export-note" style="display: none;"></div>
 
     <button id="publish-button" class="o-btn o-btn-primary oscar-export-go" type="button">
-      Publish on this OSCAR
+      Publish on the local network
     </button>
 
     <div id="publish-result" class="oscar-publish-result" style="display: none;">
@@ -43,14 +43,14 @@
       </div>
     </div>
 
+    <div id="published-box" class="oscar-published" style="display: none;">
+      <div class="oscar-published-title">Published on the local network</div>
+      <ul id="published-list" class="oscar-published-list"></ul>
+    </div>
+
     <!-- Where an extension adds to the dialog: what else a published surface
          can be, such as reachable from the internet. Empty in OSCAR itself. -->
     <div id="publish-extras" class="oscar-publish-extras"></div>
-
-    <div id="published-box" class="oscar-published" style="display: none;">
-      <div class="oscar-published-title">Published on this OSCAR</div>
-      <ul id="published-list" class="oscar-published-list"></ul>
-    </div>
 
     <!-- Closed by default. Publishing needs none of this: a published page
          finds OSCAR by the address it was opened at. Only a file that leaves
@@ -85,6 +85,12 @@
         <code>?oscar-host=ADDRESS&amp;oscar-port=PORT</code> to the page's
         address.
       </p>
+
+      <!-- Only shown for a project with several pages: a file is one page, and this says which. -->
+      <div id="export-page-field" class="oscar-export-field" style="display: none;">
+        <label for="export-page">Page to download</label>
+        <select id="export-page" class="o-input"></select>
+      </div>
 
       <button id="export-button" class="o-btn oscar-export-go" type="button">Download the file</button>
     </details>

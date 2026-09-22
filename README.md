@@ -769,7 +769,7 @@ versions open as before.
 The download button in the top bar (**Publish your interface**) turns the
 canvas into **one self-contained page**, separate from the editor.
 
-**Publish on this OSCAR** keeps the page inside OSCAR and serves it at an
+**Publish on the local network** keeps the page inside OSCAR and serves it at an
 address such as `http://192.168.1.20:8080/show/main-stage`, shown with a QR
 code to scan. It asks for a name and nothing else. This is the way onto a
 **phone or tablet**, and the way to use unless you have a reason not to.
@@ -786,7 +786,8 @@ page stays as it was until you publish it again.
 dialog, saves the same page as an `.html` file to host on a web server or
 open on another **computer**. A file cannot ask where OSCAR is, so this is
 where you say: the address and bridge port are filled in with what OSCAR
-reports for itself. It does not work opened from a phone's own storage:
+reports for itself. A project with several pages is asked which page the file
+is, since a file is one page. It does not work opened from a phone's own storage:
 Android and iOS sandbox a downloaded page and it never reaches OSCAR.
 
 Either way there is nothing to unzip and nothing else to copy. The widgets' settings, OSCAR's runtime, the

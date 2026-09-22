@@ -11,13 +11,24 @@ const path = require("node:path");
 
 const read = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
 
-test("the dialog keeps a box for extensions, between the result and the list of what is published", () => {
+test("the dialog keeps a box for extensions, after the list of what is published on the local network", () => {
   const markup = read("public/partials/export.ejs");
   const result = markup.indexOf('id="publish-result"');
   const extras = markup.indexOf('id="publish-extras"');
   const list = markup.indexOf('id="published-box"');
   assert.ok(result !== -1 && extras !== -1 && list !== -1);
-  assert.ok(result < extras && extras < list);
+  assert.ok(result < list && list < extras);
+  assert.match(markup, /Publish on the local network/);
+  assert.match(markup, /Published on the local network/);
+});
+
+test("a file is one page, and a project with several is asked which", () => {
+  const markup = read("public/partials/export.ejs");
+  assert.ok(markup.indexOf('id="export-page"') < markup.indexOf('id="export-button"'), "the choice sits by the download button");
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /pageField\.style\.display = all\.length > 1 \? "block" : "none";/);
+  assert.match(dialog, /var pageIndex = needsAddress \? Number\(pageSelect\.value\) \|\| 0 : 0;/, "publishing stays the first page");
+  assert.match(dialog, /exportSnapshot\(editor, pageIndex\)/);
 });
 
 test("an extension is handed publishDialog.addSection, and a section is drawn whenever what is published is read again", () => {
