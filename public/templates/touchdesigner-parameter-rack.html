@@ -8,8 +8,9 @@
   triggers, a caption) and a few readings back in (an audio level and a
   sensor, each a meter). Every TouchDesigner patch is different, so nothing
   here is named after a node: rename the addresses to yours. The card on the
-  right is the two-CHOP recipe: OSC In for what OSCAR sends, OSC Out for what
-  comes back, which is the part people get wrong.
+  right is the two-CHOP recipe: OSC In (port 10000 by default; set every
+  widget here to the TouchDesigner machine and that port) for what OSCAR
+  sends, OSC Out for what comes back, which is the part people get wrong.
 
   This template wears a widget style rather than a look of its own: it starts
   on Sci-fi HUD, and every colour in it is a token, so the picker in the top
@@ -347,11 +348,11 @@ body:not([data-osc-style="own"]) .tdr-name {
   <aside id="tdr-manual" class="tdr-manual" data-gjs-dmode="flow">
     <p id="tdr-manual-eyebrow" class="tdr-manual-eyebrow" data-gjs-dmode="flow">Quick reference</p>
     <h2 id="tdr-manual-title" class="tdr-manual-title" data-gjs-dmode="flow">Two CHOPs</h2>
-    <p id="tdr-manual-lead" class="tdr-manual-lead" data-gjs-dmode="flow">An OSC In CHOP hears everything here as channels named after the addresses. An OSC Out CHOP, pointed at OSCAR's IP and listening port, sends channels back, and the meters follow them.</p>
+    <p id="tdr-manual-lead" class="tdr-manual-lead" data-gjs-dmode="flow">An OSC In CHOP on its default port, 10000, hears everything here as channels named after the addresses; set every widget to the TouchDesigner machine, port 10000. An OSC Out CHOP, pointed at OSCAR's IP and listening port, sends channels back, and the meters follow them.</p>
     <dl id="tdr-manual-list" class="tdr-manual-list" data-gjs-dmode="flow">
       <div id="tdr-manual-row-1" class="tdr-manual-row" data-gjs-dmode="flow">
         <dt id="tdr-manual-key-1" class="tdr-manual-key" data-gjs-dmode="flow">OSC In CHOP</dt>
-        <dd id="tdr-manual-address-1" class="tdr-manual-address" data-gjs-dmode="flow">Network Port: the port every widget here sends to</dd>
+        <dd id="tdr-manual-address-1" class="tdr-manual-address" data-gjs-dmode="flow">Network Port 10000, its default: set every widget here to that</dd>
         <dd id="tdr-manual-note-1" class="tdr-manual-note" data-gjs-dmode="flow">One channel per address: td/speed, td/scale, td/position/x ... Wire them to your parameters with a Select or an Export.</dd>
       </div>
       <div id="tdr-manual-row-2" class="tdr-manual-row" data-gjs-dmode="flow">
