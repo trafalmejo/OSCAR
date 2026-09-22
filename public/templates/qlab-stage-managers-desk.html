@@ -10,9 +10,9 @@
   right lists every address.
 
   Every address is QLab's own (QLab 4 and 5). QLab listens for OSC on port
-  53000 with nothing to switch on. In OSCAR, set each widget's IP to the Mac
-  running QLab and its port to 53000; select every widget at once and set
-  them together. If the workspace has a passcode, QLab wants /connect with
+  53000 with nothing to switch on. Every key here already sends to port
+  53000; set each one's IP to the Mac running QLab (select every widget at
+  once and set them together). If the workspace has a passcode, QLab wants /connect with
   it first; leave the passcode off for a control surface, or send it once
   from a text box.
 
@@ -555,17 +555,17 @@ body:not([data-osc-style="own"]) .qsm-pad:has(.qsm-btn.toggle) .qsm-lamp {
     </header>
 
     <div id="qsm-main" class="qsm-main" data-gjs-dmode="flow">
-      <button id="qsm-go" class="qsm-btn qsm-mushroom qsm-go" data-gjs-dmode="flow" data-gjs-message="/go" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">GO</button>
-      <button id="qsm-stop" class="qsm-btn qsm-mushroom qsm-stop" data-gjs-dmode="flow" data-gjs-message="/stop" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">STOP</button>
+      <button id="qsm-go" class="qsm-btn qsm-mushroom qsm-go" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/go" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">GO</button>
+      <button id="qsm-stop" class="qsm-btn qsm-mushroom qsm-stop" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/stop" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">STOP</button>
     </div>
 
     <div id="qsm-keys" class="qsm-keys" data-gjs-dmode="flow">
-      <button id="qsm-pause" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/pause" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">PAUSE</button>
-      <button id="qsm-resume" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/resume" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">RESUME</button>
-      <button id="qsm-prev" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/playhead/previous" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">&#9664;&#xFE0E; PREV</button>
-      <button id="qsm-next" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/playhead/next" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">NEXT &#9654;&#xFE0E;</button>
-      <button id="qsm-reset" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-message="/reset" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">RESET</button>
-      <button id="qsm-panic" class="qsm-btn qsm-key qsm-key-panic" data-gjs-dmode="flow" data-gjs-message="/panic" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">PANIC</button>
+      <button id="qsm-pause" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/pause" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">PAUSE</button>
+      <button id="qsm-resume" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/resume" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">RESUME</button>
+      <button id="qsm-prev" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/playhead/previous" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">&#9664;&#xFE0E; PREV</button>
+      <button id="qsm-next" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/playhead/next" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">NEXT &#9654;&#xFE0E;</button>
+      <button id="qsm-reset" class="qsm-btn qsm-key" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/reset" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">RESET</button>
+      <button id="qsm-panic" class="qsm-btn qsm-key qsm-key-panic" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/panic" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">PANIC</button>
     </div>
 
     <div id="qsm-sheet" class="qsm-sheet" data-gjs-dmode="flow">
@@ -575,35 +575,35 @@ body:not([data-osc-style="own"]) .qsm-pad:has(.qsm-btn.toggle) .qsm-lamp {
       <div id="qsm-cues" class="qsm-cues" data-gjs-dmode="flow">
       <div id="qsm-cue-1" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-1" class="qsm-cue-label" data-gjs-dmode="flow">Q1 &middot; House to half</p>
-        <button id="qsm-standby-1" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/1/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-1" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/1/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       <div id="qsm-cue-2" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-2" class="qsm-cue-label" data-gjs-dmode="flow">Q2 &middot; House out, preset</p>
-        <button id="qsm-standby-2" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/2/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-2" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/2/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       <div id="qsm-cue-3" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-3" class="qsm-cue-label" data-gjs-dmode="flow">Q3 &middot; Lights up, music in</p>
-        <button id="qsm-standby-3" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/3/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-3" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/3/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       <div id="qsm-cue-4" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-4" class="qsm-cue-label" data-gjs-dmode="flow">Q4 &middot; Video wall on</p>
-        <button id="qsm-standby-4" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/4/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-4" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/4/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       <div id="qsm-cue-5" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-5" class="qsm-cue-label" data-gjs-dmode="flow">Q5 &middot; Thunder</p>
-        <button id="qsm-standby-5" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/5/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-5" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/5/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       <div id="qsm-cue-6" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-6" class="qsm-cue-label" data-gjs-dmode="flow">Q6 &middot; Blackout</p>
-        <button id="qsm-standby-6" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/6/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-6" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/6/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       <div id="qsm-cue-7" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-7" class="qsm-cue-label" data-gjs-dmode="flow">Q7 &middot; Curtain call</p>
-        <button id="qsm-standby-7" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/7/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-7" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/7/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       <div id="qsm-cue-8" class="qsm-cue" data-gjs-dmode="flow">
         <p id="qsm-cue-label-8" class="qsm-cue-label" data-gjs-dmode="flow">Q8 &middot; House up</p>
-        <button id="qsm-standby-8" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-message="/cue/8/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
+        <button id="qsm-standby-8" class="qsm-btn qsm-standby" data-gjs-dmode="flow" data-gjs-port="53000" data-gjs-message="/cue/8/start" data-gjs-arg-type="none" data-gjs-value-on="1" data-gjs-value-off="">START</button>
       </div>
       </div>
     </div>
@@ -612,7 +612,7 @@ body:not([data-osc-style="own"]) .qsm-pad:has(.qsm-btn.toggle) .qsm-lamp {
   <aside id="qsm-manual" class="qsm-manual" data-gjs-dmode="flow">
     <p id="qsm-manual-eyebrow" class="qsm-manual-eyebrow" data-gjs-dmode="flow">Quick reference</p>
     <h2 id="qsm-manual-title" class="qsm-manual-title" data-gjs-dmode="flow">QLab over OSC</h2>
-    <p id="qsm-manual-lead" class="qsm-manual-lead" data-gjs-dmode="flow">QLab listens on port 53000; nothing to switch on. Set every widget here to the Mac running QLab, port 53000. Every key sends its address bare, once, when pressed.</p>
+    <p id="qsm-manual-lead" class="qsm-manual-lead" data-gjs-dmode="flow">QLab listens on port 53000; nothing to switch on. Every key here already sends to 53000; set its IP to the Mac running QLab. Every key sends its address bare, once, when pressed.</p>
     <dl id="qsm-manual-list" class="qsm-manual-list" data-gjs-dmode="flow">
       <div id="qsm-manual-row-1" class="qsm-manual-row" data-gjs-dmode="flow">
         <dt id="qsm-manual-key-1" class="qsm-manual-key" data-gjs-dmode="flow">GO</dt>

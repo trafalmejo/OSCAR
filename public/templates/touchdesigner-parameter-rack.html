@@ -8,8 +8,8 @@
   triggers, a caption) and a few readings back in (an audio level and a
   sensor, each a meter). Every TouchDesigner patch is different, so nothing
   here is named after a node: rename the addresses to yours. The card on the
-  right is the two-CHOP recipe: OSC In (port 10000 by default; set every
-  widget here to the TouchDesigner machine and that port) for what OSCAR
+  right is the two-CHOP recipe: OSC In (port 10000 by default; every widget
+  here already sends to 10000, so only the IP is yours to set) for what OSCAR
   sends, OSC Out for what comes back, which is the part people get wrong.
 
   This template wears a widget style rather than a look of its own: it starts
@@ -294,36 +294,36 @@ body:not([data-osc-style="own"]) .tdr-name {
   <div id="tdr-row-1" class="tdr-row" data-gjs-dmode="flow">
     <div id="tdr-block-speed" class="tdr-block" data-gjs-dmode="flow">
       <h3 id="tdr-name-speed" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-speed" data-gjs-dmode="flow">Speed</span><span id="tdr-addr-speed" class="tdr-addr" data-gjs-dmode="flow">/td/speed</span></h3>
-      <input id="tdr-speed" class="tdr-fader" type="range" step="0.01" min="0" max="2" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/speed" data-gjs-min="0" data-gjs-max="2" data-gjs-value="1" data-gjs-orientation="horizontal">
+      <input id="tdr-speed" class="tdr-fader" type="range" step="0.01" min="0" max="2" orient="horizontal" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/speed" data-gjs-min="0" data-gjs-max="2" data-gjs-value="1" data-gjs-orientation="horizontal">
     </div>
     <div id="tdr-block-scale" class="tdr-block" data-gjs-dmode="flow">
       <h3 id="tdr-name-scale" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-scale" data-gjs-dmode="flow">Scale</span><span id="tdr-addr-scale" class="tdr-addr" data-gjs-dmode="flow">/td/scale</span></h3>
-      <input id="tdr-scale" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/scale" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.5" data-gjs-orientation="horizontal">
+      <input id="tdr-scale" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/scale" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.5" data-gjs-orientation="horizontal">
     </div>
     <div id="tdr-block-hue" class="tdr-block" data-gjs-dmode="flow">
       <h3 id="tdr-name-hue" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-hue" data-gjs-dmode="flow">Hue</span><span id="tdr-addr-hue" class="tdr-addr" data-gjs-dmode="flow">/td/hue</span></h3>
-      <input id="tdr-hue" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/hue" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.2" data-gjs-orientation="horizontal">
+      <input id="tdr-hue" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/hue" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.2" data-gjs-orientation="horizontal">
     </div>
     <div id="tdr-block-feedback" class="tdr-block" data-gjs-dmode="flow">
       <h3 id="tdr-name-feedback" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-feedback" data-gjs-dmode="flow">Feedback</span><span id="tdr-addr-feedback" class="tdr-addr" data-gjs-dmode="flow">/td/feedback</span></h3>
-      <input id="tdr-feedback" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/td/feedback" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.65" data-gjs-orientation="horizontal">
+      <input id="tdr-feedback" class="tdr-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/feedback" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0.65" data-gjs-orientation="horizontal">
     </div>
   </div>
   <div id="tdr-row-2" class="tdr-row" data-gjs-dmode="flow">
     <div id="tdr-block-position" class="tdr-block tdr-block-wide" data-gjs-dmode="flow">
       <h3 id="tdr-name-position" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-position" data-gjs-dmode="flow">Position</span><span id="tdr-addr-position" class="tdr-addr" data-gjs-dmode="flow">/td/position  x y</span></h3>
-      <div id="tdr-position" class="oscar-xypad tdr-pad" data-gjs-dmode="flow" data-gjs-message="/td/position" data-gjs-min-x="-1" data-gjs-max-x="1" data-gjs-min-y="-1" data-gjs-max-y="1" data-gjs-x="0" data-gjs-y="0"></div>
+      <div id="tdr-position" class="oscar-xypad tdr-pad" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/position" data-gjs-min-x="-1" data-gjs-max-x="1" data-gjs-min-y="-1" data-gjs-max-y="1" data-gjs-x="0" data-gjs-y="0"></div>
     </div>
     <div id="tdr-block-colour" class="tdr-block" data-gjs-dmode="flow">
       <h3 id="tdr-name-colour" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-colour" data-gjs-dmode="flow">Colour</span><span id="tdr-addr-colour" class="tdr-addr" data-gjs-dmode="flow">/td/colour  r g b</span></h3>
-      <input id="tdr-colour" class="tdr-colour" type="color" data-gjs-dmode="flow" data-gjs-message="/td/colour" data-gjs-value="#35d4ff" data-gjs-format="rgb" data-gjs-scale="unit">
+      <input id="tdr-colour" class="tdr-colour" type="color" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/colour" data-gjs-value="#35d4ff" data-gjs-format="rgb" data-gjs-scale="unit">
     </div>
     <div id="tdr-block-scenes" class="tdr-block" data-gjs-dmode="flow">
       <h3 id="tdr-name-scenes" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-scenes" data-gjs-dmode="flow">Scene</span><span id="tdr-addr-scenes" class="tdr-addr" data-gjs-dmode="flow">/td/scene/1 .. 3</span></h3>
       <div id="tdr-scenes" class="tdr-scenes" data-gjs-dmode="flow">
-        <button id="tdr-scene-1" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-message="/td/scene/1" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 1</button>
-        <button id="tdr-scene-2" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-message="/td/scene/2" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 2</button>
-        <button id="tdr-scene-3" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-message="/td/scene/3" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 3</button>
+        <button id="tdr-scene-1" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/scene/1" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 1</button>
+        <button id="tdr-scene-2" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/scene/2" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 2</button>
+        <button id="tdr-scene-3" class="tdr-key tdr-scene" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/scene/3" data-gjs-value-on="1" data-gjs-value-off="0">SCENE 3</button>
       </div>
     </div>
   </div>
@@ -340,7 +340,7 @@ body:not([data-osc-style="own"]) .tdr-name {
   <div id="tdr-row-4" class="tdr-row" data-gjs-dmode="flow">
     <div id="tdr-block-caption" class="tdr-block tdr-block-wide" data-gjs-dmode="flow">
       <h3 id="tdr-name-caption" class="tdr-name" data-gjs-dmode="flow"><span id="tdr-label-caption" data-gjs-dmode="flow">Caption</span><span id="tdr-addr-caption" class="tdr-addr" data-gjs-dmode="flow">/td/caption  s</span></h3>
-      <input id="tdr-caption" type="text" class="oscar-text-input tdr-caption" data-gjs-dmode="flow" data-gjs-message="/td/caption" data-gjs-value="HELLO WORLD" data-gjs-arg-type="s">
+      <input id="tdr-caption" type="text" class="oscar-text-input tdr-caption" data-gjs-dmode="flow" data-gjs-port="10000" data-gjs-message="/td/caption" data-gjs-value="HELLO WORLD" data-gjs-arg-type="s">
     </div>
   </div>
   </section>
@@ -348,11 +348,11 @@ body:not([data-osc-style="own"]) .tdr-name {
   <aside id="tdr-manual" class="tdr-manual" data-gjs-dmode="flow">
     <p id="tdr-manual-eyebrow" class="tdr-manual-eyebrow" data-gjs-dmode="flow">Quick reference</p>
     <h2 id="tdr-manual-title" class="tdr-manual-title" data-gjs-dmode="flow">Two CHOPs</h2>
-    <p id="tdr-manual-lead" class="tdr-manual-lead" data-gjs-dmode="flow">An OSC In CHOP on its default port, 10000, hears everything here as channels named after the addresses; set every widget to the TouchDesigner machine, port 10000. An OSC Out CHOP, pointed at OSCAR's IP and listening port, sends channels back, and the meters follow them.</p>
+    <p id="tdr-manual-lead" class="tdr-manual-lead" data-gjs-dmode="flow">An OSC In CHOP on its default port, 10000, hears everything here as channels named after the addresses. Every widget already sends to port 10000; set its IP to the TouchDesigner machine. An OSC Out CHOP, pointed at OSCAR's IP and listening port, sends channels back, and the meters follow them.</p>
     <dl id="tdr-manual-list" class="tdr-manual-list" data-gjs-dmode="flow">
       <div id="tdr-manual-row-1" class="tdr-manual-row" data-gjs-dmode="flow">
         <dt id="tdr-manual-key-1" class="tdr-manual-key" data-gjs-dmode="flow">OSC In CHOP</dt>
-        <dd id="tdr-manual-address-1" class="tdr-manual-address" data-gjs-dmode="flow">Network Port 10000, its default: set every widget here to that</dd>
+        <dd id="tdr-manual-address-1" class="tdr-manual-address" data-gjs-dmode="flow">Network Port 10000, its default; every widget here already sends to 10000</dd>
         <dd id="tdr-manual-note-1" class="tdr-manual-note" data-gjs-dmode="flow">One channel per address: td/speed, td/scale, td/position/x ... Wire them to your parameters with a Select or an Export.</dd>
       </div>
       <div id="tdr-manual-row-2" class="tdr-manual-row" data-gjs-dmode="flow">
