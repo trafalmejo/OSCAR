@@ -338,15 +338,20 @@ var BANNER_STYLE = [
   "z-index:2147483647",
   "margin:0",
   "padding:10px 14px",
-  "font:14px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
+  "font:600 14px/1.4 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
   "color:#fff",
+  "box-shadow:0 2px 10px rgba(0,0,0,.35)",
   "text-align:center",
   // A notice must never eat a press meant for the control underneath it.
   "pointer-events:none",
   "transition:opacity .3s",
 ].join(";");
 
-var BANNER_COLOURS = { waiting: "#5f6368", offline: "#b3261e", online: "#1a7f37" };
+// OSCAR's own colours, as its buttons wear them: the brand gradient while
+// connecting and once connected (that one fades), a dark ruby when the
+// bridge cannot be reached, which has to read as trouble and still as OSCAR.
+var BRAND = "linear-gradient(90deg,#ff623a,#ff3663)";
+var BANNER_COLOURS = { waiting: BRAND, offline: "#8a1731", online: BRAND };
 
 /**
  * The one thing every report about a dead export needed someone to say.
