@@ -226,6 +226,9 @@ function install(editor, options) {
               window.$.confirm({
                 title: "Still on the internet",
                 content: reasons.join(" "),
+                // Room for the long button; the theme keeps it on a narrow window.
+                boxWidth: "560px",
+                useBootstrap: false,
                 buttons: {
                   confirm: { text: "Take it off the internet and unpublish", btnClass: "btn-red", action: proceed },
                   cancel: { text: "Keep it published" },

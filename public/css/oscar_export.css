@@ -239,6 +239,25 @@
   align-items: start;
   margin-top: 16px;
 }
+/* The name and the button side by side on a wide dialog; stacked on a narrow one. */
+@media (min-width: 760px) {
+  .oscar-export-publish-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .oscar-export-publish-row .oscar-export-field {
+    flex: 1;
+    margin-bottom: 0;
+  }
+  .oscar-export-publish-row .oscar-export-go {
+    flex: none;
+    width: auto;
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}
+
 /* The dialog is wider than the others, so that a row fits on one line. */
 .modal-publish .gjs-mdl-dialog {
   max-width: min(980px, 96vw);

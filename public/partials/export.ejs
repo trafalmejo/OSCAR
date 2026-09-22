@@ -22,17 +22,19 @@
       published page is a single surface.
     </div>
 
-    <div class="oscar-export-field">
-      <label for="export-name">Name</label>
-      <input id="export-name" class="o-input" type="text" placeholder="my-interface" />
+    <!-- The name and the button on one line where there is room. -->
+    <div class="oscar-export-publish-row">
+      <div class="oscar-export-field">
+        <label for="export-name">Name</label>
+        <input id="export-name" class="o-input" type="text" placeholder="my-interface" />
+      </div>
+      <button id="publish-button" class="o-btn o-btn-primary oscar-export-go" type="button">
+        Publish on the local network
+      </button>
     </div>
 
     <div id="export-error" class="oscar-export-error" style="display: none;"></div>
     <div id="export-note" class="oscar-export-note" style="display: none;"></div>
-
-    <button id="publish-button" class="o-btn o-btn-primary oscar-export-go" type="button">
-      Publish on the local network
-    </button>
 
     <div id="publish-result" class="oscar-publish-result" style="display: none;">
       <div id="publish-qr" class="oscar-publish-qr" role="img" aria-label="QR code for the address"></div>
