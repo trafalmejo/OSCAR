@@ -21,6 +21,9 @@ jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    env:
+      # Whether the secret is set: a step's `if` cannot read secrets itself.
+      HAS_PRO_KEY: ${{ secrets.OSCAR_PRO_DEPLOY_KEY != '' }}
     strategy:
       # One platform failing shouldn't throw away the other two builds.
       fail-fast: false
@@ -51,6 +54,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # OSCAR Pro lives in a private repository. A read-only deploy key, kept
+      # as the secret OSCAR_PRO_DEPLOY_KEY, lets the build fetch it; it is
+      # copied into extensions/, which git ignores and the installer packs.
+      # A build with no such secret (a fork, a pull request) makes plain OSCAR.
+      - name: Fetch OSCAR Pro
+        if: env.HAS_PRO_KEY == 'true'
+        env:
+          OSCAR_PRO_DEPLOY_KEY: ${{ secrets.OSCAR_PRO_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          echo "$OSCAR_PRO_DEPLOY_KEY" > ~/.ssh/oscar_pro
+          chmod 600 ~/.ssh/oscar_pro
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/oscar_pro -o IdentitiesOnly=yes" git clone --quiet --depth 1 git@github.com:trafalmejo/oscar-pro.git "$RUNNER_TEMP/oscar-pro"
+          node scripts/bundle-extension.js "$RUNNER_TEMP/oscar-pro"
+          rm -rf ~/.ssh/oscar_pro "$RUNNER_TEMP/oscar-pro"
+          test -f extensions/pro/package.json && echo "OSCAR Pro is in extensions/"
+
       - name: Run tests
         run: npm test
 
@@ -78,6 +100,16 @@ jobs:
           found=$(find release-builds -path '*app.asar.unpacked*' -name '*.node' | grep -i midi || true)
           echo "$found"
           test -n "$found"
+
+      # And that Pro went in with it, when it was fetched: an installer that
+      # silently lacks Pro is the same kind of surprise.
+      - name: Check OSCAR Pro was packaged
+        if: env.HAS_PRO_KEY == 'true'
+        shell: bash
+        run: |
+          asar=$(find release-builds -name app.asar | head -1)
+          test -n "$asar"
+          npx --yes @electron/asar list "$asar" | grep -q "^/extensions/pro/package.json$" && echo "Pro is in $asar"
 
       # Keeps the installers available from the run even if publishing is
       # skipped (for example on a workflow_dispatch dry run).
