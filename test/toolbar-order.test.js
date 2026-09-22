@@ -12,11 +12,12 @@ const ADDED = [
   "open-load", "oscar-export", "toggle-lock", "open-serial", "open-info",
 ];
 
-test("the lock sits beside Push to preview, and Pages beside the widget style", () => {
+test("the lock sits beside Push to preview, Pages beside the widget style, and a project's buttons read Load, Save, Import, Publish", () => {
   const order = arrange(ADDED);
   assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
   assert.strictEqual(order[order.indexOf("open-styles") + 1], "open-pages");
-  assert.strictEqual(order[order.indexOf("oscar-export") + 1], "gjs-open-import-webpage", "Import sits to the right of Publish");
+  const load = order.indexOf("open-load");
+  assert.deepStrictEqual(order.slice(load, load + 4), ["open-load", "open-save", "gjs-open-import-webpage", "oscar-export"]);
   assert.deepStrictEqual(order.slice().sort(), ADDED.slice().sort(), "nothing added, nothing lost");
   const moved = PLACEMENTS.map((p) => p.id);
   assert.deepStrictEqual(order.filter((id) => !moved.includes(id)), ADDED.filter((id) => !moved.includes(id)), "and the rest keep their order");

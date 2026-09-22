@@ -27,6 +27,9 @@ var ICONS = {
   // out, so its arrow points up. Import, beside it, brings code in and keeps
   // the arrow down that GrapesJS gives it. The two used to be the same icon.
   upload: "M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z",
+  // OSCAR's jellyfish, drawn as the rest are: one colour, a bell and three
+  // tentacles. About wears it.
+  jellyfish: "M12,2.5A8.5,7.5 0 0,0 3.5,10V12.5H20.5V10A8.5,7.5 0 0,0 12,2.5ZM6.5,14.5H8.5V18.5A1,1 0 0,1 6.5,18.5ZM11,14.5H13V20.5A1,1 0 0,1 11,20.5ZM15.5,14.5H17.5V18.5A1,1 0 0,1 15.5,18.5Z",
   help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
   pages:
     "M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M19,21H8V7H19V21Z",
@@ -1428,13 +1431,24 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
   }
 
+  // About, behind OSCAR's own mark. An extension may add to it, ahead of
+  // OSCAR's words (aboutDialog.addSection below): what this OSCAR is, to whom.
+  var aboutSections = [];
+  var aboutExtras = document.getElementById("about-extras");
   pn.addButton("options", {
     id: "open-info",
-    label: icon("help"),
+    label: icon("jellyfish"),
     command: function () {
-      setModal("About", "info-panel");
+      aboutSections.forEach(function (section) {
+        try {
+          section.draw(section.box);
+        } catch (err) {
+          console.error("A section of About failed:", err);
+        }
+      });
+      setModal("About OSCAR", "info-panel");
     },
-    attributes: { title: "About", "data-tooltip-pos": "bottom" },
+    attributes: { title: "About Oscar", "data-tooltip-pos": "bottom" },
   });
 
   pn.addButton("devices-c", {
@@ -1526,7 +1540,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     "open-load": "Load project",
     "open-pages": "Pages",
     "oscar-export": "Publish your interface",
-    "open-info": "About",
+    "open-info": "About Oscar",
   });
 
   retitle("views", {
@@ -1581,6 +1595,19 @@ function initGrape(ipServer, socketPort, oscInPort) {
     publishDialog: {
       addSection: function (draw) {
         if (publishDialog) publishDialog.addSection(draw);
+      },
+    },
+    /**
+     * Add to About, ahead of OSCAR's own words. `draw(box)` is called with a
+     * box of the extension's own every time About opens.
+     */
+    aboutDialog: {
+      addSection: function (draw) {
+        if (typeof draw !== "function") throw new Error("A section of About is a draw function");
+        var box = document.createElement("div");
+        box.className = "oscar-about-section";
+        if (aboutExtras) aboutExtras.appendChild(box);
+        aboutSections.push({ draw: draw, box: box });
       },
     },
   };

@@ -45,3 +45,15 @@ test("OSCAR itself draws nothing in that box", () => {
     assert.ok(!/addSection\((?!draw)/.test(read(file)), file + " adds no section of its own");
   }
 });
+
+test("About has the same kind of place, ahead of OSCAR's own words, behind OSCAR's own mark", () => {
+  const markup = read("public/partials/about.ejs");
+  assert.ok(markup.indexOf('id="about-extras"') < markup.indexOf('class="info-panel-label"'), "an extension speaks first");
+  const editor = read("public/src/oscar_editor.js");
+  assert.match(editor, /aboutDialog: \{\s*addSection: function \(draw\) \{/);
+  assert.match(editor, /id: "open-info",\s*label: icon\("jellyfish"\)/);
+  assert.match(editor, /"open-info": "About Oscar"/);
+  assert.match(editor, /section\.draw\(section\.box\);[\s\S]*?catch \(err\) \{\s*console\.error\("A section of About failed:"/);
+  assert.match(editor, /setModal\("About OSCAR", "info-panel"\)/);
+  assert.ok(!/icon\("help"\)/.test(editor), "the question mark is retired");
+});

@@ -229,3 +229,13 @@
 .oscar-publish-section {
   margin-top: 16px;
 }
+
+/* What an extension adds to About, ahead of OSCAR's own words. */
+.oscar-about-section:empty {
+  display: none;
+}
+.oscar-about-section {
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--o-border);
+}
