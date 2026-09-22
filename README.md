@@ -782,13 +782,12 @@ the internet, for phones that are not on your network. Unlike
 `/preview`, which always shows the last push from the editor, a published
 page stays as it was until you publish it again.
 
-**Advanced: download the page as a file**, folded away at the bottom of the
-dialog, saves the same page as an `.html` file to host on a web server or
-open on another **computer**. A file cannot ask where OSCAR is, so this is
-where you say: the address and bridge port are filled in with what OSCAR
-reports for itself. A project with several pages is asked which page the file
-is, since a file is one page. It does not work opened from a phone's own storage:
-Android and iOS sandbox a downloaded page and it never reaches OSCAR.
+**Download**, on each published surface in that list, saves the same page as
+an `.html` file to host on a web server or open on another **computer**. A
+file cannot ask where OSCAR is, so the window that opens is where you say:
+the address and bridge port are filled in with what OSCAR reports for itself.
+It does not work opened from a phone's own storage: Android and iOS sandbox a
+downloaded page and it never reaches OSCAR.
 
 Either way there is nothing to unzip and nothing else to copy. The widgets' settings, OSCAR's runtime, the
 socket.io client, the widget styles and your images are all inside it. A file

@@ -806,12 +806,9 @@ function matches(definition, el) {
  * Only the first page: an exported file is one surface, and the dialog says
  * so when the project has more.
  */
-function exportSnapshot(editor, pageIndex) {
+function exportSnapshot(editor) {
   var pages = editor.Pages.getAll();
-  // One page: the first unless another is asked for by its position.
-  var index = Number(pageIndex);
-  if (!(index >= 0 && index < pages.length)) index = 0;
-  var component = pages[index].getMainComponent();
+  var component = pages[0].getMainComponent();
   var widgets = 0;
 
   var html = editor.getHtml({
@@ -835,7 +832,6 @@ function exportSnapshot(editor, pageIndex) {
     html: html,
     css: editor.getCss({ component: component }) || "",
     pages: pages.length,
-    page: index,
     widgets: widgets,
   };
 }

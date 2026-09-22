@@ -1011,16 +1011,3 @@ test("the select tool is stopped again whenever GrapesJS restarts it during a pr
   assert.strictEqual(stopped, 1);
 });
 
-test("the snapshot is of one page: the first, or the one asked for by its position", () => {
-  const { exportSnapshot } = require("../public/src/adapters/grapesjs");
-  const pages = ["one", "two", "three"].map((name) => ({ getMainComponent: () => ({ name }) }));
-  const editor = {
-    Pages: { getAll: () => pages.slice() },
-    getHtml: (o) => "<p>" + o.component.name + "</p>",
-    getCss: (o) => "." + o.component.name + "{}",
-  };
-  assert.deepStrictEqual(exportSnapshot(editor), { html: "<p>one</p>", css: ".one{}", pages: 3, page: 0, widgets: 0 });
-  assert.strictEqual(exportSnapshot(editor, 2).html, "<p>three</p>");
-  assert.strictEqual(exportSnapshot(editor, 2).page, 2);
-  for (const bad of [-1, 3, "x", undefined, null]) assert.strictEqual(exportSnapshot(editor, bad).page, 0, String(bad));
-});

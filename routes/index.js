@@ -5,7 +5,8 @@ const express = require("express");
 const { openProject, stripEditorState } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
 const { buildExport } = require("../lib/export");
-const { markServed } = require("../lib/published");
+const { markServed, rebake } = require("../lib/published");
+const { readConnection } = require("../lib/export/connection");
 
 // Where an export finds its runtime, and the only folder it may inline from.
 const PUBLIC_DIR = require("path").join(__dirname, "..", "public");
@@ -305,6 +306,19 @@ module.exports = function createRouter({
       console.error("Could not list published surfaces:", err.message);
       res.status(500).json({ error: "Could not read the published surfaces" });
     }
+  });
+
+  // A published surface as a file to take elsewhere. A file cannot ask where
+  // OSCAR is, so the address is given here and baked in place of OSCAR's own.
+  router.get("/published/:id/file", editorOnly, async (req, res) => {
+    if (!published) return res.status(503).json({ error: "This OSCAR cannot publish surfaces." });
+    const connection = readConnection({ host: req.query.host, port: req.query.port });
+    if (connection.error) return res.status(400).json({ error: connection.error });
+    const page = await published.read(req.params.id);
+    if (page === null) return res.status(404).json({ error: "There is no surface published under that name." });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="' + req.params.id + '.html"');
+    res.send(rebake(page, connection));
   });
 
   router.delete("/published/:id", editorOnly, async (req, res) => {

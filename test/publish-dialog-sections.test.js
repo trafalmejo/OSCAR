@@ -22,13 +22,19 @@ test("the dialog keeps a box for extensions, after the list of what is published
   assert.match(markup, /Published on the local network/);
 });
 
-test("a file is one page, and a project with several is asked which", () => {
+test("a file is downloaded from a published surface's own row, through a window of its own that gives the dialog back", () => {
   const markup = read("public/partials/export.ejs");
-  assert.ok(markup.indexOf('id="export-page"') < markup.indexOf('id="export-button"'), "the choice sits by the download button");
+  assert.ok(!/export-advanced|export-host|id="export-page"/.test(markup), "nothing about a file at the bottom of the dialog");
+  assert.ok(markup.indexOf('id="download-panel"') !== -1 && markup.indexOf('id="download-host"') !== -1);
   const dialog = read("public/src/export_dialog.js");
-  assert.match(dialog, /pageField\.style\.display = all\.length > 1 \? "block" : "none";/);
-  assert.match(dialog, /var pageIndex = needsAddress \? Number\(pageSelect\.value\) \|\| 0 : 0;/, "publishing stays the first page");
-  assert.match(dialog, /exportSnapshot\(editor, pageIndex\)/);
+  // Between QR and Unpublish, on every row.
+  const qr = dialog.indexOf('qr.textContent = "QR"');
+  const file = dialog.indexOf('file.textContent = "Download"');
+  const remove = dialog.indexOf('remove.textContent = "Unpublish"');
+  assert.ok(qr < file && file < remove);
+  assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(id\) \+ "\/file\?host=/);
+  assert.match(dialog, /editor\.on\("modal:close", function \(\) \{\s*if \(!returning\) return;/);
+  assert.ok(!/exportSnapshot\(editor, /.test(dialog), "publishing is the first page, and nothing else is asked");
 });
 
 test("an extension is handed publishDialog.addSection, and a section is drawn whenever what is published is read again", () => {

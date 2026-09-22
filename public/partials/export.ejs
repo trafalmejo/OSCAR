@@ -52,47 +52,35 @@
          can be, such as reachable from the internet. Empty in OSCAR itself. -->
     <div id="publish-extras" class="oscar-publish-extras"></div>
 
-    <!-- Closed by default. Publishing needs none of this: a published page
-         finds OSCAR by the address it was opened at. Only a file that leaves
-         OSCAR has to be told where OSCAR is, so the two fields live here,
-         with the one button that uses them. -->
-    <details id="export-advanced" class="oscar-export-advanced">
-      <summary>Advanced: download the page as a file</summary>
-
-      <p class="oscar-export-hint">
-        The same page as an <code>.html</code> file, to host on a web server
-        or open on another computer. It does not work opened from a phone's
-        or tablet's own storage; publish for those.
-      </p>
-
-      <div class="oscar-export-row">
-        <div class="oscar-export-field">
-          <label for="export-host">OSCAR is reachable at</label>
-          <input id="export-host" class="o-input" type="text" spellcheck="false" />
+    <!-- Opened from a published surface's Download button, in place of the
+         dialog: a file cannot ask where OSCAR is, so it is told here. -->
+    <div id="download-panel" style="display: none;">
+      <div class="oscar-export">
+        <p class="oscar-export-lead">
+          The same page as an <code>.html</code> file, to host on a web server
+          or open on another computer. It does not work opened from a phone's
+          or tablet's own storage; the published address is for those.
+        </p>
+        <div class="oscar-export-row">
+          <div class="oscar-export-field">
+            <label for="download-host">OSCAR is reachable at</label>
+            <input id="download-host" class="o-input" type="text" spellcheck="false" />
+          </div>
+          <div class="oscar-export-field">
+            <label for="download-port">Bridge port</label>
+            <input id="download-port" class="o-input" type="number" min="1" max="65535" />
+          </div>
         </div>
-        <div class="oscar-export-field">
-          <label for="export-port">Bridge port</label>
-          <input id="export-port" class="o-input" type="number" min="1" max="65535" />
-        </div>
+        <p class="oscar-export-hint">
+          Both are filled in with what this OSCAR reports for itself. Use the
+          address other devices see, not <code>localhost</code>, unless the
+          file will only ever be opened on this computer. If OSCAR moves later
+          there is no need to download again: add
+          <code>?oscar-host=ADDRESS&amp;oscar-port=PORT</code> to the page's
+          address.
+        </p>
+        <div id="download-error" class="oscar-export-error" style="display: none;"></div>
+        <button id="download-button" class="o-btn o-btn-primary oscar-export-go" type="button">Download the file</button>
       </div>
-
-      <p class="oscar-export-hint">
-        A file cannot ask where OSCAR is, so it is told here. Both are filled
-        in with what this OSCAR reports for itself. Use the address other
-        devices see, not <code>localhost</code>, unless the file will only
-        ever be opened on this computer. If OSCAR moves later there is no need
-        to download again: add
-        <code>?oscar-host=ADDRESS&amp;oscar-port=PORT</code> to the page's
-        address.
-      </p>
-
-      <!-- Only shown for a project with several pages: a file is one page, and this says which. -->
-      <div id="export-page-field" class="oscar-export-field" style="display: none;">
-        <label for="export-page">Page to download</label>
-        <select id="export-page" class="o-input"></select>
-      </div>
-
-      <button id="export-button" class="o-btn oscar-export-go" type="button">Download the file</button>
-    </details>
-  </div>
+    </div>  </div>
 </div>

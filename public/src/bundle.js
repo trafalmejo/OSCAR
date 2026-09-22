@@ -20662,12 +20662,9 @@ function matches(definition, el) {
  * Only the first page: an exported file is one surface, and the dialog says
  * so when the project has more.
  */
-function exportSnapshot(editor, pageIndex) {
+function exportSnapshot(editor) {
   var pages = editor.Pages.getAll();
-  // One page: the first unless another is asked for by its position.
-  var index = Number(pageIndex);
-  if (!(index >= 0 && index < pages.length)) index = 0;
-  var component = pages[index].getMainComponent();
+  var component = pages[0].getMainComponent();
   var widgets = 0;
 
   var html = editor.getHtml({
@@ -20691,7 +20688,6 @@ function exportSnapshot(editor, pageIndex) {
     html: html,
     css: editor.getCss({ component: component }) || "",
     pages: pages.length,
-    page: index,
     widgets: widgets,
   };
 }
@@ -21190,21 +21186,11 @@ function download(blob, filename) {
   }, 1000);
 }
 
-/** The files the server left as links, from its response header. */
-function linkedAssets(res) {
-  try {
-    var list = JSON.parse(decodeURIComponent(res.headers.get("X-Oscar-Linked-Assets") || "[]"));
-    return Array.isArray(list) ? list : [];
-  } catch (err) {
-    return [];
-  }
-}
-
 /**
  * @param {object} editor the GrapesJS editor
  * @param {{ host: string, port: number, projectName?: () => string }} options
- *        host and port are what the editor was started with, used only if
- *        the server cannot be asked again
+ *        host and port are what the editor was started with, offered for a
+ *        download only if the server cannot be asked again
  */
 function install(editor, options) {
   var container = document.getElementById("export-panel");
@@ -21224,8 +21210,10 @@ function install(editor, options) {
   var sections = [];
   var latest = null; // the id of the surface published from this dialog, most recently
   var known = []; // the published surfaces, as GET /published last said
-  // The address other devices reach OSCAR on, as GET /connection last said.
+  // The address other devices reach OSCAR on, and its bridge port, as GET
+  // /connection last said; what a download is told unless it is changed.
   var lanHost = "";
+  var lanPort = "";
 
   /** Where a published surface is opened from another device. */
   function addressOf(path) {
@@ -21295,6 +21283,16 @@ function install(editor, options) {
           };
           row.appendChild(qr);
 
+          var file = document.createElement("button");
+          file.type = "button";
+          file.className = "o-btn";
+          file.textContent = "Download";
+          file.setAttribute("aria-label", "Download " + page.id + " as a file");
+          file.onclick = function () {
+            openDownload(page.id);
+          };
+          row.appendChild(file);
+
           var remove = document.createElement("button");
           remove.type = "button";
           remove.className = "o-btn";
@@ -21321,30 +21319,74 @@ function install(editor, options) {
   }
 
   var nameField = document.getElementById("export-name");
-  var hostField = document.getElementById("export-host");
-  var portField = document.getElementById("export-port");
   var errorBox = document.getElementById("export-error");
   var noteBox = document.getElementById("export-note");
   var pagesBox = document.getElementById("export-pages");
   var pageCount = document.getElementById("export-page-count");
-  var button = document.getElementById("export-button");
-  var pageField = document.getElementById("export-page-field");
-  var pageSelect = document.getElementById("export-page");
 
-  /** The choice of page for the file: every page by name, the first chosen. Hidden for a project with one. */
-  function offerPages() {
-    var all = editor.Pages.getAll();
-    pageSelect.textContent = "";
-    all.forEach(function (page, index) {
-      var option = document.createElement("option");
-      option.value = String(index);
-      var name = typeof page.getName === "function" ? page.getName() : "";
-      option.textContent = name || "Page " + (index + 1);
-      pageSelect.appendChild(option);
+  // ---- a published surface as a file -------------------------------------
+  // Its own window, in place of the dialog, which comes back when it closes.
+  var downloadPanel = document.getElementById("download-panel");
+  var hostField = document.getElementById("download-host");
+  var portField = document.getElementById("download-port");
+  var downloadError = document.getElementById("download-error");
+  var downloadButton = document.getElementById("download-button");
+  var downloading = null; // the id of the surface the window is about
+  var returning = false; // whether the dialog comes back when the modal closes
+
+  function openDownload(id) {
+    downloading = id;
+    say(downloadError, "");
+    hostField.value = lanHost || options.host || window.location.hostname || "";
+    portField.value = lanPort || options.port || "";
+    returning = true;
+    downloadPanel.style.display = "block";
+    editor.Modal.open({
+      title: "Download " + id + " as a file",
+      content: downloadPanel,
+      attributes: { class: "modal-login" },
     });
-    pageSelect.value = "0";
-    pageField.style.display = all.length > 1 ? "block" : "none";
   }
+
+  editor.on("modal:close", function () {
+    if (!returning) return;
+    returning = false;
+    // A tick later: the modal is still closing, and would close the dialog with it.
+    setTimeout(open, 0);
+  });
+
+  downloadButton.onclick = function () {
+    var host = (hostField.value || "").trim();
+    var port = (portField.value || "").trim();
+    say(downloadError, "");
+    // The server checks both properly; this only saves a round trip.
+    if (!host) return say(downloadError, "Say where OSCAR can be reached.");
+    if (!port) return say(downloadError, "Say which port OSCAR's bridge is on.");
+    var id = downloading;
+    downloadButton.disabled = true;
+    fetch("/published/" + encodeURIComponent(id) + "/file?host=" + encodeURIComponent(host) + "&port=" + encodeURIComponent(port))
+      .then(function (res) {
+        if (res.ok) return res.blob();
+        return res.json().then(
+          function (body) {
+            throw new Error((body && body.error) || "The download failed.");
+          },
+          function () {
+            throw new Error("The download failed.");
+          }
+        );
+      })
+      .then(function (blob) {
+        download(blob, id + ".html");
+        editor.Modal.close();
+      })
+      .catch(function (err) {
+        say(downloadError, (err && err.message) || "Could not reach the OSCAR server.");
+      })
+      .then(function () {
+        downloadButton.disabled = false;
+      });
+  };
 
   function say(box, message) {
     box.textContent = message;
@@ -21362,25 +21404,18 @@ function install(editor, options) {
     var pages = features.PAGES ? editor.Pages.getAll().length : 1;
     pageCount.textContent = String(pages);
     pagesBox.style.display = pages > 1 ? "block" : "none";
-    offerPages();
 
     // Asked for now rather than remembered from when the editor loaded: a
-    // laptop that has changed network since then has a new address, and the
-    // file is about to have this one baked into it. The address OSCAR reports
-    // is the one a tablet on the same Wi-Fi can reach -- not localhost, which
-    // would only ever work on this computer.
-    hostField.value = options.host || window.location.hostname || "";
-    portField.value = options.port || "";
+    // laptop that has changed network since then has a new address. The
+    // address OSCAR reports is the one a tablet on the same Wi-Fi can reach
+    // -- not localhost, which would only ever work on this computer.
     fetch("/connection")
       .then(function (res) {
         return res.json();
       })
       .then(function (conn) {
-        if (conn && conn.address) {
-          hostField.value = conn.address;
-          lanHost = conn.address;
-        }
-        if (conn && conn.socketPort) portField.value = conn.socketPort;
+        if (conn && conn.address) lanHost = conn.address;
+        if (conn && conn.socketPort) lanPort = String(conn.socketPort);
       })
       .catch(function () {
         /* the values from startup stand */
@@ -21397,28 +21432,14 @@ function install(editor, options) {
   }
 
   /**
-   * What both buttons send: the same surface, built the same way. Null if
-   * something is missing.
-   *
-   * Only a downloaded file has to be told where OSCAR is. A published page is
-   * served by OSCAR and finds it by the address it was opened at, so
-   * publishing asks for nothing and the server bakes in its own address.
+   * What publishing sends: the surface, its settings written in. A published
+   * page is served by OSCAR and finds it by the address it was opened at, so
+   * nothing about where OSCAR is goes with it; the server bakes in its own.
    */
-  function request(needsAddress) {
-    var host = (hostField.value || "").trim();
-    var port = (portField.value || "").trim();
-    // A published surface is the first page; a file is whichever was chosen.
-    var pageIndex = needsAddress ? Number(pageSelect.value) || 0 : 0;
-
+  function request() {
     say(errorBox, "");
     say(noteBox, "");
-    if (needsAddress) {
-      // The server checks both properly; this only saves a round trip.
-      if (!host) return say(errorBox, "Say where OSCAR can be reached."), null;
-      if (!port) return say(errorBox, "Say which port OSCAR's bridge is on."), null;
-    }
-
-    var snapshot = exportSnapshot(editor, pageIndex);
+    var snapshot = exportSnapshot(editor);
     return {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -21427,13 +21448,12 @@ function install(editor, options) {
         fileName: fileStem(nameField.value),
         html: snapshot.html,
         css: snapshot.css,
-        connection: needsAddress ? { host: host, port: port } : undefined,
       }),
     };
   }
 
   publishButton.onclick = function () {
-    var body = request(false);
+    var body = request();
     if (!body) return;
     publishButton.disabled = true;
 
@@ -21457,47 +21477,6 @@ function install(editor, options) {
       })
       .then(function () {
         publishButton.disabled = false;
-      });
-  };
-
-  button.onclick = function () {
-    var stem = fileStem(nameField.value);
-    var body = request(true);
-    if (!body) return;
-    button.disabled = true;
-
-    fetch("/export", body)
-      .then(function (res) {
-        if (res.ok) {
-          return res.blob().then(function (blob) {
-            return { blob: blob, linked: linkedAssets(res) };
-          });
-        }
-        return res.json().then(
-          function (body) {
-            throw new Error((body && body.error) || "The export failed.");
-          },
-          function () {
-            throw new Error("The export failed.");
-          }
-        );
-      })
-      .then(function (result) {
-        download(result.blob, stem + ".html");
-        if (!result.linked.length) return editor.Modal.close();
-        // The one case where the file is not the whole story, so the dialog
-        // stays up to say it.
-        say(
-          noteBox,
-          "Downloaded. Too large to embed, so these stay as links and have to be " +
-            "kept next to the file: " + result.linked.join(", ")
-        );
-      })
-      .catch(function (err) {
-        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
-      })
-      .then(function () {
-        button.disabled = false;
       });
   };
 

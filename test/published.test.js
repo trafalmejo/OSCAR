@@ -195,6 +195,23 @@ test("a download still has to be told where OSCAR is, since a file cannot ask", 
   });
 });
 
+test("a published surface can be taken away as a file, told where OSCAR is", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", REQUEST);
+    const res = await fetch(base + "/published/main-stage/file?host=10.0.0.9&port=9001");
+    assert.strictEqual(res.status, 200);
+    assert.match(res.headers.get("content-disposition"), /attachment; filename="main-stage\.html"/);
+    const file = await res.text();
+    assert.ok(file.includes('window.OSCAR_EXPORT = {"host":"10.0.0.9","port":9001'), "the address given, not OSCAR's own");
+    assert.ok(!file.includes("OSCAR_SERVED"), "a file is not served");
+    assert.ok((await store.read("main-stage")).includes('"host":"192.168.0.5"'), "and the stored page is untouched");
+
+    assert.strictEqual((await fetch(base + "/published/main-stage/file?port=9001")).status, 400, "a file has to be told where OSCAR is");
+    assert.match((await (await fetch(base + "/published/main-stage/file?host=10.0.0.9&port=x")).json()).error, /bridge port/);
+    assert.strictEqual((await fetch(base + "/published/nowhere/file?host=10.0.0.9&port=9001")).status, 404);
+  });
+});
+
 test("what cannot be exported cannot be published, and the reason comes back", async () => {
   await withServer(async (base) => {
     const empty = await post(base, "/publish", Object.assign({}, REQUEST, { html: "  " }));
