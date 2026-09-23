@@ -1,0 +1,700 @@
+<!doctype html>
+<html>
+<head>
+<title>DMX Console, 9 Channels</title>
+<!--
+  DMX Console, 9 Channels: a classic lighting desk for a nine-channel RGBW
+  moving head (pan, tilt, dimmer/strobe, red, green, blue, white, speed,
+  reset), every control sending DMX directly, no lighting software between.
+  Nine channel strips with a fader, a FLASH key and a scribble strip; above
+  them the fixture's own controls: a pan/tilt pad, a colour swatch for the
+  three colour channels, a dropdown for the dimmer/strobe modes and one for
+  reset, and six program keys. The card on the right is the channel map.
+
+  Every widget has DMX out on and OSC out off, on universe 1 over Art-Net,
+  broadcast. Set the fixture to 9-channel mode at address 1, or change the
+  Channel of each widget. To drive an interface on USB (Enttec Pro, DMXKing,
+  Open DMX) rather than a network node, select every widget and set Protocol
+  to the USB choice; the port is found by itself.
+
+  Where two controls drive one channel -- the pad and the pan fader, the
+  swatch and the red fader, a FLASH key and its fader -- the highest wins,
+  as on any desk.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-dmx-channel is
+    its channel) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the desk is redrawn in that style's colours: every rule
+    that paints is written for "own" alone, and a short set of rules further
+    down, made of tokens only, dresses it for the others.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the strips go three a row.
+
+  Channels (9-channel mode):
+    1 pan   2 tilt   3 off 0-7, dimmer 8-134, strobe 135-239, switch 240-255
+    4 red   5 green   6 blue   7 white   8 pan/tilt speed   9 reset 150-200
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #17181b;
+  --osc-foreground: #e9e4d6;
+  --osc-card: #202226;
+  --osc-muted: #2b2d33;
+  --osc-accent: #f2c14e;
+  --osc-accent-foreground: #1b1300;
+  --osc-border: #0a0a0c;
+  --osc-input: #0a0a0c;
+  --osc-primary: #f2c14e;
+  --osc-primary-foreground: #1b1300;
+  --osc-ring: #ff8a3d;
+  --osc-radius: 6px;
+  --osc-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --osc-thumb: 34px;
+  --osc-track-size: 8px;
+}
+
+.dmx {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+  min-height: 100vh;
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+[data-osc-style="own"] .dmx {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(242, 193, 78, 0.08), transparent 50%),
+    linear-gradient(180deg, #0f1012, #08090a);
+}
+
+/* ---- the desk: black steel, a cream stripe, screws in the corners ---- */
+.dmx-desk {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 14px;
+}
+
+[data-osc-style="own"] .dmx-desk {
+  border: 1px solid #000;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #2a2c31, #191b1f 40%, #141618);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.dmx-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 4px 10px;
+}
+
+[data-osc-style="own"] .dmx-head {
+  border-bottom: 2px solid #f2c14e;
+}
+
+.dmx-brand {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .dmx-brand {
+  color: #f2c14e;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.dmx-model {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .dmx-model {
+  color: #8a8f99;
+}
+
+/* ---- the fixture section: the smart controls ---- */
+.dmx-fixture {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.dmx-block {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  align-content: start;
+}
+
+[data-osc-style="own"] .dmx-block {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #1c1e22, #141619);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dmx-block-name {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .dmx-block-name {
+  color: #8a8f99;
+}
+
+.dmx-ch {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+[data-osc-style="own"] .dmx-ch {
+  color: #f2c14e;
+}
+
+.dmx-pad {
+  width: 200px;
+  height: 200px;
+}
+
+[data-osc-style="own"] .dmx-pad {
+  border: 4px solid #0a0a0c;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)) center / 100% 1px no-repeat,
+    linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)) center / 1px 100% no-repeat,
+    radial-gradient(circle at 50% 50%, #26292e, #141619);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+
+[data-osc-style="own"] .dmx-pad::after {
+  border: 2px solid #0a0a0c;
+  background: radial-gradient(circle at 35% 30%, #fff1c2, #f2c14e 70%);
+  box-shadow: 0 0 10px rgba(242, 193, 78, 0.6);
+}
+
+.dmx-colour {
+  width: 100%;
+  height: 64px;
+}
+
+[data-osc-style="own"] .dmx-colour {
+  border: 4px solid #0a0a0c;
+}
+
+.dmx-select {
+  width: 100%;
+}
+
+.dmx-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.dmx-programs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dmx-program {
+  min-height: 44px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+[data-osc-style="own"] .dmx-program {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #3a3d44, #24262b);
+  color: #c9cdd4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 0 #0a0a0c;
+}
+
+[data-osc-style="own"] .dmx-program:hover {
+  background: linear-gradient(180deg, #454850, #2b2e34);
+  color: #f1f3f6;
+}
+
+.dmx-program.toggle {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] .dmx-program.toggle {
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(242, 193, 78, 0.5);
+  color: #1b1300;
+  background: linear-gradient(180deg, #f2c14e, #d9a12a);
+}
+
+[data-osc-style="own"] .dmx-program-red.toggle {
+  background: linear-gradient(180deg, #ff5a4a, #c92d20);
+  color: #2a0b06;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(255, 90, 74, 0.6);
+}
+
+[data-osc-style="own"] .dmx-program-green.toggle {
+  background: linear-gradient(180deg, #5fd47c, #2f9a4a);
+  color: #05200c;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(95, 212, 124, 0.6);
+}
+
+[data-osc-style="own"] .dmx-program-blue.toggle {
+  background: linear-gradient(180deg, #4f8cff, #2456c9);
+  color: #04122f;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(79, 140, 255, 0.6);
+}
+
+[data-osc-style="own"] .dmx-program-white.toggle {
+  background: linear-gradient(180deg, #ffffff, #cfd3d9);
+  color: #1b1b1b;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(255, 255, 255, 0.6);
+}
+
+/* ---- the channel strips: nine faders with a flash key and a scribble strip ---- */
+.dmx-strips {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px 10px 10px;
+  border-radius: 10px;
+}
+
+[data-osc-style="own"] .dmx-strips {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #1c1e22, #141619);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dmx-strip {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dmx-number {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+[data-osc-style="own"] .dmx-number {
+  color: #8a8f99;
+}
+
+.dmx-fader {
+  width: 44px;
+  height: 200px;
+}
+
+[data-osc-style="own"] .dmx-fader::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #000, #16171a 50%, #000);
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.9);
+}
+
+[data-osc-style="own"] .dmx-fader::-moz-range-track {
+  background: linear-gradient(90deg, #000, #16171a 50%, #000);
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.9);
+}
+
+[data-osc-style="own"] .dmx-fader::-webkit-slider-thumb {
+  border: 1px solid #0a0a0c;
+  border-radius: 4px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0 2px, transparent 2px 6px), linear-gradient(180deg, #f6efd8, #c9c0a4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+
+[data-osc-style="own"] .dmx-fader::-moz-range-thumb {
+  border: 1px solid #0a0a0c;
+  border-radius: 4px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0 2px, transparent 2px 6px), linear-gradient(180deg, #f6efd8, #c9c0a4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+
+.dmx-flash {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+[data-osc-style="own"] .dmx-flash {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #3a3d44, #24262b);
+  color: #c9cdd4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 0 #0a0a0c;
+}
+
+[data-osc-style="own"] .dmx-flash:hover {
+  background: linear-gradient(180deg, #454850, #2b2e34);
+  color: #f1f3f6;
+}
+
+.dmx-flash.toggle {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] .dmx-flash.toggle {
+  background: linear-gradient(180deg, #f2c14e, #d9a12a);
+  color: #1b1300;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(242, 193, 78, 0.6);
+}
+
+.dmx-scribble {
+  width: 100%;
+  margin: 0;
+  padding: 5px 2px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+[data-osc-style="own"] .dmx-scribble {
+  background: #f6efd8;
+  color: #1b1b1b;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- the leaflet that lists every address ---- */
+.dmx-manual {
+  padding: 22px;
+  border-radius: 12px;
+}
+[data-osc-style="own"] .dmx-manual {
+  border: 1px solid #000;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 40%),
+    linear-gradient(180deg, #24262b, #191b1f);
+  color: #c9cdd4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 16px 40px rgba(0, 0, 0, 0.5);
+  font-family: "Courier New", Courier, monospace;
+}
+
+.dmx-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.dmx-manual-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+[data-osc-style="own"] .dmx-manual-title {
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.dmx-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+[data-osc-style="own"] .dmx-manual-lead {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.dmx-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+
+.dmx-manual-row {
+  display: grid;
+  gap: 1px;
+}
+
+.dmx-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.dmx-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dmx-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.dmx-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+[data-osc-style="own"] .dmx-manual-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .dmx {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .dmx-desk,
+body:not([data-osc-style="own"]) .dmx-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .dmx-head {
+  border-bottom: 2px solid var(--osc-primary);
+}
+body:not([data-osc-style="own"]) .dmx-brand,
+body:not([data-osc-style="own"]) .dmx-ch {
+  color: var(--osc-primary);
+}
+body:not([data-osc-style="own"]) .dmx-model,
+body:not([data-osc-style="own"]) .dmx-block-name,
+body:not([data-osc-style="own"]) .dmx-number {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .dmx-block,
+body:not([data-osc-style="own"]) .dmx-strips {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .dmx-scribble {
+  background: var(--osc-primary);
+  color: var(--osc-primary-foreground);
+}
+
+@media (max-width: 992px) {
+  .dmx {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px;
+  }
+
+  .dmx-fixture {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .dmx-block-programs {
+    grid-column: 1 / -1;
+  }
+
+  .dmx-strips {
+    gap: 6px;
+  }
+
+  .dmx-fader {
+    width: 36px;
+    height: 170px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dmx {
+    padding: 10px;
+  }
+
+  .dmx-desk {
+    padding: 12px;
+  }
+
+  .dmx-fixture {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dmx-pad {
+    width: 100%;
+    max-width: 260px;
+    height: auto;
+    aspect-ratio: 1;
+    justify-self: center;
+  }
+
+  .dmx-strips {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .dmx-fader {
+    width: 44px;
+    height: 150px;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="dmx" class="dmx" data-gjs-dmode="flow">
+  <section id="dmx-desk" class="dmx-desk" data-gjs-dmode="flow">
+    <header id="dmx-head" class="dmx-head" data-gjs-dmode="flow">
+      <h1 id="dmx-brand" class="dmx-brand" data-gjs-dmode="flow">OSCAR</h1>
+      <p id="dmx-model" class="dmx-model" data-gjs-dmode="flow">DMX Console &middot; 9 channels &middot; RGBW moving head</p>
+    </header>
+
+    <div id="dmx-fixture" class="dmx-fixture" data-gjs-dmode="flow">
+      <div id="dmx-block-pantilt" class="dmx-block" data-gjs-dmode="flow">
+        <h3 id="dmx-block-pantilt-name" class="dmx-block-name" data-gjs-dmode="flow"><span id="dmx-block-pantilt-label" data-gjs-dmode="flow">Pan / Tilt</span><span id="dmx-block-pantilt-ch" class="dmx-ch" data-gjs-dmode="flow">CH 1-2</span></h3>
+        <div id="dmx-pad" class="oscar-xypad dmx-pad" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="2" data-gjs-message="/dmx/pantilt" data-gjs-min-x="0" data-gjs-max-x="255" data-gjs-min-y="0" data-gjs-max-y="255" data-gjs-x="128" data-gjs-y="128" data-gjs-arg-type="i"></div>
+      </div>
+      <div id="dmx-block-beam" class="dmx-block" data-gjs-dmode="flow">
+        <h3 id="dmx-block-beam-name" class="dmx-block-name" data-gjs-dmode="flow"><span id="dmx-block-beam-label" data-gjs-dmode="flow">Colour</span><span id="dmx-block-beam-ch" class="dmx-ch" data-gjs-dmode="flow">CH 4-6</span></h3>
+        <input id="dmx-colour" class="dmx-colour" type="color" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="3" data-gjs-message="/dmx/colour" data-gjs-value="#f2c14e" data-gjs-format="rgb" data-gjs-scale="byte">
+        <h3 id="dmx-block-mode-name" class="dmx-block-name" data-gjs-dmode="flow"><span id="dmx-block-mode-label" data-gjs-dmode="flow">Dimmer / strobe</span><span id="dmx-block-mode-ch" class="dmx-ch" data-gjs-dmode="flow">CH 3</span></h3>
+        <select id="dmx-mode" class="oscar-dropdown dmx-select" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/mode" data-gjs-options="Off=0, Dimmer 25%=40, Dimmer 50%=71, Dimmer 75%=103, Dimmer full=134, Strobe slow=140, Strobe medium=187, Strobe fast=235, Switch=250" data-gjs-value="134" data-gjs-arg-type="i"></select>
+        <h3 id="dmx-block-reset-name" class="dmx-block-name" data-gjs-dmode="flow"><span id="dmx-block-reset-label" data-gjs-dmode="flow">Reset</span><span id="dmx-block-reset-ch" class="dmx-ch" data-gjs-dmode="flow">CH 9</span></h3>
+        <select id="dmx-reset" class="oscar-dropdown dmx-select" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/reset" data-gjs-options="Normal=0, Reset=175" data-gjs-value="0" data-gjs-arg-type="i"></select>
+      </div>
+      <div id="dmx-block-programs" class="dmx-block dmx-block-programs" data-gjs-dmode="flow">
+        <h3 id="dmx-block-programs-name" class="dmx-block-name" data-gjs-dmode="flow"><span id="dmx-block-programs-label" data-gjs-dmode="flow">Programs</span><span id="dmx-block-programs-ch" class="dmx-ch" data-gjs-dmode="flow">toggles</span></h3>
+        <div id="dmx-programs" class="dmx-programs" data-gjs-dmode="flow">
+        <button id="dmx-red" class="dmx-key dmx-program dmx-program-red" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/red" data-gjs-value-on="1" data-gjs-value-off="0">RED</button>
+        <button id="dmx-green" class="dmx-key dmx-program dmx-program-green" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/green" data-gjs-value-on="1" data-gjs-value-off="0">GREEN</button>
+        <button id="dmx-blue" class="dmx-key dmx-program dmx-program-blue" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/blue" data-gjs-value-on="1" data-gjs-value-off="0">BLUE</button>
+        <button id="dmx-white" class="dmx-key dmx-program dmx-program-white" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/white" data-gjs-value-on="1" data-gjs-value-off="0">WHITE</button>
+        <button id="dmx-all" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="4" data-gjs-message="/dmx/program/all" data-gjs-value-on="1" data-gjs-value-off="0">ALL COLOURS</button>
+        <button id="dmx-fast" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/fast" data-gjs-value-on="1" data-gjs-value-off="0">FAST MOVES</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dmx-strips" class="dmx-strips" data-gjs-dmode="flow">
+    <div id="dmx-strip-1" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-1" class="dmx-number" data-gjs-dmode="flow">CH 1</p>
+      <input id="dmx-fader-1" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/1" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-1" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/1" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-1" class="dmx-scribble" data-gjs-dmode="flow">PAN</p>
+    </div>
+    <div id="dmx-strip-2" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-2" class="dmx-number" data-gjs-dmode="flow">CH 2</p>
+      <input id="dmx-fader-2" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="2" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/2" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-2" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="2" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/2" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-2" class="dmx-scribble" data-gjs-dmode="flow">TILT</p>
+    </div>
+    <div id="dmx-strip-3" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-3" class="dmx-number" data-gjs-dmode="flow">CH 3</p>
+      <input id="dmx-fader-3" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/3" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-3" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/3" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-3" class="dmx-scribble" data-gjs-dmode="flow">DIM / STROBE</p>
+    </div>
+    <div id="dmx-strip-4" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-4" class="dmx-number" data-gjs-dmode="flow">CH 4</p>
+      <input id="dmx-fader-4" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/4" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-4" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/4" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-4" class="dmx-scribble" data-gjs-dmode="flow">RED</p>
+    </div>
+    <div id="dmx-strip-5" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-5" class="dmx-number" data-gjs-dmode="flow">CH 5</p>
+      <input id="dmx-fader-5" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/5" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-5" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/5" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-5" class="dmx-scribble" data-gjs-dmode="flow">GREEN</p>
+    </div>
+    <div id="dmx-strip-6" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-6" class="dmx-number" data-gjs-dmode="flow">CH 6</p>
+      <input id="dmx-fader-6" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/6" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-6" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/6" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-6" class="dmx-scribble" data-gjs-dmode="flow">BLUE</p>
+    </div>
+    <div id="dmx-strip-7" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-7" class="dmx-number" data-gjs-dmode="flow">CH 7</p>
+      <input id="dmx-fader-7" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/7" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-7" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/7" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-7" class="dmx-scribble" data-gjs-dmode="flow">WHITE</p>
+    </div>
+    <div id="dmx-strip-8" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-8" class="dmx-number" data-gjs-dmode="flow">CH 8</p>
+      <input id="dmx-fader-8" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/8" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-8" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/8" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-8" class="dmx-scribble" data-gjs-dmode="flow">SPEED</p>
+    </div>
+    <div id="dmx-strip-9" class="dmx-strip" data-gjs-dmode="flow">
+      <p id="dmx-number-9" class="dmx-number" data-gjs-dmode="flow">CH 9</p>
+      <input id="dmx-fader-9" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/9" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <button id="dmx-flash-9" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/9" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dmx-scribble-9" class="dmx-scribble" data-gjs-dmode="flow">RESET</p>
+    </div>
+    </div>
+  </section>
+
+  <aside id="dmx-manual" class="dmx-manual" data-gjs-dmode="flow">
+    <p id="dmx-manual-eyebrow" class="dmx-manual-eyebrow" data-gjs-dmode="flow">Channel map</p>
+    <h2 id="dmx-manual-title" class="dmx-manual-title" data-gjs-dmode="flow">9-channel mode</h2>
+    <p id="dmx-manual-lead" class="dmx-manual-lead" data-gjs-dmode="flow">Set the fixture to 9-channel mode at DMX address 1. Everything here sends DMX on universe 1, Art-Net, broadcast; nothing sends OSC.</p>
+    <dl id="dmx-manual-list" class="dmx-manual-list" data-gjs-dmode="flow">
+      <div id="dmx-manual-row-1" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-1" class="dmx-manual-key" data-gjs-dmode="flow">Every control</dt>
+        <dd id="dmx-manual-address-1" class="dmx-manual-address" data-gjs-dmode="flow">DMX out on, OSC out off</dd>
+        <dd id="dmx-manual-note-1" class="dmx-manual-note" data-gjs-dmode="flow">Universe 1, Art-Net, broadcast. To drive a USB interface instead: select every widget, set Protocol to USB. To name a node, set Node or port.</dd>
+      </div>
+      <div id="dmx-manual-row-2" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-2" class="dmx-manual-key" data-gjs-dmode="flow">CH1, CH2</dt>
+        <dd id="dmx-manual-address-2" class="dmx-manual-address" data-gjs-dmode="flow">Pan, tilt</dd>
+        <dd id="dmx-manual-note-2" class="dmx-manual-note" data-gjs-dmode="flow">The pad drives both at once; the faders drive each alone. Highest takes precedence where they overlap.</dd>
+      </div>
+      <div id="dmx-manual-row-3" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-3" class="dmx-manual-key" data-gjs-dmode="flow">CH3</dt>
+        <dd id="dmx-manual-address-3" class="dmx-manual-address" data-gjs-dmode="flow">Off, dimmer, strobe, switch</dd>
+        <dd id="dmx-manual-note-3" class="dmx-manual-note" data-gjs-dmode="flow">The dropdown picks a mode by its exact value; the fader sweeps the whole channel, 0 to 255, off to switch.</dd>
+      </div>
+      <div id="dmx-manual-row-4" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-4" class="dmx-manual-key" data-gjs-dmode="flow">CH4 to CH6</dt>
+        <dd id="dmx-manual-address-4" class="dmx-manual-address" data-gjs-dmode="flow">Red, green, blue</dd>
+        <dd id="dmx-manual-note-4" class="dmx-manual-note" data-gjs-dmode="flow">The colour picker sends all three from one swatch. The programs light one at full.</dd>
+      </div>
+      <div id="dmx-manual-row-5" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-5" class="dmx-manual-key" data-gjs-dmode="flow">CH7</dt>
+        <dd id="dmx-manual-address-5" class="dmx-manual-address" data-gjs-dmode="flow">White</dd>
+        <dd id="dmx-manual-note-5" class="dmx-manual-note" data-gjs-dmode="flow">A fader, and a program at full.</dd>
+      </div>
+      <div id="dmx-manual-row-6" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-6" class="dmx-manual-key" data-gjs-dmode="flow">CH8</dt>
+        <dd id="dmx-manual-address-6" class="dmx-manual-address" data-gjs-dmode="flow">Pan and tilt speed</dd>
+        <dd id="dmx-manual-note-6" class="dmx-manual-note" data-gjs-dmode="flow">The FAST MOVES program sends full.</dd>
+      </div>
+      <div id="dmx-manual-row-7" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-7" class="dmx-manual-key" data-gjs-dmode="flow">CH9</dt>
+        <dd id="dmx-manual-address-7" class="dmx-manual-address" data-gjs-dmode="flow">Reset</dd>
+        <dd id="dmx-manual-note-7" class="dmx-manual-note" data-gjs-dmode="flow">The fixture resets between 150 and 200; the dropdown sends 175, then back to 0.</dd>
+      </div>
+      <div id="dmx-manual-row-8" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-8" class="dmx-manual-key" data-gjs-dmode="flow">FLASH</dt>
+        <dd id="dmx-manual-address-8" class="dmx-manual-address" data-gjs-dmode="flow">Full while held</dd>
+        <dd id="dmx-manual-note-8" class="dmx-manual-note" data-gjs-dmode="flow">Each strip's key sends 255 on its channel for as long as it is down, over the fader.</dd>
+      </div>
+    </dl>
+    <p id="dmx-manual-foot" class="dmx-manual-foot" data-gjs-dmode="flow">A second fixture at address 10 in the same mode: copy the desk and add 9 to every Channel.</p>
+  </aside>
+</div>
+</body>
+</html>
