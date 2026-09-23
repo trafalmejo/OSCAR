@@ -109,11 +109,23 @@ const SACN_PORT = 5568;
  * Art-Net addresses a universe with a 15-bit Port-Address (Net, Sub-Net and
  * Universe packed together), so 0 is an ordinary first universe. E1.31
  * reserves 0 and 64000 upward, leaving 1-63999 for data.
+ *
+ * A USB interface is one universe on one serial port (lib/dmx/usb.js): no
+ * port number, and its "host" is the serial port's name, or blank for the
+ * first interface found. `usb` marks the two.
  */
 const PROTOCOLS = [
   { id: "artnet", name: "Art-Net", port: ARTNET_PORT, minUniverse: 0, maxUniverse: 32767 },
   { id: "sacn", name: "sACN (E1.31)", port: SACN_PORT, minUniverse: 1, maxUniverse: 63999 },
+  { id: "usbpro", name: "USB: Enttec Pro, DMXKing", port: null, minUniverse: 1, maxUniverse: 1, usb: true },
+  { id: "opendmx", name: "USB: Open DMX (timing by this computer)", port: null, minUniverse: 1, maxUniverse: 1, usb: true },
 ];
+
+/** Whether a protocol goes out on a serial port rather than the network. */
+function isUsb(id) {
+  const spec = protocol(id);
+  return !!(spec && spec.usb);
+}
 
 /** The same list as a settings panel wants it. */
 const PROTOCOL_OPTIONS = PROTOCOLS.map((spec) => ({ id: spec.id, name: spec.name }));
@@ -135,7 +147,29 @@ function sacnMulticast(universe) {
  * better on a busy network, which is why the field exists.
  */
 function defaultHost(id, universe) {
+  if (isUsb(id)) return "";
   return id === "sacn" ? sacnMulticast(universe) : "255.255.255.255";
+}
+
+/**
+ * A serial port's name, as the operating systems write them: COM3,
+ * /dev/ttyUSB0, /dev/cu.usbserial-A1B2. Or a part of one, or the maker's
+ * name; lib/dmx/usb.js matches loosely. Blank means the first interface.
+ */
+const PORT_NAME = /^[A-Za-z0-9./_:-]{1,64}$/;
+
+/** A port name, "" for the first interface, or null for something refused. */
+function readPortName(raw) {
+  if (raw === null || raw === undefined) return "";
+  if (typeof raw !== "string") return null;
+  const name = raw.trim();
+  if (!name) return "";
+  return PORT_NAME.test(name) ? name : null;
+}
+
+/** The node or port a widget's DMX settings name, read by the protocol's rule. */
+function readTarget(id, raw) {
+  return isUsb(id) ? readPortName(raw) : readHost(raw);
 }
 
 /**
@@ -162,10 +196,14 @@ module.exports = {
   PROTOCOLS,
   PROTOCOL_OPTIONS,
   protocol,
+  isUsb,
   sacnMulticast,
   defaultHost,
   HOST,
   readHost,
+  PORT_NAME,
+  readPortName,
+  readTarget,
 };
 
 },{}],3:[function(require,module,exports){
@@ -2996,7 +3034,7 @@ module.exports = { dropdown, parseOptions };
 const { toNumber } = require("../osc-args");
 const { isPort } = require("../ports");
 const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
-const { SLOTS, PROTOCOL_OPTIONS, protocol, readHost } = require("../dmx/spec");
+const { SLOTS, PROTOCOL_OPTIONS, protocol, isUsb, readHost, readPortName } = require("../dmx/spec");
 const { toWhole } = require("../dmx/levels");
 const { sendsMidi, isListening } = require("../midi/spec");
 
@@ -3266,7 +3304,7 @@ function dmxFields() {
   return [
     dmxToggle(),
     field("dmxProtocol", "Protocol", "select", Object.assign({ options: PROTOCOL_OPTIONS }, only)),
-    field("dmxHost", "Node", "text", Object.assign({ placeholder: "broadcast" }, only)),
+    field("dmxHost", "Node or port", "text", Object.assign({ placeholder: "broadcast, or the first USB interface", hint: "On Art-Net and sACN: the node's address, or blank to reach every node. On USB: the serial port (COM3, /dev/ttyUSB0), a part of its name, or blank for the first interface found." }, only)),
     field("dmxUniverse", "Universe", "number", Object.assign({ min: 0, max: 63999 }, only)),
     field("dmxChannel", "Channel", "number", Object.assign({ min: 1, max: SLOTS }, only)),
     field("dmxCount", "Channels", "number", Object.assign({ min: 1, max: SLOTS }, only)),
@@ -3350,8 +3388,13 @@ const IPV4 =
 // alive and drives nothing. So the panel refuses it first. A value made of
 // digits and dots is an IPv4 literal that has to be one: "192.168.1.300" is
 // not a hostname either.
-function checkDmxHost(value) {
-  const host = readHost(value == null ? "" : String(value));
+function checkDmxHost(value, config) {
+  const text = value == null ? "" : String(value);
+  if (isUsb(config && config.dmxProtocol)) {
+    if (readPortName(text) !== null) return null;
+    return "On USB this is the serial port's name (COM3, /dev/ttyUSB0), or blank for the first interface: " + value;
+  }
+  const host = readHost(text);
   if (host !== null && (!/^[0-9.]+$/.test(host) || IPV4.test(host))) return null;
   return "A DMX node is an IP address or a host name, or blank to reach every node: " + value;
 }

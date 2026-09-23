@@ -17,7 +17,7 @@ const { receiver: oscReceiver, listenOn, atMostOncePer, parse: parseOsc } = requ
 const { portsFromEnv } = require("./lib/ports");
 const { createMidi } = require("./lib/midi");
 const features = require("./lib/features");
-const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket } = require("./lib/dmx");
+const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket, createUsbDmx, isUsb } = require("./lib/dmx");
 const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
@@ -305,7 +305,7 @@ let dmxLine = null;
 const dmxSocket = openDmxSocket({
   port: DMX_PORT,
   onReady: (address) => {
-    dmxLine = "  DMX out (Art-Net, sACN) from UDP " + address.port;
+    dmxLine = "  DMX out (Art-Net, sACN) from UDP " + address.port + "; USB interfaces on their serial port";
     if (bannerShown) console.log(dmxLine);
   },
   onError: (err) => {
@@ -317,7 +317,22 @@ const dmxSocket = openDmxSocket({
   },
 });
 
-const dmx = createDmxOutput(dmxSocket.send, {
+// A USB interface (Enttec Pro, DMXKing, Open DMX) takes the frame on a serial
+// port instead of the network; lib/dmx/usb.js. The output does not know which
+// is which: it hands every frame here with where it is for.
+const usbDmx = createUsbDmx({
+  onError: atMostOncePer(5000, (err, path) => {
+    console.error("USB DMX" + (path ? " on " + path : "") + ": " + reason(err));
+  }),
+  onStatus: (text) => console.log(text),
+});
+
+function sendDmxFrame(packet, port, host, target) {
+  if (target && isUsb(target.protocol)) return usbDmx.send(target.protocol, host, packet);
+  return dmxSocket.send(packet, port, host);
+}
+
+const dmx = createDmxOutput(sendDmxFrame, {
   sourceName: "OSCAR " + pkg.version,
   // A node that cannot be reached fails on every keepalive; one line every
   // few seconds with a count is the same news without burying the log.
@@ -325,8 +340,12 @@ const dmx = createDmxOutput(dmxSocket.send, {
     console.error("DMX could not be sent: " + reason(err) + (missed ? " (and " + missed + " more)" : ""));
   }),
   onStream: (event, stream) => {
-    const where = stream.protocol + " universe " + stream.universe + " at " + stream.host + ":" + stream.port;
+    const where = isUsb(stream.protocol)
+      ? stream.protocol + " on " + (stream.host || "the first USB interface")
+      : stream.protocol + " universe " + stream.universe + " at " + stream.host + ":" + stream.port;
     console.log(event === "open" ? "DMX: driving " + where : "DMX: released " + where);
+    // The zero frame has gone; the serial port can be let go of.
+    if (event === "release" && isUsb(stream.protocol)) usbDmx.release(stream.protocol, stream.host).catch(() => {});
   },
 });
 
@@ -599,7 +618,7 @@ function shutdown() {
   // The channels are handed back before the socket goes, so the zero frames
   // and sACN's terminated packets actually leave; the fallback exit below
   // bounds how long an unreachable node can hold that up.
-  const released = DMX_HOLD_ON_EXIT ? Promise.resolve(dmx.close()) : dmx.stopAll();
+  const released = (DMX_HOLD_ON_EXIT ? Promise.resolve(dmx.close()) : dmx.stopAll()).then(() => usbDmx.close());
   released.then(() => dmxSocket.close());
   // Extensions get the same bounded wait the rig does.
   const letGo = Promise.all([released, extensions.stop()]);

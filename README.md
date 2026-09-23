@@ -231,7 +231,7 @@ from (OSCAR's source ports, `5001` and `5002`) is heard as well, so replies
 need no configuration. If the OSC-in port is busy or cannot be opened when
 OSCAR starts, it says so and carries on: sending is unaffected.
 
-### Driving lights directly (DMX over Art-Net and sACN)
+### Driving lights directly (DMX over Art-Net, sACN and USB)
 
 A button, slider or XY pad can drive lighting fixtures directly, with no
 lighting software in between. A widget's settings are grouped in collapsible
@@ -245,9 +245,9 @@ holds:
 
 | Setting | Meaning |
 | --- | --- |
-| **Protocol** | Art-Net (UDP 6454) or sACN / E1.31 (UDP 5568) |
-| **Node** | The node's address. Blank broadcasts on Art-Net and multicasts on sACN, which every node on that network hears |
-| **Universe** | `0`-`32767` on Art-Net (the 15-bit Port-Address), `1`-`63999` on sACN |
+| **Protocol** | Art-Net (UDP 6454), sACN / E1.31 (UDP 5568), or a USB interface on a serial port: **Enttec Pro** (also DMXKing and the many Pro-protocol clones) or **Open DMX** |
+| **Node or port** | On the network: the node's address; blank broadcasts on Art-Net and multicasts on sACN, which every node on that network hears. On USB: the serial port (`COM3`, `/dev/ttyUSB0`), a part of its name, or blank for the first interface found |
+| **Universe** | `0`-`32767` on Art-Net (the 15-bit Port-Address), `1`-`63999` on sACN, `1` on USB (an interface is one universe) |
 | **Channel** | The first channel of the widget's block, `1`-`512` |
 | **Channels** | How many channels from there |
 
@@ -276,6 +276,18 @@ releases everything unless `OSCAR_DMX_HOLD_ON_EXIT=1`, for a permanent
 installation that should hold its look through a restart. As with OSC, a
 value that cannot be read is dropped rather than sent as `0`: a dropped value
 must never black a rig out.
+
+A **USB interface** needs no network at all. An Enttec DMX USB Pro, a DMXKing
+ultraDMX or one of the many interfaces that speak the Pro protocol makes the
+DMX signal itself, so it is as dependable as a network node: OSCAR hands it
+the frame on every change and on the keepalive, and it repeats it on its own.
+An Enttec Open DMX USB or its clones is a bare serial chip, and this computer
+has to make the signal, forty frames a second, for as long as the universe is
+driven; that works, and a busy computer can show it as a flicker on the rig.
+Both use the serial driver OSCAR ships for boards. The port is opened when the
+first frame goes to it and held; an interface that is not there yet is
+reported once and looked for again every two seconds, so plugging it in later
+is enough.
 
 Packets leave from any free port (`OSCAR_DMX_PORT`), so OSCAR can run next to
 lighting software that itself receives Art-Net on 6454. If the port you pin
