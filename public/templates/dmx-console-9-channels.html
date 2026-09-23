@@ -587,12 +587,12 @@ body:not([data-osc-style="own"]) .dmx-scribble {
       <div id="dmx-block-programs" class="dmx-block dmx-block-programs" data-gjs-dmode="flow">
         <h3 id="dmx-block-programs-name" class="dmx-block-name" data-gjs-dmode="flow"><span id="dmx-block-programs-label" data-gjs-dmode="flow">Programs</span><span id="dmx-block-programs-ch" class="dmx-ch" data-gjs-dmode="flow">toggles</span></h3>
         <div id="dmx-programs" class="dmx-programs" data-gjs-dmode="flow">
-        <button id="dmx-red" class="dmx-key dmx-program dmx-program-red" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-sets-on="dmx-fader-4=255" data-gjs-sets-off="dmx-fader-4=0" data-gjs-message="/dmx/program/red" data-gjs-value-on="1" data-gjs-value-off="0">RED</button>
-        <button id="dmx-green" class="dmx-key dmx-program dmx-program-green" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-sets-on="dmx-fader-5=255" data-gjs-sets-off="dmx-fader-5=0" data-gjs-message="/dmx/program/green" data-gjs-value-on="1" data-gjs-value-off="0">GREEN</button>
-        <button id="dmx-blue" class="dmx-key dmx-program dmx-program-blue" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-sets-on="dmx-fader-6=255" data-gjs-sets-off="dmx-fader-6=0" data-gjs-message="/dmx/program/blue" data-gjs-value-on="1" data-gjs-value-off="0">BLUE</button>
-        <button id="dmx-white" class="dmx-key dmx-program dmx-program-white" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-sets-on="dmx-fader-7=255" data-gjs-sets-off="dmx-fader-7=0" data-gjs-message="/dmx/program/white" data-gjs-value-on="1" data-gjs-value-off="0">WHITE</button>
-        <button id="dmx-all" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-sets-on="dmx-fader-4=255, dmx-fader-5=255, dmx-fader-6=255, dmx-fader-7=255" data-gjs-sets-off="dmx-fader-4=0, dmx-fader-5=0, dmx-fader-6=0, dmx-fader-7=0" data-gjs-message="/dmx/program/all" data-gjs-value-on="1" data-gjs-value-off="0">ALL COLOURS</button>
-        <button id="dmx-fast" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-sets-on="dmx-fader-8=255" data-gjs-sets-off="dmx-fader-8=0" data-gjs-message="/dmx/program/fast" data-gjs-value-on="1" data-gjs-value-off="0">FAST MOVES</button>
+        <button id="dmx-red" class="dmx-key dmx-program dmx-program-red" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/dmx/program/red" data-gjs-value-on="1" data-gjs-value-off="0">RED</button>
+        <button id="dmx-green" class="dmx-key dmx-program dmx-program-green" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/dmx/program/green" data-gjs-value-on="1" data-gjs-value-off="0">GREEN</button>
+        <button id="dmx-blue" class="dmx-key dmx-program dmx-program-blue" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/dmx/program/blue" data-gjs-value-on="1" data-gjs-value-off="0">BLUE</button>
+        <button id="dmx-white" class="dmx-key dmx-program dmx-program-white" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/dmx/program/white" data-gjs-value-on="1" data-gjs-value-off="0">WHITE</button>
+        <button id="dmx-all" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/dmx/program/all" data-gjs-value-on="1" data-gjs-value-off="0">ALL COLOURS</button>
+        <button id="dmx-slow" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/dmx/program/slow" data-gjs-value-on="1" data-gjs-value-off="0">SLOW MOVES</button>
         </div>
       </div>
     </div>
@@ -693,7 +693,7 @@ body:not([data-osc-style="own"]) .dmx-scribble {
       <div id="dmx-manual-row-7" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-7" class="dmx-manual-key" data-gjs-dmode="flow">CH8</dt>
         <dd id="dmx-manual-address-7" class="dmx-manual-address" data-gjs-dmode="flow">Pan and tilt speed</dd>
-        <dd id="dmx-manual-note-7" class="dmx-manual-note" data-gjs-dmode="flow">The FAST MOVES program sends full.</dd>
+        <dd id="dmx-manual-note-7" class="dmx-manual-note" data-gjs-dmode="flow">0 is fastest, 255 slowest on this fixture; SLOW MOVES puts fader 8 at full.</dd>
       </div>
       <div id="dmx-manual-row-8" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-8" class="dmx-manual-key" data-gjs-dmode="flow">CH9</dt>
@@ -708,7 +708,7 @@ body:not([data-osc-style="own"]) .dmx-scribble {
       <div id="dmx-manual-row-10" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-10" class="dmx-manual-key" data-gjs-dmode="flow">Programs</dt>
         <dd id="dmx-manual-address-10" class="dmx-manual-address" data-gjs-dmode="flow">They work the faders</dd>
-        <dd id="dmx-manual-note-10" class="dmx-manual-note" data-gjs-dmode="flow">A program sends nothing of its own: on, it puts the faders of its channels at full, and they send; off, it puts them at 0. Its "When on, sets" and "When off, sets" say which, by the faders' ids: dmx-fader-4=255.</dd>
+        <dd id="dmx-manual-note-10" class="dmx-manual-note" data-gjs-dmode="flow">A program sends nothing of its own: on, it puts the faders of its channels at full, and they send; off, it puts them at 0. The script at the end of the page says which faders each one works.</dd>
       </div>
     </dl>
     <p id="dmx-manual-foot" class="dmx-manual-foot" data-gjs-dmode="flow">A second fixture at address 10 in the same mode: copy the desk and add 9 to every Channel.</p>
@@ -737,27 +737,45 @@ body:not([data-osc-style="own"]) .dmx-scribble {
   }
 
   // The pad: the widget keeps its position in --oscar-x / --oscar-y, left and top in percent.
-  var padShown = null; // what the faders last put it at, so the pad's answer is not sent back
+  // While a finger is on it, nothing else may move it: a press from here would end the drag.
+  var dragging = false, pressing = false;
   function padLevels() {
     var x = parseFloat(pad.style.getPropertyValue("--oscar-x")); if (isNaN(x)) x = 0;
     var y = parseFloat(pad.style.getPropertyValue("--oscar-y")); if (isNaN(y)) y = 100;
-    return [x / 100 * 255, (1 - y / 100) * 255];
+    return [clamp(x / 100 * 255), clamp((1 - y / 100) * 255)];
   }
   function movePad(x, y) {
     var r = pad.getBoundingClientRect(); if (!r.width || !r.height) return;
-    padShown = [clamp(x), clamp(y)];
     var cx = r.left + x / 255 * r.width, cy = r.top + (1 - y / 255) * r.height;
-    ["pointerdown", "pointerup"].forEach(function (type) {
-      pad.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: cx, clientY: cy, pointerId: 1, isPrimary: true, button: 0 }));
-    });
+    pressing = true;
+    try {
+      ["pointerdown", "pointerup"].forEach(function (type) {
+        pad.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: cx, clientY: cy, pointerId: 1, isPrimary: true, button: 0 }));
+      });
+    } finally { pressing = false; }
   }
   if (pad) {
+    pad.addEventListener("pointerdown", function () { if (!pressing) dragging = true; });
+    ["pointerup", "pointercancel"].forEach(function (type) { pad.addEventListener(type, function () { if (!pressing) dragging = false; }); });
     new MutationObserver(function () {
-      var l = padLevels().map(clamp);
-      if (padShown && padShown[0] === l[0] && padShown[1] === l[1]) return;
+      var l = padLevels();
       guard(function () { setFader(1, l[0]); setFader(2, l[1]); });
     }).observe(pad, { attributes: true, attributeFilter: ["style"] });
   }
+
+  // The programs: a toggle lit puts its faders at full; let go, at 0. Watched by their
+  // class, so a program switched on another device works the faders here too.
+  var PROGRAMS = { "red": [4], "green": [5], "blue": [6], "white": [7], "all": [4, 5, 6, 7], "slow": [8] };
+  Object.keys(PROGRAMS).forEach(function (id) {
+    var key = byId("dmx-" + id); if (!key) return;
+    var was = key.classList.contains("toggle");
+    new MutationObserver(function () {
+      var on = key.classList.contains("toggle");
+      if (on === was) return;
+      was = on;
+      guard(function () { PROGRAMS[id].forEach(function (n) { setFader(n, on ? 255 : 0); }); });
+    }).observe(key, { attributes: true, attributeFilter: ["class"] });
+  });
 
   // The swatch: r, g, b are faders 4, 5, 6.
   var hex = function (n) { return ("0" + clamp(n).toString(16)).slice(-2); };
@@ -782,7 +800,8 @@ body:not([data-osc-style="own"]) .dmx-scribble {
   function follow() {
     var v = {}; for (var n = 1; n <= 9; n++) { var el = fader(n); v[n] = el ? clamp(el.value) : 0; }
     guard(function () {
-      if (pad && (shown[1] !== v[1] || shown[2] !== v[2])) movePad(v[1], v[2]);
+      // The pad is moved only when it is not where the faders are, and never under a finger.
+      if (pad && !dragging) { var at = padLevels(); if (at[0] !== v[1] || at[1] !== v[2]) movePad(v[1], v[2]); }
       if (swatch && (shown[4] !== v[4] || shown[5] !== v[5] || shown[6] !== v[6])) {
         var h = "#" + hex(v[4]) + hex(v[5]) + hex(v[6]);
         if (swatch.value.toLowerCase() !== h) { swatch.value = h; swatch.dispatchEvent(new Event("input", { bubbles: true })); }

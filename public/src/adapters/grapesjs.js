@@ -12,7 +12,6 @@ var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS 
 var features = require("../../../lib/features");
 var { isListening } = require("../../../lib/midi/spec");
 var { midiSource } = require("../../../lib/widgets/midi-source");
-var { registerDrivable } = require("./drive");
 var { exportAttributes } = require("../../../lib/export/config");
 
 /**
@@ -386,16 +385,6 @@ function contextFor(view, editor) {
         });
       };
     };
-  }
-
-  // One control working another (a program key and the faders): ctx.drive.
-  // The register is the editor's, so the canvas and the preview each keep
-  // their own; a control attached again replaces its entry.
-  if (definition) {
-    editor.oscarLive = editor.oscarLive || {};
-    registerDrivable(editor.oscarLive, model.getId(), ctx, definition, function () {
-      return configOf(model, definition);
-    });
   }
 
   return ctx;

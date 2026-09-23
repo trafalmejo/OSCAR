@@ -23,7 +23,6 @@
 var { readWidget, WIDGET_SELECTOR } = require("../../../lib/export/config");
 var { readHost, readPort } = require("../../../lib/export/connection");
 var { midiSource } = require("../../../lib/widgets/midi-source");
-var { registerDrivable } = require("./drive");
 
 /**
  * Where OSCAR's bridge is: { host, port }, or { error }.
@@ -123,9 +122,8 @@ function connected(bridge) {
  * @param {Function} [onDropped] called for each message dropped because the
  *        bridge was away
  * @param {object} [definition] the widget's definition, for what MIDI does to it
- * @param {object} [register] the page's live controls, id -> entry (adapters/drive.js)
  */
-function contextFor(el, config, bridge, id, onDropped, definition, register) {
+function contextFor(el, config, bridge, id, onDropped, definition) {
   var delivering = 0;
   var adopting = 0;
 
@@ -271,13 +269,6 @@ function contextFor(el, config, bridge, id, onDropped, definition, register) {
     };
   }
 
-  // One control working another (a program key and the faders): ctx.drive.
-  if (register && definition) {
-    registerDrivable(register, id, ctx, definition, function () {
-      return config;
-    });
-  }
-
   return ctx;
 }
 
@@ -305,8 +296,6 @@ function attachAll(root, bridge, onDropped) {
   var elements = root.querySelectorAll(WIDGET_SELECTOR);
   var detachers = [];
   var inert = 0;
-  // The page's live controls, for one to drive another (adapters/drive.js).
-  var register = {};
 
   for (var i = 0; i < elements.length; i++) {
     var el = elements[i];
@@ -321,7 +310,7 @@ function attachAll(root, bridge, onDropped) {
 
     var id = (typeof el.getAttribute === "function" && el.getAttribute("id")) || null;
     try {
-      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id, onDropped, widget.definition, register)));
+      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id, onDropped, widget.definition)));
     } catch (err) {
       // One control that cannot start must not take the surface with it.
       inert++;
