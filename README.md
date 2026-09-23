@@ -439,7 +439,7 @@ grid, layer strips, crossfader, master, tempo; Resolume's own addresses, port
 cue sheet; QLab's own addresses, port 53000, every key a bare address sent
 once) and the **TouchDesigner Parameter Rack** (parameters out, an audio level and a sensor back in, with the two-CHOP recipe on its card; an OSC In CHOP listens on port 10000; next to it in `public/templates/` is `touchdesigner-parameter-rack.py`, a script that builds the whole demo network inside TouchDesigner in one go, so the picture moves and the two meters read something; it wears the Sci-fi HUD style rather than a look of its own). The **DMX Console, 9 Channels** is a
 classic desk for a nine-channel RGBW moving head, every control sending DMX
-and no OSC: nine strips with a fader and a FLASH key, a pan/tilt pad, a colour
+to an Open DMX USB interface (switch the protocol for another) and no OSC: nine strips with a fader and a FLASH key, a pan/tilt pad, a colour
 swatch for the three colour channels, dropdowns for the dimmer/strobe modes
 and reset, and program keys. **Big Thumb** puts one control on each screen of a phone, the size of a
 hand. The rest are objects to play with: a boombox, a walkie-talkie, an arcade
