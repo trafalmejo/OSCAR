@@ -178,6 +178,13 @@ message in the settings panel (the gear icon).
 | **Slider** | its value as it moves, with optional inverted range |
 | **XY Pad** | both values at once — `/pad 30 70` — or as `/pad/x` and `/pad/y` |
 
+A button can also work the other controls on its surface. **When on, sets**
+and **When off, sets** take a list of controls by id and the state to put each
+in: `fader-4=255, fader-5=0, go=on, pad=128;64`. Each moves and sends as if a
+hand had moved it, and the other devices see it move, so a program key on a
+lighting desk puts the faders where the look wants them and the faders do
+the rest. A control's id is in the settings panel, and in the project file.
+
 On the XY pad, Y increases upward, and either axis can be inverted. Dragging
 sends at most one message per frame, and always sends the exact value where
 you let go.
