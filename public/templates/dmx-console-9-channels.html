@@ -354,6 +354,10 @@
   color: #f1f3f6;
 }
 
+.dmx-noflash {
+  visibility: hidden;
+}
+
 .dmx-flash.toggle {
   transform: translateY(2px);
 }
@@ -583,12 +587,12 @@ body:not([data-osc-style="own"]) .dmx-scribble {
       <div id="dmx-block-programs" class="dmx-block dmx-block-programs" data-gjs-dmode="flow">
         <h3 id="dmx-block-programs-name" class="dmx-block-name" data-gjs-dmode="flow"><span id="dmx-block-programs-label" data-gjs-dmode="flow">Programs</span><span id="dmx-block-programs-ch" class="dmx-ch" data-gjs-dmode="flow">toggles</span></h3>
         <div id="dmx-programs" class="dmx-programs" data-gjs-dmode="flow">
-        <button id="dmx-red" class="dmx-key dmx-program dmx-program-red" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/red" data-gjs-value-on="1" data-gjs-value-off="0">RED</button>
-        <button id="dmx-green" class="dmx-key dmx-program dmx-program-green" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/green" data-gjs-value-on="1" data-gjs-value-off="0">GREEN</button>
-        <button id="dmx-blue" class="dmx-key dmx-program dmx-program-blue" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/blue" data-gjs-value-on="1" data-gjs-value-off="0">BLUE</button>
-        <button id="dmx-white" class="dmx-key dmx-program dmx-program-white" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/white" data-gjs-value-on="1" data-gjs-value-off="0">WHITE</button>
-        <button id="dmx-all" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="4" data-gjs-message="/dmx/program/all" data-gjs-value-on="1" data-gjs-value-off="0">ALL COLOURS</button>
-        <button id="dmx-fast" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/program/fast" data-gjs-value-on="1" data-gjs-value-off="0">FAST MOVES</button>
+        <button id="dmx-red" class="dmx-key dmx-program dmx-program-red" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="true" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/4" data-gjs-value-on="255" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-ip="127.0.0.1" data-gjs-port="9000">RED</button>
+        <button id="dmx-green" class="dmx-key dmx-program dmx-program-green" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="true" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/5" data-gjs-value-on="255" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-ip="127.0.0.1" data-gjs-port="9000">GREEN</button>
+        <button id="dmx-blue" class="dmx-key dmx-program dmx-program-blue" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="true" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/6" data-gjs-value-on="255" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-ip="127.0.0.1" data-gjs-port="9000">BLUE</button>
+        <button id="dmx-white" class="dmx-key dmx-program dmx-program-white" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="true" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/7" data-gjs-value-on="255" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-ip="127.0.0.1" data-gjs-port="9000">WHITE</button>
+        <button id="dmx-all" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="true" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="4" data-gjs-message="/dmx/ch/[4-7]" data-gjs-value-on="255" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-ip="127.0.0.1" data-gjs-port="9000">ALL COLOURS</button>
+        <button id="dmx-fast" class="dmx-key dmx-program" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="true" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/8" data-gjs-value-on="255" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-ip="127.0.0.1" data-gjs-port="9000">FAST MOVES</button>
         </div>
       </div>
     </div>
@@ -596,56 +600,56 @@ body:not([data-osc-style="own"]) .dmx-scribble {
     <div id="dmx-strips" class="dmx-strips" data-gjs-dmode="flow">
     <div id="dmx-strip-1" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-1" class="dmx-number" data-gjs-dmode="flow">CH 1</p>
-      <input id="dmx-fader-1" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/1" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <input id="dmx-fader-1" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/1" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
       <button id="dmx-flash-1" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/1" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
       <p id="dmx-scribble-1" class="dmx-scribble" data-gjs-dmode="flow">PAN</p>
     </div>
     <div id="dmx-strip-2" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-2" class="dmx-number" data-gjs-dmode="flow">CH 2</p>
-      <input id="dmx-fader-2" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="2" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/2" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <input id="dmx-fader-2" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="2" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/2" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
       <button id="dmx-flash-2" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="2" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/2" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
       <p id="dmx-scribble-2" class="dmx-scribble" data-gjs-dmode="flow">TILT</p>
     </div>
     <div id="dmx-strip-3" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-3" class="dmx-number" data-gjs-dmode="flow">CH 3</p>
-      <input id="dmx-fader-3" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/3" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
-      <button id="dmx-flash-3" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/3" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <input id="dmx-fader-3" class="dmx-fader" type="range" step="1" min="0" max="134" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/3" data-gjs-min="0" data-gjs-max="134" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <div id="dmx-noflash-3" class="dmx-flash dmx-noflash" data-gjs-dmode="flow"></div>
       <p id="dmx-scribble-3" class="dmx-scribble" data-gjs-dmode="flow">DIM / STROBE</p>
     </div>
     <div id="dmx-strip-4" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-4" class="dmx-number" data-gjs-dmode="flow">CH 4</p>
-      <input id="dmx-fader-4" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/4" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <input id="dmx-fader-4" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/4" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
       <button id="dmx-flash-4" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/4" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
       <p id="dmx-scribble-4" class="dmx-scribble" data-gjs-dmode="flow">RED</p>
     </div>
     <div id="dmx-strip-5" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-5" class="dmx-number" data-gjs-dmode="flow">CH 5</p>
-      <input id="dmx-fader-5" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/5" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <input id="dmx-fader-5" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/5" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
       <button id="dmx-flash-5" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/5" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
       <p id="dmx-scribble-5" class="dmx-scribble" data-gjs-dmode="flow">GREEN</p>
     </div>
     <div id="dmx-strip-6" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-6" class="dmx-number" data-gjs-dmode="flow">CH 6</p>
-      <input id="dmx-fader-6" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/6" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <input id="dmx-fader-6" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/6" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
       <button id="dmx-flash-6" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/6" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
       <p id="dmx-scribble-6" class="dmx-scribble" data-gjs-dmode="flow">BLUE</p>
     </div>
     <div id="dmx-strip-7" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-7" class="dmx-number" data-gjs-dmode="flow">CH 7</p>
-      <input id="dmx-fader-7" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/7" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <input id="dmx-fader-7" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/7" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
       <button id="dmx-flash-7" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/7" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
       <p id="dmx-scribble-7" class="dmx-scribble" data-gjs-dmode="flow">WHITE</p>
     </div>
     <div id="dmx-strip-8" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-8" class="dmx-number" data-gjs-dmode="flow">CH 8</p>
-      <input id="dmx-fader-8" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/8" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
+      <input id="dmx-fader-8" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/8" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
       <button id="dmx-flash-8" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/8" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
       <p id="dmx-scribble-8" class="dmx-scribble" data-gjs-dmode="flow">SPEED</p>
     </div>
     <div id="dmx-strip-9" class="dmx-strip" data-gjs-dmode="flow">
       <p id="dmx-number-9" class="dmx-number" data-gjs-dmode="flow">CH 9</p>
-      <input id="dmx-fader-9" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/9" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i">
-      <button id="dmx-flash-9" class="dmx-key dmx-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/9" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <input id="dmx-fader-9" class="dmx-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="artnet" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/9" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <div id="dmx-noflash-9" class="dmx-flash dmx-noflash" data-gjs-dmode="flow"></div>
       <p id="dmx-scribble-9" class="dmx-scribble" data-gjs-dmode="flow">RESET</p>
     </div>
     </div>
@@ -669,7 +673,7 @@ body:not([data-osc-style="own"]) .dmx-scribble {
       <div id="dmx-manual-row-3" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-3" class="dmx-manual-key" data-gjs-dmode="flow">CH3</dt>
         <dd id="dmx-manual-address-3" class="dmx-manual-address" data-gjs-dmode="flow">Off, dimmer, strobe, switch</dd>
-        <dd id="dmx-manual-note-3" class="dmx-manual-note" data-gjs-dmode="flow">The dropdown picks a mode by its exact value; the fader sweeps the whole channel, 0 to 255, off to switch.</dd>
+        <dd id="dmx-manual-note-3" class="dmx-manual-note" data-gjs-dmode="flow">The fader is the dimmer, 0 to 134, full at the top. Strobe and switch are past that: the dropdown picks them by their exact value.</dd>
       </div>
       <div id="dmx-manual-row-4" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-4" class="dmx-manual-key" data-gjs-dmode="flow">CH4 to CH6</dt>
@@ -694,7 +698,12 @@ body:not([data-osc-style="own"]) .dmx-scribble {
       <div id="dmx-manual-row-8" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-8" class="dmx-manual-key" data-gjs-dmode="flow">FLASH</dt>
         <dd id="dmx-manual-address-8" class="dmx-manual-address" data-gjs-dmode="flow">Full while held</dd>
-        <dd id="dmx-manual-note-8" class="dmx-manual-note" data-gjs-dmode="flow">Each strip's key sends 255 on its channel for as long as it is down, over the fader.</dd>
+        <dd id="dmx-manual-note-8" class="dmx-manual-note" data-gjs-dmode="flow">Each strip's key sends 255 on its channel for as long as it is down, over the fader. Not on CH3 or CH9, where 255 is not a level.</dd>
+      </div>
+      <div id="dmx-manual-row-9" class="dmx-manual-row" data-gjs-dmode="flow">
+        <dt id="dmx-manual-key-9" class="dmx-manual-key" data-gjs-dmode="flow">Programs</dt>
+        <dd id="dmx-manual-address-9" class="dmx-manual-address" data-gjs-dmode="flow">DMX, and the faders follow</dd>
+        <dd id="dmx-manual-note-9" class="dmx-manual-note" data-gjs-dmode="flow">A program lights its channels and also tells OSCAR itself, over OSC to 127.0.0.1 port 9000, so the faders on those channels move with it and drop when it is switched off. If OSCAR listens on another port (the top bar says), select the six programs and set Port.</dd>
       </div>
     </dl>
     <p id="dmx-manual-foot" class="dmx-manual-foot" data-gjs-dmode="flow">A second fixture at address 10 in the same mode: copy the desk and add 9 to every Channel.</p>
