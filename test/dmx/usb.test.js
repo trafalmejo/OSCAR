@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { createUsbDmx, pickPort, proPacket, openDmxPacket, portSettings, OPEN_RETRY_MS, OPEN_DMX_FRAME_MS } = require("../../lib/dmx/usb");
+const { createUsbDmx, pickPort, proPacket, openDmxPacket, portSettings, OPEN_RETRY_MS, OPEN_DMX_FRAME_MS, LIST_TTL_MS } = require("../../lib/dmx/usb");
 const { createDmxOutput } = require("../../lib/dmx/output");
 const { buildRequest } = require("../../lib/dmx/request");
 const { PROTOCOLS, isUsb, defaultHost, readTarget } = require("../../lib/dmx/spec");
@@ -198,6 +198,59 @@ test("no interface, or one that cannot be opened: said once, and tried again aft
   }
   assert.strictEqual(busy.opened.length, 1, "tried again, and it worked");
   assert.strictEqual(busy.opened[0].written[0][5], 3);
+});
+
+test("the ports are listed once for many frames, not once a frame: listing takes seconds on a Raspberry Pi", async () => {
+  let lists = 0;
+  let finish = null;
+  const ports = [{ path: "/dev/ttyUSB0", manufacturer: "FTDI", vendorId: "0403" }];
+  const opened = [];
+  const usb = createUsbDmx({
+    // A slow listing, as `udevadm info -e` is on a Pi 1: it answers only when told to.
+    list: () => {
+      lists++;
+      return new Promise((resolve) => (finish = () => resolve(ports)));
+    },
+    open: async (path) => {
+      const port = fakePort(path);
+      opened.push(port);
+      return port;
+    },
+    clock: fakeClock(),
+  });
+
+  // A fader's worth of frames while the first listing is still running.
+  const sends = [];
+  for (let i = 0; i < 40; i++) sends.push(usb.send("usbpro", "", frame(i)));
+  await settle();
+  assert.strictEqual(lists, 1, "one listing, shared by every frame that asked");
+  finish();
+  await Promise.all(sends);
+  assert.strictEqual(opened.length, 1);
+  assert.strictEqual(opened[0].written.length, 40, "every frame went out once the list came back");
+
+  // Kept for a while: more frames, no more listings.
+  for (let i = 0; i < 40; i++) await usb.send("usbpro", "", frame(i));
+  assert.strictEqual(lists, 1);
+
+  // Stale after LIST_TTL_MS, and forgotten at once when a port goes away.
+  const realNow = Date.now;
+  Date.now = () => realNow() + LIST_TTL_MS + 1;
+  try {
+    const later = usb.send("usbpro", "", frame(1));
+    await settle();
+    assert.strictEqual(lists, 2, "listed again once the list is old");
+    finish();
+    await later;
+  } finally {
+    Date.now = realNow;
+  }
+  opened[0].handlers.close();
+  const after = usb.send("usbpro", "", frame(2));
+  await settle();
+  assert.strictEqual(lists, 3, "a port that closed means the list may be wrong");
+  finish();
+  await after;
 });
 
 // ---- through the output ----------------------------------------------------------
