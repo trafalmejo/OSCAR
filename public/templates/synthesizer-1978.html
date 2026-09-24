@@ -1,0 +1,932 @@
+<!doctype html>
+<html>
+<head>
+<title>Synthesizer, 1978</title>
+<!--
+  Synthesizer, 1978: walnut end cheeks, a black panel with coloured fader
+  caps, a red LED program display, pitch and mod wheels, and a 25-key bed
+  from C3 to C5. Every control sends MIDI, not OSC, on channel 1, to the
+  first MIDI output this computer has. On Windows that is usually the
+  Microsoft GS Wavetable Synth, so the keys make a sound straight away. To
+  play a synth or a DAW instead, pick its port under MIDI > Out port on
+  each control, or make a loopMIDI port and pick that.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings: data-gjs-midi-type,
+    -midi-number and -midi-channel say what it sends, and
+    data-gjs-osc-enabled="false" keeps OSC quiet. data-gjs-message is still
+    there, so switching OSC on in a control's settings sends to it too.
+    data-gjs-dmode="flow" makes a part move through the layout when dragged
+    instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the whole instrument is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
+
+  How the keys are made. Each key is an OSCAR button in momentary mode:
+  pressed, it sends Value ON, which MIDI reads as full, so a note on at
+  velocity 127; let go, Value OFF, a note off. The keybed is one grid of
+  45 columns, three to a white key, and a black key takes the two
+  columns either side of the line between two white keys, in the top row
+  only. OSCAR puts the class "toggle" on a key that is down, which is what
+  draws it pressed, on this device and on every other one showing the page.
+
+  The script at the end does two things a hand would: it lets go of the
+  pitch wheel, which springs back to the middle, and it plays the keys from
+  the computer keyboard by pressing them. Both go through the widgets, so
+  what they send is what a finger would send.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's
+  Tablet and Mobile views, so edits made in those views land in the same
+  media queries.
+
+  MIDI, all on channel 1:
+    keys        notes 48-72
+    SUSTAIN     CC 64 (latching)
+    PITCH       pitch bend (springs back)
+    MOD         CC 1
+    CUTOFF      CC 74    RESONANCE  CC 71
+    ATTACK      CC 73    DECAY      CC 75    RELEASE  CC 72
+    VOLUME      CC 7
+    PROGRAM     program change (General MIDI numbers)
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #17120d;
+  --osc-foreground: #ece3cf;
+  --osc-card: #26221e;
+  --osc-muted: #121110;
+  --osc-accent: #3a3530;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #050505;
+  --osc-input: #050505;
+  --osc-primary: #e0622a;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #f2b632;
+  --osc-radius: 4px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* A studio at night: one warm lamp over the keys. */
+.syn {
+  display: grid;
+  grid-template-columns: min(1120px, 100%);
+  justify-content: center;
+  align-content: start;
+  gap: 44px;
+  min-height: 100vh;
+  padding: 44px 24px 56px;
+  box-sizing: border-box;
+}
+[data-osc-style="own"] .syn {
+  background:
+    radial-gradient(70% 55% at 50% 0%, rgba(255, 190, 110, 0.18), rgba(0, 0, 0, 0)),
+    linear-gradient(180deg, #2a1f15, #120d09);
+  color: #ece3cf;
+}
+
+/* ---- the case: two walnut cheeks either side of the instrument ---------------------------------- */
+.syn-case {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  border-radius: 8px;
+}
+[data-osc-style="own"] .syn-case {
+  box-shadow: 0 40px 50px -20px rgba(0, 0, 0, 0.85), 0 6px 0 #0b0806;
+}
+
+.syn-cheek {
+  display: block;
+}
+.syn-cheek-left {
+  border-radius: 8px 0 0 8px;
+}
+.syn-cheek-right {
+  border-radius: 0 8px 8px 0;
+}
+[data-osc-style="own"] .syn-cheek {
+  background:
+    repeating-linear-gradient(178deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 9px, rgba(255, 255, 255, 0.05) 9px 11px, rgba(0, 0, 0, 0) 11px 19px),
+    linear-gradient(90deg, #5a3419, #8a5530 45%, #6b3f20);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.18), inset 0 -4px 6px rgba(0, 0, 0, 0.45);
+}
+
+.syn-body {
+  display: grid;
+  grid-template-rows: auto auto;
+  min-width: 0;
+}
+
+/* ---- the panel: brand strip, then the sections -------------------------------------------------- */
+.syn-panel {
+  display: grid;
+  gap: 16px;
+  padding: 16px 22px 20px;
+}
+[data-osc-style="own"] .syn-panel {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    linear-gradient(180deg, #24211e, #151412);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 0 #000000;
+  color: #ece3cf;
+}
+
+.syn-badge {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 10px;
+}
+[data-osc-style="own"] .syn-badge {
+  border-bottom: 2px solid #e0622a;
+}
+
+.syn-brand {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  line-height: 1;
+}
+
+.syn-model {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+[data-osc-style="own"] .syn-model {
+  color: #b9ae98;
+}
+
+.syn-sections {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  justify-content: space-between;
+  align-items: start;
+  gap: 18px 22px;
+}
+
+.syn-section {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.syn-section-title {
+  display: block;
+  padding: 2px 8px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-align: center;
+  text-transform: uppercase;
+}
+[data-osc-style="own"] .syn-section-title {
+  background: #e0622a;
+  color: #120d09;
+}
+[data-osc-style="own"] .syn-section-envelope .syn-section-title {
+  background: #e8b23a;
+}
+[data-osc-style="own"] .syn-section-output .syn-section-title {
+  background: #d9d0bb;
+}
+
+.syn-faders {
+  display: grid;
+  grid-auto-flow: column;
+  justify-content: center;
+  gap: 14px;
+}
+
+.syn-fader {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.syn-fader input[type="range"] {
+  width: 30px;
+  height: 118px;
+}
+[data-osc-style="own"] .syn-fader input[type="range"] {
+  --osc-primary: #050505;
+  --osc-muted: #050505;
+  --osc-track-size: 6px;
+  --osc-thumb: 22px;
+}
+
+[data-osc-style="own"] .syn-fader input[type="range"]::-webkit-slider-thumb {
+  width: 26px;
+  height: 16px;
+  margin-left: -10px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f07a3c 0 42%, #1a1a1a 42% 58%, #b8501f 58%);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.6);
+}
+[data-osc-style="own"] .syn-fader input[type="range"]::-moz-range-thumb {
+  width: 26px;
+  height: 16px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f07a3c 0 42%, #1a1a1a 42% 58%, #b8501f 58%);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.6);
+}
+[data-osc-style="own"] .syn-section-envelope input[type="range"]::-webkit-slider-thumb {
+  background: linear-gradient(180deg, #f2c350 0 42%, #1a1a1a 42% 58%, #c08c1c 58%);
+}
+[data-osc-style="own"] .syn-section-envelope input[type="range"]::-moz-range-thumb {
+  background: linear-gradient(180deg, #f2c350 0 42%, #1a1a1a 42% 58%, #c08c1c 58%);
+}
+[data-osc-style="own"] .syn-section-output input[type="range"]::-webkit-slider-thumb {
+  background: linear-gradient(180deg, #f1ebdc 0 42%, #1a1a1a 42% 58%, #b9b09c 58%);
+}
+[data-osc-style="own"] .syn-section-output input[type="range"]::-moz-range-thumb {
+  background: linear-gradient(180deg, #f1ebdc 0 42%, #1a1a1a 42% 58%, #b9b09c 58%);
+}
+
+.syn-legend {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.syn-cc {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+[data-osc-style="own"] .syn-cc {
+  color: #8c8372;
+}
+
+/* ---- the program display: a red LED window ------------------------------------------------------ */
+.syn-program {
+  display: grid;
+  gap: 10px;
+  min-width: 190px;
+}
+
+#syn-program-select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[data-osc-style="own"] #syn-program-select {
+  border: 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #2a0805, #160302);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 0 2px #050505, 0 1px 0 2px rgba(255, 255, 255, 0.1);
+  color: #ff4a2a;
+  text-shadow: 0 0 6px rgba(255, 74, 42, 0.8);
+}
+
+.syn-program-note {
+  margin: 0;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+}
+[data-osc-style="own"] .syn-program-note {
+  color: #8c8372;
+}
+
+/* ---- the playing area: wheels at the left, then the keys ---------------------------------------- */
+.syn-play {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+}
+[data-osc-style="own"] .syn-play {
+  background: linear-gradient(180deg, #0d0c0b, #1b1917);
+}
+
+.syn-controllers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  justify-items: center;
+  gap: 10px 8px;
+  padding: 14px 10px 16px;
+}
+
+#syn-sustain {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  transition: none;
+}
+[data-osc-style="own"] #syn-sustain {
+  border: 0;
+  background: linear-gradient(180deg, #3b3632, #26221f);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 0 0 2px #050505, 0 3px 0 2px #000000;
+  color: #d9d0bb;
+}
+[data-osc-style="own"] #syn-sustain:hover {
+  background: linear-gradient(180deg, #45403b, #2d2925);
+}
+#syn-sustain.toggle,
+#syn-sustain.toggle:hover {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] #syn-sustain.toggle,
+[data-osc-style="own"] #syn-sustain.toggle:hover {
+  background: linear-gradient(180deg, #26221f, #3b3632);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), inset 0 -3px 0 #e0622a, 0 0 0 2px #050505;
+  color: #ff8a54;
+}
+
+.syn-wheel {
+  display: grid;
+  justify-items: center;
+  align-content: end;
+  gap: 6px;
+}
+
+.syn-wheel input[type="range"] {
+  width: 34px;
+  height: 130px;
+}
+[data-osc-style="own"] .syn-wheel input[type="range"] {
+  --osc-primary: #050505;
+  --osc-muted: #050505;
+  --osc-track-size: 26px;
+  --osc-thumb: 30px;
+  border-radius: 4px;
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.9), 0 0 0 2px #050505;
+}
+
+/* The wheel's edge under the finger: ridged, as rubber is. */
+[data-osc-style="own"] .syn-wheel input[type="range"]::-webkit-slider-thumb {
+  width: 24px;
+  height: 30px;
+  margin-left: -1px;
+  border: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(180deg, #4a4540 0 2px, #1c1a18 2px 4px);
+  box-shadow: 0 0 0 1px #000000, 0 0 8px rgba(0, 0, 0, 0.8);
+}
+[data-osc-style="own"] .syn-wheel input[type="range"]::-moz-range-thumb {
+  width: 24px;
+  height: 30px;
+  border: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(180deg, #4a4540 0 2px, #1c1a18 2px 4px);
+  box-shadow: 0 0 0 1px #000000, 0 0 8px rgba(0, 0, 0, 0.8);
+}
+
+[data-osc-style="own"] .syn-wheel .syn-legend {
+  color: #b9ae98;
+}
+
+/* ---- the keybed ----------------------------------------------------------------------------------- */
+.syn-keybed {
+  display: grid;
+  grid-template-columns: repeat(45, minmax(0, 1fr));
+  grid-template-rows: 62% 38%;
+  height: 210px;
+  padding: 0 6px 8px 0;
+}
+[data-osc-style="own"] .syn-keybed {
+  background: linear-gradient(180deg, #7a1d12 0 5px, #0d0c0b 5px);
+}
+
+.syn-key {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 8px;
+  border-radius: 0 0 5px 5px;
+  font-size: 0;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  transition: none;
+  touch-action: none;
+}
+
+.syn-white {
+  grid-row: 1 / 3;
+  z-index: 1;
+}
+
+.syn-black {
+  grid-row: 1 / 2;
+  z-index: 2;
+  border-radius: 0 0 3px 3px;
+}
+
+/* Only the Cs are named, as on the real thing. */
+.syn-c {
+  font-size: 9px;
+}
+
+[data-osc-style="own"] .syn-white {
+  border: 0;
+  background: linear-gradient(180deg, #e9e0c9, #f6efdd 70%, #ddd2b8);
+  box-shadow: inset -1px 0 0 #8a806c, inset 0 -6px 0 #cbbf9f, 0 2px 2px rgba(0, 0, 0, 0.4);
+  color: #6b604c;
+}
+[data-osc-style="own"] .syn-white:hover {
+  background: linear-gradient(180deg, #efe7d1, #fbf5e5 70%, #e3d8bf);
+}
+[data-osc-style="own"] .syn-white.toggle,
+[data-osc-style="own"] .syn-white.toggle:hover {
+  background: linear-gradient(180deg, #d4c9ae, #e6dcc3 70%, #d4c9ae);
+  box-shadow: inset -1px 0 0 #8a806c, inset 0 -2px 0 #cbbf9f, inset 0 6px 8px -4px rgba(0, 0, 0, 0.45);
+}
+
+[data-osc-style="own"] .syn-black {
+  border: 0;
+  background: linear-gradient(180deg, #111010, #2c2a28 85%, #444140 90%, #1a1918);
+  box-shadow: 0 3px 4px rgba(0, 0, 0, 0.6), inset 0 -1px 0 #000000;
+  color: #8c8372;
+}
+[data-osc-style="own"] .syn-black:hover {
+  background: linear-gradient(180deg, #1a1918, #363432 85%, #4d4a48 90%, #222120);
+}
+[data-osc-style="own"] .syn-black.toggle,
+[data-osc-style="own"] .syn-black.toggle:hover {
+  background: linear-gradient(180deg, #0a0a0a, #232120 92%, #2e2c2a);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.6), inset 0 -1px 0 #000000;
+}
+
+.syn-white.toggle,
+.syn-black.toggle {
+  transform: translateY(2px);
+}
+
+/* Where each key sits: a white key takes three columns, a black key the two either side of a join. */
+#syn-key-48 { grid-column: 1 / span 3; }
+#syn-key-49 { grid-column: 3 / span 2; }
+#syn-key-50 { grid-column: 4 / span 3; }
+#syn-key-51 { grid-column: 6 / span 2; }
+#syn-key-52 { grid-column: 7 / span 3; }
+#syn-key-53 { grid-column: 10 / span 3; }
+#syn-key-54 { grid-column: 12 / span 2; }
+#syn-key-55 { grid-column: 13 / span 3; }
+#syn-key-56 { grid-column: 15 / span 2; }
+#syn-key-57 { grid-column: 16 / span 3; }
+#syn-key-58 { grid-column: 18 / span 2; }
+#syn-key-59 { grid-column: 19 / span 3; }
+#syn-key-60 { grid-column: 22 / span 3; }
+#syn-key-61 { grid-column: 24 / span 2; }
+#syn-key-62 { grid-column: 25 / span 3; }
+#syn-key-63 { grid-column: 27 / span 2; }
+#syn-key-64 { grid-column: 28 / span 3; }
+#syn-key-65 { grid-column: 31 / span 3; }
+#syn-key-66 { grid-column: 33 / span 2; }
+#syn-key-67 { grid-column: 34 / span 3; }
+#syn-key-68 { grid-column: 36 / span 2; }
+#syn-key-69 { grid-column: 37 / span 3; }
+#syn-key-70 { grid-column: 39 / span 2; }
+#syn-key-71 { grid-column: 40 / span 3; }
+#syn-key-72 { grid-column: 43 / span 3; }
+
+/* ---- the owner's manual ----------------------------------------------------------------------------- */
+.syn-manual {
+  justify-self: center;
+  width: 100%;
+  max-width: 760px;
+  box-sizing: border-box;
+  padding: 28px 30px 24px;
+  border-radius: 2px;
+  transform: rotate(-0.6deg);
+}
+[data-osc-style="own"] .syn-manual {
+  background: linear-gradient(180deg, #f3ecd8, #e6dcc2);
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.8), inset 0 0 40px rgba(120, 90, 40, 0.18);
+  color: #2a2418;
+  font-family: "Courier New", Courier, monospace;
+}
+
+.syn-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.syn-manual-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+[data-osc-style="own"] .syn-manual-title {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.syn-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+[data-osc-style="own"] .syn-manual-lead {
+  border-bottom: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+.syn-manual-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 28px;
+  margin: 0;
+}
+
+.syn-manual-row {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+}
+
+.syn-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.syn-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.syn-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.syn-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+[data-osc-style="own"] .syn-manual-foot {
+  border-top: 1px solid rgba(42, 36, 24, 0.4);
+}
+
+/* ---- under any other widget style: the same instrument, in that style's colours ---- */
+body:not([data-osc-style="own"]) .syn {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .syn-cheek,
+body:not([data-osc-style="own"]) .syn-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .syn-panel,
+body:not([data-osc-style="own"]) .syn-play {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .syn-section-title {
+  background: var(--osc-accent);
+  color: var(--osc-accent-foreground);
+}
+body:not([data-osc-style="own"]) .syn-white {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .syn-black {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-foreground);
+  color: var(--osc-background);
+}
+body:not([data-osc-style="own"]) .syn-white.toggle,
+body:not([data-osc-style="own"]) .syn-black.toggle {
+  background: var(--osc-primary);
+  color: var(--osc-primary-foreground);
+}
+
+/* ---- tablet: the sections go two by two, the manual one column ---------------------------------- */
+@media (max-width: 992px) {
+  .syn {
+    gap: 32px;
+    padding: 28px 16px 40px;
+  }
+
+  .syn-sections {
+    grid-template-columns: auto auto;
+    justify-content: space-around;
+  }
+
+  .syn-keybed {
+    height: 190px;
+  }
+
+  .syn-manual {
+    transform: none;
+  }
+
+  .syn-manual-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- phone: turned sideways is best; upright, the wheels sit above the keys ------------------------ */
+@media (max-width: 480px) {
+  .syn {
+    gap: 24px;
+    padding: 10px 6px 28px;
+  }
+
+  .syn-case {
+    grid-template-columns: 10px minmax(0, 1fr) 10px;
+  }
+
+  .syn-panel {
+    padding: 12px 10px 16px;
+  }
+
+  .syn-brand {
+    font-size: 16px;
+    letter-spacing: 0.2em;
+  }
+
+  .syn-sections {
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .syn-program {
+    min-width: 0;
+  }
+
+  .syn-faders {
+    gap: 10px;
+  }
+
+  .syn-fader input[type="range"] {
+    height: 96px;
+  }
+
+  .syn-play {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .syn-controllers {
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto;
+    align-items: end;
+  }
+
+  #syn-sustain {
+    grid-column: auto;
+    min-height: 44px;
+  }
+
+  .syn-wheel input[type="range"] {
+    height: 84px;
+  }
+
+  .syn-keybed {
+    height: 170px;
+    padding: 0 0 6px;
+  }
+
+  .syn-c {
+    font-size: 7px;
+  }
+
+  .syn-manual {
+    padding: 20px 16px;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="syn" class="syn" data-gjs-dmode="flow">
+  <section id="syn-case" class="syn-case" data-gjs-dmode="flow">
+    <span id="syn-cheek-left" class="syn-cheek syn-cheek-left" data-gjs-dmode="flow"></span>
+    <div id="syn-body" class="syn-body" data-gjs-dmode="flow">
+      <div id="syn-panel" class="syn-panel" data-gjs-dmode="flow">
+        <div id="syn-badge" class="syn-badge" data-gjs-dmode="flow">
+          <h1 id="syn-brand" class="syn-brand" data-gjs-dmode="flow">OSCAR</h1>
+          <span id="syn-model" class="syn-model" data-gjs-dmode="flow">Programmable polyphonic synthesizer &middot; Model 78</span>
+        </div>
+        <div id="syn-sections" class="syn-sections" data-gjs-dmode="flow">
+          <div id="syn-section-program" class="syn-section syn-program" data-gjs-dmode="flow">
+            <span id="syn-program-title" class="syn-section-title" data-gjs-dmode="flow">Program</span>
+            <select id="syn-program-select" class="oscar-dropdown" data-gjs-dmode="flow" data-gjs-message="/synth/program" data-gjs-options="01 Grand piano=0, 02 Electric piano=4, 03 Clavinet=7, 04 Drawbar organ=16, 05 Strings=48, 06 Brass=61, 07 Square lead=80, 08 Saw lead=81, 09 Warm pad=89, 10 Synth bass=38" data-gjs-value="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="program"></select>
+            <p id="syn-program-note" class="syn-program-note" data-gjs-dmode="flow">General MIDI numbers. The built-in synth plays them as named.</p>
+          </div>
+          <div id="syn-section-filter" class="syn-section syn-section-filter" data-gjs-dmode="flow">
+            <span id="syn-filter-title" class="syn-section-title" data-gjs-dmode="flow">Filter</span>
+            <div id="syn-filter-faders" class="syn-faders" data-gjs-dmode="flow">
+          <div id="syn-cutoff-cell" class="syn-fader" data-gjs-dmode="flow">
+            <input id="syn-cutoff" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/cc/74" data-gjs-min="0" data-gjs-max="127" data-gjs-value="90" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="74">
+            <span id="syn-cutoff-legend" class="syn-legend" data-gjs-dmode="flow">Cutoff</span>
+            <span id="syn-cutoff-cc" class="syn-cc" data-gjs-dmode="flow">CC 74</span>
+          </div>
+          <div id="syn-resonance-cell" class="syn-fader" data-gjs-dmode="flow">
+            <input id="syn-resonance" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/cc/71" data-gjs-min="0" data-gjs-max="127" data-gjs-value="30" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="71">
+            <span id="syn-resonance-legend" class="syn-legend" data-gjs-dmode="flow">Reso</span>
+            <span id="syn-resonance-cc" class="syn-cc" data-gjs-dmode="flow">CC 71</span>
+          </div>
+            </div>
+          </div>
+          <div id="syn-section-envelope" class="syn-section syn-section-envelope" data-gjs-dmode="flow">
+            <span id="syn-envelope-title" class="syn-section-title" data-gjs-dmode="flow">Envelope</span>
+            <div id="syn-envelope-faders" class="syn-faders" data-gjs-dmode="flow">
+          <div id="syn-attack-cell" class="syn-fader" data-gjs-dmode="flow">
+            <input id="syn-attack" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/cc/73" data-gjs-min="0" data-gjs-max="127" data-gjs-value="10" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="73">
+            <span id="syn-attack-legend" class="syn-legend" data-gjs-dmode="flow">Attack</span>
+            <span id="syn-attack-cc" class="syn-cc" data-gjs-dmode="flow">CC 73</span>
+          </div>
+          <div id="syn-decay-cell" class="syn-fader" data-gjs-dmode="flow">
+            <input id="syn-decay" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/cc/75" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="75">
+            <span id="syn-decay-legend" class="syn-legend" data-gjs-dmode="flow">Decay</span>
+            <span id="syn-decay-cc" class="syn-cc" data-gjs-dmode="flow">CC 75</span>
+          </div>
+          <div id="syn-release-cell" class="syn-fader" data-gjs-dmode="flow">
+            <input id="syn-release" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/cc/72" data-gjs-min="0" data-gjs-max="127" data-gjs-value="40" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="72">
+            <span id="syn-release-legend" class="syn-legend" data-gjs-dmode="flow">Release</span>
+            <span id="syn-release-cc" class="syn-cc" data-gjs-dmode="flow">CC 72</span>
+          </div>
+            </div>
+          </div>
+          <div id="syn-section-output" class="syn-section syn-section-output" data-gjs-dmode="flow">
+            <span id="syn-output-title" class="syn-section-title" data-gjs-dmode="flow">Output</span>
+            <div id="syn-output-faders" class="syn-faders" data-gjs-dmode="flow">
+          <div id="syn-volume-cell" class="syn-fader" data-gjs-dmode="flow">
+            <input id="syn-volume" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/cc/7" data-gjs-min="0" data-gjs-max="127" data-gjs-value="100" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="7">
+            <span id="syn-volume-legend" class="syn-legend" data-gjs-dmode="flow">Volume</span>
+            <span id="syn-volume-cc" class="syn-cc" data-gjs-dmode="flow">CC 7</span>
+          </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="syn-play" class="syn-play" data-gjs-dmode="flow">
+        <div id="syn-controllers" class="syn-controllers" data-gjs-dmode="flow">
+          <button id="syn-sustain" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/synth/cc/64" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="64">SUSTAIN</button>
+          <div id="syn-pitch-cell" class="syn-wheel" data-gjs-dmode="flow">
+            <input id="syn-pitch" type="range" step="1" min="-8192" max="8191" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/pitch" data-gjs-min="-8192" data-gjs-max="8191" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="pitch">
+            <span id="syn-pitch-legend" class="syn-legend" data-gjs-dmode="flow">Pitch</span>
+          </div>
+          <div id="syn-mod-cell" class="syn-wheel" data-gjs-dmode="flow">
+            <input id="syn-mod" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/synth/cc/1" data-gjs-min="0" data-gjs-max="127" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="1">
+            <span id="syn-mod-legend" class="syn-legend" data-gjs-dmode="flow">Mod</span>
+          </div>
+        </div>
+
+        <div id="syn-keybed" class="syn-keybed" data-gjs-dmode="flow">
+        <button id="syn-key-48" class="syn-key syn-white syn-c" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/48" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="48">C3</button>
+        <button id="syn-key-49" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/49" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="49">C&#9839;3</button>
+        <button id="syn-key-50" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/50" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="50">D3</button>
+        <button id="syn-key-51" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/51" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="51">D&#9839;3</button>
+        <button id="syn-key-52" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/52" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="52">E3</button>
+        <button id="syn-key-53" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/53" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="53">F3</button>
+        <button id="syn-key-54" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/54" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="54">F&#9839;3</button>
+        <button id="syn-key-55" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/55" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="55">G3</button>
+        <button id="syn-key-56" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/56" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="56">G&#9839;3</button>
+        <button id="syn-key-57" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/57" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="57">A3</button>
+        <button id="syn-key-58" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/58" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="58">A&#9839;3</button>
+        <button id="syn-key-59" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/59" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="59">B3</button>
+        <button id="syn-key-60" class="syn-key syn-white syn-c" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/60" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="60">C4</button>
+        <button id="syn-key-61" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/61" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="61">C&#9839;4</button>
+        <button id="syn-key-62" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/62" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="62">D4</button>
+        <button id="syn-key-63" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/63" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="63">D&#9839;4</button>
+        <button id="syn-key-64" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/64" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="64">E4</button>
+        <button id="syn-key-65" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/65" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="65">F4</button>
+        <button id="syn-key-66" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/66" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="66">F&#9839;4</button>
+        <button id="syn-key-67" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/67" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="67">G4</button>
+        <button id="syn-key-68" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/68" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="68">G&#9839;4</button>
+        <button id="syn-key-69" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/69" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="69">A4</button>
+        <button id="syn-key-70" class="syn-key syn-black" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/70" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="70">A&#9839;4</button>
+        <button id="syn-key-71" class="syn-key syn-white" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/71" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="71">B4</button>
+        <button id="syn-key-72" class="syn-key syn-white syn-c" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/synth/note/72" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="72">C5</button>
+        </div>
+      </div>
+    </div>
+    <span id="syn-cheek-right" class="syn-cheek syn-cheek-right" data-gjs-dmode="flow"></span>
+  </section>
+
+  <aside id="syn-manual" class="syn-manual" data-gjs-dmode="flow">
+    <p id="syn-manual-eyebrow" class="syn-manual-eyebrow" data-gjs-dmode="flow">Owner's manual</p>
+    <h2 id="syn-manual-title" class="syn-manual-title" data-gjs-dmode="flow">Every control speaks MIDI</h2>
+    <p id="syn-manual-lead" class="syn-manual-lead" data-gjs-dmode="flow">Channel 1, to the first MIDI output this computer has. Select a control in the editor to send it to another port or channel, or to switch OSC on as well.</p>
+    <dl id="syn-manual-list" class="syn-manual-list" data-gjs-dmode="flow">
+      <div id="syn-manual-row-1" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-1" class="syn-manual-key" data-gjs-dmode="flow">THE KEYS</dt>
+        <dd id="syn-manual-address-1" class="syn-manual-address" data-gjs-dmode="flow">Notes 48 to 72, channel 1</dd>
+        <dd id="syn-manual-note-1" class="syn-manual-note" data-gjs-dmode="flow">Two octaves and a top C, C3 to C5. A key sends note on at velocity 127 while it is held and note off when it is let go. The computer keyboard plays them too: Z to M for the lower octave, Q to I for the upper, the rows above them for the black keys.</dd>
+      </div>
+      <div id="syn-manual-row-2" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-2" class="syn-manual-key" data-gjs-dmode="flow">SUSTAIN</dt>
+        <dd id="syn-manual-address-2" class="syn-manual-address" data-gjs-dmode="flow">Control change 64</dd>
+        <dd id="syn-manual-note-2" class="syn-manual-note" data-gjs-dmode="flow">It latches: 127 holds every note that is sounding, 0 lets them go.</dd>
+      </div>
+      <div id="syn-manual-row-3" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-3" class="syn-manual-key" data-gjs-dmode="flow">PITCH</dt>
+        <dd id="syn-manual-address-3" class="syn-manual-address" data-gjs-dmode="flow">Pitch bend</dd>
+        <dd id="syn-manual-note-3" class="syn-manual-note" data-gjs-dmode="flow">The whole range, centre 8192. Let go and it springs back to the middle and says so.</dd>
+      </div>
+      <div id="syn-manual-row-4" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-4" class="syn-manual-key" data-gjs-dmode="flow">MOD</dt>
+        <dd id="syn-manual-address-4" class="syn-manual-address" data-gjs-dmode="flow">Control change 1</dd>
+        <dd id="syn-manual-note-4" class="syn-manual-note" data-gjs-dmode="flow">0 to 127, the modulation wheel.</dd>
+      </div>
+      <div id="syn-manual-row-5" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-5" class="syn-manual-key" data-gjs-dmode="flow">FILTER</dt>
+        <dd id="syn-manual-address-5" class="syn-manual-address" data-gjs-dmode="flow">Control change 74 and 71</dd>
+        <dd id="syn-manual-note-5" class="syn-manual-note" data-gjs-dmode="flow">Cutoff (brightness) and resonance, 0 to 127.</dd>
+      </div>
+      <div id="syn-manual-row-6" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-6" class="syn-manual-key" data-gjs-dmode="flow">ENVELOPE</dt>
+        <dd id="syn-manual-address-6" class="syn-manual-address" data-gjs-dmode="flow">Control change 73, 75, 72</dd>
+        <dd id="syn-manual-note-6" class="syn-manual-note" data-gjs-dmode="flow">Attack, decay and release, 0 to 127.</dd>
+      </div>
+      <div id="syn-manual-row-7" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-7" class="syn-manual-key" data-gjs-dmode="flow">VOLUME</dt>
+        <dd id="syn-manual-address-7" class="syn-manual-address" data-gjs-dmode="flow">Control change 7</dd>
+        <dd id="syn-manual-note-7" class="syn-manual-note" data-gjs-dmode="flow">The channel volume, 0 to 127.</dd>
+      </div>
+      <div id="syn-manual-row-8" class="syn-manual-row" data-gjs-dmode="flow">
+        <dt id="syn-manual-key-8" class="syn-manual-key" data-gjs-dmode="flow">PROGRAM</dt>
+        <dd id="syn-manual-address-8" class="syn-manual-address" data-gjs-dmode="flow">Program change</dd>
+        <dd id="syn-manual-note-8" class="syn-manual-note" data-gjs-dmode="flow">Picks General MIDI sounds, so the synthesizer built into Windows plays them as named. A synth of your own may call those numbers something else.</dd>
+      </div>
+    </dl>
+    <p id="syn-manual-foot" class="syn-manual-foot" data-gjs-dmode="flow">To play a DAW on this computer, make a port with loopMIDI, pick it under Out port on each control, and pick it as the DAW's input. Delete these notes from the layout before the show.</p>
+  </aside>
+</div>
+<script id="syn-script" type="module" data-gjs-dmode="flow">
+(function () {
+  var doc = document;
+  var byId = function (id) { return doc.getElementById(id); };
+  if (!byId("syn-keybed")) return;
+
+  // The pitch wheel springs back. Moved as a hand moves it: the widget sends and shares on "input".
+  var pitch = byId("syn-pitch");
+  function centre() {
+    if (!pitch || pitch.value === "0") return;
+    pitch.value = "0";
+    pitch.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  if (pitch) ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (type) { pitch.addEventListener(type, centre); });
+
+  // The computer keyboard presses the keys, as a finger does: a momentary button
+  // sends note on at pointerdown and note off at pointerup.
+  var CODES = {"KeyZ":48,"KeyS":49,"KeyX":50,"KeyD":51,"KeyC":52,"KeyV":53,"KeyG":54,"KeyB":55,"KeyH":56,"KeyN":57,"KeyJ":58,"KeyM":59,"KeyQ":60,"Digit2":61,"KeyW":62,"Digit3":63,"KeyE":64,"KeyR":65,"Digit5":66,"KeyT":67,"Digit6":68,"KeyY":69,"Digit7":70,"KeyU":71,"KeyI":72,"Comma":60};
+  var held = {};
+  function press(key, type) {
+    key.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 41, isPrimary: false, button: 0 }));
+  }
+  function typing(e) {
+    var t = e.target;
+    return t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
+  }
+  doc.addEventListener("keydown", function (e) {
+    var note = CODES[e.code];
+    if (!note || e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing(e) || held[e.code]) return;
+    var key = byId("syn-key-" + note);
+    if (!key) return;
+    held[e.code] = key;
+    press(key, "pointerdown");
+    e.preventDefault();
+  });
+  doc.addEventListener("keyup", function (e) {
+    var key = held[e.code];
+    if (!key) return;
+    delete held[e.code];
+    press(key, "pointerup");
+  });
+  // A key held while the window loses focus would never hear its keyup. The
+  // buttons let go on blur themselves; this forgets that they were held.
+  window.addEventListener("blur", function () { held = {}; });
+})();
+</script>
+</body>
+</html>
