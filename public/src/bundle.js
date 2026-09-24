@@ -22240,60 +22240,60 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
     // Learn, and ticking Data in, can name a port the dropdown has not got.
   // ---- the bridge's confirmation -------------------------------------------
-  // Data in and a Send when of "data" on one widget is the combination that
-  // can feed back (lib/widgets/bridge.js), so creating it is confirmed, from
-  // whichever side arrives last. Only for the selected widget: a project
+  // Only the same protocol both ways can loop: OSC in with OSC bridged out,
+  // MIDI in with MIDI bridged out. Creating such a pair is confirmed, from
+  // whichever side arrives last; a cross-protocol bridge (a knob to OSC) and
+  // DMX (no way in) ask nothing. Only for the selected widget: a project
   // loading is not a hand in the panel.
-  var BRIDGE_WHEN = ["oscSendWhen", "midiSendWhen", "dmxSendWhen"];
-  var BRIDGE_IN = ["listen", "midiListen"];
+  var BRIDGE_PAIRS = [
+    { input: "listen", when: "oscSendWhen", protocol: "OSC" },
+    { input: "midiListen", when: "midiSendWhen", protocol: "MIDI" },
+  ];
+  var BRIDGE_KEYS = ["listen", "oscSendWhen", "midiListen", "midiSendWhen"];
   var revertingBridge = false;
   // GrapesJS says component:update:<key> twice for one change (once from the
   // model, once from the trait), and the question must not stack.
   var bridgeAsking = false;
-  function bridgedCombination(get) {
-    var dataIn = BRIDGE_IN.some(function (key) {
-      return get(key) === true;
+  function loopedPairs(get) {
+    return BRIDGE_PAIRS.filter(function (pair) {
+      return get(pair.input) === true && get(pair.when) === "data";
     });
-    var bridged = BRIDGE_WHEN.some(function (key) {
-      return get(key) === "data";
-    });
-    return dataIn && bridged;
   }
   editor.on(
-    BRIDGE_WHEN.concat(BRIDGE_IN)
-      .map(function (key) {
-        return "component:update:" + key;
-      })
-      .join(" "),
+    BRIDGE_KEYS.map(function (key) {
+      return "component:update:" + key;
+    }).join(" "),
     function (model) {
       if (revertingBridge || bridgeAsking || editor.getSelected() !== model) return;
-      var keys = BRIDGE_WHEN.concat(BRIDGE_IN);
       var changed = Object.keys(model.changed || {}).filter(function (key) {
-        return keys.indexOf(key) !== -1;
+        return BRIDGE_KEYS.indexOf(key) !== -1;
       })[0];
       if (!changed) return;
       var before = model.previous(changed);
       var was = function (key) {
         return key === changed ? before : model.get(key);
       };
-      // Only when this change created the combination, not on every edit near it.
-      if (!bridgedCombination(model.get.bind(model)) || bridgedCombination(was)) return;
+      // Only a pair this very change created asks; each protocol's pair asks
+      // once, and edits near an accepted pair stay quiet.
+      var beforePairs = loopedPairs(was);
+      var pair = loopedPairs(model.get.bind(model)).filter(function (candidate) {
+        return beforePairs.indexOf(candidate) === -1;
+      })[0];
+      if (!pair) return;
       bridgeAsking = true;
       $.confirm({
-        title: "This control will send what it hears",
+        title: "This can loop",
+        content:
+          "This control listens to " + pair.protocol + " and will now also send on what it hears. " +
+          "If what it sends comes back -- software that echoes it, or OSCAR's own port -- it goes " +
+          "round in circles. The Loop guard (on) passes only real changes, which stops that.",
+        boxWidth: "460px",
+        useBootstrap: false,
         onDestroy: function () {
           bridgeAsking = false;
         },
-        content:
-          "Data in and a bridged Data out are both on: what arrives moves this control, and the control " +
-          "sends it on. If what it sends can reach its own Data in again -- software that echoes what it " +
-          "receives, or OSCAR's own listening port -- that is a loop. The loop guard passes on only " +
-          "changes, which keeps an echo from becoming standing traffic; leave it ticked unless a repeat " +
-          "is the event. Bridged sends act on published surfaces and downloaded files.",
-        boxWidth: "560px",
-        useBootstrap: false,
         buttons: {
-          confirm: { text: "Keep the bridge" },
+          confirm: { text: "Keep it" },
           cancel: {
             text: "Undo",
             action: function () {

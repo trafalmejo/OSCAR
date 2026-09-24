@@ -179,13 +179,14 @@ test("OSC in reaches MIDI out and DMX out through their own combos, and never th
 
 // ---- where the pieces live -----------------------------------------------------------------
 
-test("the editor confirms the combination that can feed back, and Undo puts the setting back", () => {
+test("the editor confirms only the pair that can loop, same protocol both ways, and Undo puts the setting back", () => {
   const editor = read("public/src/oscar_editor.js");
-  assert.match(editor, /BRIDGE_WHEN = \["oscSendWhen", "midiSendWhen", "dmxSendWhen"\]/);
-  assert.match(editor, /BRIDGE_IN = \["listen", "midiListen"\]/);
+  assert.match(editor, /\{ input: "listen", when: "oscSendWhen", protocol: "OSC" \}/);
+  assert.match(editor, /\{ input: "midiListen", when: "midiSendWhen", protocol: "MIDI" \}/);
+  assert.ok(!editor.includes("dmxSendWhen"), "DMX has no way in, so no question, and a cross-protocol bridge asks nothing");
   assert.match(editor, /editor\.getSelected\(\) !== model/, "a project loading is not a hand in the panel");
-  assert.match(editor, /bridgedCombination\(was\)/, "only when this change created the combination");
-  assert.match(editor, /title: "This control will send what it hears"/);
+  assert.match(editor, /beforePairs\.indexOf\(candidate\) === -1/, "only a pair this very change created asks");
+  assert.match(editor, /title: "This can loop"/);
   assert.match(editor, /model\.set\(changed, before\)/, "Undo reverts the very setting that was changed");
 });
 
