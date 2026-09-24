@@ -134,7 +134,7 @@ async function stage(widgets) {
 
 test("a knob works a published fader as a hand would: it moves on every device, sends its OSC and DMX, and says nothing back in MIDI", async () => {
   const { surfaces, sent, told } = await stage([
-    tag("oscar-slider", "master", { message: "/master", min: 0, max: 100, dmxEnabled: true, midiListen: true, midiEnabled: true, midiNumber: 7 }),
+    tag("oscar-slider", "master", { message: "/master", min: 0, max: 100, dmxEnabled: true, midiListen: true, midiEnabled: true, midiNumber: 7, oscSendWhen: "data", dmxSendWhen: "data" }),
     tag("oscar-slider", "other", { message: "/other", midiListen: true, midiNumber: 8 }),
     tag("oscar-slider", "deaf", { message: "/deaf", midiNumber: 7 }),
   ]);
@@ -151,20 +151,26 @@ test("a knob works a published fader as a hand would: it moves on every device, 
   assert.strictEqual(sent.midi.length, 1);
 
   assert.strictEqual(await surfaces.hearMidi({ type: "cc", channel: 1, number: 99, unit: 1 }, "x"), 0, "nobody's");
+
+  // The listener beside it has no Send when of "data": with nobody watching
+  // the states either, the knob on its number moves nothing at all.
+  const before = sent.osc.length;
+  assert.strictEqual(await surfaces.hearMidi({ type: "cc", channel: 1, number: 8, unit: 1 }, "x"), 0);
+  assert.strictEqual(sent.osc.length, before, "and nothing more was sent");
 });
 
 test("a pad follows two knobs, each moving its own axis from where the other left it", async () => {
-  const { surfaces, sent } = await stage([tag("oscar-xypad", "pan", { message: "/pos", minX: 0, maxX: 1, minY: 0, maxY: 1, midiListen: true, midiNumber: 20 })]);
+  const { surfaces, sent } = await stage([tag("oscar-xypad", "pan", { message: "/pos", minX: 0, maxX: 1, minY: 0, maxY: 1, midiListen: true, midiNumber: 20, oscSendWhen: "data" })]);
   await surfaces.hearMidi({ type: "cc", channel: 1, number: 20, unit: 1 }, "x");
   await surfaces.hearMidi({ type: "cc", channel: 1, number: 21, unit: 0 }, "x");
   assert.deepStrictEqual(sent.osc, [["/pos", [1, 0.5]], ["/pos", [1, 0]]]);
 });
 
 test("the ports to open are the ones the published widgets name, and a surface published since is noticed", async () => {
-  const { surfaces, published, tick } = await stage([tag("oscar-slider", "a", { midiListen: true, midiInPort: "Launchpad" })]);
+  const { surfaces, published, tick } = await stage([tag("oscar-slider", "a", { midiListen: true, midiInPort: "Launchpad", oscSendWhen: "data" })]);
   assert.deepStrictEqual(await surfaces.midiPorts(), ["launchpad"]);
 
-  await published.save("Booth", "<body>" + tag("oscar-button", "go", { midiListen: true, midiInPort: " nano " }) + "</body>");
+  await published.save("Booth", "<body>" + tag("oscar-button", "go", { midiListen: true, midiInPort: " nano ", oscSendWhen: "data" }) + "</body>");
   assert.deepStrictEqual(await surfaces.midiPorts(), ["launchpad"], "the folder is not read again for every turn of a knob");
   tick(2000);
   assert.deepStrictEqual((await surfaces.midiPorts()).sort(), ["launchpad", "nano"]);
@@ -356,11 +362,15 @@ test("a page asks only for the inputs its widgets listen on, and keeps that up t
   assert.strictEqual(midiSource({}, slider, "f", () => config, null, (d) => d()), null);
 });
 
-test("sending onward is a switch, and it is off", () => {
-  const features = require("../lib/features");
-  assert.strictEqual(features.MIDI_BRIDGE, false);
+test("sending onward is each widget's own Send when, and by default nothing bridges", () => {
+  const { bridgePlan } = require("../lib/widgets/bridge");
+  const { byName: all } = require("../lib/widgets");
+  for (const name of Object.keys(all)) {
+    assert.strictEqual(bridgePlan(all[name].defaults), null, name + " does not bridge by default");
+  }
+  assert.strictEqual(require("../lib/features").MIDI_BRIDGE, undefined, "the global switch is retired");
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.match(server, /if \(features\.MIDI_BRIDGE\) surfaces\.hearMidi\(/, "the server drives published widgets only with the switch on");
+  assert.match(server, /surfaces\.hearMidi\(heard, port, first\)/, "the server hears MIDI once, for the watchers and the bridges");
   assert.match(server, /io\.emit\("midi:in", \{ heard, port, first \}\);/, "and tells the pages either way");
 });
 

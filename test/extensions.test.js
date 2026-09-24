@@ -192,7 +192,7 @@ test("the sample extension: its template is in the Load list and fetchable, its 
     assert.match(await template.text(), /data-gjs-message="\/sample\/go"/);
 
     const editor = await (await fetch(base + "/")).text();
-    assert.match(editor, /window\.OSCAR_FEATURES = \{"PAGES":false,"SERIAL":false,"MIDI":true,"MIDI_BRIDGE":false\};/);
+    assert.match(editor, /window\.OSCAR_FEATURES = \{"PAGES":false,"SERIAL":false,"MIDI":true\};/);
     assert.ok(editor.indexOf('src="x/sample/editor.js"') > editor.indexOf('src="src/bundle.js"'), "after OSCAR's own");
     assert.strictEqual((await fetch(base + "/x/sample/editor.js")).status, 200);
 
@@ -212,7 +212,7 @@ test("the sample extension: its template is in the Load list and fetchable, its 
 test("with no extensions the pages are as they were, give or take the switches", async () => {
   await withOscar(none(), async (base) => {
     const editor = await (await fetch(base + "/")).text();
-    assert.match(editor, /window\.OSCAR_FEATURES = \{"PAGES":false,"SERIAL":false,"MIDI":true,"MIDI_BRIDGE":false\};/);
+    assert.match(editor, /window\.OSCAR_FEATURES = \{"PAGES":false,"SERIAL":false,"MIDI":true\};/);
     assert.ok(!/(src|href)="x\//.test(editor));
     assert.strictEqual((await fetch(base + "/x/sample/hello")).status, 404);
   });

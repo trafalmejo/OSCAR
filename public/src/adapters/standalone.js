@@ -23,6 +23,10 @@
 var { readWidget, WIDGET_SELECTOR } = require("../../../lib/export/config");
 var { readHost, readPort } = require("../../../lib/export/connection");
 var { midiSource } = require("../../../lib/widgets/midi-source");
+var { incoming } = require("../../../lib/widgets/incoming");
+var { stateFromMidi, valuesOf } = require("../../../lib/widgets/midi-in");
+var { midiIndex } = require("../../../lib/midi/spec");
+var { bridgePlan, BRIDGE_WINDOW_MS, BRIDGE_CEILING } = require("../../../lib/widgets/bridge");
 
 /**
  * Where OSCAR's bridge is: { host, port }, or { error }.
@@ -292,6 +296,109 @@ function markInert(el, problem) {
  * @param {Function} [onDropped] see contextFor
  * @returns {{ attached: number, inert: number, detach: Function }}
  */
+/**
+ * The bridge, on a page OSCAR does not serve: a downloaded file.
+ *
+ * A served surface is bridged by the server, once, however many devices show
+ * it (lib/surfaces.js). A file serves itself, so it does its own bridging:
+ * each widget whose Send when says "data" is watched at the host level --
+ * OSC in as the server watches it, MIDI in as midiSource reads it -- and
+ * what Data in put it in goes back out through the widget's own drive(),
+ * the guarded halves quiet. The widget's own display follows separately, as
+ * it always did. Two open copies of one file are two bridges, which is why
+ * the export dialog says to open one.
+ */
+function bridgeAll(root, bridge) {
+  var entries = [];
+  var elements = root.querySelectorAll(WIDGET_SELECTOR);
+  for (var i = 0; i < elements.length; i++) {
+    var el = elements[i];
+    var widget = readWidget(el);
+    if (!widget || widget.problem) continue;
+    var id = (typeof el.getAttribute === "function" && el.getAttribute("id")) || null;
+    var plan = bridgePlan(widget.config);
+    if (!plan || !id || typeof widget.definition.drive !== "function") continue;
+    entries.push({ id: id, definition: widget.definition, config: widget.config, plan: plan, showing: null, window: { at: 0, n: 0 } });
+  }
+  if (!entries.length) return { bridged: 0, detach: function () {} };
+
+  function forward(entry, state) {
+    var driven = entry.definition.drive(entry.config, state);
+    if (!driven) return;
+    var changed =
+      entry.showing === null ||
+      Object.keys(driven.state).some(function (key) {
+        return entry.showing[key] !== driven.state[key];
+      });
+    entry.showing = Object.assign({}, entry.showing, driven.state);
+    var send = {
+      osc: entry.plan.osc && (changed || entry.config.oscLoopGuard === false),
+      midi: entry.plan.midi && (changed || entry.config.midiLoopGuard === false),
+      dmx: entry.plan.dmx && changed,
+    };
+    if (!send.osc && !send.midi && !send.dmx) return;
+    if (!connected(bridge)) return;
+    // The ceiling: the floor under a loop with the guard off.
+    var at = Date.now();
+    if (at - entry.window.at >= BRIDGE_WINDOW_MS) entry.window = { at: at, n: 0 };
+    if (++entry.window.n > BRIDGE_CEILING) return;
+    var messages = (driven.messages || [driven.message]).filter(Boolean);
+    for (var m = 0; m < messages.length; m++) {
+      var message = messages[m];
+      if (send.osc && message.address && bridge.sendOSC) bridge.sendOSC(message.ip, message.port, message.address, message.args);
+      if (send.dmx && message.dmx && bridge.sendDMX) bridge.sendDMX(Object.assign({ source: entry.id }, message.dmx));
+      if (send.midi && message.midi && bridge.sendMIDI) bridge.sendMIDI(message.midi);
+    }
+  }
+
+  var stops = [];
+  if (bridge.onOscIn) {
+    stops.push(
+      bridge.onOscIn(function (message) {
+        for (var i = 0; i < entries.length; i++) {
+          var entry = entries[i];
+          if (typeof entry.definition.hear !== "function") continue;
+          var listens =
+            typeof entry.definition.hearAddresses === "function"
+              ? Object.assign({}, entry.config, { message: entry.definition.hearAddresses(entry.config) })
+              : entry.config;
+          var match = incoming(listens, message);
+          if (!match) continue;
+          var state = entry.definition.hear(
+            entry.config,
+            match.values.map(function (arg) {
+              return arg && typeof arg === "object" && "value" in arg ? arg.value : arg;
+            }),
+            match.address
+          );
+          if (state) forward(entry, state);
+        }
+      })
+    );
+  }
+  if (bridge.onMidiIn) {
+    stops.push(
+      bridge.onMidiIn(function (heard, port, first) {
+        for (var i = 0; i < entries.length; i++) {
+          var entry = entries[i];
+          var index = midiIndex(entry.config, heard, port, valuesOf(entry.definition, entry.config), first);
+          if (index === -1) continue;
+          var state = stateFromMidi(entry.definition, entry.config, heard, index, entry.showing);
+          if (state) forward(entry, state);
+        }
+      })
+    );
+  }
+  return {
+    bridged: entries.length,
+    detach: function () {
+      stops.forEach(function (stop) {
+        if (typeof stop === "function") stop();
+      });
+    },
+  };
+}
+
 function attachAll(root, bridge, onDropped) {
   var elements = root.querySelectorAll(WIDGET_SELECTOR);
   var detachers = [];
@@ -433,6 +540,8 @@ function start(env) {
   var wired = attachAll(doc, bridge, function () {
     dropped++;
   });
+  // A page OSCAR serves is bridged by OSCAR, once; a file serves itself.
+  var bridged = env.served ? { bridged: 0, detach: function () {} } : bridgeAll(doc, bridge);
   var off = wired.inert
     ? " " + wired.inert + " control(s) on this page are switched off: their settings could not be read."
     : "";
@@ -467,7 +576,7 @@ function start(env) {
     show("offline", offline);
   });
 
-  return { bridge: bridge, wired: wired, endpoint: where };
+  return { bridge: bridge, wired: wired, endpoint: where, bridged: bridged };
 }
 
 /**
@@ -516,6 +625,7 @@ function startOnRelay(env, show) {
 }
 
 module.exports = {
+  bridgeAll: bridgeAll,
   resolveEndpoint: resolveEndpoint,
   contextFor: contextFor,
   attachAll: attachAll,

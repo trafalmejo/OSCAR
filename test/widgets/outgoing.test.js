@@ -173,7 +173,7 @@ test("a field names its protocol's section, and an unknown section is refused wh
   const dmx = dmxFields();
   assert.strictEqual(dmx[0].key, "dmxEnabled", "the checkbox leads its section");
   assert.strictEqual(dmx[0].label, "Data out", "the direction; the section title says which protocol");
-  assert.deepStrictEqual(dmx.slice(1).map((f) => f.label), ["Protocol", "Node or port", "Universe", "Channel", "Channels"]);
+  assert.deepStrictEqual(dmx.slice(1).map((f) => f.label), ["Send when", "Protocol", "Node or port", "Universe", "Channel", "Channels"]);
   for (const f of dmx) assert.strictEqual(f.section, "dmx", f.key);
 });
 
@@ -264,9 +264,9 @@ test("each direction of a section has its own light, on only when it would reall
 test("the OSC section is built in one place, for the directions a widget has", () => {
   const { oscFields } = require("../../lib/widgets/fields");
   const keys = (options) => oscFields(options).map((f) => f.key);
-  assert.deepStrictEqual(keys(), ["listen", "oscEnabled", "ip", "port", "message"]);
+  assert.deepStrictEqual(keys(), ["listen", "oscEnabled", "oscSendWhen", "oscLoopGuard", "ip", "port", "message"]);
   assert.deepStrictEqual(keys({ sends: false }), ["listen", "message"], "a widget that only follows has nowhere to send");
-  assert.deepStrictEqual(keys({ receives: false }), ["oscEnabled", "ip", "port", "message"]);
+  assert.deepStrictEqual(keys({ receives: false }), ["oscEnabled", "oscSendWhen", "oscLoopGuard", "ip", "port", "message"]);
   for (const f of oscFields()) assert.strictEqual(f.section, "osc", f.key);
-  assert.match(oscFields()[0].hint, /never sent back out/);
+  assert.match(oscFields()[0].hint, /not sent back out unless/);
 });

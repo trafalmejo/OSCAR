@@ -377,12 +377,29 @@ the last such page closes. On Windows a MIDI input belongs to whichever program 
 first, so a controller OSCAR is listening to is not available to other
 software, and the other way round; the console says when a port is in use.
 
-There is a second way for MIDI in to work, built and switched off:
-`MIDI_BRIDGE` in `lib/features.js`. With it on, a knob works a widget **as a hand
-would**: the widget also sends its OSC and DMX, which makes OSCAR a MIDI to OSC
-and DMX bridge (it still never answers in MIDI). The server then does the
-sending, once, for the widgets of published surfaces, since pages answering the
-knob themselves would make the rig hear every move once per open page.
+### The bridge: sending on what comes in
+
+By rule, what comes in is only shown: an OSC message or a MIDI knob moves the
+widget on every screen, and nothing is sent on, which is what makes a loop
+with software that echoes its own state impossible. Each protocol's **Send
+when** setting relaxes that per widget: *Changed by the user* is the rule
+above and the default; *Changed by the user or by data in* also sends what
+Data in put the widget in. That makes OSCAR a bridge -- a MIDI fader box
+drives Resolume through a surface, a sensor's OSC drives a fixture -- and any
+of MIDI in or OSC in can feed any of OSC, MIDI or DMX out.
+
+The bridged send happens **once**, from whoever serves the surface: the
+server for published surfaces, however many devices show them and whether any
+browser is open at all; a downloaded file for itself, which is why such a
+file should be open in one copy only. The editor's canvas and the preview
+only follow, so a surface open in the editor while it is published never
+drives the rig twice. Two things stand between a bridge and a loop: the
+**Loop guard** (default on) passes on only a change that changed the value,
+so an echo moves nothing and nothing is re-sent -- untick it for triggers
+where a repeat is the event, and never point such a widget back at its own
+source -- and under the guard, no widget bridges more than 200 sends a
+second. The editor asks for confirmation when Data in and a bridged Send
+when first meet on one widget.
 
 `MIDI` in `lib/features.js` hides the section if it has to be taken out of a
 release. About (Report a problem) says how many ports OSCAR can see, which is

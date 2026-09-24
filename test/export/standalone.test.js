@@ -551,3 +551,52 @@ test("served by a relay, the page connects through it, and tells a visitor only 
   const bare = standalone.start({ document: fakeDocument([]), relay: { url: "wss://x" }, connectRelay: null });
   assert.strictEqual(bare.error, "no WebSocket");
 });
+
+// ---- the bridge, on a page OSCAR does not serve --------------------------------------------
+
+test("a downloaded file bridges for itself: data in goes back out through the widget's own drive, guarded", () => {
+  const el = exported(
+    "oscar-slider",
+    { message: "/sensor", ip: "10.0.0.9", port: 7000, min: 0, max: 1, listen: true, oscSendWhen: "data", dmxEnabled: true, dmxChannel: 4, dmxSendWhen: "data" },
+    "opacity"
+  );
+  const doc = fakeDocument([el]);
+  const bridge = fakeBridge();
+  const midiFns = [];
+  bridge.onMidiIn = (fn) => {
+    midiFns.push(fn);
+    return () => {};
+  };
+  const wired = standalone.bridgeAll(doc, bridge);
+  assert.strictEqual(wired.bridged, 1);
+
+  bridge.hears("/sensor", [{ type: "f", value: 0.5 }]);
+  assert.deepStrictEqual(bridge.osc, [{ ip: "10.0.0.9", port: 7000, address: "/sensor", args: [{ type: "f", value: 0.5 }] }]);
+  assert.deepStrictEqual(bridge.dmx, [{ source: "opacity", protocol: "artnet", host: "", universe: 1, channel: 4, levels: [128] }]);
+
+  // The guard: the echo of the same value goes nowhere.
+  bridge.hears("/sensor", [{ type: "f", value: 0.5 }]);
+  assert.strictEqual(bridge.osc.length, 1);
+  bridge.hears("/sensor", [{ type: "f", value: 1 }]);
+  assert.strictEqual(bridge.osc.length, 2);
+
+  // MIDI in reaches the same widget the same way.
+  const config = { midiListen: true };
+  assert.strictEqual(midiFns.length, 1, "the file listens for MIDI too");
+
+  // Away, nothing is bridged: the same rule a hand's send follows.
+  bridge.socket.fire("disconnect");
+  bridge.hears("/sensor", [{ type: "f", value: 0.25 }]);
+  assert.strictEqual(bridge.osc.length, 2);
+});
+
+test("a page with nothing bridging, and a served page, attach no bridge at all", () => {
+  const plain = fakeDocument([exported("oscar-slider", { listen: true }, "f1")]);
+  const bridge = fakeBridge();
+  assert.strictEqual(standalone.bridgeAll(plain, bridge).bridged, 0);
+  assert.strictEqual(bridge.oscListenerCount(), 0, "no listener is left behind");
+
+  // start() itself: served pages are bridged by the server, files by themselves.
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "public", "src", "adapters", "standalone.js"), "utf8");
+  assert.match(source, /env\.served \? \{ bridged: 0, detach: function \(\) \{\} \} : bridgeAll\(doc, bridge\)/);
+});

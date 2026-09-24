@@ -438,10 +438,10 @@ test("the panel is one collapsible section per protocol, under the widget's own 
 
   assert.ok(!names(traits).includes("transport"), "no Output list: the checkboxes say it");
   // The directions lead: Data in, Data out, then where and how.
-  assert.deepStrictEqual(inSection("osc"), ["listen", "oscEnabled", "ip", "port", "message", "argType"]);
+  assert.deepStrictEqual(inSection("osc"), ["listen", "oscEnabled", "oscSendWhen", "oscLoopGuard", "ip", "port", "message", "argType"]);
   const label = (name) => traits.find((t) => t.name === name).label;
   assert.deepStrictEqual([label("listen"), label("oscEnabled"), label("dmxEnabled")], ["Data in", "Data out", "Data out"]);
-  assert.deepStrictEqual(inSection("dmx"), ["dmxEnabled", "dmxProtocol", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"]);
+  assert.deepStrictEqual(inSection("dmx"), ["dmxEnabled", "dmxSendWhen", "dmxProtocol", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"]);
   // GrapesJS draws categorised traits above uncategorised ones, so the
   // widget's own settings need a section to stay on top. Sections appear in
   // the order their first field does, and Enabled is always first.

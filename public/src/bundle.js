@@ -374,6 +374,21 @@ function complaintAbout(definition, config) {
  * file carries its own runtime, so a missing key is never a version skew,
  * only damage. Present is not enough either: see complaintAbout.
  */
+/**
+ * Keys added to the widgets after surfaces were already published. The
+ * server reads published pages for as long as they are published, so for
+ * these -- and only these -- a missing key is version skew, not damage, and
+ * falls back to the value that means "as it always was": never to a live
+ * default. Everything older stays required, as the note on readWidget says.
+ */
+const LATER_KEYS = {
+  oscSendWhen: "user",
+  oscLoopGuard: true,
+  midiSendWhen: "user",
+  midiLoopGuard: true,
+  dmxSendWhen: "user",
+};
+
 function readWidget(el) {
   if (!el || typeof el.getAttribute !== "function") return null;
   const name = el.getAttribute(NAME_ATTR);
@@ -387,7 +402,11 @@ function readWidget(el) {
 
   const config = {};
   for (const key of Object.keys(definition.defaults)) {
-    if (!has(settings, key)) return { problem: CONFIG_ATTR + " has no " + JSON.stringify(key) };
+    if (!has(settings, key)) {
+      if (!has(LATER_KEYS, key)) return { problem: CONFIG_ATTR + " has no " + JSON.stringify(key) };
+      config[key] = LATER_KEYS[key];
+      continue;
+    }
     config[key] = settings[key];
   }
   const complaint = complaintAbout(definition, config);
@@ -458,23 +477,6 @@ const DEFAULTS = {
    */
   MIDI: true,
 
-  /**
-   * MIDI in that sends onward: a knob works a widget as a hand would, so
-   * the widget sends its OSC and DMX as well as moving, and OSCAR becomes a
-   * MIDI to OSC and DMX bridge.
-   *
-   * Off. MIDI's Data in then does what OSC's does: the widget follows, on
-   * every page that shows it, the editor's canvas included, and nothing is
-   * sent on. That is one rule for both protocols -- what comes in is never
-   * sent out -- and it is the one that cannot loop.
-   *
-   * On, the server does the sending, once, for the widgets of published
-   * surfaces (lib/surfaces.js hearMidi, lib/widgets/midi-in.js): if each
-   * page answered the knob the rig would hear every move once per page. What
-   * came in by MIDI is still never answered in MIDI. The pages follow either
-   * way. Read by the server only, so an extension cannot switch it.
-   */
-  MIDI_BRIDGE: false,
 };
 
 function isOn(name) {
@@ -3160,9 +3162,51 @@ function listen() {
 
 const DATA_IN_HINT =
   "Follow the rig: an OSC message arriving at this widget's Message address moves it. " +
-  "What comes in is never sent back out.";
+  "What comes in is not sent back out unless a Send when below says so.";
 
 const DATA_OUT_HINT = "Send this widget's value over this protocol when it is used.";
+
+/**
+ * When a protocol's Data out fires: the bridge, per widget and per protocol.
+ *
+ * "Changed by the user" is what every widget always did: a hand, on any
+ * device. "or by data in" also sends on what Data in (OSC or MIDI) put the
+ * widget in, which makes OSCAR a bridge: a knob drives Resolume, a sensor's
+ * OSC drives a fixture. The bridged send happens once, from the OSCAR that
+ * serves the surface -- on published surfaces, and on a downloaded file,
+ * which serves itself. The editor's canvas and the preview only follow, so
+ * a rig is never driven twice by a surface that is open in the editor while
+ * it is published.
+ */
+const SEND_WHEN_OPTIONS = [
+  { id: "user", name: "Changed by the user" },
+  { id: "data", name: "Changed by the user or by data in" },
+];
+
+const SEND_WHEN_HINT =
+  "When this sends. 'Changed by the user': a hand on this surface, on any device. 'or by data in': " +
+  "what arrives over Data in (OSC or MIDI) is also sent on -- the bridge. Bridged sends happen once, " +
+  "from the OSCAR that serves the surface: published surfaces and downloaded files; the editor's " +
+  "canvas only follows.";
+
+const LOOP_GUARD_HINT =
+  "Bridge only a change that changed the value, so software that echoes what it receives cannot start " +
+  "a loop. Untick for triggers where a repeat is the event -- and never point such a widget back at " +
+  "its own source.";
+
+/** A value the combo can hold, or a complaint. */
+function checkSendWhen(value) {
+  if (SEND_WHEN_OPTIONS.some((option) => option.id === value)) return null;
+  return "Send when is one of: " + SEND_WHEN_OPTIONS.map((option) => JSON.stringify(option.id)).join(", ");
+}
+
+function sendWhenField(key, section) {
+  return field(key, "Send when", "select", { section: section, options: SEND_WHEN_OPTIONS, hint: SEND_WHEN_HINT });
+}
+
+function loopGuardField(key, section) {
+  return field(key, "Loop guard", "checkbox", { section: section, hint: LOOP_GUARD_HINT });
+}
 
 /**
  * The OSC section of a panel, in the one order every widget shares.
@@ -3184,7 +3228,7 @@ function oscFields(options) {
   const receives = !options || options.receives !== false;
   const fields = [];
   if (receives) fields.push(listen());
-  if (sends) fields.push(oscToggle());
+  if (sends) fields.push(oscToggle(), sendWhenField("oscSendWhen", "osc"), loopGuardField("oscLoopGuard", "osc"));
   if (sends) return fields.concat(connection());
   return fields.concat([field("message", "Message", "text", { section: "osc", placeholder: "/address" })]);
 }
@@ -3303,6 +3347,8 @@ function dmxFields() {
   const only = { section: "dmx" };
   return [
     dmxToggle(),
+    // No guard: nothing comes in over DMX, and a repeated level changes no frame.
+    sendWhenField("dmxSendWhen", "dmx"),
     field("dmxProtocol", "Protocol", "select", Object.assign({ options: PROTOCOL_OPTIONS }, only)),
     field("dmxHost", "Node or port", "text", Object.assign({ placeholder: "broadcast, or the first USB interface", hint: "On Art-Net and sACN: the node's address, or blank to reach every node. On USB: the serial port (COM3, /dev/ttyUSB0), a part of its name, or blank for the first interface found." }, only)),
     field("dmxUniverse", "Universe", "number", Object.assign({ min: 0, max: 63999 }, only)),
@@ -3322,7 +3368,10 @@ function dmxFields() {
 function dmxDefaults(values) {
   return {
     oscEnabled: true,
+    oscSendWhen: "user",
+    oscLoopGuard: true,
     dmxEnabled: false,
+    dmxSendWhen: "user",
     dmxProtocol: "artnet",
     dmxHost: "",
     dmxUniverse: 1,
@@ -3402,6 +3451,7 @@ function checkDmxHost(value, config) {
 /** The validators that go with dmxFields(); `values` as for dmxDefaults(). */
 function dmxChecks(values) {
   return {
+    dmxSendWhen: checkSendWhen,
     dmxProtocol: checkDmxProtocol,
     dmxHost: checkDmxHost,
     dmxUniverse: checkDmxUniverse,
@@ -3461,11 +3511,15 @@ function checkNumber(label) {
 
 /** The validators that go with connection(). */
 function connectionChecks() {
-  return { ip: checkIp, port: checkPort, message: checkMessage };
+  return { ip: checkIp, port: checkPort, message: checkMessage, oscSendWhen: checkSendWhen };
 }
 
 module.exports = {
   field: field,
+  SEND_WHEN_OPTIONS: SEND_WHEN_OPTIONS,
+  checkSendWhen: checkSendWhen,
+  sendWhenField: sendWhenField,
+  loopGuardField: loopGuardField,
   enabled: enabled,
   listen: listen,
   oscFields: oscFields,
@@ -4026,6 +4080,8 @@ const mediaBrowser = {
   defaults: {
     enabled: true,
     oscEnabled: true,
+    oscSendWhen: "user",
+    oscLoopGuard: true,
     ip: "localhost",
     port: 7000,
     message: "/clip",
@@ -4633,14 +4689,14 @@ module.exports = { meter, PEAK_CLASS };
  * is in midi-in.js.
  */
 
-const { field } = require("./fields");
+const { field, checkSendWhen, sendWhenField, loopGuardField } = require("./fields");
 const { TYPES, CHANNELS, MAX_DATA, ALL_INPUTS, whole } = require("../midi/spec");
 
 const DATA_OUT_HINT = "Send this widget's value as MIDI when it is used.";
 
 const DATA_IN_HINT =
-  "Follow a MIDI controller: a knob, fader or pad moves this widget. What comes in is never sent back out. " +
-  "Learn fills in the settings below from the next control you touch.";
+  "Follow a MIDI controller: a knob, fader or pad moves this widget. What comes in is not sent back out " +
+  "unless a Send when says so. Learn fills in the settings below from the next control you touch.";
 
 const IN_PORT_HINT =
   "The MIDI port to listen on. Ticking Data in picks the first port there is, and Learn the one you touch. " +
@@ -4670,6 +4726,8 @@ function midiFields(options) {
   return [
     field("midiListen", "Data in", "checkbox", Object.assign({ hint: DATA_IN_HINT }, only)),
     sends ? field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)) : null,
+    sends ? sendWhenField("midiSendWhen", "midi") : null,
+    sends ? loopGuardField("midiLoopGuard", "midi") : null,
     field("midiInPort", "In port", "select", Object.assign({ options: IN_PORTS, hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
     sends ? field("midiPort", "Out port", "select", Object.assign({ options: OUT_PORTS, hint: PORT_HINT, source: "midi-outputs" }, only)) : null,
     field("midiChannel", "Channel", "number", Object.assign({ min: 1, max: CHANNELS }, only)),
@@ -4680,7 +4738,7 @@ function midiFields(options) {
 
 /** @param {string} [type] what suits the widget: "note" for a button, "program" for a list */
 function midiDefaults(type) {
-  return { midiListen: false, midiEnabled: false, midiInPort: "", midiPort: "", midiChannel: 1, midiType: type || "cc", midiNumber: type === "note" ? 60 : 1 };
+  return { midiListen: false, midiEnabled: false, midiSendWhen: "user", midiLoopGuard: true, midiInPort: "", midiPort: "", midiChannel: 1, midiType: type || "cc", midiNumber: type === "note" ? 60 : 1 };
 }
 
 function checkChannel(value) {
@@ -4713,7 +4771,10 @@ function checkPort(value) {
 function midiChecks(values, options) {
   const checks = { midiInPort: checkPort, midiChannel: checkChannel, midiType: checkType, midiNumber: checkNumber(values) };
   // A check for a setting the widget does not have is a check nothing runs.
-  if (!(options && options.sends === false)) checks.midiPort = checkPort;
+  if (!(options && options.sends === false)) {
+    checks.midiPort = checkPort;
+    checks.midiSendWhen = checkSendWhen;
+  }
   return checks;
 }
 
@@ -4730,11 +4791,10 @@ module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiCheck
  * followMidi() below, and hands it to the widget the way another device's
  * state is handed to it, which is a door the widget cannot send through.
  *
- * With MIDI_BRIDGE on (lib/features.js) a knob is a hand instead: the widget
- * also sends its OSC and DMX (its MIDI it keeps to itself, or a virtual port
- * would hand the message straight back for ever). The same state then goes
- * to the widget's own drive() (see index.js), and the server does that, once,
- * however many pages are showing the surface.
+ * A widget whose Send when bridges data in (lib/widgets/bridge.js) is a hand
+ * instead: the widget also sends the protocols whose combo says so. The same
+ * state then goes to the widget's own drive() (see index.js), and whoever
+ * serves the surface does that once, however many pages are showing it.
  *
  * Each kind of widget reads a level its own way, by the `kind` its
  * driveInput() gives:
@@ -5908,6 +5968,8 @@ const textInput = {
   defaults: {
     enabled: true,
     oscEnabled: true,
+    oscSendWhen: "user",
+    oscLoopGuard: true,
     ip: "localhost",
     port: 7000,
     message: "/text1",
@@ -22177,6 +22239,74 @@ function initGrape(ipServer, socketPort, oscInPort) {
       askForMidiPorts();
     });
     // Learn, and ticking Data in, can name a port the dropdown has not got.
+  // ---- the bridge's confirmation -------------------------------------------
+  // Data in and a Send when of "data" on one widget is the combination that
+  // can feed back (lib/widgets/bridge.js), so creating it is confirmed, from
+  // whichever side arrives last. Only for the selected widget: a project
+  // loading is not a hand in the panel.
+  var BRIDGE_WHEN = ["oscSendWhen", "midiSendWhen", "dmxSendWhen"];
+  var BRIDGE_IN = ["listen", "midiListen"];
+  var revertingBridge = false;
+  // GrapesJS says component:update:<key> twice for one change (once from the
+  // model, once from the trait), and the question must not stack.
+  var bridgeAsking = false;
+  function bridgedCombination(get) {
+    var dataIn = BRIDGE_IN.some(function (key) {
+      return get(key) === true;
+    });
+    var bridged = BRIDGE_WHEN.some(function (key) {
+      return get(key) === "data";
+    });
+    return dataIn && bridged;
+  }
+  editor.on(
+    BRIDGE_WHEN.concat(BRIDGE_IN)
+      .map(function (key) {
+        return "component:update:" + key;
+      })
+      .join(" "),
+    function (model) {
+      if (revertingBridge || bridgeAsking || editor.getSelected() !== model) return;
+      var keys = BRIDGE_WHEN.concat(BRIDGE_IN);
+      var changed = Object.keys(model.changed || {}).filter(function (key) {
+        return keys.indexOf(key) !== -1;
+      })[0];
+      if (!changed) return;
+      var before = model.previous(changed);
+      var was = function (key) {
+        return key === changed ? before : model.get(key);
+      };
+      // Only when this change created the combination, not on every edit near it.
+      if (!bridgedCombination(model.get.bind(model)) || bridgedCombination(was)) return;
+      bridgeAsking = true;
+      $.confirm({
+        title: "This control will send what it hears",
+        onDestroy: function () {
+          bridgeAsking = false;
+        },
+        content:
+          "Data in and a bridged Data out are both on: what arrives moves this control, and the control " +
+          "sends it on. If what it sends can reach its own Data in again -- software that echoes what it " +
+          "receives, or OSCAR's own listening port -- that is a loop. The loop guard passes on only " +
+          "changes, which keeps an echo from becoming standing traffic; leave it ticked unless a repeat " +
+          "is the event. Bridged sends act on published surfaces and downloaded files.",
+        boxWidth: "560px",
+        useBootstrap: false,
+        buttons: {
+          confirm: { text: "Keep the bridge" },
+          cancel: {
+            text: "Undo",
+            action: function () {
+              revertingBridge = true;
+              model.set(changed, before);
+              revertingBridge = false;
+            },
+          },
+        },
+      });
+    }
+  );
+
     editor.on("component:update:midiInPort component:update:midiPort", function () {
       refreshChoices(editor);
     });

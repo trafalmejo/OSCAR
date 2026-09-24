@@ -97,7 +97,7 @@ test("a surface published a moment ago is read afresh: it is made public straigh
   const published = new PublishedStore(fs.mkdtempSync(path.join(os.tmpdir(), "oscar-follow-")));
   await published.save("Stage", "<body>" + tag("oscar-meter", "level", {}) + "</body>");
   const surfaces = createSurfaces({ published, sendOSC() {}, sendDMX() {}, sendMIDI() {}, shared: { store: new SharedState() }, io: { emit() {} } });
-  await surfaces.followedMidiPorts(); // everything has just been read
+  await surfaces.midiPorts(); // everything has just been read
   await published.save("Lobby", "<body>" + tag("oscar-meter", "door", {}) + "</body>");
   assert.deepStrictEqual(await surfaces.shown("lobby"), ["door"]);
 });
@@ -133,20 +133,24 @@ test("MIDI is followed the same way, for any widget that listens: recorded, and 
     tag("oscar-slider", "fader", { min: 0, max: 10, midiListen: true, midiNumber: 8, midiEnabled: true }),
   ]);
   surfaces.onState(() => {});
-  assert.deepStrictEqual(await surfaces.followedMidiPorts(), [""]);
-  assert.strictEqual(await surfaces.followMidi({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "x", true), 1);
-  assert.strictEqual(await surfaces.followMidi({ type: "cc", channel: 1, number: 8, unit: 1 }, "x", true), 1);
+  assert.deepStrictEqual(await surfaces.midiPorts(), [""]);
+  assert.strictEqual(await surfaces.hearMidi({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "x", true), 1);
+  assert.strictEqual(await surfaces.hearMidi({ type: "cc", channel: 1, number: 8, unit: 1 }, "x", true), 1);
   assert.deepStrictEqual([store.get("level"), store.get("fader")], [{ value: 50 }, { value: 10 }]);
   assert.deepStrictEqual(sent, [], "following is not driving: the fader sends nothing, not even with Data out on");
   assert.deepStrictEqual(told, [], "the pages still read MIDI for themselves");
 });
 
-test("OSC is always followed, MIDI only while somebody who cannot hear the rig is watching", async () => {
-  const { surfaces } = await venue([tag("oscar-meter", "level", {})]);
+test("OSC is always followed; MIDI is heard once, for the watchers and for the widgets that bridge", async () => {
+  const { surfaces, told } = await venue([tag("oscar-meter", "level", { min: 0, max: 100, midiListen: true, midiNumber: 7 })]);
   assert.strictEqual(surfaces.watched(), false);
+  // Nobody watching, nothing bridging: a knob moves nothing and nothing is kept.
+  assert.strictEqual(await surfaces.hearMidi({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "x", true), 0);
+  assert.deepStrictEqual(await surfaces.midiPorts(), [], "and no port is opened for it");
+  assert.deepStrictEqual(told, []);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   assert.match(server, /if \(surfaces\) surfaces\.hearOsc\(message\)/);
-  assert.match(server, /surfaces\.watched\(\)\) surfaces\.followMidi/);
+  assert.match(server, /surfaces\.hearMidi\(heard, port, first\)/);
   assert.strictEqual((server.match(/io\.emit\("osc:in"/g) || []).length, 1, "one place tells the pages, so one place follows");
 });
 

@@ -512,20 +512,20 @@ io.on("connection", (socket) => {
 const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io });
 
 // MIDI in. What arrives is handed to every page, as incoming OSC is, and the
-// widgets that listen for it follow (lib/widgets/midi-in.js). Nothing is sent
-// on, unless MIDI_BRIDGE is on (lib/features.js): then a knob is a hand, and
-// the sending is done here, once, for the widgets of published surfaces.
+// widgets that listen for it follow (lib/widgets/midi-in.js). A published
+// widget whose Send when bridges data in is driven instead, as a hand would
+// drive it, here, once (lib/surfaces.js hearMidi); the rest are recorded
+// while anybody is watching the states, as OSC is (hearOsc).
 midi.onMessage((heard, port, first) => {
   io.emit("midi:in", { heard, port, first });
-  // Followed here too while anybody is watching the states, as OSC is (heardOsc).
-  if (!features.MIDI_BRIDGE && surfaces.watched()) surfaces.followMidi(heard, port, first).catch((err) => console.error("MIDI in: " + reason(err)));
-  if (features.MIDI_BRIDGE) surfaces.hearMidi(heard, port, first).catch((err) => console.error("MIDI in: " + reason(err)));
+  surfaces.hearMidi(heard, port, first).catch((err) => console.error("MIDI in: " + reason(err)));
 });
 
 // Only the inputs somebody wants are opened: on Windows an input belongs to
 // whoever opened it first. Each page says which ones its widgets listen on
-// ("midi:want", below); with the bridge on, the published surfaces count too,
-// asked after every few seconds so one published a moment ago is noticed.
+// ("midi:want", below); the published surfaces count too -- always for a
+// widget that bridges, and while anybody watches for the rest -- asked
+// after every few seconds so one published a moment ago is noticed.
 const midiWanted = new Map(); // socket id -> parts of port names
 let publishedWant = [];
 function listenForMidi() {
@@ -534,10 +534,9 @@ function listenForMidi() {
   midi.listenFor(Array.from(parts));
 }
 if (midi.supported) {
-  // The published widgets' ports count while the bridge is on, or while
-  // somebody is watching the states; otherwise only the open pages' do.
   const askPublished = () =>
-    (features.MIDI_BRIDGE ? surfaces.midiPorts() : surfaces.watched() ? surfaces.followedMidiPorts() : Promise.resolve([]))
+    surfaces
+      .midiPorts()
       .then((parts) => {
         publishedWant = parts;
         listenForMidi();

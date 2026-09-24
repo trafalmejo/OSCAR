@@ -136,7 +136,7 @@ test("a widget that can drive DMX has a section per protocol, each switched on b
     const section = (id) => widget.fields.filter((f) => f.section === id).map((f) => f.key);
     assert.ok(section("osc").includes("oscEnabled"), widget.name + ": OSC can be switched off on its own");
     assert.strictEqual(widget.fields.find((f) => f.key === "dmxEnabled").label, "Data out", widget.name + ": DMX only runs one way");
-    assert.deepStrictEqual(section("dmx"), ["dmxEnabled"].concat(DMX_KEYS), widget.name + ": the DMX section, checkbox first");
+    assert.deepStrictEqual(section("dmx"), ["dmxEnabled", "dmxSendWhen"].concat(DMX_KEYS), widget.name + ": the DMX section, checkbox first");
     for (const key of DMX_KEYS) {
       const field = widget.fields.find((f) => f.key === key);
       assert.strictEqual(field.showIf, undefined, widget.name + "." + key + " can be set up before DMX is switched on");
