@@ -72,3 +72,18 @@ test("Edit stands beside File: Undo and Redo under one word, their icons retired
   assert.match(editor, /menu\.contains\(event\.target\) \|\| anchor\.contains\(event\.target\)/, "a second click on the word closes the menu instead of blinking it");
   assert.match(editor, /button\.set\("togglable", false\)/, "a screen size is a choice, not a switch");
 });
+
+test("a double-clicked project opens through the same guarded door, once", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /app\.on\("open-file"/, "macOS hands the file by event");
+  assert.match(main, /OSCAR_OPEN_FILE: fileToOpen/, "the server is told which file");
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(server, /takeBootFile: \(\) => \{\n      const taken = bootFile;\n      bootFile = null;/, "claimed once: a refresh opens nothing");
+  assert.match(server, /stat\.size <= 8 \* 1024 \* 1024/, "a file too large to be a project is refused");
+  const routes = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(routes, /router\.get\("\/boot-file", editorOnly/, "handed over on the editor's own terms");
+  assert.match(editor, /fetch\("\/boot-file"\)/, "the editor asks at startup");
+  assert.match(editor, /openPicked\(file\.name, file\.text, null\)/, "and the ordinary Open flow, confirmation included, takes over");
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  assert.deepStrictEqual(pkg.build.fileAssociations[0].ext, "oscar", "the installer registers .oscar for double-clicking");
+});

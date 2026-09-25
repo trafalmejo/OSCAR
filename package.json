@@ -38,7 +38,7 @@
     "lighting",
     "vj"
   ],
-  "author": "Daniel Castaño",
+  "author": "Daniel Casta\u00f1o",
   "license": "BSD-3-Clause",
   "engines": {
     "node": ">=18"
@@ -122,7 +122,7 @@
         }
       ],
       "category": "AudioVideo",
-      "maintainer": "Daniel Castaño <hello@createwithoscar.com>"
+      "maintainer": "Daniel Casta\u00f1o <hello@createwithoscar.com>"
     },
     "publish": [
       {
@@ -132,7 +132,15 @@
         "releaseType": "draft"
       }
     ],
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "fileAssociations": [
+      {
+        "ext": "oscar",
+        "name": "OSCAR project",
+        "description": "OSCAR control surface project",
+        "role": "Editor"
+      }
+    ]
   },
   "overrides": {
     "ws": "^8.21.3"

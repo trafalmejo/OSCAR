@@ -23864,6 +23864,18 @@ function initGrape(ipServer, socketPort, oscInPort) {
     ]);
   }
 
+  // A file double-clicked in the file manager arrives through the server,
+  // once, and goes through the same Open flow as any picked file: the
+  // confirmation about unsaved changes stands between it and the canvas.
+  fetch("/boot-file")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (file) {
+      if (file && file.name && typeof file.text === "string") openPicked(file.name, file.text, null);
+    })
+    .catch(function () {});
+
   // Somebody opening OSCAR for the first time is shown the Showcase, where
   // every widget works, not an empty canvas (first_run.js).
   if (firstRun) {

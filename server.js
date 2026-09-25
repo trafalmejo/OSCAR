@@ -119,6 +119,25 @@ process.on("unhandledRejection", (reason) => {
   throw reason instanceof Error ? reason : new Error(String(reason));
 });
 
+// The file the person double-clicked to start OSCAR (main.js), read once
+// and handed to the editor once: a refresh must not re-offer it forever.
+let bootFile = null;
+if (process.env.OSCAR_OPEN_FILE && /\.(oscar|json|html?)$/i.test(process.env.OSCAR_OPEN_FILE)) {
+  try {
+    const stat = fs.statSync(process.env.OSCAR_OPEN_FILE);
+    if (stat.size <= 8 * 1024 * 1024) {
+      bootFile = {
+        name: path.basename(process.env.OSCAR_OPEN_FILE),
+        text: fs.readFileSync(process.env.OSCAR_OPEN_FILE, "utf8"),
+      };
+    } else {
+      console.error("Not opening " + process.env.OSCAR_OPEN_FILE + ": larger than any OSCAR project has business being.");
+    }
+  } catch (err) {
+    console.error("Could not read the file to open: " + err.message);
+  }
+}
+
 const lock = {
   isLocked: () => !!settings.get("locked"),
   setLocked: (value) => settings.set("locked", value),
@@ -286,6 +305,12 @@ app.use(
     // The pill's network log, backlog for a window that has just opened.
     // `liveLog` is created below; this only runs once a request arrives.
     liveLog: () => liveLog.slice(),
+    // The double-clicked project, claimed by the first editor to ask.
+    takeBootFile: () => {
+      const taken = bootFile;
+      bootFile = null;
+      return taken;
+    },
     draftsDir: DRAFTS_DIR,
     // The About window's telemetry switch.
     telemetryState: {

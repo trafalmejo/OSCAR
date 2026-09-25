@@ -46,6 +46,7 @@ module.exports = function createRouter({
   published,
   onPublishedChanged,
   liveLog,
+  takeBootFile,
   telemetryState,
   templatesDir,
   draftsDir,
@@ -350,6 +351,13 @@ module.exports = function createRouter({
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="' + req.params.id + '.html"');
     res.send(rebake(page, connection));
+  });
+
+  // The project the person double-clicked to start OSCAR, once: the first
+  // editor page to ask gets it and it is gone, so a refresh opens nothing.
+  router.get("/boot-file", editorOnly, (req, res) => {
+    const file = takeBootFile ? takeBootFile() : null;
+    res.json(file || {});
   });
 
   // The About window's telemetry switch: anonymous counts on or off.

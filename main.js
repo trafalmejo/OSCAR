@@ -12,6 +12,23 @@ let serverProcess = null;
 let serverExited = false;
 let stopping = null;
 
+// A project file double-clicked in the file manager: Windows and Linux hand
+// it to us in argv, macOS through the open-file event (which can fire
+// before ready, hence captured here). The server serves it to the editor
+// once (/boot-file), where the ordinary Open flow -- confirmation included
+// -- takes over.
+let fileToOpen = "";
+for (const arg of process.argv.slice(1)) {
+  if (/\.(oscar|json|html?)$/i.test(arg) && require("fs").existsSync(arg)) {
+    fileToOpen = arg;
+    break;
+  }
+}
+app.on("open-file", (event, file) => {
+  event.preventDefault();
+  fileToOpen = file;
+});
+
 // Two OSCAR windows would fight over port 8080, so hand focus to the running
 // instance instead of starting a second server.
 if (!app.requestSingleInstanceLock()) {
@@ -35,6 +52,8 @@ function startServer() {
         OSCAR_PROJECTS_DIR: path.join(app.getPath("userData"), "projects"),
         // Electron provides the window; don't also open the system browser.
         OSCAR_NO_OPEN: "1",
+        // The double-clicked project, if any, for the editor to open.
+        OSCAR_OPEN_FILE: fileToOpen,
       }),
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
