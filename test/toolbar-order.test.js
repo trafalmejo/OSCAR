@@ -12,12 +12,15 @@ const ADDED = [
   "open-load", "oscar-export", "toggle-lock", "open-info",
 ];
 
-test("the lock sits beside Push to preview, Pages beside the widget style, and a project's buttons read Load, Save, Import, Publish", () => {
+test("the lock sits beside Push to preview, Pages beside the widget style, and a project's buttons read Open, Save, Publish", () => {
+  // Import holds no seat of its own any more: its paste box lives inside
+  // the Open menu, and the toolbar button is removed after the preset adds it.
   const order = arrange(ADDED);
   assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
   assert.strictEqual(order[order.indexOf("open-styles") + 1], "open-pages");
   const load = order.indexOf("open-load");
-  assert.deepStrictEqual(order.slice(load, load + 4), ["open-load", "open-save", "gjs-open-import-webpage", "oscar-export"]);
+  assert.deepStrictEqual(order.slice(load, load + 3), ["open-load", "open-save", "oscar-export"]);
+  assert.ok(!PLACEMENTS.some((p) => p.id === "gjs-open-import-webpage" || p.after === "gjs-open-import-webpage"), "no placement names the retired button");
   assert.deepStrictEqual(order.slice().sort(), ADDED.slice().sort(), "nothing added, nothing lost");
   const moved = PLACEMENTS.map((p) => p.id);
   assert.deepStrictEqual(order.filter((id) => !moved.includes(id)), ADDED.filter((id) => !moved.includes(id)), "and the rest keep their order");

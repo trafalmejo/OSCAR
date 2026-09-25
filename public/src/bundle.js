@@ -1770,12 +1770,11 @@ const PLACEMENTS = [
   // Pages and the widget style are both about the surface as a whole, not
   // about getting a project in or out.
   { id: "open-pages", after: "open-styles" },
-  // A project's way in and out, in the order they are reached for: Load,
-  // Save, then Import (code in, arrow down) and Publish (the surface out,
-  // arrow up), side by side.
+  // A project's way in and out, in the order they are reached for: Open,
+  // Save, then Publish (the surface out). Import's paste box lives inside
+  // the Open menu now, so it holds no seat of its own.
   { id: "open-save", after: "open-load" },
-  { id: "gjs-open-import-webpage", after: "open-save" },
-  { id: "oscar-export", after: "gjs-open-import-webpage" },
+  { id: "oscar-export", after: "open-save" },
 ];
 
 /**
@@ -23058,7 +23057,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       templateUrl = null;
       $("#project-name").val("");
     }
-    setModal(mode, "table-panel");
+    setModal(mode === "Load" ? "Open a project or template" : mode, "table-panel");
     $("#save-button").toggle(mode === "Save");
     $("#load-button").toggle(mode === "Load");
     refreshProjects();
@@ -23573,6 +23572,232 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.UndoManager.clear();
   }
 
+  // ---- a project as a file --------------------------------------------
+  // Open and Save against the real file system: a project is one .oscar
+  // file (the library's own JSON, stamped the same way) the person can put
+  // anywhere -- a band's shared drive, an email, a community repo -- and a
+  // .html template opens through the same door. The Load window stays for
+  // templates and the local library; this is for everything else.
+  var openedFile = { handle: null, name: "" };
+
+  function slugName(name) {
+    var slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return slug || "surface";
+  }
+
+  function projectRecord(name) {
+    // The same stamping the library's save does on the server, so a .oscar
+    // file and a library project are one format, not two.
+    var data = projectFormat.stripEditorState(editor.getProjectData());
+    return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version });
+  }
+
+  function oscarSaveToFile() {
+    var name = (projectName.value || "").trim() || openedFile.name || "surface";
+    var text = JSON.stringify(projectRecord(name), null, 2);
+
+    var fallback = function () {
+      // No file pickers in this browser: the file lands in Downloads.
+      var blob = new Blob([text], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = slugName(name) + ".oscar";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () {
+        URL.revokeObjectURL(a.href);
+      }, 5000);
+    };
+
+    if (openedFile.handle) {
+      // Saving again writes the file that was opened or saved before,
+      // silently, the way every desktop app's Save works.
+      openedFile.handle
+        .createWritable()
+        .then(function (writable) {
+          return writable.write(text).then(function () {
+            return writable.close();
+          });
+        })
+        .then(function () {
+          $.alert('Saved to "' + openedFile.handle.name + '"');
+        })
+        .catch(function () {
+          // The file moved or the permission lapsed: ask where, once more.
+          openedFile.handle = null;
+          oscarSaveToFile();
+        });
+      return;
+    }
+
+    if (!window.showSaveFilePicker) return fallback();
+    window
+      .showSaveFilePicker({
+        suggestedName: slugName(name) + ".oscar",
+        types: [{ description: "OSCAR project", accept: { "application/json": [".oscar"] } }],
+      })
+      .then(function (handle) {
+        return handle
+          .createWritable()
+          .then(function (writable) {
+            return writable.write(text).then(function () {
+              return writable.close();
+            });
+          })
+          .then(function () {
+            openedFile = { handle: handle, name: name };
+            projectName.value = name;
+            $.alert('Saved to "' + handle.name + '"');
+          });
+      })
+      .catch(function (err) {
+        if (err && err.name === "AbortError") return; // they closed the picker
+        fallback();
+      });
+  }
+
+  function openProjectText(fileName, text, handle) {
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      $.alert('"' + fileName + '" is not an OSCAR project file.');
+      return;
+    }
+    if (typeof parsed.oscarFormat === "number" && parsed.oscarFormat > projectFormat.CURRENT_FORMAT) {
+      $.alert("This project was saved by a newer OSCAR (format " + parsed.oscarFormat + "). Update OSCAR to open it; nothing here was changed.");
+      return;
+    }
+    var data = projectFormat.openProject(parsed);
+    if (!isProjectData(data)) {
+      $.alert('"' + fileName + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
+      return;
+    }
+    $.confirm({
+      title: "Open",
+      content: "If you open this file, you will lose all unsaved changes in the current project.",
+      buttons: {
+        confirm: function () {
+          editor.loadProjectData(data);
+          openedFile = { handle: handle || null, name: parsed.name || fileName.replace(/\.(oscar|json)$/i, "") };
+          projectName.value = openedFile.name;
+          projectName.setAttribute("id-project", "");
+          $.alert("Opened successfully");
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function openHtmlText(fileName, text) {
+    var title = /<title[^>]*>([^<]*)<\/title>/i.exec(text);
+    $.confirm({
+      title: "Open",
+      content: "If you open this file, you will lose all unsaved changes in the current project.",
+      buttons: {
+        confirm: function () {
+          loadTemplate(text);
+          openedFile = { handle: null, name: (title && title[1].trim()) || fileName.replace(/\.html?$/i, "") };
+          projectName.value = openedFile.name;
+          projectName.setAttribute("id-project", "");
+          $.alert("Opened successfully");
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function openPicked(fileName, text, handle) {
+    if (/\.html?$/i.test(fileName) || (!/^\s*\{/.test(text) && /^\s*</.test(text))) openHtmlText(fileName, text);
+    else openProjectText(fileName, text, handle);
+  }
+
+  // The fallback for browsers without file pickers.
+  var openFileInput = document.createElement("input");
+  openFileInput.type = "file";
+  openFileInput.accept = ".oscar,.json,.html,.htm";
+  openFileInput.style.display = "none";
+  document.body.appendChild(openFileInput);
+  openFileInput.addEventListener("change", function () {
+    var file = openFileInput.files && openFileInput.files[0];
+    openFileInput.value = "";
+    if (!file) return;
+    file.text().then(function (text) {
+      openPicked(file.name, text, null);
+    });
+  });
+
+  function oscarOpenFile() {
+    if (!window.showOpenFilePicker) return openFileInput.click();
+    window
+      .showOpenFilePicker({
+        types: [{ description: "OSCAR project or template", accept: { "application/json": [".oscar", ".json"], "text/html": [".html", ".htm"] } }],
+      })
+      .then(function (picked) {
+        return picked[0].getFile().then(function (file) {
+          // A project file keeps its handle, so Save writes it back; an
+          // HTML template does not -- saving it makes a new .oscar.
+          return file.text().then(function (text) {
+            openPicked(file.name, text, /\.(oscar|json)$/i.test(file.name) ? picked[0] : null);
+          });
+        });
+      })
+      .catch(function (err) {
+        if (err && err.name === "AbortError") return;
+        openFileInput.click();
+      });
+  }
+
+  function showOpenMenu() {
+    var open = document.querySelector(".oscar-open-menu");
+    if (open) {
+      open.remove();
+      return;
+    }
+    var anchor = document.querySelector(".gjs-pn-options .oscar-open-btn");
+    if (!anchor) return;
+    var at = anchor.getBoundingClientRect();
+    var menu = document.createElement("div");
+    menu.className = "oscar-open-menu";
+    menu.style.left = Math.round(at.left) + "px";
+    menu.style.top = Math.round(at.bottom + 6) + "px";
+    [
+      { label: "Open a file\u2026", run: oscarOpenFile },
+      {
+        label: "Open a template\u2026",
+        run: function () {
+          editor.runCommand("open-projects", { type: "Load" });
+        },
+      },
+      {
+        label: "Paste HTML / CSS\u2026",
+        run: function () {
+          editor.runCommand("gjs-open-import-webpage");
+        },
+      },
+    ].forEach(function (item) {
+      var row = document.createElement("button");
+      row.type = "button";
+      row.className = "oscar-open-menu-item";
+      row.textContent = item.label;
+      row.onclick = function () {
+        menu.remove();
+        item.run();
+      };
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+    var away = function (event) {
+      if (menu.contains(event.target)) return;
+      menu.remove();
+      document.removeEventListener("pointerdown", away, true);
+    };
+    setTimeout(function () {
+      document.addEventListener("pointerdown", away, true);
+    }, 0);
+  }
+
   // Somebody opening OSCAR for the first time is shown the Showcase, where
   // every widget works, not an empty canvas (first_run.js).
   if (firstRun) {
@@ -23865,7 +24090,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
     id: "open-save",
     label: icon("save"),
     command: function () {
-      editor.runCommand("open-projects", { type: "Save" });
+      // Straight to the file system: the project is a file the person can
+      // see, mail, and keep wherever they keep their work. The first save
+      // asks where; saving again writes the same file silently.
+      oscarSaveToFile();
     },
     attributes: { title: "Save project", "data-tooltip-pos": "bottom" },
   });
@@ -23884,11 +24112,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   pn.addButton("options", {
     id: "open-load",
+    className: "oscar-open-btn",
     label: icon("open"),
     command: function () {
-      editor.runCommand("open-projects", { type: "Load" });
+      // Three ways in, one door: a file from anywhere, a template from the
+      // list, or pasted HTML/CSS (the old Import, absorbed here).
+      showOpenMenu();
     },
-    attributes: { title: "Load project", "data-tooltip-pos": "bottom" },
+    attributes: { title: "Open project", "data-tooltip-pos": "bottom" },
   });
 
   // ---- export ------------------------------------------------------------
@@ -24510,6 +24741,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // button does not re-render when its attributes change afterwards. Setting
   // the model alone is silently ignored, so the text is written onto the
   // elements as well. Buttons render in the order the panel holds them.
+  // Import's dialog lives on behind the Open menu ("Paste HTML / CSS...");
+  // the toolbar button itself retires.
+  pn.removeButton("options", "gjs-open-import-webpage");
+
   // ---- toolbar order -----------------------------------------------------
   // Every button exists by now. GrapesJS can only append, so the ones that
   // belong elsewhere are moved: in the panel's own list and on the page
@@ -24575,15 +24810,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     "export-template": "See code",
     undo: "Undo",
     redo: "Redo",
-    // Says what goes in. "Import" alone sat beside Load, which also brings
     // something in, and templates -- the other thing one might import -- are
     // opened from Load.
-    "gjs-open-import-webpage": "Import HTML/CSS",
     "canvas-clear": "Clear canvas",
     "toggle-lock": null,
     "open-styles": "Widget style",
     "open-save": "Save project",
-    "open-load": "Load project",
+    "open-load": "Open project",
     "open-pages": "Pages",
     "oscar-export": "Publish your interface",
     "open-info": "About Oscar",

@@ -111,3 +111,17 @@ test("save leaves no temp files behind", async () => {
   const leftovers = fs.readdirSync(dir).filter((f) => f.endsWith(".tmp"));
   assert.deepStrictEqual(leftovers, []);
 });
+
+test("a .oscar file in the projects folder is a project: listed, read, and removed like one", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-dot-oscar-"));
+  const store = new ProjectStore(dir);
+  await store.save("From The Library", { pages: [] });
+  fs.writeFileSync(path.join(dir, "shared-desk.oscar"), JSON.stringify({ name: "Shared Desk", updatedAt: "2026-09-25T00:00:00Z", pages: [] }));
+  fs.writeFileSync(path.join(dir, "notes.txt"), "not a project");
+
+  const rows = await store.list();
+  assert.deepStrictEqual(rows.map((r) => r.name).sort(), ["From The Library", "Shared Desk"]);
+  assert.strictEqual((await store.read("shared-desk")).name, "Shared Desk");
+  assert.strictEqual(await store.remove("shared-desk"), true);
+  assert.strictEqual(await store.read("shared-desk"), null);
+});

@@ -54,8 +54,9 @@ test("an import takes the style its body names, and only a style OSCAR has", () 
 test("the shipped template reads as its widgets and CSS, with its style", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "public", "templates", "live-visuals-controller.html"), "utf8");
   const doc = readDocument(html);
-  assert.deepStrictEqual(doc.bodyAttributes, { "data-osc-style": "default", "data-osc-appearance": "dark" });
-  assert.match(doc.html, /^<style>\n\.lvc \{/, "the CSS leads, with its comments already taken out");
+  // "own" since the neon restyle (5c58fd3): the template brings its look.
+  assert.deepStrictEqual(doc.bodyAttributes, { "data-osc-style": "own", "data-osc-appearance": "dark" });
+  assert.match(doc.html, /^<style>\n\[data-osc-style="own"\] \{/, "the CSS leads (the neon style's own tokens first), comments already taken out");
   assert.match(doc.html, /<div id="lvc" class="lvc"/);
   assert.doesNotMatch(doc.html, /<title>|<head>|<body/);
 });

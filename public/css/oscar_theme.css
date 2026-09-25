@@ -344,6 +344,34 @@ a {
   color: var(--o-accent);
 }
 
+/* The Open menu, under the Open project button: a file from anywhere, a
+   template from the list, or pasted HTML/CSS. */
+.oscar-open-menu {
+  position: fixed;
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--o-panel);
+  border: 1px solid var(--o-border-strong);
+  border-radius: var(--o-radius-md);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5);
+}
+.oscar-open-menu-item {
+  border: 0;
+  background: none;
+  color: var(--o-text);
+  font-size: var(--o-text-sm);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--o-radius-sm);
+  cursor: pointer;
+}
+.oscar-open-menu-item:hover {
+  background: var(--o-surface);
+}
+
 /* The telemetry row in About: a checkbox and its whole truth, side by side. */
 .oscar-telemetry-row {
   display: flex;
