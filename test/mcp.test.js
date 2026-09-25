@@ -25,7 +25,7 @@ function tag(name, id, settings) {
   const config = Object.assign({}, definition.defaults, settings);
   // The widget's own attributes (class, type) are what matches() knows it by,
   // exactly as a template or an assistant's HTML must carry them.
-  const attributes = Object.assign(id ? { id } : {}, definition.attributes || {}, exportAttributes(name, (key) => config[key]));
+  const attributes = Object.assign(id ? { id } : {}, definition.attributes || {}, { "data-gjs-dmode": "flow" }, exportAttributes(name, (key) => config[key]));
   const text = Object.entries(attributes)
     .map(([k, v]) => k + '="' + String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '"')
     .join(" ");
@@ -256,4 +256,24 @@ test("a draft in the Load list is badged Draft, in the assistant green, and can 
   const base = table.indexOf(".o-table .o-badge {");
   const draft = table.indexOf(".o-table .o-badge-draft {");
   assert.ok(base !== -1 && draft !== -1 && base < draft, "the draft recolour comes after the base badge, or the cascade undoes it");
+});
+
+test("every part of a saved draft drags in flow: absolute mode is what made the handles messy", async () => {
+  const { stampFlow } = require("../lib/mcp/validate");
+  const stamped = stampFlow('<body><div id="a"><button id="b" data-gjs-dmode="abs">GO</button></div><script>var x = "<div>"; if (1 < 2) x;</script></body>');
+  assert.match(stamped, /<div id="a" data-gjs-dmode="flow">/, "an unstamped part is stamped");
+  assert.match(stamped, /<button id="b" data-gjs-dmode="abs">/, "a part that chose its mode keeps it");
+  assert.match(stamped, /var x = "<div>"; if \(1 < 2\) x;/, "markup inside a script's code is not touched");
+  assert.ok(stamped.indexOf('<body data-gjs-dmode') === -1, "the body itself is not a draggable part");
+
+  const bare = validateSurface('<!doctype html><title>T</title><body><button id="go" class="oscar-button" data-oscar="oscar-button" data-gjs-message="/go">GO</button></body>');
+  assert.ok(bare.warnings.some((w) => /data-gjs-dmode/.test(w)), "the validator says why the handles would misbehave");
+
+  const { by, dir } = await bench();
+  const html = '<!doctype html><body><div><button id="go" class="oscar-button" data-oscar="oscar-button" data-gjs-message="/go">GO</button></div></body>';
+  const saved = await by.create_surface.handler({ name: "Flow Desk", html });
+  assert.strictEqual(saved.saved, true);
+  const file = fs.readFileSync(path.join(dir, "assistant", "flow-desk.html"), "utf8");
+  assert.strictEqual((file.match(/data-gjs-dmode="flow"/g) || []).length, 2, "the div and the button both stamped");
+  assert.match(HOWTO, /data-gjs-dmode/, "and the how-to teaches it up front");
 });
