@@ -3,7 +3,8 @@
 <head>
 <title>Live Visuals Controller</title>
 <!--
-  Live Visuals Controller: a surface for running visuals at a show.
+  Live Visuals Controller: a surface for running visuals at a show, dressed
+  as a wall of neon signs.
 
   Open it from Load, or paste this whole file into Import. It is ordinary
   HTML and CSS with two OSCAR additions:
@@ -11,7 +12,25 @@
   - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
     OSC address) and data-gjs-dmode="flow", which makes a part move through
     the layout when dragged instead of being pulled out of it.
-  - data-osc-style and data-osc-appearance on <body> pick the widget style.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the whole surface is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
+
+  How the neon is made. Every part that glows has its colour in one custom
+  property, --neon, set per part near the end of the own rules: the layers
+  pink, each layer's fader and row of clips its own colour, the effects each
+  a different one, the master amber, Blackout red. The rules that draw a
+  tube use nothing but --neon: a thin bright border, and the same colour
+  again as a soft outer and inner glow, the way a gas tube lights the wall
+  around it. Idle, a tube glows low; pressed or switched on (OSCAR puts the
+  class "toggle" on a button that is down), it blazes, filled with its own
+  colour. The wall is brick, drawn with gradients: a mortar line every 30px,
+  and the upright joints of alternate rows offset by half a brick.
+
+  The sign at the top flickers now and then, as old tubes do. Anyone who has
+  asked their system for less motion gets it lit and still.
 
   The layout is a CSS grid that rearranges at 992px and 480px, the widths of
   the editor's Tablet and Mobile views, so edits made in those views land in
@@ -22,16 +41,46 @@
     /master              /blackout
 -->
 <style>
+[data-osc-style="own"] {
+  --osc-background: #0b0710;
+  --osc-foreground: #f4ecff;
+  --osc-card: #140c1a;
+  --osc-muted: #1c1224;
+  --osc-accent: #2a1a36;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #05030a;
+  --osc-input: #05030a;
+  --osc-primary: #ff2bd6;
+  --osc-primary-foreground: #14020f;
+  --osc-ring: #1ef0ff;
+  --osc-radius: 10px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
 /* ---- desktop and landscape tablets: one row of panels ---- */
 .lvc {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1.1fr) auto;
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas: "header header header header" "layers clips fx master";
-  gap: 16px;
-  padding: 16px;
+  gap: 20px;
+  padding: 20px;
   min-height: 100vh;
+  box-sizing: border-box;
 }
+/* A brick wall in a dark club: mortar every 30px, the joints of every other row offset. */
+[data-osc-style="own"] .lvc {
+  background:
+    radial-gradient(70% 55% at 50% 0%, rgba(255, 43, 214, 0.12), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(60% 50% at 100% 100%, rgba(30, 240, 255, 0.08), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(180deg, rgba(8, 4, 12, 0.72), rgba(8, 4, 12, 0.86)),
+    conic-gradient(at 2px 30px, rgba(0, 0, 0, 0) 0 270deg, #0d080c 270deg 360deg) 0 0 / 60px 60px,
+    conic-gradient(at 2px 30px, rgba(0, 0, 0, 0) 0 180deg, #0d080c 180deg 270deg) 30px 0 / 60px 60px,
+    linear-gradient(180deg, #0d080c 2px, rgba(0, 0, 0, 0) 2px) 0 0 / 60px 30px,
+    linear-gradient(180deg, #2e161c, #1d0e13);
+  color: #f4ecff;
+}
+
 .lvc-header {
   grid-area: header;
   display: flex;
@@ -39,11 +88,30 @@
   justify-content: space-between;
   gap: 16px;
 }
+
+/* The sign. */
 .lvc-title {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  animation: lvc-flicker 9s linear infinite;
 }
+[data-osc-style="own"] .lvc-title {
+  --neon: #ff4fe1;
+  font-family: "Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive;
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1;
+  color: #ffe6fb;
+  text-shadow: 0 0 2px #ffffff, 0 0 8px var(--neon), 0 0 18px var(--neon), 0 0 36px var(--neon), 0 0 64px var(--neon);
+}
+
+@keyframes lvc-flicker {
+  0%, 18%, 20%, 58%, 61%, 63%, 100% { opacity: 1; }
+  19%, 62% { opacity: 0.35; }
+  60% { opacity: 0.7; }
+}
+
 .lvc-panel {
   display: flex;
   flex-direction: column;
@@ -58,6 +126,7 @@
 .lvc-clips { grid-area: clips; }
 .lvc-fx { grid-area: fx; }
 .lvc-master { grid-area: master; }
+
 .lvc-heading {
   margin: 0;
   font-size: 12px;
@@ -96,7 +165,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: minmax(56px, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 .lvc-clip-grid > button,
 .lvc-toggles > button {
@@ -114,7 +183,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 48px;
-  gap: 8px;
+  gap: 10px;
 }
 .lvc-pad-wrap {
   display: flex;
@@ -129,15 +198,142 @@
 /* The one control that has to be found in the dark, first time. */
 #lvc-blackout {
   min-height: 48px;
-  border-color: #e5484d;
-  background-color: #e5484d;
-  color: #ffffff;
 }
-#lvc-blackout.toggle,
-#lvc-blackout:hover {
-  border-color: #ce2c31;
-  background-color: #ce2c31;
-  color: #ffffff;
+
+/* ---- the neon: a tube is a bright line of --neon and its glow ------------------------------- */
+/* Panels: a tube round the edge, the wall showing through a dark glass. */
+[data-osc-style="own"] .lvc-panel {
+  border: 2px solid var(--neon);
+  border-radius: 14px;
+  background: rgba(10, 5, 16, 0.72);
+  box-shadow: 0 0 6px var(--neon), 0 0 22px color-mix(in srgb, var(--neon) 45%, rgba(0, 0, 0, 0)), inset 0 0 18px color-mix(in srgb, var(--neon) 22%, rgba(0, 0, 0, 0));
+}
+[data-osc-style="own"] .lvc-heading {
+  color: var(--neon);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  opacity: 1;
+  text-shadow: 0 0 6px var(--neon), 0 0 16px var(--neon);
+}
+[data-osc-style="own"] .lvc-label {
+  color: var(--neon);
+  font-weight: 700;
+  opacity: 1;
+  text-shadow: 0 0 6px var(--neon);
+}
+
+/* Buttons: an unlit tube glows low; lit, it is filled with its colour and throws light. */
+[data-osc-style="own"] .lvc button {
+  border: 2px solid color-mix(in srgb, var(--neon) 70%, rgba(0, 0, 0, 0));
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--neon) 55%, rgba(0, 0, 0, 0)), inset 0 0 8px color-mix(in srgb, var(--neon) 25%, rgba(0, 0, 0, 0));
+  color: var(--neon);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 6px var(--neon);
+  transition: background-color 0.08s, box-shadow 0.08s, color 0.08s;
+}
+[data-osc-style="own"] .lvc button:hover {
+  border-color: var(--neon);
+  background: color-mix(in srgb, var(--neon) 12%, rgba(0, 0, 0, 0.35));
+  box-shadow: 0 0 8px var(--neon), inset 0 0 12px color-mix(in srgb, var(--neon) 35%, rgba(0, 0, 0, 0));
+  color: var(--neon);
+}
+[data-osc-style="own"] .lvc button.toggle,
+[data-osc-style="own"] .lvc button.toggle:hover,
+[data-osc-style="own"] .lvc button:active {
+  border-color: #ffffff;
+  background: var(--neon);
+  box-shadow: 0 0 4px #ffffff, 0 0 14px var(--neon), 0 0 34px var(--neon), 0 0 60px color-mix(in srgb, var(--neon) 60%, rgba(0, 0, 0, 0));
+  color: #120818;
+  text-shadow: none;
+}
+
+/* Faders: a dark slot, lit up to the level, and a glowing capsule to hold. */
+[data-osc-style="own"] .lvc input[type="range"] {
+  --osc-primary: var(--neon);
+  --osc-muted: #1c1224;
+  --osc-track-size: 8px;
+  --osc-thumb: 26px;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--neon) 70%, rgba(0, 0, 0, 0)));
+}
+[data-osc-style="own"] .lvc input[type="range"]::-webkit-slider-thumb {
+  width: 36px;
+  height: 16px;
+  margin-left: -14px;
+  border: 2px solid #ffffff;
+  border-radius: 8px;
+  background: var(--neon);
+  box-shadow: 0 0 8px var(--neon), 0 0 18px var(--neon);
+}
+[data-osc-style="own"] .lvc input[type="range"]::-moz-range-thumb {
+  width: 36px;
+  height: 16px;
+  border: 2px solid #ffffff;
+  border-radius: 8px;
+  background: var(--neon);
+  box-shadow: 0 0 8px var(--neon), 0 0 18px var(--neon);
+}
+
+/* The pad: a neon grid on black, and a glowing puck. */
+[data-osc-style="own"] #lvc-pad {
+  border: 2px solid var(--neon);
+  border-radius: 12px;
+  background:
+    linear-gradient(color-mix(in srgb, var(--neon) 22%, rgba(0, 0, 0, 0)) 1px, rgba(0, 0, 0, 0) 1px) 0 0 / 100% 12.5%,
+    linear-gradient(90deg, color-mix(in srgb, var(--neon) 22%, rgba(0, 0, 0, 0)) 1px, rgba(0, 0, 0, 0) 1px) 0 0 / 12.5% 100%,
+    #07040b;
+  box-shadow: 0 0 8px var(--neon), inset 0 0 18px color-mix(in srgb, var(--neon) 30%, rgba(0, 0, 0, 0));
+}
+[data-osc-style="own"] #lvc-pad::after {
+  border: 2px solid #ffffff;
+  background: var(--neon);
+  box-shadow: 0 0 10px var(--neon), 0 0 26px var(--neon), 0 0 44px var(--neon);
+}
+
+/* Blackout: a red sign by the door. */
+[data-osc-style="own"] #lvc-blackout {
+  padding: 0 22px;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+/* ---- which tube is which colour ---------------------------------------------------------- */
+[data-osc-style="own"] .lvc-layers { --neon: #ff2bd6; }
+[data-osc-style="own"] .lvc-clips { --neon: #1ef0ff; }
+[data-osc-style="own"] .lvc-fx { --neon: #9dff3a; }
+[data-osc-style="own"] .lvc-master { --neon: #ffb020; }
+[data-osc-style="own"] #lvc-blackout { --neon: #ff2d3d; }
+
+[data-osc-style="own"] #lvc-fader-1 { --neon: #ff2bd6; }
+[data-osc-style="own"] #lvc-fader-2 { --neon: #1ef0ff; }
+[data-osc-style="own"] #lvc-fader-3 { --neon: #9dff3a; }
+[data-osc-style="own"] #lvc-fader-4 { --neon: #b26bff; }
+
+/* Each row of clips is its layer's colour. */
+[data-osc-style="own"] .lvc-clip-grid > button:nth-child(-n+4) { --neon: #ff2bd6; }
+[data-osc-style="own"] .lvc-clip-grid > button:nth-child(n+5):nth-child(-n+8) { --neon: #1ef0ff; }
+[data-osc-style="own"] .lvc-clip-grid > button:nth-child(n+9):nth-child(-n+12) { --neon: #9dff3a; }
+[data-osc-style="own"] .lvc-clip-grid > button:nth-child(n+13) { --neon: #b26bff; }
+
+[data-osc-style="own"] #lvc-fx-strobe { --neon: #f4f7ff; }
+[data-osc-style="own"] #lvc-fx-invert { --neon: #b26bff; }
+[data-osc-style="own"] #lvc-fx-blur { --neon: #3d8bff; }
+[data-osc-style="own"] #lvc-fx-feedback { --neon: #ff7a1a; }
+[data-osc-style="own"] #lvc-pad-wrap { --neon: #9dff3a; }
+
+/* ---- under any other widget style: the same surface, in that style's colours ---- */
+body:not([data-osc-style="own"]) .lvc {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) #lvc-blackout {
+  border-color: var(--osc-primary);
+  background-color: var(--osc-primary);
+  color: var(--osc-primary-foreground);
 }
 
 /* ---- tablets in portrait: faders beside the master, then clips, then effects ---- */
@@ -156,12 +352,15 @@
   .lvc-toggles {
     grid-auto-rows: 64px;
   }
+  [data-osc-style="own"] .lvc-title {
+    font-size: 38px;
+  }
 }
 
 /* ---- phones: tighter, and the pad under the toggles ---- */
 @media (max-width: 480px) {
   .lvc {
-    gap: 12px;
+    gap: 14px;
     padding: 12px;
   }
   .lvc-panel {
@@ -170,13 +369,21 @@
   .lvc-title {
     font-size: 16px;
   }
+  [data-osc-style="own"] .lvc-title {
+    font-size: 30px;
+  }
+  [data-osc-style="own"] #lvc-blackout {
+    padding: 0 12px;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+  }
   /* Both queries match on a phone, so the tablet's align-items is undone too. */
   .lvc-fx-body {
     display: flex;
     align-items: stretch;
   }
   .lvc-clip-grid {
-    gap: 6px;
+    gap: 7px;
     grid-auto-rows: minmax(48px, 1fr);
   }
   .lvc-clip-grid > button {
@@ -190,9 +397,17 @@
     min-height: 180px;
   }
 }
+
+/* ---- for anyone who has asked for less motion: the sign lit and still ---- */
+@media (prefers-reduced-motion: reduce) {
+
+  .lvc-title {
+    animation: none !important;
+  }
+}
 </style>
 </head>
-<body data-osc-style="default" data-osc-appearance="dark">
+<body data-osc-style="own" data-osc-appearance="dark">
 <div id="lvc" class="lvc" data-gjs-dmode="flow">
 
   <header id="lvc-header" class="lvc-header" data-gjs-dmode="flow">
