@@ -22668,6 +22668,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
       (getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#ff3663") +
       " !important; }",
     dragMode: "absolute",
+    // Style the selected element, not its classes. GrapesJS's default puts
+    // a resize or a style change on the element's class combination, which
+    // silently rewrites every sibling wearing the same classes: scale one
+    // drum and the whole kit grows, and the layout reflows under the
+    // handles ("I scale an element and something else moves"). The classes
+    // stay editable on purpose -- picking one in the Selector panel styles
+    // it deliberately.
+    selectorManager: { componentFirst: true },
     // Code pasted into Import, and templates, are read with these.
     //
     // A whole document is reduced to its CSS and its body first (see
@@ -23974,6 +23982,27 @@ function initGrape(ipServer, socketPort, oscInPort) {
       setModal("About OSCAR", "info-panel");
     },
     attributes: { title: "About Oscar", "data-tooltip-pos": "bottom" },
+  });
+
+  // ---- resize keeps its hands off flow parts' coordinates -------------------
+  // GrapesJS writes top and left along with width and height whenever the
+  // resized component's drag mode is truthy -- it only knows "absolute",
+  // "translate" and "", and our templates' dmode="flow" is truthy but
+  // neither. So a resize stamped a flow part with its own coordinates:
+  // harmless on position:static, a jump by its own offset on
+  // position:relative (the drum kit draft made it plain). Strip the
+  // coordinates for flow parts alone; a hand-placed widget (no dmode, the
+  // editor's absolute mode) keeps them, as resizing its left edge must.
+  editor.on("component:resize:update", function (props) {
+    if (!props || !props.style || typeof props.updateStyle !== "function") return;
+    var mode = (props.component && props.component.getDragMode && props.component.getDragMode()) || "";
+    if (!mode || mode === "absolute" || mode === "translate") return;
+    if (!("top" in props.style) && !("left" in props.style)) return;
+    var style = {};
+    Object.keys(props.style).forEach(function (key) {
+      if (key !== "top" && key !== "left") style[key] = props.style[key];
+    });
+    props.updateStyle(style);
   });
 
   // ---- the MCP pill --------------------------------------------------------

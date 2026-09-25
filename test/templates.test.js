@@ -238,3 +238,16 @@ test("a button read from HTML is named after its text", () => {
   assert.deepStrictEqual(parsed(slider, element("INPUT", "", { type: "range" })), { type: "oscar-slider" });
   assert.strictEqual(parsed(slider, element("INPUT", "", { type: "text" })), undefined);
 });
+
+test("resizing a flow part writes no coordinates, and styles land on the part, not its classes", () => {
+  const editor = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8").replace(/\r\n/g, "\n");
+  // GrapesJS writes top/left on resize whenever dmode is truthy, and "flow"
+  // is truthy but neither "absolute" nor "translate": a position:relative
+  // part jumped by its own offset. The listener strips them for flow alone.
+  assert.match(editor, /editor\.on\("component:resize:update"/, "the resize hook is used");
+  assert.match(editor, /if \(!mode \|\| mode === "absolute" \|\| mode === "translate"\) return;/, "hand-placed absolute widgets keep their coordinates");
+  assert.match(editor, /if \(key !== "top" && key !== "left"\) style\[key\] = props\.style\[key\];/, "only the coordinates are stripped");
+  // And styling targets the selected element, not its class combination,
+  // or scaling one part of a kit rewrites every sibling wearing the class.
+  assert.match(editor, /selectorManager: \{ componentFirst: true \}/, "component-first styling");
+});
