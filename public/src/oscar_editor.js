@@ -1425,7 +1425,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
     document.body.appendChild(menu);
     var away = function (event) {
-      if (menu.contains(event.target)) return;
+      // The anchor's own pointerdown is left alone: the click that follows
+      // it toggles the menu closed. Without this, away closed the menu a
+      // breath before the click reopened it, and the word never closed.
+      if (menu.contains(event.target) || anchor.contains(event.target)) return;
       menu.remove();
       document.removeEventListener("pointerdown", away, true);
     };
@@ -1795,6 +1798,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // Removed here, early, for the same re-render reason as above.
   pn.removeButton("options", "undo");
   pn.removeButton("options", "redo");
+  // A screen size is a choice, not a switch: clicking the chosen one again
+  // stays chosen instead of toggling half-off.
+  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
+    var button = pn.getButton("options", id);
+    if (button) button.set("togglable", false);
+  });
 
   // Open and Save live under one word at the bar's left edge: File.
 

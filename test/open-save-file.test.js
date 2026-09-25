@@ -69,4 +69,6 @@ test("Edit stands beside File: Undo and Redo under one word, their icons retired
   assert.match(editor, /editor\.runCommand\("core:redo"\)/, "and Redo its twin");
   assert.match(editor, /pn\.removeButton\("options", "undo"\);\n  pn\.removeButton\("options", "redo"\);/, "the icons retire early, before the left is wired");
   assert.match(editor, /function showBarMenu\(anchorSelector, items\)/, "File and Edit share one menu builder");
+  assert.match(editor, /menu\.contains\(event\.target\) \|\| anchor\.contains\(event\.target\)/, "a second click on the word closes the menu instead of blinking it");
+  assert.match(editor, /button\.set\("togglable", false\)/, "a screen size is a choice, not a switch");
 });
