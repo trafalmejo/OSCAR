@@ -552,14 +552,14 @@ const DEFAULTS = {
    * A board on a USB cable: the Serial (Arduino) button and its panel, where
    * the port and baud rate are picked.
    *
-   * On since 2026-09-25. There is no panel: a widget's OSC section offers
-   * Via (network or the serial cable), and choosing the cable reveals the
-   * Board row, where the one port is picked for the whole of OSCAR. Still to
-   * be tried on real boards -- an Uno or Nano over USB, both directions --
-   * before 2.1 ships; the to-do list has it. A board with Wi-Fi or Ethernet
-   * never needed any of this.
+   * Off on purpose (2026-09-25): built, researched, and put away until users
+   * ask. Everything stays and works -- Via and its Board row on Data out,
+   * From on Data in, the server's link, the word "serial" in an old page's
+   * Ip, the sketches in tools/arduino -- the panel simply does not offer any
+   * of it while this is off. A board with Wi-Fi or Ethernet never needed
+   * any of this and is not affected.
    */
-  SERIAL: true,
+  SERIAL: false,
 
   /**
    * MIDI: the MIDI section in a widget's settings.
@@ -20300,9 +20300,10 @@ function directionOn(config, section, dir) {
 function visibleFields(definition, config) {
   return definition.fields.filter(function (field) {
     // A protocol that is switched off (lib/features.js) has no section, and
-    // with no serial there is no Via to choose: everything is the network.
+    // with no serial there is no Via to choose and no door to pick with From:
+    // everything is the network.
     if (field.section === "midi" && !features.MIDI) return false;
-    if (field.key === "oscVia" && !features.SERIAL) return false;
+    if ((field.key === "oscVia" || field.key === "oscListenFrom") && !features.SERIAL) return false;
     if (field.dir && !directionOn(config, field.section, field.dir)) return false;
     var rule = field.showIf;
     return !rule || rule.in.indexOf(config[rule.key]) !== -1;
