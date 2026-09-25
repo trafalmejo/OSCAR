@@ -15,7 +15,7 @@ const { Settings } = require("./lib/settings");
 const { buildMessage, isPort } = require("./lib/osc-message");
 const { receiver: oscReceiver, listenOn, atMostOncePer, parse: parseOsc } = require("./lib/osc-in");
 const { portsFromEnv } = require("./lib/ports");
-const { createMidi } = require("./lib/midi");
+const { createRemoteMidi } = require("./lib/midi/remote");
 const features = require("./lib/features");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket, createUsbDmx, isUsb } = require("./lib/dmx");
 const { sharedSync } = require("./lib/shared-sync");
@@ -132,8 +132,12 @@ function heardOsc(message, source) {
 }
 
 const MIDI_EVENTS = { open: "sending to", closed: "let go of", listening: "listening to", deaf: "stopped listening to" };
-const midi = createMidi({
-  onEvent: (event, name) => console.log("MIDI: " + MIDI_EVENTS[event] + " " + name),
+// Supervised, not in-process: RtMidi can abort in the native code -- waking
+// from sleep with a stale Windows handle does it -- and an abort ends its
+// process. In the worker that costs a moment of MIDI, reported below and
+// restarted; in the server it cost the whole show (lib/midi/remote.js).
+const midi = createRemoteMidi({
+  onEvent: (event, name) => console.log("MIDI: " + (MIDI_EVENTS[event] || event) + " " + name),
   onError: (err) => console.error("MIDI: " + reason(err)),
 });
 
