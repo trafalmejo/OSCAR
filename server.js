@@ -125,7 +125,11 @@ let bootFile = null;
 if (process.env.OSCAR_OPEN_FILE && /\.(oscar|json|html?)$/i.test(process.env.OSCAR_OPEN_FILE)) {
   try {
     const stat = fs.statSync(process.env.OSCAR_OPEN_FILE);
-    if (stat.size <= 8 * 1024 * 1024) {
+    // A sanity ceiling, not a judgement: projects with embedded media can
+    // weigh tens of megabytes, and the Open picker takes them uncapped, so
+    // this refuses only the accident -- a video renamed .oscar -- that
+    // would otherwise be read whole into memory for nothing.
+    if (stat.size <= 200 * 1024 * 1024) {
       bootFile = {
         name: path.basename(process.env.OSCAR_OPEN_FILE),
         text: fs.readFileSync(process.env.OSCAR_OPEN_FILE, "utf8"),

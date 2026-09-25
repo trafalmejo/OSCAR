@@ -79,7 +79,7 @@ test("a double-clicked project opens through the same guarded door, once", () =>
   assert.match(main, /OSCAR_OPEN_FILE: fileToOpen/, "the server is told which file");
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8").replace(/\r\n/g, "\n");
   assert.match(server, /takeBootFile: \(\) => \{\n      const taken = bootFile;\n      bootFile = null;/, "claimed once: a refresh opens nothing");
-  assert.match(server, /stat\.size <= 8 \* 1024 \* 1024/, "a file too large to be a project is refused");
+  assert.match(server, /stat\.size <= 200 \* 1024 \* 1024/, "a sanity ceiling refuses only the renamed-video accident, not a media-heavy project");
   const routes = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8").replace(/\r\n/g, "\n");
   assert.match(routes, /router\.get\("\/boot-file", editorOnly/, "handed over on the editor's own terms");
   assert.match(editor, /fetch\("\/boot-file"\)/, "the editor asks at startup");
