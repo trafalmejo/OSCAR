@@ -100,8 +100,24 @@ function removeMcpHandshake() {
 // contract is that one file). The About window's switch and
 // OSCAR_NO_TELEMETRY=1 both silence it; a build with no key baked in is
 // silent by construction.
-const { createTelemetry } = require("./lib/telemetry");
+const { createTelemetry, crashWords } = require("./lib/telemetry");
 const telemetry = createTelemetry({ settings });
+
+// A crash is counted -- its class and the OSCAR file:line, never the
+// message -- and then the process dies exactly as it would have, after a
+// short grace for the batch to leave. A rejection nobody caught is the
+// same crash by another door, so it is rethrown into the one handler.
+process.on("uncaughtException", (err) => {
+  console.error(err);
+  try {
+    telemetry.tell("app_error", crashWords(err));
+    telemetry.close();
+  } catch {}
+  setTimeout(() => process.exit(1), 400);
+});
+process.on("unhandledRejection", (reason) => {
+  throw reason instanceof Error ? reason : new Error(String(reason));
+});
 
 const lock = {
   isLocked: () => !!settings.get("locked"),

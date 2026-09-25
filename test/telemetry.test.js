@@ -9,7 +9,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { createTelemetry, EVENTS, KEY } = require("../lib/telemetry");
+const { createTelemetry, crashWords, EVENTS, KEY } = require("../lib/telemetry");
 
 function fakeSettings(initial) {
   const held = Object.assign({}, initial);
@@ -121,7 +121,7 @@ test("close flushes what is queued, for quitting", async () => {
 const readSource = (...parts) => fs.readFileSync(path.join(__dirname, "..", ...parts), "utf8").replace(/\r\n/g, "\n");
 
 test("the events OSCAR speaks are few, named, and where they claim to be", () => {
-  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["app_start", "draft_loaded", "mcp_tool_called", "surface_published", "template_loaded"]);
+  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["app_error", "app_start", "draft_loaded", "mcp_tool_called", "surface_published", "template_loaded"]);
   const server = readSource("server.js");
   assert.match(server, /telemetry\.tell\("app_start", \{ version: pkg\.version, os: process\.platform, arch: process\.arch \}\)/);
   assert.match(server, /osc: widgets\.some/, "the publish event carries booleans, never an address");
@@ -140,4 +140,25 @@ test("no key is baked in yet, or the key is a public write-only one", () => {
   // The PostHog project key is write-only by design (phc_...); anything
   // else here would be a leaked secret.
   assert.ok(KEY === "" || /^phc_[A-Za-z0-9]+$/.test(KEY), "only ever empty or a public phc_ key");
+});
+
+test("a crash is two words: its class, and the first OSCAR frame -- never the message", () => {
+  const err = new TypeError("ENOENT: C:\\Users\\somebody\\secret-show\\file");
+  err.stack =
+    "TypeError: ENOENT: C:\\Users\\somebody\\secret-show\\file\n" +
+    "    at Object.readFileSync (node:fs:453:20)\n" +
+    "    at flushLiveLog (C:\\Users\\somebody\\Documents\\OSCAR\\lib\\midi\\remote.js:184:11)\n" +
+    "    at listOnTimeout (node:internal/timers:594:17)";
+  const words = crashWords(err);
+  assert.deepStrictEqual(words, { kind: "TypeError", where: "lib/midi/remote.js:184" });
+  assert.ok(!JSON.stringify(words).includes("somebody"), "no path, no message, no username");
+
+  assert.deepStrictEqual(crashWords(new Error("x")).kind, "Error");
+  assert.strictEqual(crashWords({ stack: "at nowhere (node:internal:1:1)" }).where, "elsewhere", "a crash outside OSCAR's code says only that");
+  assert.strictEqual(crashWords(null).kind, "Error", "a non-Error throw is still countable");
+
+  const server = readSource("server.js");
+  assert.match(server, /process\.on\("uncaughtException", \(err\) => \{\n  console\.error\(err\);/, "the crash is still printed, then counted");
+  assert.match(server, /setTimeout\(\(\) => process\.exit\(1\), 400\)/, "and the process still dies, after a short grace for the batch");
+  assert.match(server, /throw reason instanceof Error/, "a rejection nobody caught is the same crash by another door");
 });
