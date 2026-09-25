@@ -198,6 +198,13 @@ function install(editor, options) {
     restampWait = setTimeout(restamp, 2000);
   });
 
+  // The dot must not wait for the dialog to have been opened once: what is
+  // published is read soon after the editor is up, into the same list the
+  // dialog uses, and the canvas stamped against it.
+  setTimeout(function () {
+    refreshPublished().then(restamp);
+  }, 3000);
+
   copyButton.onclick = function () {
     if (!navigator.clipboard) return;
     navigator.clipboard.writeText(link.href).then(function () {
@@ -233,7 +240,7 @@ function install(editor, options) {
             var stale = document.createElement("span");
             stale.className = "oscar-published-state";
             stale.setAttribute("data-state", "grace");
-            stale.textContent = "older than your canvas";
+            stale.textContent = "outdated";
             stale.title = "The canvas has changed since this was published. Publish again to update it.";
             row.appendChild(stale);
           }

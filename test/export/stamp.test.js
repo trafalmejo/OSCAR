@@ -49,9 +49,10 @@ test("the same controls stamp the same, whatever wraps them; a setting moves the
 test("the dialog says it on the copy this canvas would publish over, and the toolbar wears the dot", () => {
   const dialog = fs.readFileSync(path.join(__dirname, "..", "..", "public", "src", "export_dialog.js"), "utf8");
   assert.match(dialog, /page\.id === currentStem\(\)/, "only the surface this canvas would replace is judged");
-  assert.match(dialog, /older than your canvas/);
+  assert.match(dialog, /"outdated"/);
+  assert.match(dialog, /refreshPublished\(\)\.then\(restamp\)/, "the dot does not wait for the dialog");
   assert.match(dialog, /oscar-publish-stale/);
   assert.match(dialog, /editor\.on\("update"/, "the dot follows edits");
   const css = fs.readFileSync(path.join(__dirname, "..", "..", "public", "css", "oscar_export.css"), "utf8");
-  assert.match(css, /\.gjs-pn-btn\.oscar-publish-stale::after/);
+  assert.match(css, /\.gjs-pn-btn\.oscar-publish-stale \{\s*background-image: radial-gradient/);
 });

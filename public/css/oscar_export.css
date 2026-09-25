@@ -329,19 +329,9 @@
   border-bottom: 1px solid var(--o-border);
 }
 
-/* The Publish button's word that the published copy is older than the canvas:
-   a dot in the brand's colour, top right of the button. */
+/* The Publish button's word that the published copy is outdated: a dot in
+   the brand's colour, top right of the button. Painted as a background layer,
+   not a pseudo-element, which the tooltips already own. */
 .gjs-pn-btn.oscar-publish-stale {
-  position: relative;
-}
-.gjs-pn-btn.oscar-publish-stale::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--brand-gradient, #ff3663);
-  box-shadow: 0 0 0 2px var(--o-panel, #17181b);
+  background-image: radial-gradient(circle at calc(100% - 6px) 6px, #ff3663 3px, rgba(255, 54, 99, 0) 4.2px);
 }
