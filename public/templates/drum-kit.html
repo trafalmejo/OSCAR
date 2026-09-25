@@ -1,0 +1,792 @@
+<!doctype html>
+<html>
+<head>
+<title>Drum Kit</title>
+<!--
+  Drum Kit: a five-piece kit seen from the stool, on a rug, under a light.
+  Kick, snare and rim, two rack toms and a floor tom, a hi-hat that plays
+  closed, open and with the pedal, a crash, and a ride with its bell. Every
+  pad sends a MIDI note on channel 10, the drum channel of General MIDI,
+  with OSC off, to the first MIDI output this computer has. On Windows that
+  is usually the Microsoft GS Wavetable Synth, so the kit makes a sound
+  straight away. To play a drum machine or a DAW, pick its port under
+  MIDI > Out port on each pad, or make a loopMIDI port and pick that.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings: data-gjs-midi-type,
+    -midi-number and -midi-channel say what it sends, and
+    data-gjs-osc-enabled="false" keeps OSC quiet. data-gjs-message is still
+    there (/drums/kick, /drums/snare, ...), so switching OSC on in a pad's
+    settings sends to it too. data-gjs-dmode="flow" makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the whole kit is redrawn in that style's colours: every
+    rule that paints is written for "own" alone, and a short set of rules
+    further down, made of tokens only, dresses it for the others.
+
+  How a hit is made. Each pad is an OSCAR button in momentary mode: pressed,
+  it sends Value ON, which MIDI reads as full, so a note on at velocity 127;
+  let go, a note off, which a drum sound ignores. Two fingers on two pads
+  play both, as two sticks do.
+
+  How the waves are made. OSCAR puts the class "toggle" on a pad while it is
+  down; that can be a moment, too short for an animation to be seen. So the
+  script at the end watches for it and starts two animations that run their
+  full length whatever the finger does: rings that spread from the drum
+  (a cymbal wobbles as well), and a pulse through the scope at the top, as
+  tall and as long as the drum is loud and long -- a crash rings, a closed
+  hat ticks. It only reads the class, so a hit on another device showing
+  the page makes waves here too. The script also plays the kit from the
+  computer keyboard, by pressing the pads as a finger does.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's
+  Tablet and Mobile views, so edits made in those views land in the same
+  media queries.
+
+  MIDI, channel 10 (General MIDI drums):
+    kick 36   snare 38   rim 37   tom 1 50   tom 2 47   floor tom 43
+    hi-hat closed 42   open 46   pedal 44   crash 49   ride 51   bell 53
+  Keyboard: X or B kick, D snare, F rim, W E G toms, A S Z hi-hat,
+            Q crash, R ride, T bell.
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #0e0b10;
+  --osc-foreground: #f1ece4;
+  --osc-card: #1d171f;
+  --osc-muted: #120e14;
+  --osc-accent: #2a2230;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #050406;
+  --osc-input: #050406;
+  --osc-primary: #2ef2b8;
+  --osc-primary-foreground: #04120d;
+  --osc-ring: #2ef2b8;
+  --osc-radius: 6px;
+  --osc-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* ---- the stage: a dark room, one light on the kit ------------------------------------------ */
+.drk {
+  display: grid;
+  grid-template-columns: min(1100px, 100%);
+  justify-content: center;
+  align-content: start;
+  gap: 26px;
+  min-height: 100vh;
+  padding: 26px 20px 48px;
+  box-sizing: border-box;
+}
+[data-osc-style="own"] .drk {
+  background:
+    radial-gradient(60% 50% at 50% 42%, rgba(255, 214, 160, 0.14), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(180deg, #0a080c 0%, #16111a 55%, #0b090d 100%);
+  color: #f1ece4;
+}
+
+.drk-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.drk-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.drk-sub {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* ---- the scope: a pulse runs through it on every hit --------------------------------------- */
+.drk-scope {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 84px;
+  padding: 0 16px;
+  border-radius: 10px;
+  pointer-events: none;
+  --amp: 1;
+  --dur: 600ms;
+}
+[data-osc-style="own"] .drk-scope {
+  background:
+    linear-gradient(0deg, rgba(46, 242, 184, 0.08) 1px, rgba(0, 0, 0, 0) 1px) 0 50% / 100% 21px,
+    linear-gradient(90deg, rgba(46, 242, 184, 0.06) 1px, rgba(0, 0, 0, 0) 1px) 0 0 / 28px 100%,
+    linear-gradient(180deg, #06130f, #030a08);
+  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.9), 0 0 0 2px #1c2a25, 0 0 0 5px #0a0f0d;
+}
+
+.drk-bar {
+  flex: 1;
+  height: 100%;
+  border-radius: 3px;
+  transform: scaleY(0.05);
+  --peak: 0.5;
+}
+[data-osc-style="own"] .drk-bar {
+  background: linear-gradient(180deg, #b8ffe9, #2ef2b8 30%, #12a57c 50%, #2ef2b8 70%, #b8ffe9);
+  box-shadow: 0 0 8px rgba(46, 242, 184, 0.55);
+}
+
+/* Longhands, not the shorthand: the shorthand would reset each bar's own delay to 0. */
+.drk-scope.drk-wave .drk-bar {
+  animation-name: drk-pulse;
+  animation-duration: var(--dur);
+  animation-timing-function: cubic-bezier(0.15, 0.7, 0.3, 1);
+}
+
+@keyframes drk-pulse {
+  0% { transform: scaleY(0.05); }
+  10% { transform: scaleY(calc(var(--peak) * var(--amp))); }
+  35% { transform: scaleY(calc(var(--peak) * var(--amp) * 0.45)); }
+  55% { transform: scaleY(calc(var(--peak) * var(--amp) * 0.62)); }
+  100% { transform: scaleY(0.05); }
+}
+
+.drk-bar:nth-child(1) { --peak: 0.12; animation-delay: 211ms; }
+.drk-bar:nth-child(2) { --peak: 0.12; animation-delay: 202ms; }
+.drk-bar:nth-child(3) { --peak: 0.138; animation-delay: 193ms; }
+.drk-bar:nth-child(4) { --peak: 0.187; animation-delay: 184ms; }
+.drk-bar:nth-child(5) { --peak: 0.197; animation-delay: 175ms; }
+.drk-bar:nth-child(6) { --peak: 0.155; animation-delay: 166ms; }
+.drk-bar:nth-child(7) { --peak: 0.239; animation-delay: 157ms; }
+.drk-bar:nth-child(8) { --peak: 0.335; animation-delay: 148ms; }
+.drk-bar:nth-child(9) { --peak: 0.36; animation-delay: 139ms; }
+.drk-bar:nth-child(10) { --peak: 0.296; animation-delay: 130ms; }
+.drk-bar:nth-child(11) { --peak: 0.359; animation-delay: 121ms; }
+.drk-bar:nth-child(12) { --peak: 0.519; animation-delay: 112ms; }
+.drk-bar:nth-child(13) { --peak: 0.574; animation-delay: 103ms; }
+.drk-bar:nth-child(14) { --peak: 0.486; animation-delay: 94ms; }
+.drk-bar:nth-child(15) { --peak: 0.468; animation-delay: 85ms; }
+.drk-bar:nth-child(16) { --peak: 0.699; animation-delay: 76ms; }
+.drk-bar:nth-child(17) { --peak: 0.793; animation-delay: 67ms; }
+.drk-bar:nth-child(18) { --peak: 0.693; animation-delay: 58ms; }
+.drk-bar:nth-child(19) { --peak: 0.528; animation-delay: 49ms; }
+.drk-bar:nth-child(20) { --peak: 0.817; animation-delay: 40ms; }
+.drk-bar:nth-child(21) { --peak: 0.952; animation-delay: 31ms; }
+.drk-bar:nth-child(22) { --peak: 0.855; animation-delay: 22ms; }
+.drk-bar:nth-child(23) { --peak: 0.577; animation-delay: 13ms; }
+.drk-bar:nth-child(24) { --peak: 0.829; animation-delay: 4ms; }
+.drk-bar:nth-child(25) { --peak: 0.994; animation-delay: 4ms; }
+.drk-bar:nth-child(26) { --peak: 0.917; animation-delay: 13ms; }
+.drk-bar:nth-child(27) { --peak: 0.642; animation-delay: 22ms; }
+.drk-bar:nth-child(28) { --peak: 0.729; animation-delay: 31ms; }
+.drk-bar:nth-child(29) { --peak: 0.9; animation-delay: 40ms; }
+.drk-bar:nth-child(30) { --peak: 0.853; animation-delay: 49ms; }
+.drk-bar:nth-child(31) { --peak: 0.618; animation-delay: 58ms; }
+.drk-bar:nth-child(32) { --peak: 0.556; animation-delay: 67ms; }
+.drk-bar:nth-child(33) { --peak: 0.709; animation-delay: 76ms; }
+.drk-bar:nth-child(34) { --peak: 0.689; animation-delay: 85ms; }
+.drk-bar:nth-child(35) { --peak: 0.515; animation-delay: 94ms; }
+.drk-bar:nth-child(36) { --peak: 0.367; animation-delay: 103ms; }
+.drk-bar:nth-child(37) { --peak: 0.484; animation-delay: 112ms; }
+.drk-bar:nth-child(38) { --peak: 0.483; animation-delay: 121ms; }
+.drk-bar:nth-child(39) { --peak: 0.372; animation-delay: 130ms; }
+.drk-bar:nth-child(40) { --peak: 0.213; animation-delay: 139ms; }
+.drk-bar:nth-child(41) { --peak: 0.287; animation-delay: 148ms; }
+.drk-bar:nth-child(42) { --peak: 0.295; animation-delay: 157ms; }
+.drk-bar:nth-child(43) { --peak: 0.233; animation-delay: 166ms; }
+.drk-bar:nth-child(44) { --peak: 0.139; animation-delay: 175ms; }
+.drk-bar:nth-child(45) { --peak: 0.148; animation-delay: 184ms; }
+.drk-bar:nth-child(46) { --peak: 0.156; animation-delay: 193ms; }
+.drk-bar:nth-child(47) { --peak: 0.127; animation-delay: 202ms; }
+.drk-bar:nth-child(48) { --peak: 0.12; animation-delay: 211ms; }
+
+/* ---- the kit: on a rug, as the drummer sees it --------------------------------------------- */
+.drk-kit {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "hats crash toms ride"
+    "hats snare kick floor";
+  align-items: center;
+  gap: 26px 28px;
+  padding: 34px 30px;
+  border-radius: 48% / 22%;
+}
+[data-osc-style="own"] .drk-kit {
+  background:
+    repeating-radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 0) 0 22px, rgba(0, 0, 0, 0.12) 22px 25px),
+    radial-gradient(ellipse at 50% 50%, #5a1f2a, #3b1219 70%, #2a0c12);
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.9), inset 0 0 60px rgba(0, 0, 0, 0.5);
+}
+
+.drk-cell {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 12px;
+  min-width: 0;
+}
+.drk-hats { grid-area: hats; }
+.drk-crash-cell { grid-area: crash; }
+.drk-toms { grid-area: toms; grid-template-columns: 1fr 1fr; align-items: center; }
+.drk-ride-cell { grid-area: ride; }
+.drk-snare-cell { grid-area: snare; }
+.drk-kick-cell { grid-area: kick; }
+.drk-floor-cell { grid-area: floor; }
+
+.drk-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+/* Side by side, the small pads keep their size rather than share the width. */
+.drk-row > .drk-pad {
+  flex: none;
+  width: var(--size);
+}
+
+/* ---- a pad: round, labelled at the bottom, and ringing when struck ------------------------- */
+.drk-pad {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  max-width: var(--size, 130px);
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 0 0 15%;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition: transform 60ms ease-out;
+  touch-action: none;
+  --size: 130px;
+}
+#drk-kick { --size: 230px; padding-bottom: 12%; font-size: 11px; }
+#drk-floor { --size: 160px; }
+#drk-snare { --size: 140px; }
+#drk-tom1 { --size: 104px; }
+#drk-tom2 { --size: 112px; }
+#drk-crash { --size: 170px; }
+#drk-ride { --size: 180px; }
+#drk-hihat { --size: 140px; }
+.drk-small { --size: 60px; padding-bottom: 0; align-items: center; font-size: 9px; letter-spacing: 0.08em; }
+
+.drk-pad.toggle {
+  transform: scale(0.96);
+}
+
+/* The rings: two, a moment apart, spreading from the rim. */
+.drk-pad::before,
+.drk-pad::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 3px solid var(--osc-primary);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.drk-pad.drk-hit::before {
+  animation: drk-ring 650ms ease-out;
+}
+.drk-pad.drk-hit::after {
+  animation: drk-ring 850ms ease-out 110ms;
+}
+/* A struck cymbal wobbles; the script puts this on cymbals only. */
+.drk-struck {
+  animation: drk-wobble 900ms ease-out;
+}
+
+@keyframes drk-ring {
+  0% { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+@keyframes drk-wobble {
+  0% { transform: rotate(0deg) scale(0.97); }
+  15% { transform: rotate(-7deg) scale(1.01); }
+  35% { transform: rotate(5deg); }
+  55% { transform: rotate(-3deg); }
+  75% { transform: rotate(1.5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* Drums: a coated head in a chrome hoop, on a red sparkle shell. */
+[data-osc-style="own"] .drk-drum {
+  border: 0;
+  background:
+    radial-gradient(circle at 42% 36%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 45%),
+    radial-gradient(circle, #f6f2ea 0 60%, #e6dece 85%, #d3c8b3);
+  box-shadow: 0 0 0 4px #e3e6ea, 0 0 0 6px #6f757c, 0 0 0 12px #a3161c, 0 0 0 13px #5e0b0f, 0 16px 24px rgba(0, 0, 0, 0.65);
+  color: #6b5a44;
+}
+[data-osc-style="own"] .drk-drum:hover {
+  background:
+    radial-gradient(circle at 42% 36%, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0) 45%),
+    radial-gradient(circle, #fbf8f2 0 60%, #ece5d7 85%, #d9cfbb);
+}
+[data-osc-style="own"] .drk-drum.toggle,
+[data-osc-style="own"] .drk-drum.toggle:hover {
+  background: radial-gradient(circle, #e9e2d3 0 55%, #d8ceba 85%, #c5b89f);
+  box-shadow: 0 0 0 4px #ffffff, 0 0 0 6px #6f757c, 0 0 0 12px #c8202a, 0 0 0 13px #5e0b0f, 0 0 34px rgba(255, 90, 90, 0.45), 0 10px 18px rgba(0, 0, 0, 0.65);
+}
+
+/* The kick shows its front head: black, a red ring, the maker's name. */
+.drk-kick-cell {
+  display: grid;
+  place-items: center;
+}
+.drk-kick-cell > * {
+  grid-area: 1 / 1;
+}
+[data-osc-style="own"] #drk-kick {
+  background: radial-gradient(circle, #1b1b1d 0 52%, #a3161c 53% 58%, #1b1b1d 59%);
+  color: #f1ece4;
+}
+[data-osc-style="own"] #drk-kick.toggle,
+[data-osc-style="own"] #drk-kick.toggle:hover {
+  background: radial-gradient(circle, #232326 0 52%, #d0222c 53% 58%, #232326 59%);
+}
+.drk-logo {
+  font-size: 26px;
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  pointer-events: none;
+  transform: translateY(-8%);
+}
+[data-osc-style="own"] .drk-logo {
+  color: #f1ece4;
+  text-shadow: 0 2px 0 #a3161c;
+}
+
+/* Cymbals: lathed bronze, a bell in the middle, a sheen across it. */
+[data-osc-style="own"] .drk-cymbal {
+  border: 0;
+  background:
+    conic-gradient(from 20deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 16%, rgba(255, 255, 255, 0.24) 48%, rgba(255, 255, 255, 0) 66%, rgba(255, 255, 255, 0.3)),
+    radial-gradient(circle, #5c3e10 0 5%, #d6aa4c 6% 20%, rgba(0, 0, 0, 0) 21%),
+    repeating-radial-gradient(circle, #d8ab4f 0 2px, #b88a30 2px 4px);
+  box-shadow: 0 14px 22px rgba(0, 0, 0, 0.6), 0 0 0 1px #6e4d14;
+  color: #3a2708;
+}
+[data-osc-style="own"] .drk-cymbal:hover {
+  filter: brightness(1.06);
+}
+[data-osc-style="own"] .drk-cymbal.toggle,
+[data-osc-style="own"] .drk-cymbal.toggle:hover {
+  filter: brightness(1.2);
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.6), 0 0 0 1px #6e4d14, 0 0 30px rgba(255, 210, 110, 0.55);
+}
+/* The hi-hat is two cymbals, one under the other. */
+[data-osc-style="own"] #drk-hihat {
+  box-shadow: 0 7px 0 -3px #9c7424, 0 8px 0 -2px #5c3e10, 0 16px 22px rgba(0, 0, 0, 0.6), 0 0 0 1px #6e4d14;
+}
+[data-osc-style="own"] .drk-small.drk-cymbal {
+  color: #2a1c05;
+}
+
+[data-osc-style="own"] .drk-drum::before,
+[data-osc-style="own"] .drk-drum::after {
+  border-color: rgba(255, 255, 255, 0.85);
+}
+[data-osc-style="own"] .drk-cymbal::before,
+[data-osc-style="own"] .drk-cymbal::after {
+  border-color: #f5d27a;
+}
+
+/* ---- the card on the floor tom's case: every note ------------------------------------------ */
+.drk-notes {
+  justify-self: center;
+  width: 100%;
+  max-width: 820px;
+  box-sizing: border-box;
+  padding: 22px 26px;
+  border-radius: 4px;
+}
+[data-osc-style="own"] .drk-notes {
+  background: #17131a;
+  box-shadow: 0 0 0 1px #2a2230;
+  color: #d9d2c7;
+}
+
+.drk-notes-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.drk-notes-lead {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  opacity: 0.85;
+}
+
+.drk-notes-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 26px;
+  margin: 0;
+}
+
+.drk-notes-row {
+  display: grid;
+  gap: 1px;
+}
+
+.drk-notes-key {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.drk-notes-note {
+  margin: 0;
+  font-size: 13px;
+}
+[data-osc-style="own"] .drk-notes-note {
+  color: #2ef2b8;
+}
+
+.drk-notes-how {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* ---- under any other widget style: the same kit, in that style's colours ---- */
+body:not([data-osc-style="own"]) .drk {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .drk-scope,
+body:not([data-osc-style="own"]) .drk-notes {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .drk-bar {
+  background: var(--osc-primary);
+}
+body:not([data-osc-style="own"]) .drk-kit {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+}
+body:not([data-osc-style="own"]) .drk-pad {
+  border: 2px solid var(--osc-border);
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .drk-cymbal {
+  border-style: dashed;
+}
+body:not([data-osc-style="own"]) .drk-pad.toggle {
+  background: var(--osc-primary);
+  color: var(--osc-primary-foreground);
+}
+
+/* ---- tablet: three across, the kick along the front ---------------------------------------- */
+@media (max-width: 992px) {
+  .drk {
+    gap: 22px;
+    padding: 20px 14px 40px;
+  }
+
+  .drk-kit {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas:
+      "crash toms ride"
+      "hats snare floor"
+      "kick kick kick";
+    gap: 22px;
+    padding: 28px 20px;
+    border-radius: 36px;
+  }
+
+  #drk-kick { --size: 200px; }
+
+  .drk-notes-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- phone: two across, every pad big enough for a thumb ----------------------------------- */
+@media (max-width: 480px) {
+  .drk {
+    gap: 16px;
+    padding: 12px 8px 28px;
+  }
+
+  .drk-title {
+    font-size: 16px;
+    letter-spacing: 0.2em;
+  }
+
+  .drk-sub {
+    display: none;
+  }
+
+  .drk-scope {
+    height: 56px;
+    padding: 0 10px;
+    gap: 2px;
+  }
+
+  .drk-kit {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "crash ride"
+      "toms toms"
+      "hats snare"
+      "floor kick";
+    gap: 20px 14px;
+    padding: 22px 12px;
+    border-radius: 24px;
+  }
+
+  #drk-kick { --size: 150px; }
+  #drk-crash { --size: 140px; }
+  #drk-ride { --size: 140px; }
+  #drk-tom1,
+  #drk-tom2 { --size: 120px; }
+
+  .drk-small { --size: 52px; }
+
+  .drk-row {
+    gap: 8px;
+  }
+
+  .drk-logo {
+    font-size: 18px;
+  }
+
+  .drk-notes {
+    padding: 18px 14px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+
+  .drk-bar,
+  .drk-scope.drk-wave .drk-bar,
+  .drk-pad.drk-hit::before,
+  .drk-pad.drk-hit::after,
+  .drk-struck {
+    animation: none !important;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="drk" class="drk" data-gjs-dmode="flow">
+  <header id="drk-head" class="drk-head" data-gjs-dmode="flow">
+    <h1 id="drk-title" class="drk-title" data-gjs-dmode="flow">Drum Kit</h1>
+    <span id="drk-sub" class="drk-sub" data-gjs-dmode="flow">MIDI channel 10 &middot; General MIDI drums</span>
+  </header>
+
+  <div id="drk-scope" class="drk-scope" data-gjs-dmode="flow">
+      <span id="drk-bar-1" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-2" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-3" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-4" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-5" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-6" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-7" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-8" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-9" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-10" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-11" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-12" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-13" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-14" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-15" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-16" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-17" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-18" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-19" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-20" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-21" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-22" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-23" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-24" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-25" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-26" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-27" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-28" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-29" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-30" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-31" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-32" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-33" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-34" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-35" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-36" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-37" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-38" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-39" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-40" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-41" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-42" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-43" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-44" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-45" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-46" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-47" class="drk-bar" data-gjs-dmode="flow"></span>
+      <span id="drk-bar-48" class="drk-bar" data-gjs-dmode="flow"></span>
+  </div>
+
+  <section id="drk-kit" class="drk-kit" data-gjs-dmode="flow">
+    <div id="drk-hats" class="drk-cell drk-hats" data-gjs-dmode="flow">
+      <button id="drk-hihat" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/hihat" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="42">Hi-hat</button>
+      <div id="drk-hats-row" class="drk-row" data-gjs-dmode="flow">
+        <button id="drk-open" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/open" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="46">Open</button>
+        <button id="drk-pedal" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/pedal" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="44">Pedal</button>
+      </div>
+    </div>
+    <div id="drk-crash-cell" class="drk-cell drk-crash-cell" data-gjs-dmode="flow">
+      <button id="drk-crash" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/crash" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="49">Crash</button>
+    </div>
+    <div id="drk-toms" class="drk-cell drk-toms" data-gjs-dmode="flow">
+      <button id="drk-tom1" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/tom1" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="50">Tom 1</button>
+      <button id="drk-tom2" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/tom2" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="47">Tom 2</button>
+    </div>
+    <div id="drk-ride-cell" class="drk-cell drk-ride-cell" data-gjs-dmode="flow">
+      <button id="drk-ride" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/ride" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="51">Ride</button>
+      <button id="drk-bell" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/bell" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="53">Bell</button>
+    </div>
+    <div id="drk-snare-cell" class="drk-cell drk-snare-cell" data-gjs-dmode="flow">
+      <button id="drk-snare" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/snare" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="38">Snare</button>
+      <button id="drk-rim" class="drk-pad drk-drum drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/rim" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="37">Rim</button>
+    </div>
+    <div id="drk-kick-cell" class="drk-cell drk-kick-cell" data-gjs-dmode="flow">
+      <button id="drk-kick" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/kick" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="36">Kick</button>
+      <span id="drk-logo" class="drk-logo" data-gjs-dmode="flow">OSCAR</span>
+    </div>
+    <div id="drk-floor-cell" class="drk-cell drk-floor-cell" data-gjs-dmode="flow">
+      <button id="drk-floor" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/floor" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="43">Floor tom</button>
+    </div>
+  </section>
+
+  <aside id="drk-notes" class="drk-notes" data-gjs-dmode="flow">
+    <h2 id="drk-notes-title" class="drk-notes-title" data-gjs-dmode="flow">Every pad is a MIDI note</h2>
+    <p id="drk-notes-lead" class="drk-notes-lead" data-gjs-dmode="flow">Channel 10, the drum channel of General MIDI, to the first MIDI output this computer has; on Windows the built-in synth plays it. Select a pad in the editor to send it to another port, another note or channel, or to switch OSC on as well. The keyboard plays the kit too.</p>
+    <dl id="drk-notes-list" class="drk-notes-list" data-gjs-dmode="flow">
+      <div id="drk-notes-row-1" class="drk-notes-row" data-gjs-dmode="flow">
+        <dt id="drk-notes-key-1" class="drk-notes-key" data-gjs-dmode="flow">KICK</dt>
+        <dd id="drk-notes-note-1" class="drk-notes-note" data-gjs-dmode="flow">Note 36</dd>
+        <dd id="drk-notes-how-1" class="drk-notes-how" data-gjs-dmode="flow">The front head, or X or B on the keyboard.</dd>
+      </div>
+      <div id="drk-notes-row-2" class="drk-notes-row" data-gjs-dmode="flow">
+        <dt id="drk-notes-key-2" class="drk-notes-key" data-gjs-dmode="flow">SNARE, RIM</dt>
+        <dd id="drk-notes-note-2" class="drk-notes-note" data-gjs-dmode="flow">Note 38, 37</dd>
+        <dd id="drk-notes-how-2" class="drk-notes-how" data-gjs-dmode="flow">D and F.</dd>
+      </div>
+      <div id="drk-notes-row-3" class="drk-notes-row" data-gjs-dmode="flow">
+        <dt id="drk-notes-key-3" class="drk-notes-key" data-gjs-dmode="flow">TOM 1, TOM 2, FLOOR TOM</dt>
+        <dd id="drk-notes-note-3" class="drk-notes-note" data-gjs-dmode="flow">Note 50, 47, 43</dd>
+        <dd id="drk-notes-how-3" class="drk-notes-how" data-gjs-dmode="flow">W, E and G.</dd>
+      </div>
+      <div id="drk-notes-row-4" class="drk-notes-row" data-gjs-dmode="flow">
+        <dt id="drk-notes-key-4" class="drk-notes-key" data-gjs-dmode="flow">HI-HAT: CLOSED, OPEN, PEDAL</dt>
+        <dd id="drk-notes-note-4" class="drk-notes-note" data-gjs-dmode="flow">Note 42, 46, 44</dd>
+        <dd id="drk-notes-how-4" class="drk-notes-how" data-gjs-dmode="flow">A, S and Z. A closed or pedal hat cuts an open one short, as General MIDI synths do.</dd>
+      </div>
+      <div id="drk-notes-row-5" class="drk-notes-row" data-gjs-dmode="flow">
+        <dt id="drk-notes-key-5" class="drk-notes-key" data-gjs-dmode="flow">CRASH, RIDE, BELL</dt>
+        <dd id="drk-notes-note-5" class="drk-notes-note" data-gjs-dmode="flow">Note 49, 51, 53</dd>
+        <dd id="drk-notes-how-5" class="drk-notes-how" data-gjs-dmode="flow">Q, R and T.</dd>
+      </div>
+    </dl>
+  </aside>
+</div>
+<script id="drk-script" type="module" data-gjs-dmode="flow">
+(function () {
+  var doc = document;
+  var byId = function (id) { return doc.getElementById(id); };
+  var scope = byId("drk-scope");
+  if (!scope) return;
+
+  // How loud and how long each piece rings: the height and the length of its pulse.
+  var WAVES = {"drk-kick": [1.0, 720], "drk-snare": [0.85, 380], "drk-rim": [0.45, 200], "drk-tom1": [0.75, 480], "drk-tom2": [0.8, 540], "drk-floor": [0.9, 650], "drk-hihat": [0.35, 170], "drk-open": [0.55, 520], "drk-pedal": [0.25, 140], "drk-crash": [1.0, 1150], "drk-ride": [0.55, 760], "drk-bell": [0.65, 620]};
+
+  // Start an animation from the top, even while the last one is still running.
+  function restart(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
+  function waves(pad) {
+    var wave = WAVES[pad.id] || [0.6, 500];
+    scope.style.setProperty("--amp", String(wave[0]));
+    scope.style.setProperty("--dur", wave[1] + "ms");
+    restart(scope, "drk-wave");
+    restart(pad, "drk-hit");
+    if (pad.classList.contains("drk-cymbal")) restart(pad, "drk-struck");
+  }
+
+  // OSCAR puts "toggle" on a pad while it is down, here or on another device.
+  // Only the moment it goes on is a hit; any other change of class is not.
+  // Every change is read in order, from the class each one replaced: a tap
+  // can be down and up again before the observer hears of either.
+  var isDown = function (cls) { return (" " + (cls || "") + " ").indexOf(" toggle ") !== -1; };
+  Object.keys(WAVES).forEach(function (id) {
+    var pad = byId(id);
+    if (!pad) return;
+    new MutationObserver(function (records) {
+      var states = records.map(function (r) { return isDown(r.oldValue); });
+      states.push(pad.classList.contains("toggle"));
+      for (var i = 1; i < states.length; i++) {
+        if (states[i] && !states[i - 1]) {
+          waves(pad);
+          return;
+        }
+      }
+    }).observe(pad, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+  });
+
+  // The computer keyboard presses the pads, as a finger does.
+  var KEYS = {"KeyX": "drk-kick", "KeyD": "drk-snare", "KeyF": "drk-rim", "KeyW": "drk-tom1", "KeyE": "drk-tom2", "KeyG": "drk-floor", "KeyA": "drk-hihat", "KeyS": "drk-open", "KeyZ": "drk-pedal", "KeyQ": "drk-crash", "KeyR": "drk-ride", "KeyT": "drk-bell", "KeyB": "drk-kick"};
+  var held = {};
+  function press(pad, type) {
+    pad.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 43, isPrimary: false, button: 0 }));
+  }
+  function typing(e) {
+    var t = e.target;
+    return t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
+  }
+  doc.addEventListener("keydown", function (e) {
+    var id = KEYS[e.code];
+    if (!id || e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing(e) || held[e.code]) return;
+    var pad = byId(id);
+    if (!pad) return;
+    held[e.code] = pad;
+    press(pad, "pointerdown");
+    e.preventDefault();
+  });
+  doc.addEventListener("keyup", function (e) {
+    var pad = held[e.code];
+    if (!pad) return;
+    delete held[e.code];
+    press(pad, "pointerup");
+  });
+  window.addEventListener("blur", function () { held = {}; });
+})();
+</script>
+</body>
+</html>
