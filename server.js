@@ -1,6 +1,8 @@
 "use strict";
 
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
 const express = require("express");
 const cors = require("cors");
 const osc = require("osc");
@@ -46,6 +48,9 @@ const DMX_HOLD_ON_EXIT = process.env.OSCAR_DMX_HOLD_ON_EXIT === "1";
 
 const PROJECTS_DIR =
   process.env.OSCAR_PROJECTS_DIR || path.join(__dirname, "projects");
+// Where an assistant's drafts land (lib/mcp/tools.js create_surface): beside
+// the projects, listed in the editor's Load window for a person to review.
+const DRAFTS_DIR = path.join(PROJECTS_DIR, "assistant");
 
 let serverIP = lanAddress();
 
@@ -222,6 +227,7 @@ app.use(
     // The pill's network log, backlog for a window that has just opened.
     // `liveLog` is created below; this only runs once a request arrives.
     liveLog: () => liveLog.slice(),
+    draftsDir: DRAFTS_DIR,
     templatesDir: path.join(__dirname, "public", "templates"),
     extensions,
   })
@@ -620,6 +626,32 @@ extensions.start({
   log: console,
 });
 
+// ---- MCP: OSCAR for AI assistants -------------------------------------------
+// Levels one and two (lib/mcp/): read and diagnose, and build drafts for a
+// person to review. Loopback only, a fresh bearer token each boot, and no
+// tool that touches the wire. features.MCP off = the route does not exist.
+let mcpToken = null;
+if (features.MCP) {
+  const { buildTools } = require("./lib/mcp/tools");
+  const { attachMcp } = require("./lib/mcp/http");
+  mcpToken = attachMcp(app, {
+    version: pkg.version,
+    tools: buildTools({
+      version: pkg.version,
+      features: extensions.features(),
+      httpPort: () => HTTP_PORT,
+      oscInPort: () => OSC_IN_PORT,
+      socketPort: () => SOCKET_PORT,
+      store,
+      published,
+      midi,
+      liveLog: () => liveLog.slice(),
+      lock,
+      draftsDir: DRAFTS_DIR,
+    }),
+  });
+}
+
 const httpServer = app.listen(HTTP_PORT, () => {
   console.log("");
   console.log("  OSCAR is running.");
@@ -629,6 +661,19 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("");
   console.log("  Projects folder:      " + PROJECTS_DIR);
   bannerShown = true;
+  // The MCP handshake: where an assistant's shim finds this OSCAR. Written
+  // once the port is certain, readable by this user alone, and gone stale
+  // the moment OSCAR restarts (the token dies with the process).
+  if (mcpToken) {
+    const handshake = process.env.OSCAR_MCP_FILE || path.join(os.homedir(), ".oscar", "mcp.json");
+    try {
+      fs.mkdirSync(path.dirname(handshake), { recursive: true });
+      fs.writeFileSync(handshake, JSON.stringify({ url: "http://127.0.0.1:" + HTTP_PORT + "/mcp", token: mcpToken, version: pkg.version }, null, 1) + "\n", { mode: 0o600 });
+      console.log("  Assistants (MCP):     http://127.0.0.1:" + HTTP_PORT + "/mcp -- token in " + handshake);
+    } catch (err) {
+      console.error("Could not write the MCP handshake file: " + err.message);
+    }
+  }
   if (oscInLine) console.log(oscInLine);
   if (dmxLine) console.log(dmxLine);
   if (serialLine) console.log(serialLine);

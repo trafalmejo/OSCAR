@@ -486,6 +486,28 @@ Widgets carry their own OSC settings (IP, port, address, value). When you press
 a button or move a slider the browser sends that over socket.io to the OSCAR
 server, which emits the actual OSC packet over UDP.
 
+## OSCAR for AI assistants (MCP)
+
+A running OSCAR is an MCP server, so an assistant such as Claude can read it
+and build for it: what is published and what each widget is set to, the MIDI
+ports, the recent network activity ("why isn't my light responding?"), every
+widget's settings and how a surface is written -- and it can draft a whole
+surface as HTML, judged by the widgets' own validators, saved into your Load
+list for you to review. **No tool touches the wire**: nothing is sent,
+published or driven; a draft does nothing until you open it and decide.
+
+Connect with the shim (reads `~/.oscar/mcp.json`, which OSCAR writes on every
+start):
+
+```
+claude mcp add oscar -- node <path-to-oscar>/scripts/oscar-mcp.js
+```
+
+or point an HTTP-capable client at `http://127.0.0.1:<port>/mcp` with the
+token from that same file as a bearer token. The endpoint answers this
+machine only, the token is new on every start, and `MCP: false` in
+`lib/features.js` removes the whole thing.
+
 ## Tutorials
 
 1. Youtube Channel [OSCAR](https://www.youtube.com/channel/UCyIxOoajn_4Nj8Mjz2k-3qA)

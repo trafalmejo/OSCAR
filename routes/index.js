@@ -47,6 +47,7 @@ module.exports = function createRouter({
   onPublishedChanged,
   liveLog,
   templatesDir,
+  draftsDir,
   extensions,
 }) {
   const router = express.Router();
@@ -374,6 +375,17 @@ module.exports = function createRouter({
     res.send(markServed(page, socketPort ? socketPort() : undefined));
   });
 
+  // An assistant's draft, served to the editor the way a template is. The
+  // file name pattern shuts out anything but the flat .html files the MCP
+  // server writes -- no separators, no dots, no way to walk out of the folder.
+  router.get("/drafts/:file", editorOnly, (req, res) => {
+    const file = String(req.params.file || "");
+    if (!draftsDir || !/^[a-z0-9][a-z0-9-]*\.html$/.test(file)) return res.status(404).type("text/plain").send("No such draft.");
+    res.sendFile(require("path").join(draftsDir, file), (err) => {
+      if (err && !res.headersSent) res.status(404).type("text/plain").send("No such draft.");
+    });
+  });
+
   // ---- Local project library --------------------------------------------
   router.get("/projects", editorOnly, async (req, res) => {
     try {
@@ -382,6 +394,9 @@ module.exports = function createRouter({
       for (const source of extensions ? extensions.templateSources() : []) {
         templates = templates.concat(await listTemplates(source.dir, source));
       }
+      // An assistant's drafts (lib/mcp/tools.js create_surface): reviewed by
+      // loading them here, exactly as a template is.
+      if (draftsDir) templates = templates.concat(await listTemplates(draftsDir, { name: "assistant", urlPrefix: "drafts/" }));
       res.json(templates.concat(await store.list()));
     } catch (err) {
       console.error("Could not list projects:", err.message);
