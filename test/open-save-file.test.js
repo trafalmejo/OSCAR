@@ -40,3 +40,18 @@ test("opening a file guards the person: format skew refused honestly, changes ne
   assert.match(editor, /you will lose all unsaved changes in the current project/, "opening always asks first");
   assert.match(editor, /accept = "\.oscar,\.json,\.html,\.htm"/, "and .html templates come through the same door");
 });
+
+test("the bar's geography: Open and Save first at the left, the screen sizes pilled at the right", () => {
+  const order = require("../lib/toolbar-order");
+  assert.deepStrictEqual(
+    order.arrange(["x", "sw-visibility", "set-device-desktop", "set-device-tablet", "set-device-mobile"], order.PLACEMENTS).slice(1, 4),
+    ["set-device-desktop", "set-device-tablet", "set-device-mobile"],
+    "the sizes lead the right half, ahead of Show borders"
+  );
+  assert.match(editor, /moveButton\("devices-c", "options", id\);/, "the sizes cross panels whole");
+  assert.match(editor, /moveButton\("options", "devices-c", "open-load"\);/, "Open crosses to the left");
+  assert.match(editor, /moveButton\("options", "devices-c", "open-save"\);/, "Save follows it");
+  assert.match(editor, /var wanted = \["open-load", "open-save", "oscar-mcp-pill", "oscar-live-pill", "ipButton"\]/, "the left half's order, stated");
+  assert.match(editor, /pill\.className = "oscar-devices-pill";/, "the sizes wear one pill");
+  assert.match(editor, /pillDevices\(\);\n  \}/, "and every re-arrange puts the pill back");
+});

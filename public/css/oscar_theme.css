@@ -344,6 +344,22 @@ a {
   color: var(--o-accent);
 }
 
+/* The screen sizes, crossed to the right half of the bar: one pill, just
+   left of the tools, so trying widths reads as one act with three options. */
+.oscar-devices-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px;
+  margin-right: 10px;
+  border: 1px solid var(--o-border-strong);
+  border-radius: 999px;
+}
+.oscar-devices-pill .gjs-pn-btn {
+  margin: 0;
+  padding: 3px;
+}
+
 /* The Open menu, under the Open project button: a file from anywhere, a
    template from the list, or pasted HTML/CSS. */
 .oscar-open-menu {

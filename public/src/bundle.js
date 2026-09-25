@@ -1764,6 +1764,12 @@ module.exports = { SERIAL_HOST, isSerialTarget, viaSerial };
  * Each entry reads "put this button straight after that one".
  */
 const PLACEMENTS = [
+  // The screen sizes cross to the right half of the bar, one pill just left
+  // of the tools (the editor moves them into this panel and wraps them;
+  // here is only their order: first, ahead of everything).
+  { id: "set-device-desktop", before: "sw-visibility" },
+  { id: "set-device-tablet", after: "set-device-desktop" },
+  { id: "set-device-mobile", after: "set-device-tablet" },
   // Locking is what you do once a surface is pushed and the doors are about
   // to open, so it belongs beside the button that pushes it.
   { id: "toggle-lock", after: "preview" },
@@ -1790,12 +1796,24 @@ function moveAfter(ids, id, after) {
   return order;
 }
 
-/** The order after every placement has been applied, first to last. */
-function arrange(ids, placements) {
-  return (placements || PLACEMENTS).reduce((order, p) => moveAfter(order, p.id, p.after), Array.isArray(ids) ? ids.slice() : []);
+/** As moveAfter, in the other direction: `id` moved to sit straight before `before`. */
+function moveBefore(ids, id, before) {
+  const order = Array.isArray(ids) ? ids.slice() : [];
+  if (id === before || order.indexOf(id) === -1 || order.indexOf(before) === -1) return order;
+  order.splice(order.indexOf(id), 1);
+  order.splice(order.indexOf(before), 0, id);
+  return order;
 }
 
-module.exports = { PLACEMENTS, moveAfter, arrange };
+/** The order after every placement has been applied, first to last. */
+function arrange(ids, placements) {
+  return (placements || PLACEMENTS).reduce(
+    (order, p) => (p.before ? moveBefore(order, p.id, p.before) : moveAfter(order, p.id, p.after)),
+    Array.isArray(ids) ? ids.slice() : []
+  );
+}
+
+module.exports = { PLACEMENTS, moveAfter, moveBefore, arrange };
 
 },{}],16:[function(require,module,exports){
 "use strict";
@@ -24745,6 +24763,67 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // the toolbar button itself retires.
   pn.removeButton("options", "gjs-open-import-webpage");
 
+  // ---- the bar's geography -------------------------------------------------
+  // Open and Save cross to the far left -- the first thing a hand reaches --
+  // and the screen sizes cross to the right, one pill just left of the
+  // tools. A button moves panels whole: its command, label and state ride
+  // along.
+  function moveButton(fromPanel, toPanel, id) {
+    var button = pn.getButton(fromPanel, id);
+    if (!button) return;
+    var props = {
+      id: id,
+      command: button.get("command"),
+      label: button.get("label"),
+      className: button.get("className"),
+      attributes: button.get("attributes"),
+      active: button.get("active"),
+      togglable: button.get("togglable"),
+      context: button.get("context"),
+    };
+    pn.removeButton(fromPanel, id);
+    pn.addButton(toPanel, props);
+  }
+  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
+    moveButton("devices-c", "options", id);
+  });
+  moveButton("options", "devices-c", "open-load");
+  moveButton("options", "devices-c", "open-save");
+
+  // The left half's order, applied the way arrangeToolbar applies the
+  // right's: models and elements moved together, silently, because a reset
+  // that redraws would throw away the pills' painted state.
+  (function orderLeftPanel() {
+    var panel = pn.getPanel("devices-c");
+    var row = document.querySelector(".gjs-pn-devices-c .gjs-pn-buttons");
+    if (!panel || !row) return;
+    var buttons = panel.get("buttons");
+    var models = buttons.models.slice();
+    var els = Array.prototype.slice.call(row.querySelectorAll(".gjs-pn-btn"));
+    if (models.length !== els.length) return;
+    var ids = models.map(function (model) {
+      return model.get("id");
+    });
+    var wanted = ["open-load", "open-save", "oscar-mcp-pill", "oscar-live-pill", "ipButton"]
+      .filter(function (id) {
+        return ids.indexOf(id) !== -1;
+      })
+      .concat(
+        ids.filter(function (id) {
+          return ["open-load", "open-save", "oscar-mcp-pill", "oscar-live-pill", "ipButton"].indexOf(id) === -1;
+        })
+      );
+    wanted.forEach(function (id) {
+      row.appendChild(els[ids.indexOf(id)]);
+    });
+    buttons.reset(
+      wanted.map(function (id) {
+        return models[ids.indexOf(id)];
+      }),
+      { silent: true }
+    );
+  })();
+
   // ---- toolbar order -----------------------------------------------------
   // Every button exists by now. GrapesJS can only append, so the ones that
   // belong elsewhere are moved: in the panel's own list and on the page
@@ -24781,6 +24860,31 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }),
       { silent: true }
     );
+    // Re-appending pulled the screen sizes out of their pill; put it back.
+    pillDevices();
+  }
+
+  /** The screen sizes wear one pill, at the left edge of the right half. */
+  function pillDevices() {
+    var panel = pn.getPanel("options");
+    var row = document.querySelector(".gjs-pn-options .gjs-pn-buttons");
+    if (!panel || !row) return;
+    var old = row.querySelector(".oscar-devices-pill");
+    if (old) old.remove();
+    var models = panel.get("buttons").models;
+    var els = row.querySelectorAll(".gjs-pn-btn");
+    if (models.length !== els.length) return;
+    var chosen = [];
+    models.forEach(function (model, index) {
+      if (String(model.get("id")).indexOf("set-device-") === 0) chosen.push(els[index]);
+    });
+    if (!chosen.length) return;
+    var pill = document.createElement("span");
+    pill.className = "oscar-devices-pill";
+    row.insertBefore(pill, chosen[0]);
+    chosen.forEach(function (el) {
+      pill.appendChild(el);
+    });
   }
   arrangeToolbar();
 
