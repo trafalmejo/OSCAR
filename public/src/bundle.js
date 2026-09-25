@@ -2428,7 +2428,7 @@ const colour = {
   fields: [enabled()]
     .concat(oscFields())
     .concat([
-      field("value", "Colour", "text", { placeholder: "#rrggbb" }),
+      field("value", "Initial colour", "text", { placeholder: "#rrggbb", hint: "The swatch a fresh page opens with. Nothing is sent until a hand, a message or the bridge changes it." }),
       field("format", "Send as", "select", { options: FORMATS }),
       field("scale", "Range", "select", { options: SCALES }),
       // Alpha is configured, not picked: the native control has no alpha
@@ -2868,7 +2868,7 @@ const dropdown = {
     .concat(oscFields())
     .concat([
       field("options", "Options", "text", { placeholder: "Red=1, Green=2, Blue=3" }),
-      field("value", "Selected", "text"),
+      field("value", "Initially selected", "text", { hint: "The option a fresh page opens on. Nothing is sent until a hand, a message or the bridge picks one." }),
       field("argType", "Argument type", "select", { section: "osc", dir: "out", options: ARG_TYPES }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
@@ -4583,7 +4583,7 @@ const meter = {
     ...oscFields({ sends: false }),
     field("min", "Min", "number", { step: "any" }),
     field("max", "Max", "number", { step: "any" }),
-    field("value", "Value", "number", { step: "any" }),
+    field("value", "Initial value", "number", { step: "any", hint: "Where the needle starts until the first reading arrives." }),
     field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
     field("peakHold", "Peak hold (s)", "number", { min: 0, step: "any" }),
     // A level can come from a controller as well as from software: Data in,
@@ -5161,7 +5161,7 @@ const numberInput = {
   fields: [enabled()]
     .concat(oscFields())
     .concat([
-      field("value", "Value", "number", { step: "any" }),
+      field("value", "Initial value", "number", { step: "any", hint: "Where the control starts when a page opens. Nothing is sent until a hand, a message or the bridge moves it." }),
       field("min", "Min", "number", { step: "any", placeholder: "no limit" }),
       field("max", "Max", "number", { step: "any", placeholder: "no limit" }),
       field("step", "Step", "number", { step: "any", min: 0, placeholder: "any" }),
@@ -5800,7 +5800,7 @@ const slider = {
     .concat([
       field("min", "Min", "number", { step: "any" }),
       field("max", "Max", "number", { step: "any" }),
-      field("value", "Value", "number", { step: "any" }),
+      field("value", "Initial value", "number", { step: "any", hint: "Where the control starts when a page opens. Nothing is sent until a hand, a message or the bridge moves it." }),
       field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
       field("invert", "Invert", "checkbox"),
       field("argType", "Argument type", "select", { section: "osc", dir: "out", options: NUMERIC_ARG_TYPES }),
@@ -6089,7 +6089,7 @@ const textInput = {
   fields: [enabled()]
     .concat(oscFields())
     .concat([
-    field("value", "Value", "text"),
+    field("value", "Initial value", "text", { hint: "Where the control starts when a page opens. Nothing is sent until a hand, a message or the bridge moves it." }),
     field("placeholder", "Placeholder", "text"),
     field("argType", "Argument type", "select", { section: "osc", dir: "out", options: ARG_TYPES }),
   ]),
