@@ -149,7 +149,7 @@ All optional, set as environment variables:
 | `OSCAR_SOCKET_PORT` | `8081` | Browser-to-server OSC bridge (browsers are told the port) |
 | `OSCAR_LAN_PORT` | `5001` | Source port for OSC sent to the network |
 | `OSCAR_LOCAL_PORT` | `5002` | Source port for OSC sent to this machine |
-| `OSCAR_OSC_IN_PORT` | `9000` | Where OSC coming back from the rig is received |
+| `OSCAR_OSC_IN_PORT` | `8880` | Where OSC coming back from the rig is received |
 | `OSCAR_DMX_PORT` | `0` (any free port) | Source port Art-Net and sACN are sent from; `6454` for a node that insists on it |
 | `OSCAR_DMX_HOLD_ON_EXIT` | unset | Set to `1` to leave DMX fixtures on their last look when OSCAR quits, instead of releasing them |
 | `OSCAR_PROJECTS_DIR` | `./projects` | Where saved projects are written |
@@ -189,9 +189,12 @@ resize afterwards, or clear the width and height in the Style Manager.
 
 ### Following the rig (OSC in)
 
-OSCAR also receives. It listens for OSC on UDP port `9000`
-(`OSCAR_OSC_IN_PORT`), the port TouchOSC and Lemur offer first; point your
-software's OSC output at OSCAR's IP and that port. OSC runs both ways, so a
+OSCAR also receives. It listens for OSC on UDP port `8880`: point your
+software's OSC output at OSCAR's IP and that port. The port is fixed by
+design, as QLab's 53000 is, so a rig aimed at an OSCAR always finds it; the
+editor shows it in the top bar and as **Port in** under a widget's Data in,
+and only `OSCAR_OSC_IN_PORT` at startup moves it, for the rare machine where
+8880 is taken. OSC runs both ways, so a
 widget's **OSC** section opens with a checkbox per direction: **Data in** and
 **Data out**. Tick **Data in** on a widget and it follows whatever arrives at
 its own Message address: a slider's

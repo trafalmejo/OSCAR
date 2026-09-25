@@ -13,7 +13,7 @@
 #
 # If TouchDesigner is not on the same computer as OSCAR, change the two lines
 # under "Where OSCAR is" first. OSCAR prints its IP and listening port when it
-# starts; the port is 9000 unless you changed it (the top bar says which).
+# starts; the port is 8880 unless you changed it (the top bar says which).
 #
 # What is built:
 #   oscin      OSC In CHOP, port 10000: everything the rack sends.
@@ -29,7 +29,7 @@
 
 # ---- Where OSCAR is ------------------------------------------------------------
 OSCAR_IP = '127.0.0.1'
-OSCAR_PORT = 9000
+OSCAR_PORT = 8880
 
 # ---- the helper the picture's expressions use ----------------------------------
 LIB = '''
