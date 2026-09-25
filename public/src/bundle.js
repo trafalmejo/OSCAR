@@ -385,6 +385,7 @@ const LATER_KEYS = {
   // "network" is only the words for what such a page already did: an old page
   // on the cable spells it ip: "serial", which viaSerial() still honours.
   oscVia: "network",
+  oscListenFrom: "any",
   oscSendWhen: "user",
   oscLoopGuard: true,
   midiSendWhen: "user",
@@ -2024,6 +2025,7 @@ const button = {
       port: 7000,
       message: "/push1",
       listen: false,
+      oscListenFrom: "any",
       mode: "momentary",
       valueOn: "1",
       valueOff: "0",
@@ -2433,6 +2435,7 @@ const colour = {
       port: 7000,
       message: "/colour",
       listen: false,
+      oscListenFrom: "any",
       value: "#ff0000",
       format: "rgb",
       scale: "unit",
@@ -2874,6 +2877,7 @@ const dropdown = {
       port: 7000,
       message: "/dropdown1",
       listen: false,
+      oscListenFrom: "any",
       options: "Red=1, Green=2, Blue=3",
       value: "1",
       argType: "i",
@@ -3302,6 +3306,31 @@ const DATA_IN_HINT =
 const DATA_OUT_HINT = "Send this widget's value over this protocol when it is used.";
 
 /**
+ * Which door Data in believes: both by default, or one alone. Narrowing to
+ * the USB board is the sensor case, and the security case: a widget that
+ * only ever means the cable cannot be moved from the network.
+ */
+const LISTEN_FROM_OPTIONS = [
+  { id: "any", name: "Network and USB board" },
+  { id: "network", name: "Network only" },
+  { id: "serial", name: "USB board only" },
+];
+
+const LISTEN_FROM_HINT =
+  "Where Data in is believed from. OSCAR hears the network (Port in) and a USB board alike; narrow " +
+  "this widget to one door if the other should never move it -- a sensor's widget set to the board " +
+  "alone cannot be moved by anything on the network.";
+
+function checkListenFrom(value) {
+  if (LISTEN_FROM_OPTIONS.some((option) => option.id === value)) return null;
+  return "From is one of: " + LISTEN_FROM_OPTIONS.map((option) => JSON.stringify(option.id)).join(", ");
+}
+
+function listenFrom() {
+  return field("oscListenFrom", "From", "select", { section: "osc", dir: "in", options: LISTEN_FROM_OPTIONS, hint: LISTEN_FROM_HINT });
+}
+
+/**
  * When a protocol's Data out fires: the bridge, per widget and per protocol.
  *
  * "Changed by the user" is what every widget always did: a hand, on any
@@ -3363,7 +3392,7 @@ function oscFields(options) {
   const sends = !options || options.sends !== false;
   const receives = !options || options.receives !== false;
   const fields = [];
-  if (receives) fields.push(listen());
+  if (receives) fields.push(listen(), listenFrom());
   if (sends) fields.push(oscToggle(), sendWhenField("oscSendWhen", "osc"), loopGuardField("oscLoopGuard", "osc", "oscSendWhen"));
   if (sends) return fields.concat(connection());
   return fields.concat([field("message", "Message", "text", { section: "osc", dir: "in", placeholder: "/address" })]);
@@ -3654,11 +3683,12 @@ function checkNumber(label) {
 
 /** The validators that go with connection(). */
 function connectionChecks() {
-  return { oscVia: checkVia, ip: checkIp, port: checkPort, message: checkMessage, oscSendWhen: checkSendWhen };
+  return { oscListenFrom: checkListenFrom, oscVia: checkVia, ip: checkIp, port: checkPort, message: checkMessage, oscSendWhen: checkSendWhen };
 }
 
 module.exports = {
   field: field,
+  checkListenFrom: checkListenFrom,
   SEND_WHEN_OPTIONS: SEND_WHEN_OPTIONS,
   checkSendWhen: checkSendWhen,
   sendWhenField: sendWhenField,
@@ -3731,6 +3761,17 @@ const { matchesAddress } = require("../osc-address");
 function incoming(config, message) {
   if (!config || !config.enabled || !config.listen) return null;
   if (!message || typeof message.address !== "string" || !Array.isArray(message.args)) return null;
+
+  // Which door the widget agreed to listen at (oscListenFrom): both, unless
+  // it narrowed to the network or the USB board. The serial link tags what
+  // came up the cable; a message with no tag came in by the network. A
+  // sensor's widget set to the board alone cannot be moved by a stray -- or
+  // hostile -- packet on the venue's network.
+  const from = config.oscListenFrom;
+  if (from === "network" || from === "serial") {
+    const came = message.source === "serial" ? "serial" : "network";
+    if (came !== from) return null;
+  }
 
   const addresses = Array.isArray(config.message) ? config.message : [config.message];
   for (const address of addresses) {
@@ -4230,6 +4271,7 @@ const mediaBrowser = {
     port: 7000,
     message: "/clip",
     listen: false,
+    oscListenFrom: "any",
     items: "Clip 1; Clip 2; Clip 3; Clip 4; Clip 5; Clip 6",
     columns: 3,
     showLabels: true,
@@ -4540,7 +4582,7 @@ module.exports = {
 },{"../osc-args":9,"./fields":20,"./incoming":21,"./outgoing":29,"./shared":31,"./typed":34}],24:[function(require,module,exports){
 "use strict";
 
-const { field, enabled, oscFields, checkMessage, checkNumber, ORIENTATIONS } = require("./fields");
+const { field, enabled, oscFields, checkMessage, checkNumber, checkListenFrom, ORIENTATIONS } = require("./fields");
 const { follow } = require("./incoming");
 const { onShared } = require("./shared");
 const { midiFields, midiDefaults, midiChecks } = require("./midi-fields");
@@ -4611,6 +4653,7 @@ const meter = {
     // A meter exists to follow something; unlike a control, there is nothing
     // it could start doing on its own that a hand would have to fight.
     listen: true,
+    oscListenFrom: "any",
     min: 0,
     max: 100,
     value: 0,
@@ -4655,6 +4698,7 @@ const meter = {
 
   checks: Object.assign({
     message: checkMessage,
+    oscListenFrom: checkListenFrom,
     min: checkNumber("Min"),
     max: checkNumber("Max"),
     value: checkNumber("Value"),
@@ -5190,6 +5234,7 @@ const numberInput = {
       port: 7000,
       message: "/number1",
       listen: false,
+      oscListenFrom: "any",
       value: 0,
       min: "",
       max: "",
@@ -5828,6 +5873,7 @@ const slider = {
       port: 7000,
       message: "/slider1",
       listen: false,
+      oscListenFrom: "any",
       min: 0,
       max: 100,
       value: 0,
@@ -6126,6 +6172,7 @@ const textInput = {
     port: 7000,
     message: "/text1",
     listen: false,
+    oscListenFrom: "any",
     value: "",
     placeholder: "Type, then press Enter",
     argType: "s",
@@ -6558,6 +6605,7 @@ const xypad = {
       port: 7000,
       message: "/pad",
       listen: false,
+      oscListenFrom: "any",
       sendMode: "one",
       minX: 0,
       maxX: 100,

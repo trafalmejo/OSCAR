@@ -72,7 +72,7 @@ test("the meter is display-only: it follows, never sends, and has no address to 
     assert.ok(!keys.includes(key), "a meter has no " + key);
   }
   assert.strictEqual(keys.filter((k) => k === "listen" || k === "oscEnabled" || k === "ip" || k === "message")[0], "listen", "Data in comes before anything else about OSC");
-  assert.deepStrictEqual(meter.fields.filter((f) => f.section === "osc").map((f) => f.key), ["listen", "message"], "Data in and the address: no Data out, nowhere to send");
+  assert.deepStrictEqual(meter.fields.filter((f) => f.section === "osc").map((f) => f.key), ["listen", "oscListenFrom", "message"], "Data in, which door to believe, and the address: no Data out, nowhere to send");
   assert.strictEqual(meter.defaults.listen, true, "and is on from the start: following is all it does");
   assert.ok(meter.checks.message("meter1"), "Message is still checked as an OSC path");
   assert.strictEqual(meter.checks.message("/meter1"), null);

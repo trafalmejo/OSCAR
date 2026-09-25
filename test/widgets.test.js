@@ -215,11 +215,11 @@ test("the OSC section opens with a checkbox per direction the widget has, in bef
     const osc = widget.fields.filter((f) => f.section === "osc");
     if (!osc.length) continue;
     const wanted = [];
-    if (widget.receives) wanted.push("listen");
+    if (widget.receives) wanted.push("listen", "oscListenFrom");
     if (widget.sends) wanted.push("oscEnabled");
     assert.deepStrictEqual(osc.slice(0, wanted.length).map((f) => f.key), wanted, widget.name);
     // Named for the direction; the section's title names the protocol.
-    const labels = { listen: "Data in", oscEnabled: "Data out" };
+    const labels = { listen: "Data in", oscListenFrom: "From", oscEnabled: "Data out" };
     for (const key of wanted) assert.strictEqual(osc.find((f) => f.key === key).label, labels[key], widget.name + "." + key);
     assert.ok(osc.some((f) => f.key === "message"), widget.name + " has an address");
     // A widget cannot offer a direction it has not got.

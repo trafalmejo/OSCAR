@@ -149,7 +149,8 @@ test("OSC is always followed; MIDI is heard once, for the watchers and for the w
   assert.deepStrictEqual(await surfaces.midiPorts(), [], "and no port is opened for it");
   assert.deepStrictEqual(told, []);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.match(server, /if \(surfaces\) surfaces\.hearOsc\(message\)/);
+  assert.match(server, /if \(surfaces\) surfaces\.hearOsc\(tagged\)/, "every message goes tagged with its door");
+  assert.match(server, /heardOsc\(message, "serial"\)/, "the cable tags its own");
   assert.match(server, /surfaces\.hearMidi\(heard, port, first\)/);
   assert.strictEqual((server.match(/io\.emit\("osc:in"/g) || []).length, 1, "one place tells the pages, so one place follows");
 });
@@ -213,4 +214,25 @@ test("a published fader, button and two-message pad follow the rig with no page 
   assert.deepStrictEqual(told.map((t) => t[1].id), ["fader", "go", "pad", "pad"]);
   assert.deepStrictEqual(told[3][1].state, { x: 0.5, y: 0.25 }, "every device is told the whole position");
   assert.deepStrictEqual(sent, [], "what comes in is never sent out");
+});
+
+test("a widget believes only the door its From names: the network cannot move a board's widget", async () => {
+  const { surfaces, store } = await venue([
+    tag("oscar-meter", "sensor", { message: "/sensor", oscListenFrom: "serial" }),
+    tag("oscar-meter", "wifi", { message: "/sensor", oscListenFrom: "network" }),
+    tag("oscar-meter", "both", { message: "/sensor" }),
+  ]);
+  surfaces.onState(() => {});
+
+  const network = Object.assign({ source: "network" }, osc("/sensor", 0.25));
+  assert.strictEqual(await surfaces.hearOsc(network), 2, "the board-only widget was not moved");
+  assert.deepStrictEqual([store.get("sensor"), store.get("wifi"), store.get("both")], [null, { value: 0.25 }, { value: 0.25 }]);
+
+  const cable = Object.assign({ source: "serial" }, osc("/sensor", 0.75));
+  assert.strictEqual(await surfaces.hearOsc(cable), 2, "the network-only widget was not moved");
+  assert.deepStrictEqual([store.get("sensor"), store.get("wifi")], [{ value: 0.75 }, { value: 0.25 }]);
+
+  // A message with no tag came in by the network: old tests and old tools keep working.
+  assert.strictEqual(await surfaces.hearOsc(osc("/sensor", 0.5)), 2);
+  assert.deepStrictEqual(store.get("sensor"), { value: 0.75 }, "and still cannot reach the board's widget");
 });

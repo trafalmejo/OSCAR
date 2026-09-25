@@ -123,9 +123,12 @@ function diagnostics() {
 // phone across the internet included. The raw message still goes to every
 // page, for the editor's canvas and the widgets OSCAR cannot yet follow for.
 // `surfaces` is made further down; nothing arrives before it is.
-function heardOsc(message) {
-  io.emit("osc:in", message);
-  if (surfaces) surfaces.hearOsc(message).catch((err) => console.error("OSC in: " + reason(err)));
+function heardOsc(message, source) {
+  // Tagged at the door: the widgets' From (oscListenFrom) reads it wherever
+  // the message is read -- here, on published pages, in the editor.
+  const tagged = Object.assign({}, message, { source: source === "serial" ? "serial" : "network" });
+  io.emit("osc:in", tagged);
+  if (surfaces) surfaces.hearOsc(tagged).catch((err) => console.error("OSC in: " + reason(err)));
 }
 
 const MIDI_EVENTS = { open: "sending to", closed: "let go of", listening: "listening to", deaf: "stopped listening to" };
@@ -167,7 +170,7 @@ const serialLink = new SerialLink({
   // way the network does: a meter with Listen on can show a potentiometer.
   onMessage: (packet) => {
     const message = parseOsc(packet);
-    if (message) heardOsc(message);
+    if (message) heardOsc(message, "serial");
   },
   // A sketch that also Serial.println()s down the same line produces one of
   // these per line it prints.
