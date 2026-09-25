@@ -157,6 +157,7 @@ test("the log floats so the faders stay usable under it: that is what it is for"
   assert.match(editorSource, /document\.body\.classList\.add\("oscar-log-dragging"\)/, "the shield goes up");
   assert.match(themeSource, /body\.oscar-log-dragging iframe \{\n  pointer-events: none;/, "and the canvas cannot eat the moves");
   assert.match(editorSource, /if \(logOpen\(\)\) \{\n        logBox\.style\.display = "none";/, "the lights toggle it");
+  assert.match(editorSource, /window\.innerWidth - at\.width\) \/ 2/, "opened in the middle of the screen, then dragged from there");
   assert.match(themeSource, /\.oscar-live-log \{\n  position: fixed;/, "floating over the editor");
   assert.match(themeSource, /width: 820px;/, "wide enough to read");
   assert.match(themeSource, /height: 420px;/, "a fixed height, not one that grows with every row");

@@ -173,6 +173,19 @@
   border-bottom: 1px solid var(--o-border);
 }
 
+/* The green dot before each published name: this row is being served right
+   now. The same green and breath as the LIVE pill (its keyframes live in
+   oscar_theme.css, loaded on the same page). */
+.oscar-published-list .oscar-published-live {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2fbf5f;
+  box-shadow: 0 0 5px rgba(47, 191, 95, 0.8);
+  animation: oscar-live-breathe 2.4s ease-in-out infinite;
+}
+
 .oscar-published-list li:last-child {
   border-bottom: 0;
 }

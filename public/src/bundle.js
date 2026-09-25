@@ -21978,6 +21978,15 @@ function install(editor, options) {
         known = Array.isArray(pages) ? pages : [];
         known.forEach(function (page) {
           var row = document.createElement("li");
+
+          // A green dot first: this row is not a file, it is being served
+          // right now -- the same green, and the same breath, as the LIVE
+          // pill in the top bar.
+          var live = document.createElement("span");
+          live.className = "oscar-published-live";
+          live.title = "Live: OSCAR is serving this surface right now.";
+          row.appendChild(live);
+
           var open = document.createElement("a");
           open.className = "o-link";
           open.target = "_blank";
@@ -24225,6 +24234,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }
       if (!logBox) buildLogBox();
       logBox.style.display = "";
+      // Opened in the middle of the screen; a drag moves it from there, and
+      // the window then keeps its place, toggle after toggle.
+      if (!logBox.style.left) {
+        var at = logBox.getBoundingClientRect();
+        logBox.style.left = Math.max(0, Math.round((window.innerWidth - at.width) / 2)) + "px";
+        logBox.style.top = Math.max(0, Math.round((window.innerHeight - at.height) / 2)) + "px";
+        logBox.style.right = "auto";
+      }
       fetch("/live/log")
         .then(function (res) {
           return res.json();

@@ -225,6 +225,15 @@ function install(editor, options) {
         known = Array.isArray(pages) ? pages : [];
         known.forEach(function (page) {
           var row = document.createElement("li");
+
+          // A green dot first: this row is not a file, it is being served
+          // right now -- the same green, and the same breath, as the LIVE
+          // pill in the top bar.
+          var live = document.createElement("span");
+          live.className = "oscar-published-live";
+          live.title = "Live: OSCAR is serving this surface right now.";
+          row.appendChild(live);
+
           var open = document.createElement("a");
           open.className = "o-link";
           open.target = "_blank";

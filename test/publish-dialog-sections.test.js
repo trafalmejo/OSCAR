@@ -101,3 +101,14 @@ test("the note about several pages is only for a project with Pages on", () => {
   const showcase = read("public/templates/oscar-showcase.html");
   assert.ok(!/osh-feature-pages|A page per room/.test(showcase), "the Showcase does not advertise a feature that is off");
 });
+
+test("each surface published on the local network wears a green live dot: served, not stored", () => {
+  const dialog = read("public/src/export_dialog.js");
+  const at = dialog.indexOf('live.className = "oscar-published-live"');
+  const name = dialog.indexOf('open.className = "o-link oscar-published-name"');
+  assert.ok(at !== -1 && name !== -1 && at < name, "the dot comes before the name");
+  assert.match(dialog, /live\.title = "Live: OSCAR is serving this surface right now\."/, "and says what it means");
+  const css = read("public/css/oscar_export.css");
+  assert.match(css, /\.oscar-published-list \.oscar-published-live \{/, "with the pill's green and breath");
+  assert.match(css, /animation: oscar-live-breathe/, "the same breath as the LIVE pill");
+});

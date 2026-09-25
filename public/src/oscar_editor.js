@@ -1879,6 +1879,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }
       if (!logBox) buildLogBox();
       logBox.style.display = "";
+      // Opened in the middle of the screen; a drag moves it from there, and
+      // the window then keeps its place, toggle after toggle.
+      if (!logBox.style.left) {
+        var at = logBox.getBoundingClientRect();
+        logBox.style.left = Math.max(0, Math.round((window.innerWidth - at.width) / 2)) + "px";
+        logBox.style.top = Math.max(0, Math.round((window.innerHeight - at.height) / 2)) + "px";
+        logBox.style.right = "auto";
+      }
       fetch("/live/log")
         .then(function (res) {
           return res.json();
