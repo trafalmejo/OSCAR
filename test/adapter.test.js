@@ -440,7 +440,7 @@ test("the panel is one collapsible section per protocol, under the widget's own 
   // The directions lead, and decide: a default slider sends OSC and nothing
   // else, so OSC shows its sending half (the guard waits for a bridging Send
   // when), DMX is its one checkbox, MIDI its two.
-  assert.deepStrictEqual(inSection("osc"), ["listen", "oscEnabled", "oscSendWhen", "ip", "port", "message", "argType"]);
+  assert.deepStrictEqual(inSection("osc"), ["listen", "oscEnabled", "oscSendWhen", "oscVia", "ip", "port", "message", "argType"]);
   const label = (name) => traits.find((t) => t.name === name).label;
   assert.deepStrictEqual([label("listen"), label("oscEnabled"), label("dmxEnabled")], ["Data in", "Data out", "Data out"]);
   assert.deepStrictEqual(inSection("dmx"), ["dmxEnabled"]);
