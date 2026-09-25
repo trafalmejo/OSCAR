@@ -718,20 +718,18 @@ address it prints, and type it into the widget's **Ip** and **Port**.
 **A board on a USB cable** (Uno, Nano, Mega, Leonardo, Pico) has no address,
 so OSCAR opens the serial port for you.
 
-> The Serial panel is switched off in this version while it is tested on
-> real boards (`SERIAL` in `lib/features.js`). The steps below describe it
-> as it works once that is on. A board with Wi-Fi or Ethernet, above, is not
-> affected.
+> Still to be tried on real boards before 2.1 ships; the to-do list has it.
+> A board with Wi-Fi or Ethernet, above, is not affected.
 
-1. Flash `tools/arduino/oscar_serial`.
-2. In the editor, open the **Serial** panel (the USB icon in the toolbar),
-   pick the board's port and the baud rate in your sketch's `Serial.begin()`
-   (115200 in ours), and press **Connect**.
-3. Set the widget's OSC **Via** to **USB board (serial)**. Its Ip and Port
-   fold away (the cable has no address) and a **Board** row appears: pick
-   the port the board is on. One cable serves the whole of OSCAR, so picking it
-   once picks it everywhere; there is no separate panel. The old spelling,
-   Ip set to the word `serial`, still works
+1. Flash `tools/arduino/oscar_serial` (115200 baud, no libraries).
+2. Set a widget's OSC **Via** to **USB board (serial)**. Its Ip and Port fold
+   away (the cable has no address) and a **Board** row appears: pick the port
+   the board is on. One cable serves the whole of OSCAR, so picking it once
+   picks it everywhere; there is no separate panel. The old spelling, Ip set
+   to the word `serial`, still works.
+3. The board's own OSC needs nothing more: what it sends up the cable is
+   heard beside the network, so a widget with **Data in** on follows it by
+   address, exactly as it follows the rig
 
 Every widget that sends can be pointed at the cable, and the message is the
 same OSC message it would have sent to the network, framed with SLIP -- the
