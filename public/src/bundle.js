@@ -3232,7 +3232,7 @@ function sectionStatus(fields, config) {
 function connection() {
   return [
     field("ip", "Ip", "text", { section: "osc", dir: "out", placeholder: "localhost, an IP, or " + SERIAL_HOST }),
-    field("port", "Port", "number", { section: "osc", dir: "out", min: 1, max: 65535 }),
+    field("port", "Port out", "number", { section: "osc", dir: "out", min: 1, max: 65535 }),
     // The address sent to and the address followed: either direction needs it.
     field("message", "Message", "text", { section: "osc", dir: "both", placeholder: "/address" }),
   ];
@@ -21131,6 +21131,53 @@ function sectionLights(editor, options) {
         light.setAttribute("aria-label", words);
       });
     });
+
+    // OSC's Port in: the one port OSCAR hears on, for every widget alike. It
+    // is the server's, not a setting, so it is drawn as a row of the panel
+    // that cannot be edited, under Data in while Data in is on.
+    var oscSections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + '="osc"]');
+    var oscSection = oscSections && oscSections.length ? oscSections[0] : null;
+    if (oscSection && typeof oscSection.querySelector === "function") {
+      var anchor = oscSection.querySelector('[data-oscar-field="listen"]');
+      var portInRow = oscSection.querySelector(".oscar-port-in");
+      var listening = config.listen === true || config.listen === "true";
+      var showPortIn = !!(definition && fieldOf(definition, "listen") && listening && server.listeningPort && anchor);
+      if (!showPortIn) {
+        if (portInRow) portInRow.parentNode.removeChild(portInRow);
+      } else {
+        if (!portInRow) {
+          portInRow = doc.createElement("div");
+          portInRow.className = "gjs-trt-trait__wrp oscar-port-in";
+          var traitBox = doc.createElement("div");
+          traitBox.className = "gjs-trt-trait gjs-trt-trait--number";
+          var labelBox = doc.createElement("div");
+          labelBox.className = "gjs-label-wrp";
+          var label = doc.createElement("div");
+          label.className = "gjs-label";
+          label.textContent = "Port in";
+          labelBox.appendChild(label);
+          var fieldBox = doc.createElement("div");
+          fieldBox.className = "gjs-field-wrp gjs-field-wrp--number";
+          var fieldEl = doc.createElement("div");
+          fieldEl.className = "gjs-field gjs-field-number";
+          var input = doc.createElement("input");
+          input.type = "text";
+          input.disabled = true;
+          fieldEl.appendChild(input);
+          fieldBox.appendChild(fieldEl);
+          traitBox.appendChild(labelBox);
+          traitBox.appendChild(fieldBox);
+          portInRow.appendChild(traitBox);
+          portInRow.setAttribute(
+            "title",
+            "Where OSCAR hears OSC, for every widget's Data in alike. It is OSCAR's port, not this widget's: start OSCAR with OSCAR_OSC_IN_PORT to move it."
+          );
+        }
+        if (anchor.nextSibling !== portInRow) anchor.parentNode.insertBefore(portInRow, anchor.nextSibling);
+        var portInInput = portInRow.querySelector("input");
+        if (portInInput.value !== String(server.listeningPort)) portInInput.value = String(server.listeningPort);
+      }
+    }
 
     // GrapesJS puts a trait's attributes on the wrapper around its row.
     var hinted = root.querySelectorAll(".gjs-trt-trait__wrp[title]");

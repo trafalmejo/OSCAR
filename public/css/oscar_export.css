@@ -335,3 +335,10 @@
 .gjs-pn-btn.oscar-publish-stale {
   background-image: radial-gradient(circle at calc(100% - 6px) 6px, #ff3663 3px, rgba(255, 54, 99, 0) 4.2px);
 }
+
+/* Port in: the server's one listening port, drawn as a row of the OSC
+   section that cannot be edited. */
+.oscar-port-in input[disabled] {
+  opacity: 0.65;
+  cursor: default;
+}

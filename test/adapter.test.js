@@ -1019,3 +1019,18 @@ test("the select tool is stopped again whenever GrapesJS restarts it during a pr
   assert.strictEqual(stopped, 1);
 });
 
+
+test("Port in is the server's, shown beside Port out and never edited", () => {
+  // Drawn by the panel decoration (sectionLights), not stored as a setting:
+  // it is one port for the whole of OSCAR, so it must not live in a widget.
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "adapters", "grapesjs.js"), "utf8");
+  assert.match(src, /oscar-port-in/);
+  assert.match(src, /input\.disabled = true;/);
+  assert.match(src, /config\.listen === true \|\| config\.listen === "true"/, "shown while Data in is on, like the fields of that direction");
+  assert.match(src, /OSCAR_OSC_IN_PORT/, "and says whose port it is");
+  const { slider } = require("../lib/widgets/slider");
+  assert.strictEqual(slider.fields.find((f) => f.key === "port").label, "Port out");
+  assert.ok(!slider.fields.some((f) => f.key === "oscInPort"), "not a setting: nothing is stored");
+});
