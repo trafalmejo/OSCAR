@@ -93,10 +93,13 @@ test("a widget switched off is driven silently: shown, not sent, and no OUT", as
 
 // ---- the wiring, read from the sources -----------------------------------
 
-const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-const editorSource = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
-const themeSource = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8");
-const routesSource = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8");
+// Read with line endings normalised: a git checkout on Windows rewrites
+// these files with CRLF, and the multiline assertions anchor on \n.
+const readSource = (...parts) => fs.readFileSync(path.join(__dirname, "..", ...parts), "utf8").replace(/\r\n/g, "\n");
+const serverSource = readSource("server.js");
+const editorSource = readSource("public", "src", "oscar_editor.js");
+const themeSource = readSource("public", "css", "oscar_theme.css");
+const routesSource = readSource("routes", "index.js");
 
 test("the server throttles the flickers, keeps the log, and announces the roster's changes", () => {
   assert.match(serverSource, /io\.emit\("live:activity", \{ dir: event\.dir \}\)/, "the activity event");
