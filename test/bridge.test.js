@@ -199,6 +199,7 @@ test("the export dialog says a file bridges for itself, one copy only; the featu
 test("the canvas yields to the show, per widget id, and wears the light that says so", () => {
   const adapter = read("public/src/adapters/grapesjs.js");
   assert.match(adapter, /if \(publishedOwners\(editor, model\.getId\(\)\)\.length\) return;/, "a live id sends nothing from the canvas");
+  assert.match(adapter, /if \(!features\.CANVAS_YIELD\) return \[\];/, "and the whole of it sits behind one switch");
   assert.strictEqual((adapter.match(/publishedOwners\(editor, model\.getId\(\)\)\.length\) return;/g) || []).length, 2, "and shares nothing either");
   assert.match(adapter, /the published copy is playing, so this control sends nothing from the canvas/);
   assert.match(adapter, /#2fbf5f/, "green: sends from here");

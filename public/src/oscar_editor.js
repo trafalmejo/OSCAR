@@ -505,6 +505,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // on a slow beat, each widget wears its light (green sends, red yields),
   // and the dots follow the layout on a faster one (adapters/grapesjs.js).
   var askForPublished = function () {
+    if (!features.CANVAS_YIELD) return;
     fetch("/published")
       .then(function (res) {
         return res.ok ? res.json() : null;

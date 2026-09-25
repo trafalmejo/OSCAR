@@ -1394,6 +1394,7 @@ function refreshChoices(editor) {
  * /published; empty until it has.
  */
 function publishedOwners(editor, id) {
+  if (!features.CANVAS_YIELD) return [];
   var live = editor && editor.oscarPublishedWidgets;
   return (live && id && live[id]) || [];
 }
@@ -1424,6 +1425,7 @@ function tellPublishedWidgets(editor, rows) {
  * every repaint: layouts barely move while someone is editing.
  */
 function paintWidgetLights(editor) {
+  if (!features.CANVAS_YIELD) return;
   var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
   if (!canvas || !canvas.body) return;
   var layer = canvas.getElementById("oscar-widget-lights");

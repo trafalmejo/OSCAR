@@ -572,6 +572,16 @@ const DEFAULTS = {
    */
   MIDI: true,
 
+  /**
+   * The canvas yields to the show: a control whose id is live on a published
+   * surface sends and shares nothing from the editor's canvas, and every
+   * enabled control wears a light saying whether it sends from here (green)
+   * or a published surface owns it (red, the owners in the hover text).
+   * On because two masters on one id fight on the wire; here as a switch in
+   * case an installation prefers the old behaviour, canvas always live.
+   */
+  CANVAS_YIELD: true,
+
 };
 
 function isOn(name) {
@@ -21555,6 +21565,7 @@ function refreshChoices(editor) {
  * /published; empty until it has.
  */
 function publishedOwners(editor, id) {
+  if (!features.CANVAS_YIELD) return [];
   var live = editor && editor.oscarPublishedWidgets;
   return (live && id && live[id]) || [];
 }
@@ -21585,6 +21596,7 @@ function tellPublishedWidgets(editor, rows) {
  * every repaint: layouts barely move while someone is editing.
  */
 function paintWidgetLights(editor) {
+  if (!features.CANVAS_YIELD) return;
   var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
   if (!canvas || !canvas.body) return;
   var layer = canvas.getElementById("oscar-widget-lights");
@@ -22838,6 +22850,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // on a slow beat, each widget wears its light (green sends, red yields),
   // and the dots follow the layout on a faster one (adapters/grapesjs.js).
   var askForPublished = function () {
+    if (!features.CANVAS_YIELD) return;
     fetch("/published")
       .then(function (res) {
         return res.ok ? res.json() : null;
