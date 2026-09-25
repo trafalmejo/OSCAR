@@ -134,12 +134,6 @@ test("the pill sits between the screen sizes and the network info, split into it
   assert.match(themeSource, /:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "LIVE struck through at zero");
   assert.match(editorSource, /Nothing is published: OSCAR serves no surfaces in the background\./, "the quiet pill says why");
   assert.match(themeSource, /border: 1px solid rgba\(47, 191, 95, 0\.55\)/, "the pill is green");
-  // The address is centred in the top bar: the middle of the screen when
-  // there is room, stepped left of the toolbar when there is not, and
-  // re-placed when the pill's width changes or the window resizes.
-  assert.match(editorSource, /Math\.min\(window\.innerWidth \/ 2, rightWall - w \/ 2\)/, "the middle, unless the toolbar is in the way");
-  assert.match(editorSource, /window\.addEventListener\("resize", centerIpLabel\)/, "and it follows the window");
-  assert.match(themeSource, /\.gjs-pn-btn\.oscar-ip-label,\n\.gjs-pn-btn\.oscar-ip-label:hover \{\n  position: absolute;/, "lifted out of the row to be placed");
 });
 
 test("the log window says the address first, then the traffic, filtered by direction and protocol", () => {

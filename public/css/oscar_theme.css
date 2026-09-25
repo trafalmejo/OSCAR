@@ -598,17 +598,9 @@ body.oscar-log-dragging iframe {
 
 /* The server address is information, not a button. GrapesJS marks it
    disabled and fades it to half opacity, which on top of muted text made the
-   one address people need to read the hardest thing on screen to read.
-   Centred in the top bar: absolute within the devices panel (which starts at
-   the screen's left edge, so `left` is a viewport coordinate), with the
-   editor's centerIpLabel() choosing the middle of the screen when there is
-   room and stepping left of the toolbar when there is not. */
+   one address people need to read the hardest thing on screen to read. */
 .gjs-pn-btn.oscar-ip-label,
 .gjs-pn-btn.oscar-ip-label:hover {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  white-space: nowrap;
   background: none;
   color: var(--o-text-muted);
   font-size: var(--o-text-xs);
