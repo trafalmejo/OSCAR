@@ -1596,6 +1596,31 @@ function initGrape(ipServer, socketPort, oscInPort) {
     })
     .catch(function () {});
 
+  // ---- telemetry switch, in About ----------------------------------------
+  // Shown only when this build can speak at all (a key baked in): a switch
+  // for something that sends nothing would only sow doubt. The full list of
+  // what OSCAR can say is lib/telemetry.js; the label links to it.
+  fetch("/telemetry-state")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (state) {
+      if (!state || !state.wired) return;
+      var row = document.getElementById("about-telemetry");
+      var box = document.getElementById("about-telemetry-switch");
+      if (!row || !box) return;
+      row.style.display = "";
+      box.checked = !!state.on;
+      box.addEventListener("change", function () {
+        fetch("/telemetry-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ on: box.checked }),
+        }).catch(function () {});
+      });
+    })
+    .catch(function () {});
+
   // ---- serial -------------------------------------------------------------
   // No panel: the cable is picked where it is used, the Board row the
   // settings panel draws under a widget's Via (adapters/grapesjs.js).

@@ -27,5 +27,22 @@
     </div>
 
     <div id="about-version" class="about-note"></div>
+
+    <!-- The telemetry switch, filled by oscar_editor.js from /telemetry-state:
+         the whole list of what OSCAR can say is lib/telemetry.js, one screen. -->
+    <div id="about-telemetry" class="about-note" style="display: none">
+      <label class="oscar-telemetry-row">
+        <input id="about-telemetry-switch" type="checkbox" />
+        Share anonymous usage counts (which features are used, never your
+        projects, addresses or what the rig says) to help decide what OSCAR
+        builds next. The complete list lives in
+        <a
+          class="o-link"
+          target="_blank"
+          href="https://github.com/trafalmejo/OSCAR/blob/master/lib/telemetry.js"
+          >lib/telemetry.js</a
+        >.
+      </label>
+    </div>
   </div>
 </div>

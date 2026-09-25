@@ -23,7 +23,7 @@ const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocke
 const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
-const { createSurfaces } = require("./lib/surfaces");
+const { createSurfaces, allWidgetsIn } = require("./lib/surfaces");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -95,6 +95,13 @@ function removeMcpHandshake() {
     fs.unlinkSync(MCP_HANDSHAKE);
   } catch {}
 }
+
+// Telemetry: anonymous counts, whitelisted in lib/telemetry.js (the whole
+// contract is that one file). The About window's switch and
+// OSCAR_NO_TELEMETRY=1 both silence it; a build with no key baked in is
+// silent by construction.
+const { createTelemetry } = require("./lib/telemetry");
+const telemetry = createTelemetry({ settings });
 
 const lock = {
   isLocked: () => !!settings.get("locked"),
@@ -227,6 +234,16 @@ const reportSerialDrop = atMostOncePer(5000, (address, missed) => {
   console.error("Not sent to serial: " + address + (missed ? " and " + missed + " more" : "") + " -- " + why);
 });
 
+// A template or a draft being fetched for the Load window is the one place
+// the server sees "somebody opened this": counted by name, nothing else.
+app.use((req, res, next) => {
+  if (req.method === "GET") {
+    const opened = /^\/(templates|drafts)\/([a-z0-9][a-z0-9-]*)\.html$/.exec(req.path);
+    if (opened) telemetry.tell(opened[1] === "drafts" ? "draft_loaded" : "template_loaded", { template: opened[2] });
+  }
+  next();
+});
+
 app.use(
   "/",
   createRouter({
@@ -254,6 +271,12 @@ app.use(
     // `liveLog` is created below; this only runs once a request arrives.
     liveLog: () => liveLog.slice(),
     draftsDir: DRAFTS_DIR,
+    // The About window's telemetry switch.
+    telemetryState: {
+      isOn: () => settings.get("telemetry") !== false,
+      setOn: (value) => settings.set("telemetry", !!value),
+      wired: () => telemetry.wired(),
+    },
     // The MCP pill's switch. Turning it off closes the door mid-session:
     // the route refuses and the handshake file is removed.
     mcp: features.MCP
@@ -614,7 +637,24 @@ const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared,
 
 // The pill's count follows publishing without waiting for the editor's next
 // poll. Unpublishing is told by the route that does it (onPublishedChanged).
-surfaces.onPublished(() => io.emit("published:changed"));
+// Publishing is also the one moment worth an anonymous count: how many
+// widgets, and which protocols -- booleans, never an address.
+surfaces.onPublished((id) => {
+  io.emit("published:changed");
+  published
+    .read(id)
+    .then((page) => {
+      if (page === null) return;
+      const widgets = allWidgetsIn(page);
+      telemetry.tell("surface_published", {
+        widgets: widgets.length,
+        osc: widgets.some((w) => w.config && !!(w.config.oscEnabled || w.config.listen)),
+        midi: widgets.some((w) => w.config && !!(w.config.midiEnabled || w.config.midiListen)),
+        dmx: widgets.some((w) => w.config && !!w.config.dmxEnabled),
+      });
+    })
+    .catch(() => {});
+});
 
 // MIDI in. What arrives is handed to every page, as incoming OSC is, and the
 // widgets that listen for it follow (lib/widgets/midi-in.js). A published
@@ -674,6 +714,7 @@ if (features.MCP) {
   mcpToken = attachMcp(app, {
     version: pkg.version,
     enabled: mcpOn,
+    onToolCall: (tool) => telemetry.tell("mcp_tool_called", { tool }),
     tools: buildTools({
       version: pkg.version,
       features: extensions.features(),
@@ -699,6 +740,7 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("");
   console.log("  Projects folder:      " + PROJECTS_DIR);
   bannerShown = true;
+  telemetry.tell("app_start", { version: pkg.version, os: process.platform, arch: process.arch });
   // The MCP handshake: where an assistant's shim finds this OSCAR. Written
   // once the port is certain, readable by this user alone, and gone stale
   // the moment OSCAR restarts (the token dies with the process). Switched

@@ -46,6 +46,7 @@ module.exports = function createRouter({
   published,
   onPublishedChanged,
   liveLog,
+  telemetryState,
   templatesDir,
   draftsDir,
   mcp,
@@ -349,6 +350,23 @@ module.exports = function createRouter({
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="' + req.params.id + '.html"');
     res.send(rebake(page, connection));
+  });
+
+  // The About window's telemetry switch: anonymous counts on or off.
+  // "wired" is whether this build can speak at all (a key baked in and no
+  // OSCAR_NO_TELEMETRY): unwired, the About window hides the row.
+  router.get("/telemetry-state", editorOnly, (req, res) => {
+    res.json({
+      on: !!(telemetryState && telemetryState.isOn()),
+      wired: !!(telemetryState && telemetryState.wired()),
+    });
+  });
+
+  router.post("/telemetry-state", editorOnly, (req, res) => {
+    if (!telemetryState) return res.status(404).json({ error: "No telemetry in this OSCAR." });
+    const on = !!(req.body && req.body.on);
+    telemetryState.setOn(on);
+    res.json({ on });
   });
 
   // The MCP pill's switch: whether assistants may talk to this OSCAR.

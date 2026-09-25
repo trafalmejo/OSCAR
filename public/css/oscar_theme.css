@@ -344,6 +344,20 @@ a {
   color: var(--o-accent);
 }
 
+/* The telemetry row in About: a checkbox and its whole truth, side by side. */
+.oscar-telemetry-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  cursor: pointer;
+  text-align: left;
+}
+.oscar-telemetry-row input {
+  accent-color: #2fbf5f;
+  cursor: pointer;
+  flex: none;
+}
+
 /* The MCP pill: whether assistants may talk to this OSCAR. The LIVE pill's
    green when on -- the top bar's pills share one language, green for an open
    door -- and grey with the word struck through when closed. */

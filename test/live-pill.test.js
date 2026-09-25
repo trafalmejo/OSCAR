@@ -108,7 +108,7 @@ test("the server throttles the flickers, keeps the log, and announces the roster
   assert.match(serverSource, /io\.emit\("live:log", entry\)/, "the log rows flow to every editor");
   assert.match(serverSource, /held\.n \+= event\.n \|\| 1;/, "repeats coalesce into one row with a count");
   assert.match(serverSource, /liveLog\.splice\(0, liveLog\.length - LIVE_LOG_KEEP\)/, "the backlog is capped");
-  assert.match(serverSource, /surfaces\.onPublished\(\(\) => io\.emit\("published:changed"\)\)/, "publishing recounts the pill");
+  assert.match(serverSource, /surfaces\.onPublished\(\(id\) => \{\n  io\.emit\("published:changed"\);/, "publishing recounts the pill");
   assert.match(serverSource, /onPublishedChanged: \(\) => io\.emit\("published:changed"\)/, "unpublishing does too");
   assert.match(routesSource, /if \(onPublishedChanged\) onPublishedChanged\(\);/, "from the route that unpublishes");
   assert.match(routesSource, /router\.get\("\/live\/log", editorOnly/, "the backlog behind a freshly opened window");
