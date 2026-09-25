@@ -508,7 +508,7 @@ test("a field shown only for some settings is a trait only then, and follows an 
   assert.ok(revealKeys(colour).includes("format"));
   assert.deepStrictEqual(
     revealKeys(slider),
-    ["listen", "oscEnabled", "oscSendWhen", "midiListen", "midiEnabled", "midiSendWhen", "dmxEnabled", "dmxProtocol"],
+    ["listen", "oscEnabled", "oscSendWhen", "oscVia", "midiListen", "midiEnabled", "midiSendWhen", "dmxEnabled", "dmxProtocol"],
     "the directions, the bridging combos and the DMX protocol decide the rest of a slider's panel"
   );
   assert.strictEqual(visibleFields(slider, {}).length, slider.fields.filter((f) => !f.dir).length, "every direction off: a section is its checkboxes");

@@ -138,8 +138,10 @@ function directionOn(config, section, dir) {
  */
 function visibleFields(definition, config) {
   return definition.fields.filter(function (field) {
-    // A protocol that is switched off (lib/features.js) has no section.
+    // A protocol that is switched off (lib/features.js) has no section, and
+    // with no serial there is no Via to choose: everything is the network.
     if (field.section === "midi" && !features.MIDI) return false;
+    if (field.key === "oscVia" && !features.SERIAL) return false;
     if (field.dir && !directionOn(config, field.section, field.dir)) return false;
     var rule = field.showIf;
     return !rule || rule.in.indexOf(config[rule.key]) !== -1;

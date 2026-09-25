@@ -382,6 +382,9 @@ function complaintAbout(definition, config) {
  * default. Everything older stays required, as the note on readWidget says.
  */
 const LATER_KEYS = {
+  // "network" is only the words for what such a page already did: an old page
+  // on the cable spells it ip: "serial", which viaSerial() still honours.
+  oscVia: "network",
   oscSendWhen: "user",
   oscLoopGuard: true,
   midiSendWhen: "user",
@@ -1714,7 +1717,17 @@ function isSerialTarget(ip) {
   return typeof ip === "string" && ip.trim().toLowerCase() === SERIAL_HOST;
 }
 
-module.exports = { SERIAL_HOST, isSerialTarget };
+/**
+ * Whether these settings send OSC down the cable rather than the network:
+ * the Via setting says so, or -- from before Via existed -- the word
+ * "serial" in Ip. Both spellings stay honoured, so no page breaks.
+ */
+function viaSerial(config) {
+  if (!config) return false;
+  return config.oscVia === "serial" || isSerialTarget(config.ip);
+}
+
+module.exports = { SERIAL_HOST, isSerialTarget, viaSerial };
 
 },{}],15:[function(require,module,exports){
 "use strict";
@@ -3136,7 +3149,7 @@ module.exports = { dropdown, parseOptions };
 
 const { toNumber } = require("../osc-args");
 const { isPort } = require("../ports");
-const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
+const { SERIAL_HOST, isSerialTarget, viaSerial } = require("../serial-target");
 const { SLOTS, PROTOCOL_OPTIONS, protocol, isUsb, readHost, readPortName } = require("../dmx/spec");
 const { toWhole } = require("../dmx/levels");
 const { sendsMidi, isListening } = require("../midi/spec");
@@ -3234,10 +3247,25 @@ function sectionStatus(fields, config) {
  * Ip also takes the word `serial`: the board on the USB cable, which has no
  * address (lib/serial-target.js says why it lives here). Port is then unused.
  */
+const VIA_OPTIONS = [
+  { id: "network", name: "Network" },
+  { id: "serial", name: "Serial cable" },
+];
+
+const VIA_HINT =
+  "Where Data out goes: the network, at the Ip and Port below, or down the serial cable to the board " +
+  "chosen in the Serial panel. One cable for the whole of OSCAR, so the cable has no address here.";
+
+function checkVia(value) {
+  if (VIA_OPTIONS.some((option) => option.id === value)) return null;
+  return "Via is one of: " + VIA_OPTIONS.map((option) => JSON.stringify(option.id)).join(", ");
+}
+
 function connection() {
   return [
-    field("ip", "Ip", "text", { section: "osc", dir: "out", placeholder: "localhost, an IP, or " + SERIAL_HOST }),
-    field("port", "Port out", "number", { section: "osc", dir: "out", min: 1, max: 65535 }),
+    field("oscVia", "Via", "select", { section: "osc", dir: "out", options: VIA_OPTIONS, hint: VIA_HINT }),
+    field("ip", "Ip", "text", { section: "osc", dir: "out", showIf: { key: "oscVia", in: ["network"] }, placeholder: "localhost or an IP" }),
+    field("port", "Port out", "number", { section: "osc", dir: "out", showIf: { key: "oscVia", in: ["network"] }, min: 1, max: 65535 }),
     // The address sent to and the address followed: either direction needs it.
     field("message", "Message", "text", { section: "osc", dir: "both", placeholder: "/address" }),
   ];
@@ -3479,6 +3507,7 @@ function dmxFields() {
 function dmxDefaults(values) {
   return {
     oscEnabled: true,
+    oscVia: "network",
     oscSendWhen: "user",
     oscLoopGuard: true,
     dmxEnabled: false,
@@ -3581,6 +3610,8 @@ function dmxChecks(values) {
  */
 function checkIp(value, config) {
   if (isSerialTarget(value)) return null;
+  // A widget on the cable keeps whatever Ip it had; the field is not shown.
+  if (viaSerial(config)) return null;
   if (value !== "localhost" && !IPV4.test(String(value))) {
     return "That isn't an IP address, localhost, or " + SERIAL_HOST + ": " + value;
   }
@@ -3598,7 +3629,7 @@ function checkIp(value, config) {
 // back as a port the server refuses the day Ip is pointed at the network.
 function checkPort(value, config) {
   if (isPort(value)) return null;
-  if (config && isSerialTarget(config.ip)) {
+  if (config && viaSerial(config)) {
     const blank = value === undefined || value === null || (typeof value === "string" && value.trim() === "");
     return blank ? null : "Leave the Port empty for serial, or give a whole number between 1 and 65535";
   }
@@ -3622,7 +3653,7 @@ function checkNumber(label) {
 
 /** The validators that go with connection(). */
 function connectionChecks() {
-  return { ip: checkIp, port: checkPort, message: checkMessage, oscSendWhen: checkSendWhen };
+  return { oscVia: checkVia, ip: checkIp, port: checkPort, message: checkMessage, oscSendWhen: checkSendWhen };
 }
 
 module.exports = {
@@ -4191,6 +4222,7 @@ const mediaBrowser = {
   defaults: {
     enabled: true,
     oscEnabled: true,
+    oscVia: "network",
     oscSendWhen: "user",
     oscLoopGuard: true,
     ip: "localhost",
@@ -5468,7 +5500,7 @@ const { SLOTS, protocol } = require("../dmx/spec");
 const { toWhole, toLevels, spread } = require("../dmx/levels");
 const { sendsOsc, sendsDmx } = require("./fields");
 const { sendsMidi, midiRequest } = require("../midi/spec");
-const { SERIAL_HOST, isSerialTarget } = require("../serial-target");
+const { SERIAL_HOST, viaSerial } = require("../serial-target");
 
 /**
  * Decide what a widget should put on the wire, or null for silence.
@@ -5504,8 +5536,9 @@ function outgoing(config, raw, units) {
     const args = oscArgs(config, raw);
     if (args) {
       // The cable is named once, in one spelling, so the server never has to
-      // wonder whether " Serial" is a host name. The port rides along unread.
-      message.ip = isSerialTarget(config.ip) ? SERIAL_HOST : config.ip;
+      // wonder whether " Serial" is a host name. Via says so today; the word
+      // "serial" in Ip said so before it existed. The port rides along unread.
+      message.ip = viaSerial(config) ? SERIAL_HOST : config.ip;
       message.port = config.port;
       message.address = config.message;
       message.args = args;
@@ -5620,6 +5653,7 @@ function asCtx(config) {
 function routing(ctx) {
   return {
     enabled: ctx.get("enabled"),
+    oscVia: ctx.get("oscVia"),
     oscEnabled: ctx.get("oscEnabled"),
     dmxEnabled: ctx.get("dmxEnabled"),
     // Only ever set on a widget from a project saved before the checkboxes.
@@ -6084,6 +6118,7 @@ const textInput = {
   defaults: {
     enabled: true,
     oscEnabled: true,
+    oscVia: "network",
     oscSendWhen: "user",
     oscLoopGuard: true,
     ip: "localhost",
@@ -20215,8 +20250,10 @@ function directionOn(config, section, dir) {
  */
 function visibleFields(definition, config) {
   return definition.fields.filter(function (field) {
-    // A protocol that is switched off (lib/features.js) has no section.
+    // A protocol that is switched off (lib/features.js) has no section, and
+    // with no serial there is no Via to choose: everything is the network.
     if (field.section === "midi" && !features.MIDI) return false;
+    if (field.key === "oscVia" && !features.SERIAL) return false;
     if (field.dir && !directionOn(config, field.section, field.dir)) return false;
     var rule = field.showIf;
     return !rule || rule.in.indexOf(config[rule.key]) !== -1;

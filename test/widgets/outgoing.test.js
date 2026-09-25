@@ -264,9 +264,9 @@ test("each direction of a section has its own light, on only when it would reall
 test("the OSC section is built in one place, for the directions a widget has", () => {
   const { oscFields } = require("../../lib/widgets/fields");
   const keys = (options) => oscFields(options).map((f) => f.key);
-  assert.deepStrictEqual(keys(), ["listen", "oscEnabled", "oscSendWhen", "oscLoopGuard", "ip", "port", "message"]);
+  assert.deepStrictEqual(keys(), ["listen", "oscEnabled", "oscSendWhen", "oscLoopGuard", "oscVia", "ip", "port", "message"]);
   assert.deepStrictEqual(keys({ sends: false }), ["listen", "message"], "a widget that only follows has nowhere to send");
-  assert.deepStrictEqual(keys({ receives: false }), ["oscEnabled", "oscSendWhen", "oscLoopGuard", "ip", "port", "message"]);
+  assert.deepStrictEqual(keys({ receives: false }), ["oscEnabled", "oscSendWhen", "oscLoopGuard", "oscVia", "ip", "port", "message"]);
   for (const f of oscFields()) assert.strictEqual(f.section, "osc", f.key);
   assert.match(oscFields()[0].hint, /not sent back out unless/);
 });

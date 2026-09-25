@@ -47,9 +47,16 @@ test("leaving the cable for the network needs a port first", () => {
   assert.strictEqual(checkIp("serial", { ip: "serial", port: "" }), null);
 });
 
-test("the Ip field says the cable is an option", () => {
+test("the cable is chosen by Via now, and the old word in Ip still counts", () => {
+  const via = connection().find((f) => f.key === "oscVia");
+  assert.deepStrictEqual(via.options.map((o) => o.id), ["network", "serial"]);
+  assert.strictEqual(via.dir, "out");
   const ip = connection().find((f) => f.key === "ip");
-  assert.match(ip.placeholder, /serial/);
+  assert.deepStrictEqual(ip.showIf, { key: "oscVia", in: ["network"] }, "the cable has no address, so no Ip while it is chosen");
+  const { viaSerial } = require("../../lib/serial-target");
+  assert.strictEqual(viaSerial({ oscVia: "serial", ip: "10.0.0.9" }), true);
+  assert.strictEqual(viaSerial({ oscVia: "network", ip: " Serial " }), true, "the old spelling is a promise kept");
+  assert.strictEqual(viaSerial({ oscVia: "network", ip: "10.0.0.9" }), false);
 });
 
 test("every sending widget accepts the cable through its own checks", () => {
