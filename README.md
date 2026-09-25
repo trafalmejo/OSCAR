@@ -727,8 +727,9 @@ so OSCAR opens the serial port for you.
 2. In the editor, open the **Serial** panel (the USB icon in the toolbar),
    pick the board's port and the baud rate in your sketch's `Serial.begin()`
    (115200 in ours), and press **Connect**.
-3. Set a widget's **Ip** to the word `serial`. Its **Port** is not used and
-   may be left empty.
+3. Set the widget's OSC **Via** to **Serial cable** (its Ip and Port fold
+   away: the cable has no address). The old spelling, Ip set to the word
+   `serial`, still works
 
 Every widget that sends can be pointed at the cable, and the message is the
 same OSC message it would have sent to the network, framed with SLIP -- the
