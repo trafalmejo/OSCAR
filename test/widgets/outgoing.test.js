@@ -173,7 +173,7 @@ test("a field names its protocol's section, and an unknown section is refused wh
   const dmx = dmxFields();
   assert.strictEqual(dmx[0].key, "dmxEnabled", "the checkbox leads its section");
   assert.strictEqual(dmx[0].label, "Data out", "the direction; the section title says which protocol");
-  assert.deepStrictEqual(dmx.slice(1).map((f) => f.label), ["Send when", "Protocol", "Node or port", "Universe", "Channel", "Channels"]);
+  assert.deepStrictEqual(dmx.slice(1).map((f) => f.label), ["Send when", "Protocol", "Node", "Interface", "Universe", "Channel", "Channels"]);
   for (const f of dmx) assert.strictEqual(f.section, "dmx", f.key);
 });
 

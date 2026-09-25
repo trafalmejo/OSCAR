@@ -86,8 +86,13 @@ function traitKeys(traits) {
   return traits
     .map(function (trait) {
       // A GrapesJS trait is a model once the component has built it, and a
-      // plain descriptor before.
-      return trait.key || (typeof trait.get === "function" ? trait.get("name") : trait.name);
+      // plain descriptor before. The label rides along because one key can
+      // wear two faces -- DMX's Node and Interface -- and a change of face
+      // with the same keys still has to redraw the panel.
+      var read = typeof trait.get === "function";
+      var name = trait.key || (read ? trait.get("name") : trait.name);
+      var label = read ? trait.get("label") : trait.label;
+      return name + "=" + (label || "");
     })
     .join(" ");
 }
@@ -1225,8 +1230,11 @@ function choicesFor(field, value) {
       return option.id === id;
     });
   };
-  (suggestions[field.source] || []).forEach(function (name) {
-    if (!has(name)) options.push({ id: name, name: name });
+  (suggestions[field.source] || []).forEach(function (entry) {
+    // MIDI suggests names; serial suggests { id, name }, a path and its label.
+    var id = entry && typeof entry === "object" ? entry.id : entry;
+    var name = entry && typeof entry === "object" ? entry.name : entry;
+    if (!has(id)) options.push({ id: id, name: name });
   });
   var own = value === undefined || value === null ? "" : String(value);
   if (!has(own)) options.push({ id: own, name: own + " (not connected)" });

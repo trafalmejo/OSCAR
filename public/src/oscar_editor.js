@@ -488,6 +488,31 @@ function initGrape(ipServer, socketPort, oscInPort) {
       refreshChoices(editor);
       askForMidiPorts();
     });
+  }
+
+  // The serial ports, for a DMX widget's Interface to choose from. Asked the
+  // same way: dongles come and go with the cable.
+  {
+    var askForSerialPorts = function () {
+      fetch("/serial")
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (report) {
+          if (report && Array.isArray(report.ports)) {
+            suggest(
+              "serial-ports",
+              report.ports.map(function (port) {
+                return { id: port.path, name: port.label || port.path };
+              }),
+              editor
+            );
+          }
+        })
+        .catch(function () {});
+    };
+    askForSerialPorts();
+    editor.on("component:selected", askForSerialPorts);
     // Learn, and ticking Data in, can name a port the dropdown has not got.
   // ---- the bridge's confirmation -------------------------------------------
   // Only the same protocol both ways can loop: OSC in with OSC bridged out,

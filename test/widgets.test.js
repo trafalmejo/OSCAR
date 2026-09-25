@@ -136,10 +136,21 @@ test("a widget that can drive DMX has a section per protocol, each switched on b
     const section = (id) => widget.fields.filter((f) => f.section === id).map((f) => f.key);
     assert.ok(section("osc").includes("oscEnabled"), widget.name + ": OSC can be switched off on its own");
     assert.strictEqual(widget.fields.find((f) => f.key === "dmxEnabled").label, "Data out", widget.name + ": DMX only runs one way");
-    assert.deepStrictEqual(section("dmx"), ["dmxEnabled", "dmxSendWhen"].concat(DMX_KEYS), widget.name + ": the DMX section, checkbox first");
+    // dmxHost is there twice on purpose: the network protocols' Node and the
+    // USB protocols' Interface are two faces of one stored setting, and the
+    // Protocol decides which is shown.
+    assert.deepStrictEqual(
+      section("dmx"),
+      ["dmxEnabled", "dmxSendWhen", "dmxProtocol", "dmxHost", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"],
+      widget.name + ": the DMX section, checkbox first"
+    );
     for (const key of DMX_KEYS) {
       const field = widget.fields.find((f) => f.key === key);
-      assert.strictEqual(field.showIf, undefined, widget.name + "." + key + " can be set up before DMX is switched on");
+      // Every DMX setting waits behind its Data out; dmxHost also follows the
+      // protocol, which of its two faces to show (Node or Interface).
+      assert.strictEqual(field.dir, "out", widget.name + "." + key + " belongs to DMX's one direction");
+      if (key === "dmxHost") assert.deepStrictEqual(field.showIf, { key: "dmxProtocol", in: ["artnet", "sacn"] });
+      else assert.strictEqual(field.showIf, undefined, widget.name + "." + key);
       assert.strictEqual(typeof widget.checks[key], "function", widget.name + " checks " + key);
     }
   }

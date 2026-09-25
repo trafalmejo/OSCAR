@@ -1218,7 +1218,12 @@ const DEFAULTS = {
   /** Source port for OSC sent to this machine. */
   local: 5002,
   /** Where OSC coming back from the rig is received. */
-  oscIn: 9000,
+  // Fixed by design, the way QLab's 53000 is: one number every patch and
+  // cheat sheet can rely on, movable only deliberately (OSCAR_OSC_IN_PORT or
+  // serve:at), never from the UI, so a rig aimed at an OSCAR always finds it.
+  // 8880 is unassigned, outside every OS's ephemeral range, and unclaimed by
+  // the live-event tools OSCAR runs beside.
+  oscIn: 8880,
   /**
    * Source port Art-Net and sACN are sent from. 0 means any free port: the
    * nodes listen on 6454 and 5568 whatever OSCAR sends from, and binding 6454
@@ -3452,7 +3457,11 @@ function dmxFields() {
     // No guard: nothing comes in over DMX, and a repeated level changes no frame.
     sendWhenField("dmxSendWhen", "dmx"),
     field("dmxProtocol", "Protocol", "select", Object.assign({ options: PROTOCOL_OPTIONS }, only)),
-    field("dmxHost", "Node or port", "text", Object.assign({ placeholder: "broadcast, or the first USB interface", hint: "On Art-Net and sACN: the node's address, or blank to reach every node. On USB: the serial port (COM3, /dev/ttyUSB0), a part of its name, or blank for the first interface found." }, only)),
+    // One setting, two faces: an address for the network protocols, a pick
+    // from the machine's serial ports for the USB ones. Same key, so which
+    // face shows follows the protocol and nothing is stored twice.
+    field("dmxHost", "Node", "text", Object.assign({ placeholder: "broadcast", showIf: { key: "dmxProtocol", in: ["artnet", "sacn"] }, hint: "On Art-Net and sACN: the address of the node, or blank to reach every node. On USB: which serial port the interface is on; ports come and go with the cable, and a saved one that is unplugged stays chosen, marked so." }, only)),
+    field("dmxHost", "Interface", "select", Object.assign({ options: [{ id: "", name: "First DMX interface" }], source: "serial-ports", showIf: { key: "dmxProtocol", in: ["usbpro", "opendmx"] }, hint: "On Art-Net and sACN: the address of the node, or blank to reach every node. On USB: which serial port the interface is on; ports come and go with the cable, and a saved one that is unplugged stays chosen, marked so." }, only)),
     field("dmxUniverse", "Universe", "number", Object.assign({ min: 0, max: 63999 }, only)),
     field("dmxChannel", "Channel", "number", Object.assign({ min: 1, max: SLOTS }, only)),
     field("dmxCount", "Channels", "number", Object.assign({ min: 1, max: SLOTS }, only)),
@@ -20154,8 +20163,13 @@ function traitKeys(traits) {
   return traits
     .map(function (trait) {
       // A GrapesJS trait is a model once the component has built it, and a
-      // plain descriptor before.
-      return trait.key || (typeof trait.get === "function" ? trait.get("name") : trait.name);
+      // plain descriptor before. The label rides along because one key can
+      // wear two faces -- DMX's Node and Interface -- and a change of face
+      // with the same keys still has to redraw the panel.
+      var read = typeof trait.get === "function";
+      var name = trait.key || (read ? trait.get("name") : trait.name);
+      var label = read ? trait.get("label") : trait.label;
+      return name + "=" + (label || "");
     })
     .join(" ");
 }
@@ -21293,8 +21307,11 @@ function choicesFor(field, value) {
       return option.id === id;
     });
   };
-  (suggestions[field.source] || []).forEach(function (name) {
-    if (!has(name)) options.push({ id: name, name: name });
+  (suggestions[field.source] || []).forEach(function (entry) {
+    // MIDI suggests names; serial suggests { id, name }, a path and its label.
+    var id = entry && typeof entry === "object" ? entry.id : entry;
+    var name = entry && typeof entry === "object" ? entry.name : entry;
+    if (!has(id)) options.push({ id: id, name: name });
   });
   var own = value === undefined || value === null ? "" : String(value);
   if (!has(own)) options.push({ id: own, name: own + " (not connected)" });
@@ -22500,6 +22517,31 @@ function initGrape(ipServer, socketPort, oscInPort) {
       refreshChoices(editor);
       askForMidiPorts();
     });
+  }
+
+  // The serial ports, for a DMX widget's Interface to choose from. Asked the
+  // same way: dongles come and go with the cable.
+  {
+    var askForSerialPorts = function () {
+      fetch("/serial")
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (report) {
+          if (report && Array.isArray(report.ports)) {
+            suggest(
+              "serial-ports",
+              report.ports.map(function (port) {
+                return { id: port.path, name: port.label || port.path };
+              }),
+              editor
+            );
+          }
+        })
+        .catch(function () {});
+    };
+    askForSerialPorts();
+    editor.on("component:selected", askForSerialPorts);
     // Learn, and ticking Data in, can name a port the dropdown has not got.
   // ---- the bridge's confirmation -------------------------------------------
   // Only the same protocol both ways can loop: OSC in with OSC bridged out,
