@@ -9,7 +9,7 @@ const { PLACEMENTS, moveAfter, moveBefore, arrange } = require("../lib/toolbar-o
 // (moved over from the left panel), Import is removed after the preset adds
 // it, and Open/Save live under File on the left, holding no seat here.
 const ADDED = [
-  "sw-visibility", "preview", "fullscreen", "export-template", "undo", "redo",
+  "sw-visibility", "preview", "fullscreen", "export-template",
   "canvas-clear", "open-styles", "open-pages", "oscar-export", "toggle-lock", "open-info",
   "set-device-desktop", "set-device-tablet", "set-device-mobile",
 ];

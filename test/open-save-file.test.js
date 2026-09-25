@@ -52,7 +52,7 @@ test("the bar's geography: File first at the left, the screen sizes pilled at th
     "the sizes lead the right half, ahead of Show borders"
   );
   assert.match(editor, /moveButton\("devices-c", "options", id\);/, "the sizes cross panels whole");
-  assert.match(editor, /var wanted = \["oscar-file", "oscar-live-pill", "oscar-mcp-pill", "ipButton"\]/, "the left half reads File, LIVE, MCP, the address");
+  assert.match(editor, /var wanted = \["oscar-file", "oscar-edit", "oscar-live-pill", "oscar-mcp-pill", "ipButton"\]/, "the left half reads File, Edit, LIVE, MCP, the address");
   assert.match(editor, /els\[index\]\.classList\.add\("oscar-size-btn"\)/, "the sizes are marked, not wrapped");
   assert.match(editor, /markDevices\(\);\n  \}/, "and every re-arrange re-marks them");
   const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
@@ -61,4 +61,12 @@ test("the bar's geography: File first at the left, the screen sizes pilled at th
   const tooltip = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_tooltip.css"), "utf8").replace(/\r\n/g, "\n");
   assert.match(tooltip, /white-space: normal;\n  width: max-content;\n  max-width: 19rem;/, "tooltips wrap instead of cropping");
   assert.match(tooltip, /\.gjs-pn-devices-c \[data-tooltip-pos="bottom"\]::after \{\n  left: 0;/, "and the left edge's hang rightward");
+});
+
+test("Edit stands beside File: Undo and Redo under one word, their icons retired", () => {
+  assert.match(editor, /label: "Edit",/, "a word, like File");
+  assert.match(editor, /editor\.runCommand\("core:undo"\)/, "Undo runs the editor's own command");
+  assert.match(editor, /editor\.runCommand\("core:redo"\)/, "and Redo its twin");
+  assert.match(editor, /pn\.removeButton\("options", "undo"\);\n  pn\.removeButton\("options", "redo"\);/, "the icons retire early, before the left is wired");
+  assert.match(editor, /function showBarMenu\(anchorSelector, items\)/, "File and Edit share one menu builder");
 });

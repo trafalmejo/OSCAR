@@ -347,7 +347,9 @@ a {
 /* The File word at the bar's left edge: a menu, not an icon. Disabled to
    GrapesJS (its clicks are its own), so its disabled fade is undone. */
 .gjs-pn-btn.oscar-file-btn,
-.gjs-pn-btn.oscar-file-btn:hover {
+.gjs-pn-btn.oscar-file-btn:hover,
+.gjs-pn-btn.oscar-edit-btn,
+.gjs-pn-btn.oscar-edit-btn:hover {
   font-size: var(--o-text-sm);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -357,7 +359,8 @@ a {
   cursor: pointer;
   color: var(--o-text);
 }
-.gjs-pn-btn.oscar-file-btn:hover {
+.gjs-pn-btn.oscar-file-btn:hover,
+.gjs-pn-btn.oscar-edit-btn:hover {
   background-color: var(--o-surface);
 }
 
@@ -744,6 +747,8 @@ body.oscar-log-dragging iframe {
   font-variant-numeric: tabular-nums;
   opacity: 1;
   cursor: default;
+  align-items: center;
+  display: flex;
 }
 
 /* A locked OSCAR that looked unlocked would be its own hazard, so the lock

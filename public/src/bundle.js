@@ -23770,44 +23770,21 @@ function initGrape(ipServer, socketPort, oscInPort) {
     oscarSaveToFile();
   }
 
-  function showFileMenu() {
+  /** One menu under a bar word: built, placed, closed by a click away. */
+  function showBarMenu(anchorSelector, items) {
     var open = document.querySelector(".oscar-open-menu");
     if (open) {
       open.remove();
       return;
     }
-    var anchor = document.querySelector(".gjs-pn-devices-c .oscar-file-btn");
+    var anchor = document.querySelector(anchorSelector);
     if (!anchor) return;
     var at = anchor.getBoundingClientRect();
     var menu = document.createElement("div");
     menu.className = "oscar-open-menu";
     menu.style.left = Math.round(at.left) + "px";
     menu.style.top = Math.round(at.bottom + 6) + "px";
-    [
-      { label: "Open a file\u2026", run: oscarOpenFile },
-      {
-        label: "Open a template\u2026",
-        run: function () {
-          editor.runCommand("open-projects", { type: "Load" });
-        },
-      },
-      {
-        label: "Import HTML/CSS\u2026",
-        run: function () {
-          editor.runCommand("gjs-open-import-webpage");
-        },
-      },
-      { rule: true },
-      { label: "Save", run: oscarSaveToFile },
-      { label: "Save as\u2026", run: oscarSaveAs },
-      { rule: true },
-      {
-        label: "Publish\u2026",
-        run: function () {
-          editor.runCommand("oscar-export");
-        },
-      },
-    ].forEach(function (item) {
+    items.forEach(function (item) {
       if (item.rule) {
         var line = document.createElement("div");
         line.className = "oscar-open-menu-rule";
@@ -23833,6 +23810,51 @@ function initGrape(ipServer, socketPort, oscInPort) {
     setTimeout(function () {
       document.addEventListener("pointerdown", away, true);
     }, 0);
+  }
+
+  function showEditMenu() {
+    showBarMenu(".gjs-pn-devices-c .oscar-edit-btn", [
+      {
+        label: "Undo",
+        run: function () {
+          editor.runCommand("core:undo");
+        },
+      },
+      {
+        label: "Redo",
+        run: function () {
+          editor.runCommand("core:redo");
+        },
+      },
+    ]);
+  }
+
+  function showFileMenu() {
+    showBarMenu(".gjs-pn-devices-c .oscar-file-btn", [
+      { label: "Open a file\u2026", run: oscarOpenFile },
+      {
+        label: "Open a template\u2026",
+        run: function () {
+          editor.runCommand("open-projects", { type: "Load" });
+        },
+      },
+      {
+        label: "Import HTML/CSS\u2026",
+        run: function () {
+          editor.runCommand("gjs-open-import-webpage");
+        },
+      },
+      { rule: true },
+      { label: "Save", run: oscarSaveToFile },
+      { label: "Save as\u2026", run: oscarSaveAs },
+      { rule: true },
+      {
+        label: "Publish\u2026",
+        run: function () {
+          editor.runCommand("oscar-export");
+        },
+      },
+    ]);
   }
 
   // Somebody opening OSCAR for the first time is shown the Showcase, where
@@ -24147,6 +24169,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
   ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
     moveButton("devices-c", "options", id);
   });
+  // Undo and Redo live under Edit at the left edge; their icons retire.
+  // Removed here, early, for the same re-render reason as above.
+  pn.removeButton("options", "undo");
+  pn.removeButton("options", "redo");
 
   // Open and Save live under one word at the bar's left edge: File.
 
@@ -24179,6 +24205,24 @@ function initGrape(ipServer, socketPort, oscInPort) {
     el.addEventListener("click", function (event) {
       event.stopPropagation();
       showFileMenu();
+    });
+  })();
+
+  pn.addButton("devices-c", {
+    id: "oscar-edit",
+    className: "oscar-edit-btn",
+    label: "Edit",
+    command: null,
+    attributes: { title: "Undo and redo", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  (function wireEditButton() {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-edit-btn");
+    if (!el) return;
+    el.addEventListener("click", function (event) {
+      event.stopPropagation();
+      showEditMenu();
     });
   })();
 
@@ -24823,13 +24867,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["oscar-file", "oscar-live-pill", "oscar-mcp-pill", "ipButton"]
+    var wanted = ["oscar-file", "oscar-edit", "oscar-live-pill", "oscar-mcp-pill", "ipButton"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["oscar-file", "oscar-live-pill", "oscar-mcp-pill", "ipButton"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-edit", "oscar-live-pill", "oscar-mcp-pill", "ipButton"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {
@@ -24921,8 +24965,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
     preview: "Push to preview",
     fullscreen: "Fullscreen",
     "export-template": "See code",
-    undo: "Undo",
-    redo: "Redo",
     // something in, and templates -- the other thing one might import -- are
     // opened from Load.
     "canvas-clear": "Clear canvas",
