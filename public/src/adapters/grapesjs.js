@@ -1456,6 +1456,7 @@ function paintWidgetLights(editor) {
     var x = rect.right + (doc.defaultView ? doc.defaultView.scrollX : 0);
     var y = rect.top + (doc.defaultView ? doc.defaultView.scrollY : 0);
     wanted.push({
+      model: model,
       id: model.getId(),
       x: x,
       y: y,
@@ -1472,8 +1473,11 @@ function paintWidgetLights(editor) {
             ": the published copy is playing, so this control sends nothing from the canvas. Publish again to make your edits the show.",
     });
   });
-  // Redrawn whole: there are dozens at most, and bookkeeping would cost more.
+  // Redrawn whole on membership or colour changes; between paints the dots
+  // are only repositioned (repositionWidgetLights), every frame, so a widget
+  // being dragged carries its light with it.
   layer.textContent = "";
+  var pairs = [];
   wanted.forEach(function (dot) {
     var el = canvas.createElement("span");
     el.setAttribute("data-oscar-light", dot.id);
@@ -1485,7 +1489,32 @@ function paintWidgetLights(editor) {
         "background:" + (dot.live ? "#2fbf5f" : "#e5484d") + ";box-shadow:0 0 4px " + (dot.live ? "rgba(47,191,95,.7)" : "rgba(229,72,77,.8)") + ";"
     );
     layer.appendChild(el);
+    pairs.push({ model: dot.model, el: el });
   });
+  editor.oscarLightPairs = pairs;
+}
+
+/**
+ * Move the existing dots to where their widgets are now: the cheap step,
+ * run every frame, so dragging a widget drags its light. Membership and
+ * colour stay paintWidgetLights' business.
+ */
+function repositionWidgetLights(editor) {
+  var pairs = editor.oscarLightPairs;
+  if (!pairs || !pairs.length) return;
+  var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
+  var view = canvas && canvas.defaultView;
+  for (var i = 0; i < pairs.length; i++) {
+    var pair = pairs[i];
+    var widgetView = pair.model.getView && pair.model.getView();
+    var el = widgetView && widgetView.el;
+    if (!el || typeof el.getBoundingClientRect !== "function") continue;
+    var rect = el.getBoundingClientRect();
+    var left = Math.round(rect.right + (view ? view.scrollX : 0) - 5) + "px";
+    var top = Math.round(rect.top + (view ? view.scrollY : 0) - 3) + "px";
+    if (pair.el.style.left !== left) pair.el.style.left = left;
+    if (pair.el.style.top !== top) pair.el.style.top = top;
+  }
 }
 
 function fieldOf(definition, key) {
@@ -1528,6 +1557,7 @@ module.exports = {
   tellPublishedWidgets: tellPublishedWidgets,
   paintWidgetLights: paintWidgetLights,
   publishedOwners: publishedOwners,
+  repositionWidgetLights: repositionWidgetLights,
   noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
   suggest: suggest,

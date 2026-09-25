@@ -516,9 +516,22 @@ function initGrape(ipServer, socketPort, oscInPort) {
   };
   askForPublished();
   setInterval(askForPublished, 5000);
-  setInterval(function () {
-    adapters.paintWidgetLights(editor);
-  }, 1200);
+  // Position follows the layout every frame, so a dragged widget carries
+  // its light; membership and colour repaint on edits, debounced.
+  (function beat() {
+    adapters.repositionWidgetLights(editor);
+    window.requestAnimationFrame(beat);
+  })();
+  var repaintLights = (function () {
+    var wait = null;
+    return function () {
+      if (wait) clearTimeout(wait);
+      wait = setTimeout(function () {
+        adapters.paintWidgetLights(editor);
+      }, 150);
+    };
+  })();
+  editor.on("update component:add component:remove change:device undo redo", repaintLights);
 
   // The serial ports, for a DMX widget's Interface and the OSC Board to
   // choose from, and the cable's own state, for the Board row to say. Asked
