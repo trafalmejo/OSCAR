@@ -1,0 +1,650 @@
+<!doctype html>
+<html>
+<head>
+<title>MIDI Console, Liquid Glass</title>
+<!--
+  MIDI Console, Liquid Glass: an eight-channel MIDI controller made of
+  frosted glass floating over colour. Eight strips (pan, fader, mute) and a
+  master, eight pads, an XY pad, transport keys and a program picker. Every
+  control sends MIDI on channel 1, with OSC off, to the first MIDI output
+  this computer has; the numbers are the ones DAW controllers use, so MIDI
+  Learn in Ableton, Bitwig, Logic, Reaper or TouchDesigner picks them up at
+  the first touch. To play something else, pick its port under MIDI > Out
+  port on each control, or make a loopMIDI port and pick that.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings: data-gjs-midi-type,
+    -midi-number and -midi-channel say what it sends, and
+    data-gjs-osc-enabled="false" keeps OSC quiet. data-gjs-message is still
+    there (/midi/fader/1, /midi/pad/1, ...), so switching OSC on in a
+    control's settings sends to it too. data-gjs-dmode="flow" makes a part
+    move through the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the whole console is redrawn in that style's colours:
+    every rule that paints is written for "own" alone, and a short set of
+    rules further down, made of tokens only, dresses it for the others.
+
+  How the glass is made. Behind everything, three soft blobs of colour
+  drift slowly over a deep blue. Each panel is a pane of glass over them:
+  a thin white fill, backdrop-filter blurring and saturating whatever is
+  behind, a hairline border, a bright line along the top edge where the
+  light catches it, and a sheen across the upper half. Buttons and fader
+  handles are smaller pieces of the same glass, and a glass bead for a
+  handle. Each strip and pad has its own tint, in --tint, which colours its
+  fader's fill and lights the pad or the mute key when it is down (OSCAR
+  puts the class "toggle" on a button that is down). A browser without
+  backdrop-filter shows the panes unblurred, a little fainter.
+  Anyone who has asked their system for less motion gets the colour still.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's
+  Tablet and Mobile views, so edits made in those views land in the same
+  media queries.
+
+  MIDI, channel 1:
+    faders  CC 21-28     pans  CC 31-38 (64 is centre)
+    mutes   CC 41-48 (127 on, 0 off)    master  CC 7
+    pads    notes 36-43                 XY pad  CC 16 (x) and 17 (y)
+    stop, play, record  notes 93, 94, 95 (the Mackie Control numbers)
+    program             program change
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #0c1330;
+  --osc-foreground: #ffffff;
+  --osc-card: #1a2250;
+  --osc-muted: #111a3d;
+  --osc-accent: #26306a;
+  --osc-accent-foreground: #ffffff;
+  --osc-border: #0a0f24;
+  --osc-input: #0a0f24;
+  --osc-primary: #ffffff;
+  --osc-primary-foreground: #0c1330;
+  --osc-ring: #9fd3ff;
+  --osc-radius: 16px;
+  --osc-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---- the room: colour drifting under the glass ------------------------------------------- */
+.lqc {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  grid-template-areas:
+    "head head"
+    "mixer pads"
+    "side side";
+  align-content: start;
+  gap: 20px;
+  min-height: 100vh;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow: hidden;
+  isolation: isolate;
+}
+[data-osc-style="own"] .lqc {
+  background: radial-gradient(120% 90% at 20% 0%, #25306e, #0c1330 55%, #070b1f);
+  color: #ffffff;
+}
+
+.lqc-blob {
+  position: absolute;
+  z-index: -1;
+  width: 55vmax;
+  height: 55vmax;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: lqc-drift 26s ease-in-out infinite alternate;
+}
+.lqc-blob-a { top: -18vmax; left: -12vmax; }
+.lqc-blob-b { top: 20%; right: -20vmax; animation-duration: 31s; animation-delay: -9s; }
+.lqc-blob-c { bottom: -24vmax; left: 25%; animation-duration: 37s; animation-delay: -17s; }
+[data-osc-style="own"] .lqc-blob { filter: blur(60px); opacity: 0.85; }
+[data-osc-style="own"] .lqc-blob-a { background: radial-gradient(circle, #ff4fa3, rgba(255, 79, 163, 0) 68%); }
+[data-osc-style="own"] .lqc-blob-b { background: radial-gradient(circle, #2ed8d0, rgba(46, 216, 208, 0) 68%); }
+[data-osc-style="own"] .lqc-blob-c { background: radial-gradient(circle, #8c7bff, rgba(140, 123, 255, 0) 68%); }
+
+@keyframes lqc-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(8vmax, 5vmax) scale(1.12); }
+  100% { transform: translate(-6vmax, 9vmax) scale(0.94); }
+}
+
+/* ---- glass: every pane is the same recipe ------------------------------------------------ */
+.lqc-glass {
+  position: relative;
+  border-radius: 28px;
+}
+[data-osc-style="own"] .lqc-glass {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(26px) saturate(185%);
+  backdrop-filter: blur(26px) saturate(185%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 30px rgba(255, 255, 255, 0.05),
+    0 24px 50px -18px rgba(3, 6, 20, 0.7);
+}
+/* The sheen: light across the upper half of the pane. */
+[data-osc-style="own"] .lqc-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(170deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.04) 38%, rgba(255, 255, 255, 0) 60%);
+  pointer-events: none;
+}
+/* ---- the header -------------------------------------------------------------------------- */
+.lqc-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px 14px 26px;
+  border-radius: 999px;
+}
+
+.lqc-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.lqc-head-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lqc-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+[data-osc-style="own"] .lqc-chip {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+#lqc-program {
+  min-width: 190px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+}
+[data-osc-style="own"] #lqc-program {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  color: #ffffff;
+}
+[data-osc-style="own"] #lqc-program option {
+  background: #1a2250;
+  color: #ffffff;
+}
+
+.lqc-section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* ---- the mixer --------------------------------------------------------------------------- */
+.lqc-mixer {
+  grid-area: mixer;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 20px;
+}
+
+.lqc-strips {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr)) minmax(0, 1.2fr);
+  gap: 10px;
+}
+
+.lqc-strip {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  justify-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 4px 10px;
+  border-radius: 20px;
+}
+[data-osc-style="own"] .lqc-strip {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.lqc-pan {
+  width: 100%;
+}
+
+.lqc-fader {
+  width: 40px;
+  height: 100%;
+  min-height: 250px;
+}
+
+.lqc-mute {
+  width: 40px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lqc-name {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+/* The master: the same, a little wider, without pan or mute. */
+.lqc-master-strip {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* Sliders: a glass groove, the tint rising in it, a glass bead to hold. */
+[data-osc-style="own"] .lqc input[type="range"] {
+  --osc-primary: color-mix(in srgb, var(--tint, #ffffff) 85%, #ffffff);
+  --osc-muted: rgba(255, 255, 255, 0.14);
+  --osc-track-size: 8px;
+  --osc-thumb: 30px;
+}
+[data-osc-style="own"] .lqc input[type="range"]::-webkit-slider-thumb {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, rgba(255, 255, 255, 0.75) 35%, rgba(220, 230, 255, 0.45) 70%, rgba(255, 255, 255, 0.6));
+  box-shadow: 0 6px 14px rgba(3, 6, 20, 0.45), inset 0 -3px 6px rgba(120, 140, 200, 0.35), 0 0 0 4px rgba(255, 255, 255, 0.08);
+}
+[data-osc-style="own"] .lqc input[type="range"]::-moz-range-thumb {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, rgba(255, 255, 255, 0.75) 35%, rgba(220, 230, 255, 0.45) 70%, rgba(255, 255, 255, 0.6));
+  box-shadow: 0 6px 14px rgba(3, 6, 20, 0.45), inset 0 -3px 6px rgba(120, 140, 200, 0.35);
+}
+[data-osc-style="own"] .lqc .lqc-pan {
+  --osc-track-size: 6px;
+  --osc-thumb: 20px;
+}
+[data-osc-style="own"] .lqc .lqc-pan::-webkit-slider-thumb {
+  width: 20px;
+  height: 20px;
+}
+[data-osc-style="own"] .lqc .lqc-pan::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---- buttons: small pieces of the same glass --------------------------------------------- */
+[data-osc-style="own"] .lqc button {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(255, 255, 255, 0.1), 0 8px 18px -8px rgba(3, 6, 20, 0.6);
+  color: #ffffff;
+  transition: background 0.12s, box-shadow 0.12s, transform 0.08s;
+}
+[data-osc-style="own"] .lqc button:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+.lqc button.toggle {
+  transform: scale(0.96);
+}
+[data-osc-style="own"] .lqc button.toggle,
+[data-osc-style="own"] .lqc button.toggle:hover {
+  border-color: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--tint, #ffffff) 70%, rgba(255, 255, 255, 0.2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 26px color-mix(in srgb, var(--tint, #ffffff) 65%, rgba(0, 0, 0, 0)), 0 8px 18px -8px rgba(3, 6, 20, 0.6);
+  color: #0c1330;
+}
+
+/* ---- pads --------------------------------------------------------------------------------- */
+.lqc-pads {
+  grid-area: pads;
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.lqc-pad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lqc-pad {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 22px;
+  font-size: 13px;
+  font-weight: 700;
+  touch-action: none;
+}
+/* Idle, a pad carries a faint wash of its tint. */
+[data-osc-style="own"] .lqc .lqc-pad {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tint) 32%, rgba(255, 255, 255, 0.12)), rgba(255, 255, 255, 0.08));
+}
+
+/* ---- the XY pad and the transport -------------------------------------------------------- */
+.lqc-side {
+  grid-area: side;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.lqc-xy-panel,
+.lqc-transport-panel {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+#lqc-xy {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 1;
+  border-radius: 20px;
+}
+[data-osc-style="own"] #lqc-xy {
+  --tint: #4aa8ff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, rgba(0, 0, 0, 0) 1px) 0 0 / 100% 25%,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, rgba(0, 0, 0, 0) 1px) 0 0 / 12.5% 100%,
+    rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 0 30px rgba(255, 255, 255, 0.05);
+}
+[data-osc-style="own"] #lqc-xy::after {
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: radial-gradient(circle at 35% 30%, #ffffff, rgba(255, 255, 255, 0.7) 40%, rgba(200, 220, 255, 0.45));
+  box-shadow: 0 6px 16px rgba(3, 6, 20, 0.5), 0 0 24px rgba(74, 168, 255, 0.6);
+}
+
+.lqc-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 12px;
+}
+.lqc-transport-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.lqc-pads {
+  align-content: start;
+}
+
+.lqc-transport {
+  width: 100%;
+  height: 100%;
+  min-height: 56px;
+  max-height: 140px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+[data-osc-style="own"] .lqc-stop { --tint: #d9e2ff; }
+[data-osc-style="own"] .lqc-play { --tint: #5be37d; }
+[data-osc-style="own"] .lqc-record { --tint: #ff5f6d; }
+
+/* ---- which strip and pad is which tint ----------------------------------------------------- */
+[data-osc-style="own"] #lqc-strip-1,
+[data-osc-style="own"] #lqc-pad-1 { --tint: #ff5f6d; }
+[data-osc-style="own"] #lqc-strip-2,
+[data-osc-style="own"] #lqc-pad-2 { --tint: #ff9a3c; }
+[data-osc-style="own"] #lqc-strip-3,
+[data-osc-style="own"] #lqc-pad-3 { --tint: #ffd23f; }
+[data-osc-style="own"] #lqc-strip-4,
+[data-osc-style="own"] #lqc-pad-4 { --tint: #5be37d; }
+[data-osc-style="own"] #lqc-strip-5,
+[data-osc-style="own"] #lqc-pad-5 { --tint: #2ed8d0; }
+[data-osc-style="own"] #lqc-strip-6,
+[data-osc-style="own"] #lqc-pad-6 { --tint: #4aa8ff; }
+[data-osc-style="own"] #lqc-strip-7,
+[data-osc-style="own"] #lqc-pad-7 { --tint: #8c7bff; }
+[data-osc-style="own"] #lqc-strip-8,
+[data-osc-style="own"] #lqc-pad-8 { --tint: #e86bff; }
+[data-osc-style="own"] #lqc-master { --tint: #ffffff; }
+
+/* ---- under any other widget style: the same console, in that style's colours ---- */
+body:not([data-osc-style="own"]) .lqc {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .lqc-blob {
+  display: none;
+}
+body:not([data-osc-style="own"]) .lqc-glass {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+}
+body:not([data-osc-style="own"]) .lqc-chip,
+body:not([data-osc-style="own"]) .lqc-strip {
+  background: var(--osc-muted);
+}
+
+/* ---- tablet: the mixer across the top, pads and XY beside each other ----------------------- */
+@media (max-width: 992px) {
+  .lqc {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "head head"
+      "mixer mixer"
+      "pads side";
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .lqc-fader {
+    min-height: 200px;
+  }
+
+  .lqc-pad-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lqc-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #lqc-xy {
+    aspect-ratio: 16 / 10;
+  }
+}
+
+/* ---- phone: one column; the strips go three to a row --------------------------------------- */
+@media (max-width: 480px) {
+  .lqc {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "pads"
+      "mixer"
+      "side";
+    gap: 14px;
+    padding: 12px;
+  }
+
+  .lqc-head {
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    border-radius: 24px;
+  }
+
+  .lqc-title {
+    font-size: 18px;
+  }
+
+  #lqc-program {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .lqc-mixer,
+  .lqc-pads,
+  .lqc-xy-panel,
+  .lqc-transport-panel {
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  /* Three to a row: eight strips and the master make a square. */
+  .lqc-strips {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .lqc-fader {
+    min-height: 160px;
+  }
+
+  .lqc-pad-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .lqc-pad {
+    border-radius: 16px;
+    font-size: 11px;
+  }
+}
+
+/* ---- for anyone who has asked for less motion: the colour holds still ---- */
+@media (prefers-reduced-motion: reduce) {
+
+  .lqc-blob {
+    animation: none !important;
+  }
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="lqc" class="lqc" data-gjs-dmode="flow">
+  <span id="lqc-blob-a" class="lqc-blob lqc-blob-a" data-gjs-dmode="flow"></span>
+  <span id="lqc-blob-b" class="lqc-blob lqc-blob-b" data-gjs-dmode="flow"></span>
+  <span id="lqc-blob-c" class="lqc-blob lqc-blob-c" data-gjs-dmode="flow"></span>
+
+  <header id="lqc-head" class="lqc-glass lqc-head" data-gjs-dmode="flow">
+    <h1 id="lqc-title" class="lqc-title" data-gjs-dmode="flow">MIDI Console</h1>
+    <div id="lqc-head-right" class="lqc-head-right" data-gjs-dmode="flow">
+      <span id="lqc-channel" class="lqc-chip" data-gjs-dmode="flow">CH 1</span>
+      <select id="lqc-program" class="oscar-dropdown" data-gjs-dmode="flow" data-gjs-message="/midi/program" data-gjs-options="Program 1=0, Program 2=1, Program 3=2, Program 4=3, Program 5=4, Program 6=5, Program 7=6, Program 8=7" data-gjs-value="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="program"></select>
+    </div>
+  </header>
+
+  <section id="lqc-mixer" class="lqc-glass lqc-mixer" data-gjs-dmode="flow">
+    <h2 id="lqc-mixer-title" class="lqc-section-title" data-gjs-dmode="flow">Mixer</h2>
+    <div id="lqc-strips" class="lqc-strips" data-gjs-dmode="flow">
+        <div id="lqc-strip-1" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-1" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/1" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="31">
+          <input id="lqc-fader-1" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/1" data-gjs-min="0" data-gjs-max="127" data-gjs-value="100" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="21">
+          <button id="lqc-mute-1" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/1" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="41">M</button>
+          <span id="lqc-strip-1-name" class="lqc-name" data-gjs-dmode="flow">1</span>
+        </div>
+        <div id="lqc-strip-2" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-2" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/2" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="32">
+          <input id="lqc-fader-2" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/2" data-gjs-min="0" data-gjs-max="127" data-gjs-value="88" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="22">
+          <button id="lqc-mute-2" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/2" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="42">M</button>
+          <span id="lqc-strip-2-name" class="lqc-name" data-gjs-dmode="flow">2</span>
+        </div>
+        <div id="lqc-strip-3" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-3" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/3" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="33">
+          <input id="lqc-fader-3" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/3" data-gjs-min="0" data-gjs-max="127" data-gjs-value="96" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="23">
+          <button id="lqc-mute-3" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/3" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="43">M</button>
+          <span id="lqc-strip-3-name" class="lqc-name" data-gjs-dmode="flow">3</span>
+        </div>
+        <div id="lqc-strip-4" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-4" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/4" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="34">
+          <input id="lqc-fader-4" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/4" data-gjs-min="0" data-gjs-max="127" data-gjs-value="72" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="24">
+          <button id="lqc-mute-4" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/4" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="44">M</button>
+          <span id="lqc-strip-4-name" class="lqc-name" data-gjs-dmode="flow">4</span>
+        </div>
+        <div id="lqc-strip-5" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-5" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/5" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="35">
+          <input id="lqc-fader-5" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/5" data-gjs-min="0" data-gjs-max="127" data-gjs-value="110" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="25">
+          <button id="lqc-mute-5" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/5" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="45">M</button>
+          <span id="lqc-strip-5-name" class="lqc-name" data-gjs-dmode="flow">5</span>
+        </div>
+        <div id="lqc-strip-6" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-6" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/6" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="36">
+          <input id="lqc-fader-6" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/6" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="26">
+          <button id="lqc-mute-6" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/6" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="46">M</button>
+          <span id="lqc-strip-6-name" class="lqc-name" data-gjs-dmode="flow">6</span>
+        </div>
+        <div id="lqc-strip-7" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-7" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/7" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="37">
+          <input id="lqc-fader-7" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/7" data-gjs-min="0" data-gjs-max="127" data-gjs-value="80" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="27">
+          <button id="lqc-mute-7" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/7" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="47">M</button>
+          <span id="lqc-strip-7-name" class="lqc-name" data-gjs-dmode="flow">7</span>
+        </div>
+        <div id="lqc-strip-8" class="lqc-strip" data-gjs-dmode="flow">
+          <input id="lqc-pan-8" class="lqc-pan" type="range" step="1" min="0" max="127" orient="horizontal" data-gjs-dmode="flow" data-gjs-message="/midi/pan/8" data-gjs-min="0" data-gjs-max="127" data-gjs-value="64" data-gjs-orientation="horizontal" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="38">
+          <input id="lqc-fader-8" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/fader/8" data-gjs-min="0" data-gjs-max="127" data-gjs-value="92" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="28">
+          <button id="lqc-mute-8" class="lqc-mute" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-message="/midi/mute/8" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="48">M</button>
+          <span id="lqc-strip-8-name" class="lqc-name" data-gjs-dmode="flow">8</span>
+        </div>
+        <div id="lqc-master-strip" class="lqc-strip lqc-master-strip" data-gjs-dmode="flow">
+          <input id="lqc-master" class="lqc-fader" type="range" step="1" min="0" max="127" orient="vertical" data-gjs-dmode="flow" data-gjs-message="/midi/master" data-gjs-min="0" data-gjs-max="127" data-gjs-value="100" data-gjs-orientation="vertical" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="7">
+          <span id="lqc-master-name" class="lqc-name" data-gjs-dmode="flow">Master</span>
+        </div>
+    </div>
+  </section>
+
+  <section id="lqc-pads" class="lqc-glass lqc-pads" data-gjs-dmode="flow">
+    <h2 id="lqc-pads-title" class="lqc-section-title" data-gjs-dmode="flow">Pads</h2>
+    <div id="lqc-pad-grid" class="lqc-pad-grid" data-gjs-dmode="flow">
+        <button id="lqc-pad-1" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/1" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="36">Kick</button>
+        <button id="lqc-pad-2" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/2" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="37">Snare</button>
+        <button id="lqc-pad-3" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/3" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="38">Clap</button>
+        <button id="lqc-pad-4" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/4" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="39">Hat</button>
+        <button id="lqc-pad-5" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/5" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="40">Tom</button>
+        <button id="lqc-pad-6" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/6" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="41">Perc</button>
+        <button id="lqc-pad-7" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/7" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="42">FX 1</button>
+        <button id="lqc-pad-8" class="lqc-pad" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/pad/8" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="43">FX 2</button>
+    </div>
+  </section>
+
+  <div id="lqc-side" class="lqc-side" data-gjs-dmode="flow">
+    <section id="lqc-xy-panel" class="lqc-glass lqc-xy-panel" data-gjs-dmode="flow">
+      <h2 id="lqc-xy-title" class="lqc-section-title" data-gjs-dmode="flow">XY &middot; CC 16 / 17</h2>
+      <div id="lqc-xy" class="oscar-xypad" data-gjs-dmode="flow" data-gjs-message="/midi/xy" data-gjs-min-x="0" data-gjs-max-x="127" data-gjs-min-y="0" data-gjs-max-y="127" data-gjs-x="64" data-gjs-y="64" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="cc" data-gjs-midi-number="16"></div>
+    </section>
+    <section id="lqc-transport-panel" class="lqc-glass lqc-transport-panel" data-gjs-dmode="flow">
+      <h2 id="lqc-transport-title" class="lqc-section-title" data-gjs-dmode="flow">Transport</h2>
+      <div id="lqc-keys" class="lqc-keys" data-gjs-dmode="flow">
+        <button id="lqc-stop" class="lqc-transport lqc-stop" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/stop" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="93">&#9632; Stop</button>
+        <button id="lqc-play" class="lqc-transport lqc-play" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/play" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="94">&#9654; Play</button>
+        <button id="lqc-record" class="lqc-transport lqc-record" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/midi/record" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="1" data-gjs-midi-type="note" data-gjs-midi-number="95">&#9679; Rec</button>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>
