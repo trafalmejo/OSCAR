@@ -45,6 +45,7 @@ module.exports = function createRouter({
   exportFiles,
   published,
   onPublishedChanged,
+  liveLog,
   templatesDir,
   extensions,
 }) {
@@ -346,6 +347,13 @@ module.exports = function createRouter({
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="' + req.params.id + '.html"');
     res.send(rebake(page, connection));
+  });
+
+  // What the server has lately done for the published surfaces: the backlog
+  // behind the LIVE pill's network log. Live rows arrive by socket
+  // ("live:log"); this is what a window that has just opened starts from.
+  router.get("/live/log", editorOnly, (req, res) => {
+    res.json(liveLog ? liveLog() : []);
   });
 
   router.delete("/published/:id", editorOnly, async (req, res) => {

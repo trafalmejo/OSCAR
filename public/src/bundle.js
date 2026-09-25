@@ -23959,26 +23959,42 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // surfaces at all (lib/surfaces.js onActivity). Hidden while nothing is
   // published. Added before ipButton on purpose: buttons render in the order
   // they are added, which is what puts it in that gap.
+  //
+  // Two halves, each its own door: LIVE and the count open the publish
+  // window, the IN/OUT lights open the network log. Like ipButton it is
+  // `disable: true` with its own click handlers: a command would toggle the
+  // button active, and GrapesJS re-renders a button whose model changed,
+  // which would wipe the count and the lights back to their pristine,
+  // hidden state.
   pn.addButton("devices-c", {
     id: "oscar-live-pill",
     className: "oscar-live-btn",
     label:
       '<span class="oscar-live-pill">' +
+      '<span class="oscar-live-zone" data-zone="publish">' +
       '<span class="oscar-live-dot"></span>' +
       '<span class="oscar-live-word">LIVE</span>' +
       '<span class="oscar-live-count">0</span>' +
+      "</span>" +
+      '<span class="oscar-live-sep"></span>' +
+      '<span class="oscar-live-zone" data-zone="log">' +
       '<span class="oscar-live-led" data-led="in">IN</span>' +
       '<span class="oscar-live-led" data-led="out">OUT</span>' +
+      "</span>" +
       "</span>",
-    command: function () {
-      // The roster lives in the publish window; the pill is the way there.
-      editor.runCommand("oscar-export");
-    },
+    command: null,
     active: false,
+    disable: true,
   });
 
   (function wireLivePill() {
     var flashes = { in: null, out: null };
+    // The network log's rows, oldest first, the server's cap mirrored here.
+    var LOG_KEEP = 200;
+    var logRows = [];
+    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true };
+    var logBox = null;
+    var logList = null;
 
     function pillEl() {
       return document.querySelector(".gjs-pn-devices-c .oscar-live-btn");
@@ -23995,13 +24011,20 @@ function initGrape(ipServer, socketPort, oscInPort) {
           return '"' + row.id + '"';
         })
         .join(", ");
-      el.setAttribute(
-        "data-tooltip",
-        rows.length === 1
-          ? "OSCAR is serving " + names + " in the background. IN lights as it receives, OUT as OSCAR sends for it. Click to manage."
-          : "OSCAR is serving " + rows.length + " published surfaces: " + names + ". IN lights as they receive, OUT as OSCAR sends for them. Click to manage."
-      );
-      el.setAttribute("data-tooltip-pos", "bottom");
+      var publishZone = el.querySelector('.oscar-live-zone[data-zone="publish"]');
+      if (publishZone) {
+        publishZone.setAttribute(
+          "data-tooltip",
+          (rows.length === 1 ? "OSCAR is serving " + names : "OSCAR is serving " + rows.length + " published surfaces: " + names) +
+            " in the background. Click for the publish window."
+        );
+        publishZone.setAttribute("data-tooltip-pos", "bottom");
+      }
+      var logZone = el.querySelector('.oscar-live-zone[data-zone="log"]');
+      if (logZone) {
+        logZone.setAttribute("data-tooltip", "IN lights as a published surface receives, OUT as OSCAR sends for one. Click for the network log.");
+        logZone.setAttribute("data-tooltip-pos", "bottom");
+      }
     }
 
     function refreshLive() {
@@ -24029,9 +24052,143 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }, 350);
     }
 
+    // ---- the network log window ------------------------------------------
+    // What the server has done for the published surfaces, newest at the
+    // top: the address or MIDI message it consumed, the widget it sent for.
+    // Repeats within a moment arrive as one row with a count (server.js
+    // coalesces them). Filters by direction and protocol.
+
+    function timeOf(at) {
+      var d = new Date(at);
+      return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+    }
+
+    function renderLog() {
+      if (!logList) return;
+      logList.textContent = "";
+      var shown = 0;
+      for (var i = logRows.length - 1; i >= 0; i--) {
+        var row = logRows[i];
+        if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
+        shown++;
+        var line = document.createElement("div");
+        line.className = "oscar-log-row";
+        var when = document.createElement("span");
+        when.className = "oscar-log-time";
+        when.textContent = timeOf(row.at);
+        var dir = document.createElement("span");
+        dir.className = "oscar-log-chip oscar-log-" + row.dir;
+        dir.textContent = row.dir === "in" ? "IN" : "OUT";
+        var protocol = document.createElement("span");
+        protocol.className = "oscar-log-chip oscar-log-protocol";
+        protocol.textContent = String(row.protocol || "").toUpperCase();
+        var what = document.createElement("span");
+        what.className = "oscar-log-what";
+        what.textContent = String(row.what || "") + (row.dir === "out" && row.surface ? ' · "' + row.surface + '"' : "");
+        line.appendChild(when);
+        line.appendChild(dir);
+        line.appendChild(protocol);
+        line.appendChild(what);
+        if (row.n > 1) {
+          var times = document.createElement("span");
+          times.className = "oscar-log-n";
+          times.textContent = "×" + row.n;
+          line.appendChild(times);
+        }
+        logList.appendChild(line);
+      }
+      if (!shown) {
+        var quiet = document.createElement("div");
+        quiet.className = "oscar-log-quiet";
+        quiet.textContent = logRows.length ? "Nothing matches these filters." : "Nothing yet: the published surfaces are quiet.";
+        logList.appendChild(quiet);
+      }
+    }
+
+    function buildLogBox() {
+      logBox = document.createElement("div");
+      logBox.className = "oscar-live-log";
+
+      var head = document.createElement("div");
+      head.className = "oscar-log-head";
+      head.textContent = "Server IP: " + ipServer + (oscInPort ? " · Listening Port: " + oscInPort : "");
+      logBox.appendChild(head);
+
+      var bar = document.createElement("div");
+      bar.className = "oscar-log-filters";
+      [
+        ["in", "Incoming"],
+        ["out", "Outgoing"],
+        ["osc", "OSC"],
+        ["midi", "MIDI"],
+        ["dmx", "DMX"],
+      ].forEach(function (pair, index) {
+        if (index === 2) {
+          var gap = document.createElement("span");
+          gap.className = "oscar-log-filter-gap";
+          bar.appendChild(gap);
+        }
+        var label = document.createElement("label");
+        label.className = "oscar-log-filter";
+        var box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = logFilters[pair[0]];
+        box.addEventListener("change", function () {
+          logFilters[pair[0]] = box.checked;
+          renderLog();
+        });
+        label.appendChild(box);
+        label.appendChild(document.createTextNode(pair[1]));
+        bar.appendChild(label);
+      });
+      logBox.appendChild(bar);
+
+      logList = document.createElement("div");
+      logList.className = "oscar-log-list";
+      logBox.appendChild(logList);
+    }
+
+    function openLiveLog() {
+      if (!logBox) buildLogBox();
+      fetch("/live/log")
+        .then(function (res) {
+          return res.json();
+        })
+        .then(function (rows) {
+          if (Array.isArray(rows)) logRows = rows;
+          renderLog();
+        })
+        .catch(function () {
+          renderLog();
+        });
+      renderLog();
+      modal.open({ title: "Network log", content: logBox, attributes: { class: "modal-live-log" } });
+    }
+
+    // The zones' own clicks; the button is disabled to GrapesJS, so nothing
+    // else answers them.
+    var pill = pillEl();
+    if (pill) {
+      pill.addEventListener("click", function (event) {
+        var zone = event.target.closest ? event.target.closest(".oscar-live-zone") : null;
+        if (!zone) return;
+        event.stopPropagation();
+        if (zone.getAttribute("data-zone") === "publish") editor.runCommand("oscar-export");
+        else openLiveLog();
+      });
+    }
+
     if (editor.socket) {
       editor.socket.on("live:activity", function (msg) {
         if (msg && (msg.dir === "in" || msg.dir === "out")) flash(msg.dir);
+      });
+      // The log listens all along, not only while its window is open: what
+      // happened a minute before it was opened is exactly what it is for.
+      editor.socket.on("live:log", function (row) {
+        if (!row || (row.dir !== "in" && row.dir !== "out")) return;
+        logRows.push(row);
+        if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
+        if (logList && document.body.contains(logList)) renderLog();
       });
       editor.socket.on("published:changed", refreshLive);
       // A server that restarted may have a different roster than the one

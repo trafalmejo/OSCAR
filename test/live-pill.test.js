@@ -52,10 +52,10 @@ test("consuming OSC for a published widget says IN; a message nobody follows say
   store.onChange(() => {});
 
   await surfaces.hearOsc(osc("/level", 0.7));
-  assert.deepStrictEqual(activity, ["in"], "one flicker for the widget it moved");
+  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "osc", what: "/level", n: 1 }], "one event, saying what was consumed");
 
   await surfaces.hearOsc(osc("/nothing/here", 1));
-  assert.deepStrictEqual(activity, ["in"], "a message that moved nothing lights nothing");
+  assert.strictEqual(activity.length, 1, "a message that moved nothing lights nothing");
 });
 
 test("a drive on a published surface's behalf says OUT, and a bridge says both", async () => {
@@ -63,12 +63,26 @@ test("a drive on a published surface's behalf says OUT, and a bridge says both",
 
   const driven = await surfaces.drive("stage", "s2", { value: 0.5 });
   assert.strictEqual(driven.ok, true);
-  assert.deepStrictEqual(activity, ["out"], "the send was the server's, for the surface");
+  assert.deepStrictEqual(
+    activity.map((e) => [e.dir, e.protocol, e.surface]),
+    [["out", "osc", "stage"]],
+    "the send was the server's, for the surface, named per protocol"
+  );
 
-  activity.length = 0;
   const bridged = await venue([tag("oscar-slider", "s3", { enabled: true, listen: true, message: "/dim", min: 0, max: 1, oscSendWhen: "data" })]);
   await bridged.surfaces.hearOsc(osc("/dim", 0.9));
-  assert.deepStrictEqual(bridged.activity, ["out", "in"], "what came in went back out: both lights");
+  assert.deepStrictEqual(
+    bridged.activity.map((e) => [e.dir, e.protocol]),
+    [["out", "osc"], ["in", "osc"]],
+    "what came in went back out: both lights"
+  );
+});
+
+test("MIDI consumed for a published widget says IN with the message spelled out", async () => {
+  const { surfaces, store, activity } = await venue([tag("oscar-slider", "s5", { enabled: true, midiListen: true, midiType: "cc", midiChannel: 1, midiNumber: 7, min: 0, max: 1 })]);
+  store.onChange(() => {});
+  await surfaces.hearMidi({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "nanoKONTROL2", true);
+  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "midi", what: "cc 7 ch 1 · nanoKONTROL2", n: 1 }]);
 });
 
 test("a widget switched off is driven silently: shown, not sent, and no OUT", async () => {
@@ -84,21 +98,46 @@ const editorSource = fs.readFileSync(path.join(__dirname, "..", "public", "src",
 const themeSource = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8");
 const routesSource = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8");
 
-test("the server throttles the flickers and announces the roster's changes", () => {
-  assert.match(serverSource, /io\.emit\("live:activity", \{ dir \}\)/, "the activity event");
-  assert.match(serverSource, /at - activityAt\[dir\] < 200/, "throttled per direction");
+test("the server throttles the flickers, keeps the log, and announces the roster's changes", () => {
+  assert.match(serverSource, /io\.emit\("live:activity", \{ dir: event\.dir \}\)/, "the activity event");
+  assert.match(serverSource, /at - activityAt\[event\.dir\] >= 200/, "throttled per direction");
   assert.match(serverSource, /onActivity: tellActivity/, "handed to the surfaces");
+  assert.match(serverSource, /io\.emit\("live:log", entry\)/, "the log rows flow to every editor");
+  assert.match(serverSource, /held\.n \+= event\.n \|\| 1;/, "repeats coalesce into one row with a count");
+  assert.match(serverSource, /liveLog\.splice\(0, liveLog\.length - LIVE_LOG_KEEP\)/, "the backlog is capped");
   assert.match(serverSource, /surfaces\.onPublished\(\(\) => io\.emit\("published:changed"\)\)/, "publishing recounts the pill");
   assert.match(serverSource, /onPublishedChanged: \(\) => io\.emit\("published:changed"\)/, "unpublishing does too");
   assert.match(routesSource, /if \(onPublishedChanged\) onPublishedChanged\(\);/, "from the route that unpublishes");
+  assert.match(routesSource, /router\.get\("\/live\/log", editorOnly/, "the backlog behind a freshly opened window");
 });
 
-test("the pill sits between the screen sizes and the network info, and listens", () => {
+test("the pill sits between the screen sizes and the network info, split into its two doors", () => {
   const pill = editorSource.indexOf('id: "oscar-live-pill"');
   const ip = editorSource.indexOf('id: "ipButton"');
   assert.ok(pill !== -1 && ip !== -1 && pill < ip, "added before ipButton, which is what renders it in the gap");
+  // Disabled to GrapesJS on purpose: a command toggles the button active,
+  // and re-rendering it wiped the count and hid the pill (the bug where it
+  // vanished after the publish window closed).
+  const button = editorSource.slice(pill, editorSource.indexOf("});", pill));
+  assert.match(button, /command: null/, "no command to toggle");
+  assert.match(button, /disable: true/, "no active state to re-render on");
+  assert.match(button, /data-zone="publish"/, "the LIVE half");
+  assert.match(button, /data-zone="log"/, "the lights half");
+  assert.match(editorSource, /editor\.runCommand\("oscar-export"\)/, "LIVE opens the publish window");
+  assert.match(editorSource, /else openLiveLog\(\);/, "the lights open the network log");
   assert.match(editorSource, /editor\.socket\.on\("live:activity"/, "the flickers arrive by socket");
+  assert.match(editorSource, /editor\.socket\.on\("live:log"/, "the log listens all along");
   assert.match(editorSource, /editor\.socket\.on\("published:changed", refreshLive\)/, "the count follows the roster");
-  assert.match(editorSource, /editor\.runCommand\("oscar-export"\)/, "clicking opens the publish window");
   assert.match(themeSource, /\.gjs-pn-btn\.oscar-live-btn \{\n  display: none;/, "hidden while nothing is published");
+  assert.match(themeSource, /border: 1px solid rgba\(47, 191, 95, 0\.55\)/, "the pill is green");
+});
+
+test("the log window says the address first, then the traffic, filtered by direction and protocol", () => {
+  assert.match(editorSource, /head\.textContent = "Server IP: " \+ ipServer \+ \(oscInPort \? " · Listening Port: " \+ oscInPort : ""\)/, "the address on top");
+  for (const key of ['"in", "Incoming"', '"out", "Outgoing"', '"osc", "OSC"', '"midi", "MIDI"', '"dmx", "DMX"']) {
+    assert.ok(editorSource.indexOf("[" + key + "]") !== -1, "a filter for " + key);
+  }
+  assert.match(editorSource, /if \(!logFilters\[row\.dir\] \|\| !logFilters\[row\.protocol\]\) continue;/, "rows obey the filters");
+  assert.match(editorSource, /title: "Network log"/, "its own window");
+  assert.match(editorSource, /fetch\("\/live\/log"\)/, "opened onto the backlog, not an empty page");
 });

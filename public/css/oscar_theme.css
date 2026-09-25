@@ -357,28 +357,49 @@ a {
   align-items: center;
   cursor: pointer;
 }
+/* Green on purpose: LIVE is a state of health, not an alarm, and green is
+   already what the widget lights use for "sending". The button is disabled
+   to GrapesJS (clicks are the zones' own), so its disabled fade is undone
+   here the way the ip label's is. */
+.gjs-pn-btn.oscar-live-btn,
+.gjs-pn-btn.oscar-live-btn:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
 .oscar-live-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.4em;
   padding: 0.15rem 0.6rem;
   border-radius: 999px;
-  border: 1px solid var(--o-accent-border);
-  background: var(--o-accent-subtle);
-  color: var(--o-accent-text);
+  border: 1px solid rgba(47, 191, 95, 0.55);
+  background: rgba(47, 191, 95, 0.12);
+  color: #8fe3ae;
   font-size: var(--o-text-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
 }
-.gjs-pn-btn.oscar-live-btn:hover .oscar-live-pill {
-  background: var(--o-accent-subtle-hover);
+.oscar-live-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  cursor: pointer;
+}
+.oscar-live-zone:hover {
+  color: #c2f4d4;
+}
+.oscar-live-sep {
+  width: 1px;
+  height: 0.85em;
+  background: rgba(47, 191, 95, 0.4);
 }
 .oscar-live-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--o-accent);
+  background: #2fbf5f;
+  box-shadow: 0 0 5px rgba(47, 191, 95, 0.8);
   animation: oscar-live-breathe 2.4s ease-in-out infinite;
 }
 @keyframes oscar-live-breathe {
@@ -404,6 +425,101 @@ a {
   background: rgba(47, 191, 95, 0.45);
   border-color: rgba(47, 191, 95, 0.8);
   box-shadow: 0 0 6px rgba(47, 191, 95, 0.6);
+}
+
+/* The network log window, behind the pill's IN/OUT half: the address, then
+   what the server has lately heard and sent for the published surfaces. */
+.modal-live-log .gjs-mdl-dialog {
+  max-width: 660px;
+}
+.oscar-log-head {
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+  font-variant-numeric: tabular-nums;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--o-border);
+  margin-bottom: 0.6rem;
+}
+.oscar-log-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.oscar-log-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--o-text);
+  font-size: var(--o-text-sm);
+  cursor: pointer;
+  user-select: none;
+}
+.oscar-log-filter input {
+  accent-color: #2fbf5f;
+  cursor: pointer;
+}
+.oscar-log-filter-gap {
+  width: 1px;
+  height: 1rem;
+  background: var(--o-border-strong);
+}
+.oscar-log-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  font-family: var(--o-font-mono);
+  font-size: var(--o-text-xs);
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  padding: 0.35rem 0;
+}
+.oscar-log-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.18rem 0.7rem;
+}
+.oscar-log-row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.025);
+}
+.oscar-log-time {
+  color: var(--o-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.oscar-log-chip {
+  flex: none;
+  padding: 0 0.4em;
+  border-radius: var(--o-radius-sm);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+}
+.oscar-log-in {
+  color: #8fe3ae;
+  border: 1px solid rgba(47, 191, 95, 0.5);
+}
+.oscar-log-out {
+  color: var(--o-accent-text);
+  border: 1px solid var(--o-accent-border);
+}
+.oscar-log-protocol {
+  color: var(--o-text-muted);
+  border: 1px solid var(--o-border-strong);
+  min-width: 2.6em;
+  text-align: center;
+}
+.oscar-log-what {
+  color: var(--o-text);
+  overflow-wrap: anywhere;
+}
+.oscar-log-n {
+  margin-left: auto;
+  color: var(--o-text-faint);
+}
+.oscar-log-quiet {
+  padding: 1rem 0.7rem;
+  color: var(--o-text-muted);
+  font-family: var(--o-font);
 }
 
 /* The server address is information, not a button. GrapesJS marks it

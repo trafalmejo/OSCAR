@@ -219,6 +219,9 @@ app.use(
     // Unpublishing has no store event of its own, so the route says it, and
     // every editor's LIVE pill recounts.
     onPublishedChanged: () => io.emit("published:changed"),
+    // The pill's network log, backlog for a window that has just opened.
+    // `liveLog` is created below; this only runs once a request arrives.
+    liveLog: () => liveLog.slice(),
     templatesDir: path.join(__dirname, "public", "templates"),
     extensions,
   })
@@ -524,14 +527,44 @@ io.on("connection", (socket) => {
 // which widget and what state, never where to send.
 //
 // onActivity feeds the editor's LIVE pill: IN as the server consumes OSC or
-// MIDI for a published surface, OUT as it sends on one's behalf. Throttled
-// here so a fader at 60 Hz costs a flicker, not a socket message per move.
+// MIDI for a published surface, OUT as it sends on one's behalf. The lights
+// are throttled so a fader at 60 Hz costs a flicker, not a socket message
+// per move; the log coalesces repeats of the same event into one row with a
+// count, flushed a few times a second, and keeps the latest rows for the
+// window to read when it opens (GET /live/log).
 const activityAt = { in: 0, out: 0 };
-function tellActivity(dir) {
+const LIVE_LOG_KEEP = 200;
+const LIVE_LOG_FLUSH_MS = 300;
+const liveLog = [];
+let liveLogPending = new Map(); // key -> entry being coalesced
+let liveLogTimer = null;
+
+function flushLiveLog() {
+  liveLogTimer = null;
+  for (const entry of liveLogPending.values()) {
+    liveLog.push(entry);
+    io.emit("live:log", entry);
+  }
+  if (liveLog.length > LIVE_LOG_KEEP) liveLog.splice(0, liveLog.length - LIVE_LOG_KEEP);
+  liveLogPending = new Map();
+}
+
+function tellActivity(event) {
+  if (!event || !event.dir) return;
   const at = Date.now();
-  if (at - activityAt[dir] < 200) return;
-  activityAt[dir] = at;
-  io.emit("live:activity", { dir });
+  if (at - activityAt[event.dir] >= 200) {
+    activityAt[event.dir] = at;
+    io.emit("live:activity", { dir: event.dir });
+  }
+  const key = event.dir + "|" + event.protocol + "|" + event.what + "|" + (event.surface || "");
+  const held = liveLogPending.get(key);
+  if (held) {
+    held.n += event.n || 1;
+    held.at = at;
+  } else {
+    liveLogPending.set(key, { at, dir: event.dir, protocol: event.protocol, what: event.what, surface: event.surface, n: event.n || 1 });
+  }
+  if (!liveLogTimer) liveLogTimer = setTimeout(flushLiveLog, LIVE_LOG_FLUSH_MS);
 }
 const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io, onActivity: tellActivity });
 
