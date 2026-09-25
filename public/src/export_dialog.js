@@ -17,6 +17,7 @@
 
 var { exportSnapshot } = require("./adapters/grapesjs");
 var { surfaceAddress } = require("../../lib/published-address");
+var { surfaceStamp } = require("../../lib/export/stamp");
 var features = require("../../lib/features");
 // Draws the code for a published surface's address. Bundled, like everything
 // else here: OSCAR runs at venues with no internet.
@@ -74,6 +75,11 @@ function install(editor, options) {
   var publishedBox = document.getElementById("published-box");
   var publishedList = document.getElementById("published-list");
   var extrasBox = document.getElementById("publish-extras");
+  // The canvas's stamp against each published copy's (lib/export/stamp.js):
+  // the dialog says "older than your canvas" on the surface this canvas would
+  // publish over, and the toolbar's Publish button wears a dot meanwhile.
+  var canvasStamp = null; // worked out at most once per wave of edits
+
   // What an extension adds to the dialog (addSection below): each gets a box
   // of its own in #publish-extras and is asked to draw whenever the dialog
   // opens or what is published changes.
@@ -137,6 +143,61 @@ function install(editor, options) {
     showAddress(addressOf(path), replaced ? "Published again, at the same address:" : "Published. Open it at:");
   }
 
+  /** The name this canvas would publish under right now. */
+  function currentStem() {
+    var typed = nameField && nameField.value ? nameField.value : (options.projectName && options.projectName()) || "";
+    return fileStem(typed);
+  }
+
+  /** The published copy this canvas would replace, out of what is known. */
+  function publishedTwin() {
+    var stem = currentStem();
+    for (var i = 0; i < known.length; i++) {
+      if (known[i].id === stem) return known[i];
+    }
+    return null;
+  }
+
+  function staleNow() {
+    var twin = publishedTwin();
+    if (!twin || !twin.stamp || canvasStamp === null) return false;
+    return twin.stamp !== canvasStamp;
+  }
+
+  /** The Publish button in the toolbar, found by the tooltip the editor gives it. */
+  function toolbarButton() {
+    return document.querySelector('.gjs-pn-options [data-tooltip="Publish your interface"]');
+  }
+
+  function paintStale() {
+    var button = toolbarButton();
+    if (!button) return;
+    var stale = staleNow();
+    button.classList.toggle("oscar-publish-stale", stale);
+    button.setAttribute(
+      "data-tooltip",
+      stale ? "Publish your interface \u00b7 the published copy is older than your canvas" : "Publish your interface"
+    );
+  }
+
+  /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
+  function restamp() {
+    try {
+      canvasStamp = surfaceStamp(exportSnapshot(editor).html);
+    } catch (err) {
+      canvasStamp = null;
+    }
+    paintStale();
+  }
+
+  // Any edit may change the stamp; one reading two seconds after the last
+  // edit of a burst is fresh enough for a dot.
+  var restampWait = null;
+  editor.on("update", function () {
+    if (restampWait) clearTimeout(restampWait);
+    restampWait = setTimeout(restamp, 2000);
+  });
+
   copyButton.onclick = function () {
     if (!navigator.clipboard) return;
     navigator.clipboard.writeText(link.href).then(function () {
@@ -167,6 +228,15 @@ function install(editor, options) {
           open.title = addressOf(page.path);
           open.className = "o-link oscar-published-name";
           row.appendChild(open);
+
+          if (page.stamp && page.id === currentStem() && canvasStamp !== null && page.stamp !== canvasStamp) {
+            var stale = document.createElement("span");
+            stale.className = "oscar-published-state";
+            stale.setAttribute("data-state", "grace");
+            stale.textContent = "older than your canvas";
+            stale.title = "The canvas has changed since this was published. Publish again to update it.";
+            row.appendChild(stale);
+          }
 
           var qr = document.createElement("button");
           qr.type = "button";
@@ -242,6 +312,7 @@ function install(editor, options) {
           publishedList.appendChild(row);
         });
         publishedBox.style.display = publishedList.children.length ? "block" : "none";
+        paintStale();
         drawSections();
       })
       .catch(function () {
@@ -330,6 +401,7 @@ function install(editor, options) {
     say(errorBox, "");
     say(noteBox, "");
     latest = null;
+    restamp();
     nameField.value = fileStem((options.projectName && options.projectName()) || "");
 
     // A project saved while Pages was on may still hold several; with the

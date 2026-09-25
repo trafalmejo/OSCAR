@@ -88,7 +88,7 @@ function spread(levels, count) {
 
 module.exports = { toWhole, unitOf, toLevel, toLevels, spread, clamp };
 
-},{"../osc-args":8,"./spec":2}],2:[function(require,module,exports){
+},{"../osc-args":9,"./spec":2}],2:[function(require,module,exports){
 "use strict";
 
 /**
@@ -425,7 +425,98 @@ module.exports = {
   readWidget,
 };
 
-},{"../widgets":21}],4:[function(require,module,exports){
+},{"../widgets":22}],4:[function(require,module,exports){
+"use strict";
+
+/**
+ * A surface's stamp: what its controls are set to, as one short string.
+ *
+ * The editor's canvas and a published copy of it are two documents that
+ * cannot be compared byte for byte -- the published page carries the runtime
+ * around the same widgets -- but their widgets can be: same widgets, same
+ * ids, same settings, same surface. The stamp reads every widget tag out of
+ * a page's markup and hashes its id, its kind and its settings, in document
+ * order, so the editor can say "the published copy is older than your
+ * canvas" without keeping notes anywhere.
+ *
+ * What a hand changes as it plays is left out -- a fader's value, a pad's
+ * position -- or every published surface would be stale the moment anyone
+ * touched it. What the stamp does not see: the page's own CSS and anything
+ * that is not a widget, so a purely visual edit does not mark. The mark is
+ * about behaviour: where things send, what they listen to, whether they are
+ * on.
+ *
+ * Runs in the browser and in Node alike: string work and arithmetic only.
+ */
+
+const { NAME_ATTR, CONFIG_ATTR } = require("./config");
+
+/** The settings a hand replaces as it plays; see STATE_KEYS in config.js. */
+const VOLATILE = ["value", "x", "y"];
+
+const TAG = new RegExp("<[^>]*" + NAME_ATTR + '="([^"]*)"[^>]*>', "g");
+const ID = /\sid="([^"]*)"/;
+const CONFIG = new RegExp("\\s" + CONFIG_ATTR + '="([^"]*)"');
+
+function unescapeHtml(value) {
+  return String(value)
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/** cyrb53: a small, well-mixed 53-bit string hash; no crypto needed for "did it change". */
+function hash(text) {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+/**
+ * The stamp of a page's widgets, or "" for markup with none: two pages with
+ * the same stamp hold the same controls, set the same way.
+ *
+ * @param {string} html any markup holding widget tags: a canvas snapshot, a
+ *        published page, a template
+ */
+function surfaceStamp(html) {
+  const parts = [];
+  String(html || "").replace(TAG, function (tag, name) {
+    const id = ID.exec(tag);
+    const raw = CONFIG.exec(tag);
+    let config = null;
+    if (raw) {
+      try {
+        config = JSON.parse(unescapeHtml(raw[1]));
+      } catch (err) {
+        config = { unreadable: raw[1] };
+      }
+    }
+    if (config && typeof config === "object") {
+      for (const key of VOLATILE) delete config[key];
+      config = Object.keys(config)
+        .sort()
+        .map((key) => key + "=" + JSON.stringify(config[key]))
+        .join(",");
+    }
+    parts.push((id ? id[1] : "") + "|" + name + "|" + (config === null ? "none" : config));
+    return tag;
+  });
+  return parts.length ? hash(parts.join("\n")) : "";
+}
+
+module.exports = { surfaceStamp, VOLATILE };
+
+},{"./config":3}],5:[function(require,module,exports){
 "use strict";
 
 /**
@@ -493,7 +584,7 @@ for (const name of Object.keys(DEFAULTS)) {
 
 module.exports = features;
 
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 "use strict";
 
 /**
@@ -592,7 +683,7 @@ function readDocument(input) {
 
 module.exports = { readDocument, attributesOf, stripCssComments, cleanStyleBlocks };
 
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 "use strict";
 
 /**
@@ -786,7 +877,7 @@ module.exports = {
   inputWanted: inputWanted,
 };
 
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 "use strict";
 
 /**
@@ -986,7 +1077,7 @@ function matchesAddress(pattern, address) {
 
 module.exports = { matchesAddress, isPattern, compile };
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1104,7 +1195,7 @@ function isSendable(argType, raw) {
 
 module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy, toNumber, isInt32 };
 
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -1258,7 +1349,7 @@ function planPorts(args, env) {
 module.exports = { portsFromEnv, planPorts, DEFAULTS, VARIABLES, isPort };
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":35}],10:[function(require,module,exports){
+},{"_process":36}],11:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1467,7 +1558,7 @@ module.exports = {
   stampProject,
 };
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1556,7 +1647,7 @@ const DEFAULT_SORT = { key: "date", direction: "descending" };
 
 module.exports = { formatSize, sortProjects, orderProjects, nextSort, DEFAULT_SORT };
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1582,7 +1673,7 @@ function surfaceAddress(host, httpPort, path) {
 
 module.exports = { surfaceAddress };
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1620,7 +1711,7 @@ function isSerialTarget(ip) {
 
 module.exports = { SERIAL_HOST, isSerialTarget };
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1668,7 +1759,7 @@ function arrange(ids, placements) {
 
 module.exports = { PLACEMENTS, moveAfter, arrange };
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1846,7 +1937,7 @@ module.exports = {
   withoutAppearance,
 };
 
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 "use strict";
 
 const {
@@ -2179,7 +2270,7 @@ function checkValueOff(value, config) {
 
 module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 
-},{"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":28,"./shared":30}],17:[function(require,module,exports){
+},{"../osc-args":9,"./fields":20,"./incoming":21,"./midi-fields":25,"./outgoing":29,"./shared":31}],18:[function(require,module,exports){
 "use strict";
 
 const {
@@ -2663,7 +2754,7 @@ function checkWholeNumbers(value, config) {
 
 module.exports = { colour, FORMATS, SCALES, parseHex, normaliseHex, fromWire };
 
-},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":28,"./shared":30}],18:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":9,"./fields":20,"./incoming":21,"./midi-fields":25,"./outgoing":29,"./shared":31}],19:[function(require,module,exports){
 "use strict";
 
 const {
@@ -3009,7 +3100,7 @@ function checkValue(value, config) {
 
 module.exports = { dropdown, parseOptions };
 
-},{"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":28,"./shared":30,"./typed":33}],19:[function(require,module,exports){
+},{"../osc-args":9,"./fields":20,"./incoming":21,"./midi-fields":25,"./outgoing":29,"./shared":31,"./typed":34}],20:[function(require,module,exports){
 "use strict";
 
 /**
@@ -3545,7 +3636,7 @@ module.exports = {
   IPV4: IPV4,
 };
 
-},{"../dmx/levels":1,"../dmx/spec":2,"../midi/spec":6,"../osc-args":8,"../ports":9,"../serial-target":13}],20:[function(require,module,exports){
+},{"../dmx/levels":1,"../dmx/spec":2,"../midi/spec":7,"../osc-args":9,"../ports":10,"../serial-target":14}],21:[function(require,module,exports){
 "use strict";
 
 const { matchesAddress } = require("../osc-address");
@@ -3625,7 +3716,7 @@ function follow(ctx, fn, addresses) {
 
 module.exports = { incoming, follow };
 
-},{"../osc-address":7}],21:[function(require,module,exports){
+},{"../osc-address":8}],22:[function(require,module,exports){
 "use strict";
 
 /**
@@ -3891,7 +3982,7 @@ for (const widget of WIDGETS) {
 
 module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
 
-},{"./outgoing":28,"./registry":29}],22:[function(require,module,exports){
+},{"./outgoing":29,"./registry":30}],23:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -4393,7 +4484,7 @@ module.exports = {
   COLUMNS_PROPERTY,
 };
 
-},{"../osc-args":8,"./fields":19,"./incoming":20,"./outgoing":28,"./shared":30,"./typed":33}],23:[function(require,module,exports){
+},{"../osc-args":9,"./fields":20,"./incoming":21,"./outgoing":29,"./shared":31,"./typed":34}],24:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, checkMessage, checkNumber, ORIENTATIONS } = require("./fields");
@@ -4673,7 +4764,7 @@ function checkPeakHold(value) {
 
 module.exports = { meter, PEAK_CLASS };
 
-},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./shared":30}],24:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":9,"./fields":20,"./incoming":21,"./midi-fields":25,"./shared":31}],25:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4780,7 +4871,7 @@ function midiChecks(values, options) {
 
 module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiChecks: midiChecks };
 
-},{"../midi/spec":6,"./fields":19}],25:[function(require,module,exports){
+},{"../midi/spec":7,"./fields":20}],26:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4921,7 +5012,7 @@ function followMidi(definition, read, showing) {
 
 module.exports = { stateFromMidi: stateFromMidi, valuesOf: valuesOf, followMidi: followMidi, inputOf: inputOf };
 
-},{"../midi/spec":6,"../osc-args":8}],26:[function(require,module,exports){
+},{"../midi/spec":7,"../osc-args":9}],27:[function(require,module,exports){
 "use strict";
 
 const { followMidi } = require("./midi-in");
@@ -4968,7 +5059,7 @@ var midiKeys = 0;
 
 module.exports = { midiSource: midiSource };
 
-},{"../midi/spec":6,"./midi-in":25}],27:[function(require,module,exports){
+},{"../midi/spec":7,"./midi-in":26}],28:[function(require,module,exports){
 "use strict";
 
 const {
@@ -5344,7 +5435,7 @@ function checkValue(value, config) {
 
 module.exports = { numberInput };
 
-},{"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":28,"./shared":30,"./typed":33}],28:[function(require,module,exports){
+},{"../osc-args":9,"./fields":20,"./incoming":21,"./midi-fields":25,"./outgoing":29,"./shared":31,"./typed":34}],29:[function(require,module,exports){
 "use strict";
 
 const { toArgs } = require("../osc-args");
@@ -5527,7 +5618,7 @@ function routing(ctx) {
 
 module.exports = { outgoing, only, routing, asCtx };
 
-},{"../dmx/levels":1,"../dmx/spec":2,"../midi/spec":6,"../osc-args":8,"../serial-target":13,"./fields":19}],29:[function(require,module,exports){
+},{"../dmx/levels":1,"../dmx/spec":2,"../midi/spec":7,"../osc-args":9,"../serial-target":14,"./fields":20}],30:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5551,7 +5642,7 @@ module.exports = [
   require("./media-browser").mediaBrowser,
 ];
 
-},{"./button":16,"./colour":17,"./dropdown":18,"./media-browser":22,"./meter":23,"./number-input":27,"./slider":31,"./text-input":32,"./xypad":34}],30:[function(require,module,exports){
+},{"./button":17,"./colour":18,"./dropdown":19,"./media-browser":23,"./meter":24,"./number-input":28,"./slider":32,"./text-input":33,"./xypad":35}],31:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5618,7 +5709,7 @@ function onShared(ctx, fn) {
 
 module.exports = { share, onShared };
 
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 "use strict";
 
 const {
@@ -5918,7 +6009,7 @@ function checkValue(value, config) {
 // this is where it used to be, and a caller that learned it here keeps working.
 module.exports = { slider, ORIENTATIONS };
 
-},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":28,"./shared":30}],32:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":9,"./fields":20,"./incoming":21,"./midi-fields":25,"./outgoing":29,"./shared":31}],33:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -6115,7 +6206,7 @@ function checkValue(value, config) {
 
 module.exports = { textInput };
 
-},{"../osc-args":8,"./fields":19,"./incoming":20,"./outgoing":28,"./shared":30,"./typed":33}],33:[function(require,module,exports){
+},{"../osc-args":9,"./fields":20,"./incoming":21,"./outgoing":29,"./shared":31,"./typed":34}],34:[function(require,module,exports){
 "use strict";
 
 const { isSendable, toNumber } = require("../osc-args");
@@ -6334,7 +6425,7 @@ function dmxRange(min, max) {
 
 module.exports = { commitOn, refusal, checkArgType, levelOf, dmxRange };
 
-},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":8}],34:[function(require,module,exports){
+},{"../dmx/levels":1,"../dmx/spec":2,"../osc-args":9}],35:[function(require,module,exports){
 "use strict";
 
 const {
@@ -6744,7 +6835,7 @@ function within(value, min, max) {
 
 module.exports = { xypad, SEND_MODES };
 
-},{"../dmx/levels":1,"../osc-args":8,"./fields":19,"./incoming":20,"./midi-fields":24,"./outgoing":28,"./shared":30}],35:[function(require,module,exports){
+},{"../dmx/levels":1,"../osc-args":9,"./fields":20,"./incoming":21,"./midi-fields":25,"./outgoing":29,"./shared":31}],36:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -6930,7 +7021,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],36:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 /*!
  * jquery-confirm v3.3.4 (http://craftpip.github.io/jquery-confirm/)
  * Author: Boniface Pereira
@@ -6941,7 +7032,7 @@ process.umask = function() { return 0; };
  * Licensed under MIT (https://github.com/craftpip/jquery-confirm/blob/master/LICENSE)
  */
 (function(factory){if(typeof define==="function"&&define.amd){define(["jquery"],factory);}else{if(typeof module==="object"&&module.exports){module.exports=function(root,jQuery){if(jQuery===undefined){if(typeof window!=="undefined"){jQuery=require("jquery");}else{jQuery=require("jquery")(root);}}factory(jQuery);return jQuery;};}else{factory(jQuery);}}}(function($){var w=window;$.fn.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}$(this).each(function(){var $this=$(this);if($this.attr("jc-attached")){console.warn("jConfirm has already been attached to this element ",$this[0]);return;}$this.on("click",function(e){e.preventDefault();var jcOption=$.extend({},options);if($this.attr("data-title")){jcOption.title=$this.attr("data-title");}if($this.attr("data-content")){jcOption.content=$this.attr("data-content");}if(typeof jcOption.buttons==="undefined"){jcOption.buttons={};}jcOption["$target"]=$this;if($this.attr("href")&&Object.keys(jcOption.buttons).length===0){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];jcOption.buttons=buttons;jcOption.buttons[firstBtn].action=function(){location.href=$this.attr("href");};}jcOption.closeIcon=false;var instance=$.confirm(jcOption);});$this.attr("jc-attached",true);});return $(this);};$.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});options.buttons=buttons;}return w.jconfirm(options);};$.alert=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];options.buttons[firstBtn]=buttons[firstBtn];}return w.jconfirm(options);};$.dialog=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false,closeIcon:function(){}};}options.buttons={};if(typeof options.closeIcon==="undefined"){options.closeIcon=function(){};}options.confirmKeys=[13];return w.jconfirm(options);};w.jconfirm=function(options){if(typeof options==="undefined"){options={};}var pluginOptions=$.extend(true,{},w.jconfirm.pluginDefaults);if(w.jconfirm.defaults){pluginOptions=$.extend(true,pluginOptions,w.jconfirm.defaults);}pluginOptions=$.extend(true,{},pluginOptions,options);var instance=new w.Jconfirm(pluginOptions);w.jconfirm.instances.push(instance);return instance;};w.Jconfirm=function(options){$.extend(this,options);this._init();};w.Jconfirm.prototype={_init:function(){var that=this;if(!w.jconfirm.instances.length){w.jconfirm.lastFocused=$("body").find(":focus");}this._id=Math.round(Math.random()*99999);this.contentParsed=$(document.createElement("div"));if(!this.lazyOpen){setTimeout(function(){that.open();},0);}},_buildHTML:function(){var that=this;this._parseAnimation(this.animation,"o");this._parseAnimation(this.closeAnimation,"c");this._parseBgDismissAnimation(this.backgroundDismissAnimation);this._parseColumnClass(this.columnClass);this._parseTheme(this.theme);this._parseType(this.type);var template=$(this.template);template.find(".jconfirm-box").addClass(this.animationParsed).addClass(this.backgroundDismissAnimationParsed).addClass(this.typeParsed);if(this.typeAnimated){template.find(".jconfirm-box").addClass("jconfirm-type-animated");}if(this.useBootstrap){template.find(".jc-bs3-row").addClass(this.bootstrapClasses.row);template.find(".jc-bs3-row").addClass("justify-content-md-center justify-content-sm-center justify-content-xs-center justify-content-lg-center");template.find(".jconfirm-box-container").addClass(this.columnClassParsed);if(this.containerFluid){template.find(".jc-bs3-container").addClass(this.bootstrapClasses.containerFluid);}else{template.find(".jc-bs3-container").addClass(this.bootstrapClasses.container);}}else{template.find(".jconfirm-box").css("width",this.boxWidth);}if(this.titleClass){template.find(".jconfirm-title-c").addClass(this.titleClass);}template.addClass(this.themeParsed);var ariaLabel="jconfirm-box"+this._id;template.find(".jconfirm-box").attr("aria-labelledby",ariaLabel).attr("tabindex",-1);template.find(".jconfirm-content").attr("id",ariaLabel);if(this.bgOpacity!==null){template.find(".jconfirm-bg").css("opacity",this.bgOpacity);}if(this.rtl){template.addClass("jconfirm-rtl");}this.$el=template.appendTo(this.container);this.$jconfirmBoxContainer=this.$el.find(".jconfirm-box-container");this.$jconfirmBox=this.$body=this.$el.find(".jconfirm-box");this.$jconfirmBg=this.$el.find(".jconfirm-bg");this.$title=this.$el.find(".jconfirm-title");this.$titleContainer=this.$el.find(".jconfirm-title-c");this.$content=this.$el.find("div.jconfirm-content");this.$contentPane=this.$el.find(".jconfirm-content-pane");this.$icon=this.$el.find(".jconfirm-icon-c");this.$closeIcon=this.$el.find(".jconfirm-closeIcon");this.$holder=this.$el.find(".jconfirm-holder");this.$btnc=this.$el.find(".jconfirm-buttons");this.$scrollPane=this.$el.find(".jconfirm-scrollpane");that.setStartingPoint();this._contentReady=$.Deferred();this._modalReady=$.Deferred();this.$holder.css({"padding-top":this.offsetTop,"padding-bottom":this.offsetBottom,});this.setTitle();this.setIcon();this._setButtons();this._parseContent();this.initDraggable();if(this.isAjax){this.showLoading(false);}$.when(this._contentReady,this._modalReady).then(function(){if(that.isAjaxLoading){setTimeout(function(){that.isAjaxLoading=false;that.setContent();that.setTitle();that.setIcon();setTimeout(function(){that.hideLoading(false);that._updateContentMaxHeight();},100);if(typeof that.onContentReady==="function"){that.onContentReady();}},50);}else{that._updateContentMaxHeight();that.setTitle();that.setIcon();if(typeof that.onContentReady==="function"){that.onContentReady();}}if(that.autoClose){that._startCountDown();}}).then(function(){that._watchContent();});if(this.animation==="none"){this.animationSpeed=1;this.animationBounce=1;}this.$body.css(this._getCSS(this.animationSpeed,this.animationBounce));this.$contentPane.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBg.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBoxContainer.css(this._getCSS(this.animationSpeed,1));},_typePrefix:"jconfirm-type-",typeParsed:"",_parseType:function(type){this.typeParsed=this._typePrefix+type;},setType:function(type){var oldClass=this.typeParsed;this._parseType(type);this.$jconfirmBox.removeClass(oldClass).addClass(this.typeParsed);},themeParsed:"",_themePrefix:"jconfirm-",setTheme:function(theme){var previous=this.theme;this.theme=theme||this.theme;this._parseTheme(this.theme);if(previous){this.$el.removeClass(previous);}this.$el.addClass(this.themeParsed);this.theme=theme;},_parseTheme:function(theme){var that=this;theme=theme.split(",");$.each(theme,function(k,a){if(a.indexOf(that._themePrefix)===-1){theme[k]=that._themePrefix+$.trim(a);}});this.themeParsed=theme.join(" ").toLowerCase();},backgroundDismissAnimationParsed:"",_bgDismissPrefix:"jconfirm-hilight-",_parseBgDismissAnimation:function(bgDismissAnimation){var animation=bgDismissAnimation.split(",");var that=this;$.each(animation,function(k,a){if(a.indexOf(that._bgDismissPrefix)===-1){animation[k]=that._bgDismissPrefix+$.trim(a);}});this.backgroundDismissAnimationParsed=animation.join(" ").toLowerCase();},animationParsed:"",closeAnimationParsed:"",_animationPrefix:"jconfirm-animation-",setAnimation:function(animation){this.animation=animation||this.animation;this._parseAnimation(this.animation,"o");},_parseAnimation:function(animation,which){which=which||"o";var animations=animation.split(",");var that=this;$.each(animations,function(k,a){if(a.indexOf(that._animationPrefix)===-1){animations[k]=that._animationPrefix+$.trim(a);}});var a_string=animations.join(" ").toLowerCase();if(which==="o"){this.animationParsed=a_string;}else{this.closeAnimationParsed=a_string;}return a_string;},setCloseAnimation:function(closeAnimation){this.closeAnimation=closeAnimation||this.closeAnimation;this._parseAnimation(this.closeAnimation,"c");},setAnimationSpeed:function(speed){this.animationSpeed=speed||this.animationSpeed;},columnClassParsed:"",setColumnClass:function(colClass){if(!this.useBootstrap){console.warn("cannot set columnClass, useBootstrap is set to false");return;}this.columnClass=colClass||this.columnClass;this._parseColumnClass(this.columnClass);this.$jconfirmBoxContainer.addClass(this.columnClassParsed);},_updateContentMaxHeight:function(){var height=$(window).height()-(this.$jconfirmBox.outerHeight()-this.$contentPane.outerHeight())-(this.offsetTop+this.offsetBottom);this.$contentPane.css({"max-height":height+"px"});},setBoxWidth:function(width){if(this.useBootstrap){console.warn("cannot set boxWidth, useBootstrap is set to true");return;}this.boxWidth=width;this.$jconfirmBox.css("width",width);},_parseColumnClass:function(colClass){colClass=colClass.toLowerCase();var p;switch(colClass){case"xl":case"xlarge":p="col-md-12";break;case"l":case"large":p="col-md-8 col-md-offset-2";break;case"m":case"medium":p="col-md-6 col-md-offset-3";break;case"s":case"small":p="col-md-4 col-md-offset-4";break;case"xs":case"xsmall":p="col-md-2 col-md-offset-5";break;default:p=colClass;}this.columnClassParsed=p;},initDraggable:function(){var that=this;var $t=this.$titleContainer;this.resetDrag();if(this.draggable){$t.on("mousedown",function(e){$t.addClass("jconfirm-hand");that.mouseX=e.clientX;that.mouseY=e.clientY;that.isDrag=true;});$(window).on("mousemove."+this._id,function(e){if(that.isDrag){that.movingX=e.clientX-that.mouseX+that.initialX;that.movingY=e.clientY-that.mouseY+that.initialY;that.setDrag();}});$(window).on("mouseup."+this._id,function(){$t.removeClass("jconfirm-hand");if(that.isDrag){that.isDrag=false;that.initialX=that.movingX;that.initialY=that.movingY;}});}},resetDrag:function(){this.isDrag=false;this.initialX=0;this.initialY=0;this.movingX=0;this.movingY=0;this.mouseX=0;this.mouseY=0;this.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");},setDrag:function(){if(!this.draggable){return;}this.alignMiddle=false;var boxWidth=this.$jconfirmBox.outerWidth();var boxHeight=this.$jconfirmBox.outerHeight();var windowWidth=$(window).width();var windowHeight=$(window).height();var that=this;var dragUpdate=1;if(that.movingX%dragUpdate===0||that.movingY%dragUpdate===0){if(that.dragWindowBorder){var leftDistance=(windowWidth/2)-boxWidth/2;var topDistance=(windowHeight/2)-boxHeight/2;topDistance-=that.dragWindowGap;leftDistance-=that.dragWindowGap;if(leftDistance+that.movingX<0){that.movingX=-leftDistance;}else{if(leftDistance-that.movingX<0){that.movingX=leftDistance;}}if(topDistance+that.movingY<0){that.movingY=-topDistance;}else{if(topDistance-that.movingY<0){that.movingY=topDistance;}}}that.$jconfirmBoxContainer.css("transform","translate("+that.movingX+"px, "+that.movingY+"px)");}},_scrollTop:function(){if(typeof pageYOffset!=="undefined"){return pageYOffset;}else{var B=document.body;var D=document.documentElement;D=(D.clientHeight)?D:B;return D.scrollTop;}},_watchContent:function(){var that=this;if(this._timer){clearInterval(this._timer);}var prevContentHeight=0;this._timer=setInterval(function(){if(that.smoothContent){var contentHeight=that.$content.outerHeight()||0;if(contentHeight!==prevContentHeight){prevContentHeight=contentHeight;}var wh=$(window).height();var total=that.offsetTop+that.offsetBottom+that.$jconfirmBox.height()-that.$contentPane.height()+that.$content.height();if(total<wh){that.$contentPane.addClass("no-scroll");}else{that.$contentPane.removeClass("no-scroll");}}},this.watchInterval);},_overflowClass:"jconfirm-overflow",_hilightAnimating:false,highlight:function(){this.hiLightModal();},hiLightModal:function(){var that=this;if(this._hilightAnimating){return;}that.$body.addClass("hilight");var duration=parseFloat(that.$body.css("animation-duration"))||2;this._hilightAnimating=true;setTimeout(function(){that._hilightAnimating=false;that.$body.removeClass("hilight");},duration*1000);},_bindEvents:function(){var that=this;this.boxClicked=false;this.$scrollPane.click(function(e){if(!that.boxClicked){var buttonName=false;var shouldClose=false;var str;if(typeof that.backgroundDismiss==="function"){str=that.backgroundDismiss();}else{str=that.backgroundDismiss;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}else{that.hiLightModal();}}that.boxClicked=false;});this.$jconfirmBox.click(function(e){that.boxClicked=true;});var isKeyDown=false;$(window).on("jcKeyDown."+that._id,function(e){if(!isKeyDown){isKeyDown=true;}});$(window).on("keyup."+that._id,function(e){if(isKeyDown){that.reactOnKey(e);isKeyDown=false;}});$(window).on("resize."+this._id,function(){that._updateContentMaxHeight();setTimeout(function(){that.resetDrag();},100);});},_cubic_bezier:"0.36, 0.55, 0.19",_getCSS:function(speed,bounce){return{"-webkit-transition-duration":speed/1000+"s","transition-duration":speed/1000+"s","-webkit-transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")","transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")"};},_setButtons:function(){var that=this;var total_buttons=0;if(typeof this.buttons!=="object"){this.buttons={};}$.each(this.buttons,function(key,button){total_buttons+=1;if(typeof button==="function"){that.buttons[key]=button={action:button};}that.buttons[key].text=button.text||key;that.buttons[key].btnClass=button.btnClass||"btn-default";that.buttons[key].action=button.action||function(){};that.buttons[key].keys=button.keys||[];that.buttons[key].isHidden=button.isHidden||false;that.buttons[key].isDisabled=button.isDisabled||false;$.each(that.buttons[key].keys,function(i,a){that.buttons[key].keys[i]=a.toLowerCase();});var button_element=$('<button type="button" class="btn"></button>').html(that.buttons[key].text).addClass(that.buttons[key].btnClass).prop("disabled",that.buttons[key].isDisabled).css("display",that.buttons[key].isHidden?"none":"").click(function(e){e.preventDefault();var res=that.buttons[key].action.apply(that,[that.buttons[key]]);that.onAction.apply(that,[key,that.buttons[key]]);that._stopCountDown();if(typeof res==="undefined"||res){that.close();}});that.buttons[key].el=button_element;that.buttons[key].setText=function(text){button_element.html(text);};that.buttons[key].addClass=function(className){button_element.addClass(className);};that.buttons[key].removeClass=function(className){button_element.removeClass(className);};that.buttons[key].disable=function(){that.buttons[key].isDisabled=true;button_element.prop("disabled",true);};that.buttons[key].enable=function(){that.buttons[key].isDisabled=false;button_element.prop("disabled",false);};that.buttons[key].show=function(){that.buttons[key].isHidden=false;button_element.css("display","");};that.buttons[key].hide=function(){that.buttons[key].isHidden=true;button_element.css("display","none");};that["$_"+key]=that["$$"+key]=button_element;that.$btnc.append(button_element);});if(total_buttons===0){this.$btnc.hide();}if(this.closeIcon===null&&total_buttons===0){this.closeIcon=true;}if(this.closeIcon){if(this.closeIconClass){var closeHtml='<i class="'+this.closeIconClass+'"></i>';this.$closeIcon.html(closeHtml);}this.$closeIcon.click(function(e){e.preventDefault();var buttonName=false;var shouldClose=false;var str;if(typeof that.closeIcon==="function"){str=that.closeIcon();}else{str=that.closeIcon;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}});this.$closeIcon.show();}else{this.$closeIcon.hide();}},setTitle:function(string,force){force=force||false;if(typeof string!=="undefined"){if(typeof string==="string"){this.title=string;}else{if(typeof string==="function"){if(typeof string.promise==="function"){console.error("Promise was returned from title function, this is not supported.");}var response=string();if(typeof response==="string"){this.title=response;}else{this.title=false;}}else{this.title=false;}}}if(this.isAjaxLoading&&!force){return;}this.$title.html(this.title||"");this.updateTitleContainer();},setIcon:function(iconClass,force){force=force||false;if(typeof iconClass!=="undefined"){if(typeof iconClass==="string"){this.icon=iconClass;}else{if(typeof iconClass==="function"){var response=iconClass();if(typeof response==="string"){this.icon=response;}else{this.icon=false;}}else{this.icon=false;}}}if(this.isAjaxLoading&&!force){return;}this.$icon.html(this.icon?'<i class="'+this.icon+'"></i>':"");this.updateTitleContainer();},updateTitleContainer:function(){if(!this.title&&!this.icon){this.$titleContainer.hide();}else{this.$titleContainer.show();}},setContentPrepend:function(content,force){if(!content){return;}this.contentParsed.prepend(content);},setContentAppend:function(content){if(!content){return;}this.contentParsed.append(content);},setContent:function(content,force){force=!!force;var that=this;if(content){this.contentParsed.html("").append(content);}if(this.isAjaxLoading&&!force){return;}this.$content.html("");this.$content.append(this.contentParsed);setTimeout(function(){that.$body.find("input[autofocus]:visible:first").focus();},100);},loadingSpinner:false,showLoading:function(disableButtons){this.loadingSpinner=true;this.$jconfirmBox.addClass("loading");if(disableButtons){this.$btnc.find("button").prop("disabled",true);}},hideLoading:function(enableButtons){this.loadingSpinner=false;this.$jconfirmBox.removeClass("loading");if(enableButtons){this.$btnc.find("button").prop("disabled",false);}},ajaxResponse:false,contentParsed:"",isAjax:false,isAjaxLoading:false,_parseContent:function(){var that=this;var e="&nbsp;";if(typeof this.content==="function"){var res=this.content.apply(this);if(typeof res==="string"){this.content=res;}else{if(typeof res==="object"&&typeof res.always==="function"){this.isAjax=true;this.isAjaxLoading=true;res.always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});this.content=e;}else{this.content=e;}}}if(typeof this.content==="string"&&this.content.substr(0,4).toLowerCase()==="url:"){this.isAjax=true;this.isAjaxLoading=true;var u=this.content.substring(4,this.content.length);$.get(u).done(function(html){that.contentParsed.html(html);}).always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});}if(!this.content){this.content=e;}if(!this.isAjax){this.contentParsed.html(this.content);this.setContent();that._contentReady.resolve();}},_stopCountDown:function(){clearInterval(this.autoCloseInterval);if(this.$cd){this.$cd.remove();}},_startCountDown:function(){var that=this;var opt=this.autoClose.split("|");if(opt.length!==2){console.error("Invalid option for autoClose. example 'close|10000'");return false;}var button_key=opt[0];var time=parseInt(opt[1]);if(typeof this.buttons[button_key]==="undefined"){console.error("Invalid button key '"+button_key+"' for autoClose");return false;}var seconds=Math.ceil(time/1000);this.$cd=$('<span class="countdown"> ('+seconds+")</span>").appendTo(this["$_"+button_key]);this.autoCloseInterval=setInterval(function(){that.$cd.html(" ("+(seconds-=1)+") ");if(seconds<=0){that["$$"+button_key].trigger("click");that._stopCountDown();}},1000);},_getKey:function(key){switch(key){case 192:return"tilde";case 13:return"enter";case 16:return"shift";case 9:return"tab";case 20:return"capslock";case 17:return"ctrl";case 91:return"win";case 18:return"alt";case 27:return"esc";case 32:return"space";}var initial=String.fromCharCode(key);if(/^[A-z0-9]+$/.test(initial)){return initial.toLowerCase();}else{return false;}},reactOnKey:function(e){var that=this;var a=$(".jconfirm");if(a.eq(a.length-1)[0]!==this.$el[0]){return false;}var key=e.which;if(this.$content.find(":input").is(":focus")&&/13|32/.test(key)){return false;}var keyChar=this._getKey(key);if(keyChar==="esc"&&this.escapeKey){if(this.escapeKey===true){this.$scrollPane.trigger("click");}else{if(typeof this.escapeKey==="string"||typeof this.escapeKey==="function"){var buttonKey;if(typeof this.escapeKey==="function"){buttonKey=this.escapeKey();}else{buttonKey=this.escapeKey;}if(buttonKey){if(typeof this.buttons[buttonKey]==="undefined"){console.warn("Invalid escapeKey, no buttons found with key "+buttonKey);}else{this["$_"+buttonKey].trigger("click");}}}}}$.each(this.buttons,function(key,button){if(button.keys.indexOf(keyChar)!==-1){that["$_"+key].trigger("click");}});},setDialogCenter:function(){console.info("setDialogCenter is deprecated, dialogs are centered with CSS3 tables");},_unwatchContent:function(){clearInterval(this._timer);},close:function(onClosePayload){var that=this;if(typeof this.onClose==="function"){this.onClose(onClosePayload);}this._unwatchContent();$(window).unbind("resize."+this._id);$(window).unbind("keyup."+this._id);$(window).unbind("jcKeyDown."+this._id);if(this.draggable){$(window).unbind("mousemove."+this._id);$(window).unbind("mouseup."+this._id);this.$titleContainer.unbind("mousedown");}that.$el.removeClass(that.loadedClass);$("body").removeClass("jconfirm-no-scroll-"+that._id);that.$jconfirmBoxContainer.removeClass("jconfirm-no-transition");setTimeout(function(){that.$body.addClass(that.closeAnimationParsed);that.$jconfirmBg.addClass("jconfirm-bg-h");var closeTimer=(that.closeAnimation==="none")?1:that.animationSpeed;setTimeout(function(){that.$el.remove();var l=w.jconfirm.instances;var i=w.jconfirm.instances.length-1;for(i;i>=0;i--){if(w.jconfirm.instances[i]._id===that._id){w.jconfirm.instances.splice(i,1);}}if(!w.jconfirm.instances.length){if(that.scrollToPreviousElement&&w.jconfirm.lastFocused&&w.jconfirm.lastFocused.length&&$.contains(document,w.jconfirm.lastFocused[0])){var $lf=w.jconfirm.lastFocused;if(that.scrollToPreviousElementAnimate){var st=$(window).scrollTop();var ot=w.jconfirm.lastFocused.offset().top;var wh=$(window).height();if(!(ot>st&&ot<(st+wh))){var scrollTo=(ot-Math.round((wh/3)));$("html, body").animate({scrollTop:scrollTo},that.animationSpeed,"swing",function(){$lf.focus();});}else{$lf.focus();}}else{$lf.focus();}w.jconfirm.lastFocused=false;}}if(typeof that.onDestroy==="function"){that.onDestroy();}},closeTimer*0.4);},50);return true;},open:function(){if(this.isOpen()){return false;}this._buildHTML();this._bindEvents();this._open();return true;},setStartingPoint:function(){var el=false;if(this.animateFromElement!==true&&this.animateFromElement){el=this.animateFromElement;w.jconfirm.lastClicked=false;}else{if(w.jconfirm.lastClicked&&this.animateFromElement===true){el=w.jconfirm.lastClicked;w.jconfirm.lastClicked=false;}else{return false;}}if(!el){return false;}var offset=el.offset();var iTop=el.outerHeight()/2;var iLeft=el.outerWidth()/2;iTop-=this.$jconfirmBox.outerHeight()/2;iLeft-=this.$jconfirmBox.outerWidth()/2;var sourceTop=offset.top+iTop;sourceTop=sourceTop-this._scrollTop();var sourceLeft=offset.left+iLeft;var wh=$(window).height()/2;var ww=$(window).width()/2;var targetH=wh-this.$jconfirmBox.outerHeight()/2;var targetW=ww-this.$jconfirmBox.outerWidth()/2;sourceTop-=targetH;sourceLeft-=targetW;if(Math.abs(sourceTop)>wh||Math.abs(sourceLeft)>ww){return false;}this.$jconfirmBoxContainer.css("transform","translate("+sourceLeft+"px, "+sourceTop+"px)");},_open:function(){var that=this;if(typeof that.onOpenBefore==="function"){that.onOpenBefore();}this.$body.removeClass(this.animationParsed);this.$jconfirmBg.removeClass("jconfirm-bg-h");this.$body.focus();that.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");setTimeout(function(){that.$body.css(that._getCSS(that.animationSpeed,1));that.$body.css({"transition-property":that.$body.css("transition-property")+", margin"});that.$jconfirmBoxContainer.addClass("jconfirm-no-transition");that._modalReady.resolve();if(typeof that.onOpen==="function"){that.onOpen();}that.$el.addClass(that.loadedClass);},this.animationSpeed);},loadedClass:"jconfirm-open",isClosed:function(){return !this.$el||this.$el.parent().length===0;},isOpen:function(){return !this.isClosed();},toggle:function(){if(!this.isOpen()){this.open();}else{this.close();}}};w.jconfirm.instances=[];w.jconfirm.lastFocused=false;w.jconfirm.pluginDefaults={template:'<div class="jconfirm"><div class="jconfirm-bg jconfirm-bg-h"></div><div class="jconfirm-scrollpane"><div class="jconfirm-row"><div class="jconfirm-cell"><div class="jconfirm-holder"><div class="jc-bs3-container"><div class="jc-bs3-row"><div class="jconfirm-box-container jconfirm-animated"><div class="jconfirm-box" role="dialog" aria-labelledby="labelled" tabindex="-1"><div class="jconfirm-closeIcon">&times;</div><div class="jconfirm-title-c"><span class="jconfirm-icon-c"></span><span class="jconfirm-title"></span></div><div class="jconfirm-content-pane"><div class="jconfirm-content"></div></div><div class="jconfirm-buttons"></div><div class="jconfirm-clear"></div></div></div></div></div></div></div></div></div></div>',title:"Hello",titleClass:"",type:"default",typeAnimated:true,draggable:true,dragWindowGap:15,dragWindowBorder:true,animateFromElement:true,alignMiddle:true,smoothContent:true,content:"Are you sure to continue?",buttons:{},defaultButtons:{ok:{action:function(){}},close:{action:function(){}}},contentLoaded:function(){},icon:"",lazyOpen:false,bgOpacity:null,theme:"light",animation:"scale",closeAnimation:"scale",animationSpeed:400,animationBounce:1,escapeKey:true,rtl:false,container:"body",containerFluid:false,backgroundDismiss:false,backgroundDismissAnimation:"shake",autoClose:false,closeIcon:null,closeIconClass:false,watchInterval:100,columnClass:"col-md-4 col-md-offset-4 col-sm-6 col-sm-offset-3 col-xs-10 col-xs-offset-1",boxWidth:"50%",scrollToPreviousElement:true,scrollToPreviousElementAnimate:true,useBootstrap:true,offsetTop:40,offsetBottom:40,bootstrapClasses:{container:"container",containerFluid:"container-fluid",row:"row"},onContentReady:function(){},onOpenBefore:function(){},onOpen:function(){},onClose:function(){},onDestroy:function(){},onAction:function(){}};var keyDown=false;$(window).on("keydown",function(e){if(!keyDown){var $target=$(e.target);var pass=false;if($target.closest(".jconfirm-box").length){pass=true;}if(pass){$(window).trigger("jcKeyDown");}keyDown=true;}});$(window).on("keyup",function(){keyDown=false;});w.jconfirm.lastClicked=false;$(document).on("mousedown","button, a, [jc-source]",function(){w.jconfirm.lastClicked=$(this);});}));
-},{"jquery":37}],37:[function(require,module,exports){
+},{"jquery":38}],38:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -17659,7 +17750,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],38:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -19958,7 +20049,7 @@ var qrcode = function() {
     return qrcode;
 }));
 
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 /**
  * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
  *
@@ -21233,7 +21324,7 @@ module.exports = {
   revealKeys: revealKeys,
 };
 
-},{"../../../lib/export/config":3,"../../../lib/features":4,"../../../lib/midi/spec":6,"../../../lib/widgets":21,"../../../lib/widgets/fields":19,"../../../lib/widgets/midi-source":26}],40:[function(require,module,exports){
+},{"../../../lib/export/config":3,"../../../lib/features":5,"../../../lib/midi/spec":7,"../../../lib/widgets":22,"../../../lib/widgets/fields":20,"../../../lib/widgets/midi-source":27}],41:[function(require,module,exports){
 /**
  * "Export" in the editor: turning the canvas into one file that works.
  *
@@ -21253,6 +21344,7 @@ module.exports = {
 
 var { exportSnapshot } = require("./adapters/grapesjs");
 var { surfaceAddress } = require("../../lib/published-address");
+var { surfaceStamp } = require("../../lib/export/stamp");
 var features = require("../../lib/features");
 // Draws the code for a published surface's address. Bundled, like everything
 // else here: OSCAR runs at venues with no internet.
@@ -21310,6 +21402,11 @@ function install(editor, options) {
   var publishedBox = document.getElementById("published-box");
   var publishedList = document.getElementById("published-list");
   var extrasBox = document.getElementById("publish-extras");
+  // The canvas's stamp against each published copy's (lib/export/stamp.js):
+  // the dialog says "older than your canvas" on the surface this canvas would
+  // publish over, and the toolbar's Publish button wears a dot meanwhile.
+  var canvasStamp = null; // worked out at most once per wave of edits
+
   // What an extension adds to the dialog (addSection below): each gets a box
   // of its own in #publish-extras and is asked to draw whenever the dialog
   // opens or what is published changes.
@@ -21373,6 +21470,61 @@ function install(editor, options) {
     showAddress(addressOf(path), replaced ? "Published again, at the same address:" : "Published. Open it at:");
   }
 
+  /** The name this canvas would publish under right now. */
+  function currentStem() {
+    var typed = nameField && nameField.value ? nameField.value : (options.projectName && options.projectName()) || "";
+    return fileStem(typed);
+  }
+
+  /** The published copy this canvas would replace, out of what is known. */
+  function publishedTwin() {
+    var stem = currentStem();
+    for (var i = 0; i < known.length; i++) {
+      if (known[i].id === stem) return known[i];
+    }
+    return null;
+  }
+
+  function staleNow() {
+    var twin = publishedTwin();
+    if (!twin || !twin.stamp || canvasStamp === null) return false;
+    return twin.stamp !== canvasStamp;
+  }
+
+  /** The Publish button in the toolbar, found by the tooltip the editor gives it. */
+  function toolbarButton() {
+    return document.querySelector('.gjs-pn-options [data-tooltip="Publish your interface"]');
+  }
+
+  function paintStale() {
+    var button = toolbarButton();
+    if (!button) return;
+    var stale = staleNow();
+    button.classList.toggle("oscar-publish-stale", stale);
+    button.setAttribute(
+      "data-tooltip",
+      stale ? "Publish your interface \u00b7 the published copy is older than your canvas" : "Publish your interface"
+    );
+  }
+
+  /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
+  function restamp() {
+    try {
+      canvasStamp = surfaceStamp(exportSnapshot(editor).html);
+    } catch (err) {
+      canvasStamp = null;
+    }
+    paintStale();
+  }
+
+  // Any edit may change the stamp; one reading two seconds after the last
+  // edit of a burst is fresh enough for a dot.
+  var restampWait = null;
+  editor.on("update", function () {
+    if (restampWait) clearTimeout(restampWait);
+    restampWait = setTimeout(restamp, 2000);
+  });
+
   copyButton.onclick = function () {
     if (!navigator.clipboard) return;
     navigator.clipboard.writeText(link.href).then(function () {
@@ -21403,6 +21555,15 @@ function install(editor, options) {
           open.title = addressOf(page.path);
           open.className = "o-link oscar-published-name";
           row.appendChild(open);
+
+          if (page.stamp && page.id === currentStem() && canvasStamp !== null && page.stamp !== canvasStamp) {
+            var stale = document.createElement("span");
+            stale.className = "oscar-published-state";
+            stale.setAttribute("data-state", "grace");
+            stale.textContent = "older than your canvas";
+            stale.title = "The canvas has changed since this was published. Publish again to update it.";
+            row.appendChild(stale);
+          }
 
           var qr = document.createElement("button");
           qr.type = "button";
@@ -21478,6 +21639,7 @@ function install(editor, options) {
           publishedList.appendChild(row);
         });
         publishedBox.style.display = publishedList.children.length ? "block" : "none";
+        paintStale();
         drawSections();
       })
       .catch(function () {
@@ -21566,6 +21728,7 @@ function install(editor, options) {
     say(errorBox, "");
     say(noteBox, "");
     latest = null;
+    restamp();
     nameField.value = fileStem((options.projectName && options.projectName()) || "");
 
     // A project saved while Pages was on may still hold several; with the
@@ -21678,7 +21841,7 @@ function install(editor, options) {
 
 module.exports = { install: install, fileStem: fileStem };
 
-},{"../../lib/features":4,"../../lib/published-address":12,"./adapters/grapesjs":39,"qrcode-generator":38}],41:[function(require,module,exports){
+},{"../../lib/export/stamp":4,"../../lib/features":5,"../../lib/published-address":13,"./adapters/grapesjs":40,"qrcode-generator":39}],42:[function(require,module,exports){
 "use strict";
 
 /**
@@ -21747,7 +21910,7 @@ function openWelcome(deps) {
 
 module.exports = { isFirstRun: isFirstRun, openWelcome: openWelcome, WELCOME: WELCOME, AUTOSAVE_KEY: AUTOSAVE_KEY };
 
-},{}],42:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 window.$ = $ = window.jQuery = require("jquery");
 
 // jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
@@ -23467,7 +23630,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":4,"../../lib/html-document":5,"../../lib/project-format":10,"../../lib/projects-table":11,"../../lib/toolbar-order":14,"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./export_dialog":40,"./first_run":41,"./pages":44,"jquery":37,"jquery-confirm":36}],43:[function(require,module,exports){
+},{"../../lib/features":5,"../../lib/html-document":6,"../../lib/project-format":11,"../../lib/projects-table":12,"../../lib/toolbar-order":15,"../../lib/widget-styles":16,"./adapters/grapesjs":40,"./export_dialog":41,"./first_run":42,"./pages":45,"jquery":38,"jquery-confirm":37}],44:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
@@ -23637,7 +23800,7 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"../../lib/widget-styles":15,"./adapters/grapesjs":39,"./pages":44,"jquery":37}],44:[function(require,module,exports){
+},{"../../lib/widget-styles":16,"./adapters/grapesjs":40,"./pages":45,"jquery":38}],45:[function(require,module,exports){
 /**
  * Multiple pages: what the editor and the control surface have in common.
  *
@@ -23918,4 +24081,4 @@ module.exports = {
   pageTabs: pageTabs,
 };
 
-},{"../../lib/features":4,"../../lib/project-format":10}]},{},[43,42]);
+},{"../../lib/features":5,"../../lib/project-format":11}]},{},[44,43]);

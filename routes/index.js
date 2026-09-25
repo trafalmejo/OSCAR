@@ -7,6 +7,7 @@ const { isLoopbackAddress } = require("../lib/net");
 const { buildExport } = require("../lib/export");
 const { markServed, rebake } = require("../lib/published");
 const { readConnection } = require("../lib/export/connection");
+const { surfaceStamp } = require("../lib/export/stamp");
 
 // Where an export finds its runtime, and the only folder it may inline from.
 const PUBLIC_DIR = require("path").join(__dirname, "..", "public");
@@ -298,10 +299,28 @@ module.exports = function createRouter({
     }
   });
 
+  // Each row carries the stamp of its widgets (lib/export/stamp.js), so the
+  // editor can say when a published copy is older than the canvas. Computed
+  // once per published version: the cache key is the file's date and size.
+  const stamps = new Map(); // id -> { key, stamp }
+  async function stampOf(page) {
+    const key = String(page.date) + "/" + page.size;
+    const held = stamps.get(page.id);
+    if (held && held.key === key) return held.stamp;
+    const html = await published.read(page.id);
+    const stamp = html === null ? "" : surfaceStamp(html);
+    stamps.set(page.id, { key, stamp });
+    return stamp;
+  }
+
   router.get("/published", editorOnly, async (req, res) => {
     try {
       const pages = published ? await published.list() : [];
-      res.json(pages.map((page) => Object.assign({ path: "/show/" + page.id }, page)));
+      const rows = [];
+      for (const page of pages) {
+        rows.push(Object.assign({ path: "/show/" + page.id, stamp: await stampOf(page) }, page));
+      }
+      res.json(rows);
     } catch (err) {
       console.error("Could not list published surfaces:", err.message);
       res.status(500).json({ error: "Could not read the published surfaces" });
