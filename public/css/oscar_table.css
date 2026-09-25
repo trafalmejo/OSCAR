@@ -189,3 +189,12 @@ th[aria-sort="descending"] .o-sort::after {
   line-height: 16px;
   vertical-align: 1px;
 }
+
+/* An assistant's draft: the same shape, the assistant green, so a reviewer
+   knows at a glance this was written by an assistant, not shipped with
+   OSCAR -- and unlike a template, it can be deleted. After .o-badge, which
+   it rides and recolours. */
+.o-table .o-badge-draft {
+  border-color: rgba(47, 191, 95, 0.55);
+  color: #8fe3ae;
+}

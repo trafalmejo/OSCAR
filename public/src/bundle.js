@@ -23136,10 +23136,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
           String(row.template ? row._id === selectedTemplate : !selectedTemplate && row._id === selectedId)
         );
         var name = projectCell(row.name);
+        // An assistant's draft rides the template mechanism but is not one:
+        // it is user data, badged apart and deletable below.
+        var isDraft = row.template && String(row._id).indexOf("assistant:") === 0;
         if (row.template) {
           var badge = document.createElement("span");
-          badge.className = "o-badge";
-          badge.textContent = "Template";
+          badge.className = isDraft ? "o-badge o-badge-draft" : "o-badge";
+          badge.textContent = isDraft ? "Draft" : "Template";
+          if (isDraft) badge.setAttribute("title", "Written by an assistant through MCP. Review it before it goes anywhere near the rig.");
           name.appendChild(badge);
         }
         tr.appendChild(name);
@@ -23162,8 +23166,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
         };
         projectsBody.appendChild(tr);
 
-        // Templates ship with OSCAR and cannot be deleted.
-        if (row.template) return;
+        // Templates ship with OSCAR and cannot be deleted; a draft can.
+        if (row.template && !isDraft) return;
 
         var remove = document.createElement("button");
         remove.type = "button";
@@ -23199,19 +23203,24 @@ function initGrape(ipServer, socketPort, oscInPort) {
   });
 
   function confirmRemove(row) {
+    var draft = row.template && String(row._id).indexOf("assistant:") === 0;
     $.confirm({
-      title: "Delete Project",
-      content:
-        "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
+      title: draft ? "Delete Draft" : "Delete Project",
+      content: draft
+        ? "Delete this assistant-written draft? Anything you loaded from it and saved as a project stays."
+        : "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
       buttons: {
         confirm: function () {
-          $.ajax({ type: "DELETE", url: "/remove/" + row._id })
+          var call = draft
+            ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
+            : $.ajax({ type: "DELETE", url: "/remove/" + row._id });
+          call
             .done(function (data) {
               refreshProjects();
               $.alert(data.error || data.msg);
             })
             .fail(function () {
-              $.alert("Could not delete that project");
+              $.alert(draft ? "Could not delete that draft" : "Could not delete that project");
             });
         },
         cancel: function () {},

@@ -400,6 +400,17 @@ module.exports = function createRouter({
     });
   });
 
+  // A draft is user data, not a shipped template: deletable, from the Load
+  // list's own delete button. The same flat-name guard as serving it.
+  router.delete("/drafts/:file", editorOnly, (req, res) => {
+    const file = String(req.params.file || "");
+    if (!draftsDir || !/^[a-z0-9][a-z0-9-]*\.html$/.test(file)) return res.status(404).json({ error: "No such draft." });
+    require("fs").unlink(require("path").join(draftsDir, file), (err) => {
+      if (err) return res.status(404).json({ error: "No such draft." });
+      res.json({ msg: "Draft deleted" });
+    });
+  });
+
   // ---- Local project library --------------------------------------------
   router.get("/projects", editorOnly, async (req, res) => {
     try {

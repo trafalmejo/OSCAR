@@ -242,3 +242,18 @@ test("the MCP pill sits to the left of the LIVE pill and speaks plainly", () => 
   const theme = readSource("public", "css", "oscar_theme.css");
   assert.match(theme, /\.oscar-mcp-word \{\n  text-decoration: line-through;/, "off is struck through, the LIVE pill's own off-language");
 });
+
+test("a draft in the Load list is badged Draft, in the assistant green, and can be deleted", () => {
+  const editor = readSource("public", "src", "oscar_editor.js");
+  assert.match(editor, /String\(row\._id\)\.indexOf\("assistant:"\) === 0/, "known by its id prefix");
+  assert.match(editor, /badge\.textContent = isDraft \? "Draft" : "Template";/, "badged apart from shipped templates");
+  assert.match(editor, /Written by an assistant through MCP\. Review it/, "the badge says where it came from");
+  assert.match(editor, /if \(row\.template && !isDraft\) return;/, "templates keep their no-delete rule; drafts do not");
+  assert.match(editor, /DELETE", url: "\/drafts\/"/, "deleted through the drafts route");
+  const routes = readSource("routes", "index.js");
+  assert.match(routes, /router\.delete\("\/drafts\/:file", editorOnly/, "the route exists");
+  const table = readSource("public", "css", "oscar_table.css");
+  const base = table.indexOf(".o-table .o-badge {");
+  const draft = table.indexOf(".o-table .o-badge-draft {");
+  assert.ok(base !== -1 && draft !== -1 && base < draft, "the draft recolour comes after the base badge, or the cascade undoes it");
+});
