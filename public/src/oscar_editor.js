@@ -466,6 +466,16 @@ function initGrape(ipServer, socketPort, oscInPort) {
   sectionLights(editor, {
     root: document.querySelector(".gjs-pn-views-container") || document.body,
     listeningPort: oscInPort,
+    serial: features.SERIAL
+      ? {
+          state: function () {
+            return window.oscarSerialForPanel ? window.oscarSerialForPanel.state() : {};
+          },
+          pick: function (path) {
+            if (window.oscarSerialForPanel) window.oscarSerialForPanel.pick(path);
+          },
+        }
+      : null,
   });
 
   // The MIDI ports this computer has, for a widget's Port setting to suggest.
@@ -490,8 +500,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
   }
 
-  // The serial ports, for a DMX widget's Interface to choose from. Asked the
-  // same way: dongles come and go with the cable.
+  // The serial ports, for a DMX widget's Interface and the OSC Board to
+  // choose from, and the cable's own state, for the Board row to say. Asked
+  // the same way: dongles come and go with the cable.
+  var serialLink = { path: "", state: "idle", error: null, bitrate: null };
   {
     var askForSerialPorts = function () {
       fetch("/serial")
@@ -499,7 +511,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
           return res.ok ? res.json() : null;
         })
         .then(function (report) {
-          if (report && Array.isArray(report.ports)) {
+          if (!report) return;
+          serialLink = report;
+          if (Array.isArray(report.ports)) {
             suggest(
               "serial-ports",
               report.ports.map(function (port) {
@@ -513,6 +527,28 @@ function initGrape(ipServer, socketPort, oscInPort) {
     };
     askForSerialPorts();
     editor.on("component:selected", askForSerialPorts);
+    window.oscarSerialForPanel = {
+      state: function () {
+        return serialLink;
+      },
+      pick: function (path) {
+        fetch("/serial", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(path ? { action: "connect", path: path } : { action: "disconnect" }),
+        })
+          .then(function (res) {
+            return res.json().catch(function () {
+              return {};
+            });
+          })
+          .then(function (answer) {
+            if (answer && answer.error) $.alert(answer.error);
+          })
+          .catch(function () {})
+          .then(askForSerialPorts);
+      },
+    };
     // Learn, and ticking Data in, can name a port the dropdown has not got.
   // ---- the bridge's confirmation -------------------------------------------
   // Only the same protocol both ways can loop: OSC in with OSC bridged out,
@@ -1510,20 +1546,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
     .catch(function () {});
 
   // ---- serial -------------------------------------------------------------
-  // The panel is its own script (oscar_serial.js); it adds its own button
-  // here, between the lock and About. Not offered while the feature is off
-  // (lib/features.js), which also spares the server its two-second poll.
-  if (features.SERIAL && typeof oscar_serial === "function") {
-    oscar_serial({
-      panels: pn,
-      openModal: function () {
-        setModal("Serial (Arduino)", "serial-panel");
-      },
-      alert: function (text) {
-        $.alert(text);
-      },
-    });
-  }
+  // No panel: the cable is picked where it is used, the Board row the
+  // settings panel draws under a widget's Via (adapters/grapesjs.js).
 
   // About, behind OSCAR's own mark. An extension may add to it, ahead of
   // OSCAR's words (aboutDialog.addSection below): what this OSCAR is, to whom.

@@ -9,7 +9,7 @@ const { PLACEMENTS, moveAfter, arrange } = require("../lib/toolbar-order");
 const ADDED = [
   "sw-visibility", "preview", "fullscreen", "export-template", "undo", "redo",
   "gjs-open-import-webpage", "canvas-clear", "open-styles", "open-save", "open-pages",
-  "open-load", "oscar-export", "toggle-lock", "open-serial", "open-info",
+  "open-load", "oscar-export", "toggle-lock", "open-info",
 ];
 
 test("the lock sits beside Push to preview, Pages beside the widget style, and a project's buttons read Load, Save, Import, Publish", () => {

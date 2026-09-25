@@ -17,9 +17,12 @@
   widget. For an Enttec Pro or DMXKing interface, or an Art-Net or sACN node
   on the network, select every widget and set Protocol.
 
-  Where two controls drive one channel -- the pad and the pan fader, the
-  swatch and the red fader, a FLASH key and its fader -- the highest wins,
-  as on any desk.
+  Only the faders and the FLASH keys send DMX. The pad, the swatch, the
+  dropdowns and the programs move faders, and show where the faders are;
+  the script at the end of the page does that, and never lets the two
+  directions meet, so a level arriving from outside and a hand never fight.
+  Where a FLASH key and its fader drive one channel, the highest wins, as
+  on any desk.
 
   Open it from Load, or paste this whole file into Import. It is ordinary
   HTML and CSS with two OSCAR additions:
@@ -698,7 +701,7 @@ body:not([data-osc-style="own"]) .dmx-scribble {
       <div id="dmx-manual-row-8" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-8" class="dmx-manual-key" data-gjs-dmode="flow">CH9</dt>
         <dd id="dmx-manual-address-8" class="dmx-manual-address" data-gjs-dmode="flow">Reset</dd>
-        <dd id="dmx-manual-note-8" class="dmx-manual-note" data-gjs-dmode="flow">The fixture resets between 150 and 200; the dropdown puts fader 9 at 175, then back to 0.</dd>
+        <dd id="dmx-manual-note-8" class="dmx-manual-note" data-gjs-dmode="flow">The fixture resets between 150 and 200; the dropdown puts fader 9 at 175; choose Normal again to put it back at 0.</dd>
       </div>
       <div id="dmx-manual-row-9" class="dmx-manual-row" data-gjs-dmode="flow">
         <dt id="dmx-manual-key-9" class="dmx-manual-key" data-gjs-dmode="flow">FLASH</dt>
@@ -722,9 +725,12 @@ body:not([data-osc-style="own"]) .dmx-scribble {
   var pad = byId("dmx-pad"), swatch = byId("dmx-colour"), mode = byId("dmx-mode"), reset = byId("dmx-reset");
   if (!fader(1)) return;
 
-  // One control moving another: the other must not move it back.
-  var busy = false;
-  function guard(fn) { if (busy) return; busy = true; try { fn(); } finally { busy = false; } }
+  // Two directions, never mixed. A hand on the pad, the swatch, a dropdown or a
+  // program moves faders, as a hand would, and the faders send. The faders
+  // are only ever shown on the others: nothing is sent, nothing is pressed,
+  // and nothing listens to that, so data in and a hand can never bounce off
+  // each other. Only a hand on this device drives: a program lit by another
+  // device is that device's to act on, and its faders reach here anyway.
   var clamp = function (v) { return Math.max(0, Math.min(255, Math.round(v))); };
 
   // A fader moved from here moves as a hand moves it: the widget sends and shares on "input".
@@ -736,87 +742,79 @@ body:not([data-osc-style="own"]) .dmx-scribble {
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  // The pad: the widget keeps its position in --oscar-x / --oscar-y, left and top in percent.
-  // While a finger is on it, nothing else may move it: a press from here would end the drag.
-  var dragging = false, pressing = false;
-  function padLevels() {
-    var x = parseFloat(pad.style.getPropertyValue("--oscar-x")); if (isNaN(x)) x = 0;
-    var y = parseFloat(pad.style.getPropertyValue("--oscar-y")); if (isNaN(y)) y = 100;
-    return [clamp(x / 100 * 255), clamp((1 - y / 100) * 255)];
-  }
-  function movePad(x, y) {
+  // The pad: faders 1 and 2 from where the finger is, worked out as the pad
+  // itself does. While the finger is down the pad is not redrawn under it.
+  var dragging = false;
+  function fromFinger(e) {
     var r = pad.getBoundingClientRect(); if (!r.width || !r.height) return;
-    var cx = r.left + x / 255 * r.width, cy = r.top + (1 - y / 255) * r.height;
-    pressing = true;
-    try {
-      ["pointerdown", "pointerup"].forEach(function (type) {
-        pad.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: cx, clientY: cy, pointerId: 1, isPrimary: true, button: 0 }));
-      });
-    } finally { pressing = false; }
+    var px = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    var py = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    setFader(1, px * 255);
+    setFader(2, (1 - py) * 255);
   }
   if (pad) {
-    pad.addEventListener("pointerdown", function () { if (!pressing) dragging = true; });
-    ["pointerup", "pointercancel"].forEach(function (type) { pad.addEventListener(type, function () { if (!pressing) dragging = false; }); });
-    new MutationObserver(function () {
-      var l = padLevels();
-      guard(function () { setFader(1, l[0]); setFader(2, l[1]); });
-    }).observe(pad, { attributes: true, attributeFilter: ["style"] });
+    pad.addEventListener("pointerdown", function (e) { if (!e.isTrusted) return; dragging = true; fromFinger(e); });
+    pad.addEventListener("pointermove", function (e) { if (e.isTrusted && dragging) fromFinger(e); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (type) {
+      pad.addEventListener(type, function (e) { if (!e.isTrusted || !dragging) return; if (type === "pointerup") fromFinger(e); dragging = false; });
+    });
+    window.addEventListener("blur", function () { dragging = false; });
   }
-
-  // The programs: a toggle lit puts its faders at full; let go, at 0. Watched by their
-  // class, so a program switched on another device works the faders here too.
-  var PROGRAMS = { "red": [4], "green": [5], "blue": [6], "white": [7], "all": [4, 5, 6, 7], "slow": [8] };
-  Object.keys(PROGRAMS).forEach(function (id) {
-    var key = byId("dmx-" + id); if (!key) return;
-    var was = key.classList.contains("toggle");
-    new MutationObserver(function () {
-      var on = key.classList.contains("toggle");
-      if (on === was) return;
-      was = on;
-      guard(function () { PROGRAMS[id].forEach(function (n) { setFader(n, on ? 255 : 0); }); });
-    }).observe(key, { attributes: true, attributeFilter: ["class"] });
-  });
 
   // The swatch: r, g, b are faders 4, 5, 6.
-  var hex = function (n) { return ("0" + clamp(n).toString(16)).slice(-2); };
-  if (swatch) {
-    swatch.addEventListener("input", function () {
-      var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(swatch.value); if (!m) return;
-      guard(function () { setFader(4, parseInt(m[1], 16)); setFader(5, parseInt(m[2], 16)); setFader(6, parseInt(m[3], 16)); });
-    });
-  }
+  if (swatch) swatch.addEventListener("input", function (e) {
+    if (!e.isTrusted) return;
+    var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(swatch.value); if (!m) return;
+    setFader(4, parseInt(m[1], 16)); setFader(5, parseInt(m[2], 16)); setFader(6, parseInt(m[3], 16));
+  });
 
   // The dropdowns: a mode is a level on fader 3, reset a level on fader 9.
   function couple(select, n) {
-    if (!select) return;
-    select.addEventListener("input", function () { guard(function () { setFader(n, Number(select.value)); }); });
+    if (select) select.addEventListener("input", function (e) { if (e.isTrusted) setFader(n, Number(select.value)); });
   }
   couple(mode, 3);
   couple(reset, 9);
 
-  // The faders are the truth, however they moved: a hand, a program key, another
-  // device, the rig. Ten times a second the others are made to agree with them.
-  var shown = {};
-  function follow() {
-    var v = {}; for (var n = 1; n <= 9; n++) { var el = fader(n); v[n] = el ? clamp(el.value) : 0; }
-    guard(function () {
-      // The pad is moved only when it is not where the faders are, and never under a finger.
-      if (pad && !dragging) { var at = padLevels(); if (at[0] !== v[1] || at[1] !== v[2]) movePad(v[1], v[2]); }
-      if (swatch && (shown[4] !== v[4] || shown[5] !== v[5] || shown[6] !== v[6])) {
-        var h = "#" + hex(v[4]) + hex(v[5]) + hex(v[6]);
-        if (swatch.value.toLowerCase() !== h) { swatch.value = h; swatch.dispatchEvent(new Event("input", { bubbles: true })); }
-      }
-      [[mode, 3], [reset, 9]].forEach(function (pair) {
-        var select = pair[0], n = pair[1]; if (!select || shown[n] === v[n]) return;
-        // Shown only where an option is that exact level; otherwise the fader is between modes.
-        for (var i = 0; i < select.options.length; i++) {
-          if (Number(select.options[i].value) === v[n]) { if (select.selectedIndex !== i) { select.selectedIndex = i; select.dispatchEvent(new Event("input", { bubbles: true })); } break; }
-        }
-      });
+  // The programs: pressed on, their faders go to full; pressed off, to 0. Read
+  // after the widget's own click handler has flipped the key.
+  var PROGRAMS = { "red": [4], "green": [5], "blue": [6], "white": [7], "all": [4, 5, 6, 7], "slow": [8] };
+  Object.keys(PROGRAMS).forEach(function (id) {
+    var key = byId("dmx-" + id); if (!key) return;
+    key.addEventListener("click", function (e) {
+      if (!e.isTrusted) return;
+      setTimeout(function () {
+        var on = key.classList.contains("toggle");
+        PROGRAMS[id].forEach(function (n) { setFader(n, on ? 255 : 0); });
+      }, 0);
     });
-    shown = v;
+  });
+
+  // The faders are the truth, however they moved: a hand, the controls above,
+  // another device, the rig. The pad, the swatch and the dropdowns are drawn
+  // from them -- drawn only, the widget is not told, so nothing goes out --
+  // and never while a hand is on the one being drawn.
+  var hex = function (n) { return ("0" + clamp(n).toString(16)).slice(-2); };
+  function level(n) { var el = fader(n); return el ? clamp(el.value) : 0; }
+  function draw() {
+    if (pad && !dragging) {
+      var x = (level(1) / 255 * 100).toFixed(2) + "%", y = ((1 - level(2) / 255) * 100).toFixed(2) + "%";
+      if (pad.style.getPropertyValue("--oscar-x") !== x) pad.style.setProperty("--oscar-x", x);
+      if (pad.style.getPropertyValue("--oscar-y") !== y) pad.style.setProperty("--oscar-y", y);
+    }
+    if (swatch && doc.activeElement !== swatch) {
+      var h = "#" + hex(level(4)) + hex(level(5)) + hex(level(6));
+      if (swatch.value.toLowerCase() !== h) swatch.value = h;
+    }
+    [[mode, 3], [reset, 9]].forEach(function (pair) {
+      var select = pair[0], v = level(pair[1]);
+      if (!select || doc.activeElement === select) return;
+      // Shown only where an option is that exact level; otherwise the fader is between modes.
+      for (var i = 0; i < select.options.length; i++) {
+        if (Number(select.options[i].value) === v) { if (select.selectedIndex !== i) select.selectedIndex = i; return; }
+      }
+    });
   }
-  setInterval(follow, 100);
+  setInterval(draw, 50);
 })();
 </script>
 </body>

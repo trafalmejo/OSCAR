@@ -1019,6 +1019,10 @@ function sectionLights(editor, options) {
   }
   // What the server said of itself: { listeningPort }, the one OSC in port.
   var server = { listeningPort: options && options.listeningPort };
+  // And the serial cable: what the host says of it ({ path, state, error },
+  // told through options.serial.state) and how to pick a board
+  // (options.serial.pick(path)). The adapter knows no routes.
+  var serial = (options && options.serial) || null;
   var watched = null;
   var unwatch = null;
 
@@ -1120,6 +1124,76 @@ function sectionLights(editor, options) {
       }
     }
 
+    // The Board: the one serial cable, picked where it is used. Drawn while
+    // the selected widget's Via says Serial cable, right under the Via row,
+    // as Port in is drawn under Data in. Picking writes through to the host,
+    // and every widget's Board row shows the same cable: one board, said in
+    // every place that depends on it.
+    if (oscSection && typeof oscSection.querySelector === "function" && serial) {
+      var viaRow = oscSection.querySelector('[data-oscar-field="oscVia"]');
+      var boardRow = oscSection.querySelector(".oscar-board");
+      var onCable = config.oscVia === "serial";
+      if (!onCable || !viaRow) {
+        if (boardRow) boardRow.parentNode.removeChild(boardRow);
+      } else {
+        if (!boardRow) {
+          boardRow = doc.createElement("div");
+          boardRow.className = "gjs-trt-trait__wrp oscar-board";
+          var boardTrait = doc.createElement("div");
+          boardTrait.className = "gjs-trt-trait gjs-trt-trait--select";
+          var boardLabelBox = doc.createElement("div");
+          boardLabelBox.className = "gjs-label-wrp";
+          var boardLabel = doc.createElement("div");
+          boardLabel.className = "gjs-label";
+          boardLabel.textContent = "Board";
+          boardLabelBox.appendChild(boardLabel);
+          var boardFieldBox = doc.createElement("div");
+          boardFieldBox.className = "gjs-field-wrp gjs-field-wrp--select";
+          var boardField = doc.createElement("div");
+          boardField.className = "gjs-field gjs-field-select";
+          var select = doc.createElement("select");
+          select.addEventListener("change", function () {
+            serial.pick(select.value);
+          });
+          boardField.appendChild(select);
+          boardFieldBox.appendChild(boardField);
+          boardTrait.appendChild(boardLabelBox);
+          boardTrait.appendChild(boardFieldBox);
+          boardRow.appendChild(boardTrait);
+        }
+        if (viaRow.nextSibling !== boardRow) viaRow.parentNode.insertBefore(boardRow, viaRow.nextSibling);
+        var link = serial.state() || {};
+        var choices = [{ id: "", name: "Pick a board..." }];
+        (suggestions["serial-ports"] || []).forEach(function (entry) {
+          choices.push({ id: entry.id, name: entry.name });
+        });
+        if (link.path && !choices.some(function (choice) { return choice.id === link.path; })) {
+          choices.push({ id: link.path, name: link.path + " (not connected)" });
+        }
+        var boardSelect = boardRow.querySelector("select");
+        var ids = choices.map(function (choice) { return choice.id; }).join("|");
+        if (boardSelect.getAttribute("data-choices") !== ids) {
+          boardSelect.setAttribute("data-choices", ids);
+          boardSelect.textContent = "";
+          choices.forEach(function (choice) {
+            var option = doc.createElement("option");
+            option.value = choice.id;
+            option.textContent = choice.name;
+            boardSelect.appendChild(option);
+          });
+        }
+        if (boardSelect.value !== (link.path || "")) boardSelect.value = link.path || "";
+        var said =
+          link.state === "open"
+            ? "Connected to " + link.path + " at " + link.bitrate + " baud."
+            : link.state === "waiting"
+            ? "Waiting for " + link.path + (link.error ? " (" + link.error + ")" : "") + "."
+            : "No board yet: pick the port it is on. One cable for the whole of OSCAR.";
+        boardRow.setAttribute("title", said);
+        boardRow.setAttribute("data-serial-state", link.state || "idle");
+      }
+    }
+
     // GrapesJS puts a trait's attributes on the wrapper around its row.
     var hinted = root.querySelectorAll(".gjs-trt-trait__wrp[title]");
     Array.prototype.forEach.call(hinted, function (row) {
@@ -1181,7 +1255,7 @@ function sectionLights(editor, options) {
     unwatch = null;
     watched = model || null;
     if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:midiListen change:ip change:port";
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:midiListen change:ip change:port change:oscVia";
     watched.on(events, paint);
     unwatch = function () {
       watched.off(events, paint);

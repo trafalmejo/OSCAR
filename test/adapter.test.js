@@ -1034,3 +1034,18 @@ test("Port in is the server's, shown beside Port out and never edited", () => {
   assert.strictEqual(slider.fields.find((f) => f.key === "port").label, "Port out");
   assert.ok(!slider.fields.some((f) => f.key === "oscInPort"), "not a setting: nothing is stored");
 });
+
+test("the Board is picked where it is used: under Via, one cable for the whole of OSCAR, no panel", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "adapters", "grapesjs.js"), "utf8");
+  assert.match(src, /oscar-board/);
+  assert.match(src, /config\.oscVia === "serial"/, "drawn while Via says the cable");
+  assert.match(src, /serial\.pick\(select\.value\)/, "picking writes through to the host");
+  assert.match(src, /Pick a board\.\.\./, "and nothing is grabbed until a person picks");
+  const editor = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
+  assert.match(editor, /action: "connect", path: path/);
+  assert.ok(!editor.includes("oscar_serial("), "the panel is retired");
+  const page = fs.readFileSync(path.join(__dirname, "..", "public", "index.ejs"), "utf8");
+  assert.ok(!/oscar_serial|partials\/serial/.test(page));
+});

@@ -1,0 +1,911 @@
+<!doctype html>
+<html>
+<head>
+<title>DMX Console, 12 Channels</title>
+<!--
+  DMX Console, 12 Channels: a generic lighting desk with an effect engine.
+  Twelve channel strips, each a fader, a SEL key, a FLASH key and a scribble
+  strip, for whatever fixtures sit on DMX channels 1 to 12. Above them the
+  effects: six waves (sine, triangle, square, saw, random, chase) that move
+  the selected faders, with Speed, Size, Base and Spread, a TAP key for the
+  tempo, STOP and BLACKOUT. The card on the right says how it works.
+
+  The faders and the FLASH keys are the only controls on the wire: DMX out
+  on, OSC out off, on an Open DMX USB interface (the first FTDI one found;
+  name the port in Node or port to pick one). For an Enttec Pro or DMXKing
+  interface, or an Art-Net or sACN node on the network, select the faders
+  and the FLASH keys and set Protocol. Everything in the effect section
+  sends nothing of its own.
+
+  The effects are the script at the end of the page. It runs the effect on
+  the device where it was started, and moves the faders there as a hand
+  would, so they send DMX and every other device sees them move. Three
+  rules keep it from fighting anything else:
+  - only the script moves a fader while it animates it, and it never moves
+    one control from another;
+  - a hand on a fader it is animating -- here or on another device -- or a
+    level arriving for that fader from outside takes the channel out of
+    the effect (its SEL goes off);
+  - an effect is started only by a hand on this device: an effect key lit
+    by another device is shown, not run, so two devices never run one
+    effect twice. Turning it off anywhere stops it.
+  A page in the background runs its timers once a second, so keep the
+  device running the effect in front.
+
+  Open it from Load, or paste this whole file into Import. It is ordinary
+  HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-dmx-channel is
+    its channel) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the desk is redrawn in that style's colours: every rule
+    that paints is written for "own" alone, and a short set of rules further
+    down, made of tokens only, dresses it for the others.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries. On a phone the strips go four a row.
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #17181b;
+  --osc-foreground: #e9e4d6;
+  --osc-card: #202226;
+  --osc-muted: #2b2d33;
+  --osc-accent: #f2c14e;
+  --osc-accent-foreground: #1b1300;
+  --osc-border: #0a0a0c;
+  --osc-input: #0a0a0c;
+  --osc-primary: #f2c14e;
+  --osc-primary-foreground: #1b1300;
+  --osc-ring: #ff8a3d;
+  --osc-radius: 6px;
+  --osc-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --osc-thumb: 30px;
+  --osc-track-size: 8px;
+}
+
+.dgc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+  min-height: 100vh;
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+[data-osc-style="own"] .dgc {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(242, 193, 78, 0.08), transparent 50%),
+    linear-gradient(180deg, #0f1012, #08090a);
+}
+
+/* ---- the desk: black steel, a cream stripe ---- */
+.dgc-desk {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 14px;
+  min-width: 0;
+}
+
+[data-osc-style="own"] .dgc-desk {
+  border: 1px solid #000;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #2a2c31, #191b1f 40%, #141618);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.dgc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 4px 10px;
+}
+
+[data-osc-style="own"] .dgc-head {
+  border-bottom: 2px solid #f2c14e;
+}
+
+.dgc-brand {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .dgc-brand {
+  color: #f2c14e;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.dgc-model {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .dgc-model {
+  color: #8a8f99;
+}
+
+/* ---- the effect section ---- */
+.dgc-fx {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+  gap: 16px;
+}
+
+.dgc-block {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  align-content: start;
+  min-width: 0;
+}
+
+[data-osc-style="own"] .dgc-block {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #1c1e22, #141619);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dgc-block-name {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .dgc-block-name {
+  color: #8a8f99;
+}
+
+.dgc-waves {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dgc-params {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.dgc-param {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dgc-param-name {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+[data-osc-style="own"] .dgc-param-name {
+  color: #c9cdd4;
+}
+
+.dgc-readout {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-osc-style="own"] .dgc-readout {
+  color: #f2c14e;
+}
+
+.dgc-slider {
+  width: 100%;
+}
+
+.dgc-master {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 120px;
+}
+
+/* ---- keys ---- */
+.dgc-key {
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+[data-osc-style="own"] .dgc-key {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #3a3d44, #24262b);
+  color: #c9cdd4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 0 #0a0a0c;
+}
+
+[data-osc-style="own"] .dgc-key:hover {
+  background: linear-gradient(180deg, #454850, #2b2e34);
+  color: #f1f3f6;
+}
+
+.dgc-key.toggle {
+  transform: translateY(2px);
+}
+
+[data-osc-style="own"] .dgc-key.toggle {
+  background: linear-gradient(180deg, #f2c14e, #d9a12a);
+  color: #1b1300;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(242, 193, 78, 0.55);
+}
+
+[data-osc-style="own"] .dgc-select.toggle {
+  background: linear-gradient(180deg, #5fd47c, #2f9a4a);
+  color: #05200c;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 12px rgba(95, 212, 124, 0.55);
+}
+
+[data-osc-style="own"] .dgc-blackout {
+  background: linear-gradient(180deg, #7a2a24, #4d1511);
+  color: #ffd9d4;
+}
+
+[data-osc-style="own"] .dgc-blackout.toggle {
+  background: linear-gradient(180deg, #ff5a4a, #c92d20);
+  color: #2a0b06;
+  box-shadow: 0 1px 0 #0a0a0c, 0 0 14px rgba(255, 90, 74, 0.6);
+}
+
+/* ---- the channel strips ---- */
+.dgc-strips {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px 10px 10px;
+  border-radius: 10px;
+}
+
+[data-osc-style="own"] .dgc-strips {
+  border: 1px solid #000;
+  background: linear-gradient(180deg, #1c1e22, #141619);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dgc-strip {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dgc-number {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+[data-osc-style="own"] .dgc-number {
+  color: #8a8f99;
+}
+
+.dgc-fader {
+  width: 40px;
+  height: 200px;
+}
+
+[data-osc-style="own"] .dgc-fader::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #000, #16171a 50%, #000);
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.9);
+}
+
+[data-osc-style="own"] .dgc-fader::-moz-range-track {
+  background: linear-gradient(90deg, #000, #16171a 50%, #000);
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.9);
+}
+
+[data-osc-style="own"] .dgc-fader::-webkit-slider-thumb {
+  border: 1px solid #0a0a0c;
+  border-radius: 4px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0 2px, transparent 2px 6px), linear-gradient(180deg, #f6efd8, #c9c0a4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+
+[data-osc-style="own"] .dgc-fader::-moz-range-thumb {
+  border: 1px solid #0a0a0c;
+  border-radius: 4px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0 2px, transparent 2px 6px), linear-gradient(180deg, #f6efd8, #c9c0a4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+
+.dgc-select,
+.dgc-flash {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 2px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.dgc-scribble {
+  width: 100%;
+  margin: 0;
+  padding: 5px 2px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+[data-osc-style="own"] .dgc-scribble {
+  background: #f6efd8;
+  color: #1b1b1b;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- the card that says how it works ---- */
+.dgc-manual {
+  padding: 22px;
+  border-radius: 12px;
+}
+
+[data-osc-style="own"] .dgc-manual {
+  border: 1px solid #000;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 40%),
+    linear-gradient(180deg, #24262b, #191b1f);
+  color: #c9cdd4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 16px 40px rgba(0, 0, 0, 0.5);
+  font-family: "Courier New", Courier, monospace;
+}
+
+.dgc-manual-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.dgc-manual-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+[data-osc-style="own"] .dgc-manual-title {
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.dgc-manual-lead {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+[data-osc-style="own"] .dgc-manual-lead {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.dgc-manual-list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+
+.dgc-manual-row {
+  display: grid;
+  gap: 1px;
+}
+
+.dgc-manual-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.dgc-manual-address {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dgc-manual-note {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.dgc-manual-foot {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+[data-osc-style="own"] .dgc-manual-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ---- under any other widget style: the same object, in that style's colours ---- */
+body:not([data-osc-style="own"]) .dgc {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .dgc-desk,
+body:not([data-osc-style="own"]) .dgc-manual {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .dgc-head {
+  border-bottom: 2px solid var(--osc-primary);
+}
+body:not([data-osc-style="own"]) .dgc-brand,
+body:not([data-osc-style="own"]) .dgc-readout {
+  color: var(--osc-primary);
+}
+body:not([data-osc-style="own"]) .dgc-model,
+body:not([data-osc-style="own"]) .dgc-block-name,
+body:not([data-osc-style="own"]) .dgc-param-name,
+body:not([data-osc-style="own"]) .dgc-number {
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .dgc-block,
+body:not([data-osc-style="own"]) .dgc-strips {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .dgc-scribble {
+  background: var(--osc-primary);
+  color: var(--osc-primary-foreground);
+}
+
+@media (max-width: 992px) {
+  .dgc {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px;
+  }
+
+  .dgc-fx {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .dgc-block-master {
+    grid-column: 1 / -1;
+  }
+
+  .dgc-master {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dgc-strips {
+    gap: 5px;
+    padding: 12px 6px 8px;
+  }
+
+  .dgc-fader {
+    width: 34px;
+    height: 170px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dgc {
+    padding: 10px;
+  }
+
+  .dgc-desk {
+    padding: 12px;
+  }
+
+  .dgc-fx {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dgc-waves {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dgc-params {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dgc-strips {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px 8px;
+  }
+
+  .dgc-fader {
+    width: 40px;
+    height: 150px;
+  }
+}
+
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="dgc" class="dgc" data-gjs-dmode="flow">
+  <section id="dgc-desk" class="dgc-desk" data-gjs-dmode="flow">
+    <header id="dgc-head" class="dgc-head" data-gjs-dmode="flow">
+      <h1 id="dgc-brand" class="dgc-brand" data-gjs-dmode="flow">OSCAR</h1>
+      <p id="dgc-model" class="dgc-model" data-gjs-dmode="flow">DMX Console &middot; 12 channels &middot; effects</p>
+    </header>
+
+    <div id="dgc-fx" class="dgc-fx" data-gjs-dmode="flow">
+      <div id="dgc-block-waves" class="dgc-block" data-gjs-dmode="flow">
+        <h3 id="dgc-block-waves-name" class="dgc-block-name" data-gjs-dmode="flow">Effect</h3>
+        <div id="dgc-waves" class="dgc-waves" data-gjs-dmode="flow">
+        <button id="dgc-wave-sine" class="dgc-key dgc-wave" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/wave/sine" data-gjs-value-on="1" data-gjs-value-off="0">SINE</button>
+        <button id="dgc-wave-triangle" class="dgc-key dgc-wave" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/wave/triangle" data-gjs-value-on="1" data-gjs-value-off="0">TRIANGLE</button>
+        <button id="dgc-wave-square" class="dgc-key dgc-wave" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/wave/square" data-gjs-value-on="1" data-gjs-value-off="0">SQUARE</button>
+        <button id="dgc-wave-saw" class="dgc-key dgc-wave" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/wave/saw" data-gjs-value-on="1" data-gjs-value-off="0">SAW</button>
+        <button id="dgc-wave-random" class="dgc-key dgc-wave" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/wave/random" data-gjs-value-on="1" data-gjs-value-off="0">RANDOM</button>
+        <button id="dgc-wave-chase" class="dgc-key dgc-wave" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/wave/chase" data-gjs-value-on="1" data-gjs-value-off="0">CHASE</button>
+        </div>
+      </div>
+      <div id="dgc-block-params" class="dgc-block" data-gjs-dmode="flow">
+        <h3 id="dgc-block-params-name" class="dgc-block-name" data-gjs-dmode="flow">Shape</h3>
+        <div id="dgc-params" class="dgc-params" data-gjs-dmode="flow">
+        <div id="dgc-param-speed" class="dgc-param" data-gjs-dmode="flow">
+          <p id="dgc-param-speed-name" class="dgc-param-name" data-gjs-dmode="flow"><span id="dgc-param-speed-label" data-gjs-dmode="flow">Speed</span><span id="dgc-readout-speed" class="dgc-readout" data-gjs-dmode="flow"></span></p>
+          <input id="dgc-speed" class="dgc-slider" type="range" step="1" min="20" max="300" orient="horizontal" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-message="/fx/speed" data-gjs-min="20" data-gjs-max="300" data-gjs-value="60" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+        </div>
+        <div id="dgc-param-size" class="dgc-param" data-gjs-dmode="flow">
+          <p id="dgc-param-size-name" class="dgc-param-name" data-gjs-dmode="flow"><span id="dgc-param-size-label" data-gjs-dmode="flow">Size</span><span id="dgc-readout-size" class="dgc-readout" data-gjs-dmode="flow"></span></p>
+          <input id="dgc-size" class="dgc-slider" type="range" step="1" min="0" max="255" orient="horizontal" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-message="/fx/size" data-gjs-min="0" data-gjs-max="255" data-gjs-value="255" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+        </div>
+        <div id="dgc-param-base" class="dgc-param" data-gjs-dmode="flow">
+          <p id="dgc-param-base-name" class="dgc-param-name" data-gjs-dmode="flow"><span id="dgc-param-base-label" data-gjs-dmode="flow">Base</span><span id="dgc-readout-base" class="dgc-readout" data-gjs-dmode="flow"></span></p>
+          <input id="dgc-base" class="dgc-slider" type="range" step="1" min="0" max="255" orient="horizontal" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-message="/fx/base" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+        </div>
+        <div id="dgc-param-spread" class="dgc-param" data-gjs-dmode="flow">
+          <p id="dgc-param-spread-name" class="dgc-param-name" data-gjs-dmode="flow"><span id="dgc-param-spread-label" data-gjs-dmode="flow">Spread</span><span id="dgc-readout-spread" class="dgc-readout" data-gjs-dmode="flow"></span></p>
+          <input id="dgc-spread" class="dgc-slider" type="range" step="1" min="0" max="100" orient="horizontal" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-message="/fx/spread" data-gjs-min="0" data-gjs-max="100" data-gjs-value="0" data-gjs-orientation="horizontal" data-gjs-arg-type="i">
+        </div>
+        </div>
+      </div>
+      <div id="dgc-block-master" class="dgc-block dgc-block-master" data-gjs-dmode="flow">
+        <h3 id="dgc-block-master-name" class="dgc-block-name" data-gjs-dmode="flow">Master</h3>
+        <div id="dgc-master" class="dgc-master" data-gjs-dmode="flow">
+          <button id="dgc-tap" class="dgc-key dgc-tap" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-message="/fx/tap" data-gjs-value-on="1" data-gjs-value-off="0">TAP</button>
+          <button id="dgc-stop" class="dgc-key dgc-stop" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-message="/fx/stop" data-gjs-value-on="1" data-gjs-value-off="0">STOP</button>
+          <button id="dgc-blackout" class="dgc-key dgc-blackout" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-message="/fx/blackout" data-gjs-value-on="1" data-gjs-value-off="0">BLACKOUT</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dgc-strips" class="dgc-strips" data-gjs-dmode="flow">
+    <div id="dgc-strip-1" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-1" class="dgc-number" data-gjs-dmode="flow">CH 1</p>
+      <button id="dgc-select-1" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/1" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-1" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/1" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-1" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="1" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/1" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-1" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-2" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-2" class="dgc-number" data-gjs-dmode="flow">CH 2</p>
+      <button id="dgc-select-2" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/2" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-2" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="2" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/2" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-2" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="2" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/2" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-2" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-3" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-3" class="dgc-number" data-gjs-dmode="flow">CH 3</p>
+      <button id="dgc-select-3" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/3" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-3" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/3" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-3" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="3" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/3" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-3" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-4" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-4" class="dgc-number" data-gjs-dmode="flow">CH 4</p>
+      <button id="dgc-select-4" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/4" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-4" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/4" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-4" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="4" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/4" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-4" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-5" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-5" class="dgc-number" data-gjs-dmode="flow">CH 5</p>
+      <button id="dgc-select-5" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/5" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-5" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/5" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-5" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="5" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/5" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-5" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-6" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-6" class="dgc-number" data-gjs-dmode="flow">CH 6</p>
+      <button id="dgc-select-6" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/6" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-6" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/6" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-6" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="6" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/6" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-6" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-7" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-7" class="dgc-number" data-gjs-dmode="flow">CH 7</p>
+      <button id="dgc-select-7" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/7" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-7" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/7" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-7" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="7" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/7" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-7" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-8" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-8" class="dgc-number" data-gjs-dmode="flow">CH 8</p>
+      <button id="dgc-select-8" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/8" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-8" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/8" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-8" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="8" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/8" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-8" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-9" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-9" class="dgc-number" data-gjs-dmode="flow">CH 9</p>
+      <button id="dgc-select-9" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/9" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-9" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/9" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-9" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="9" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/9" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-9" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-10" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-10" class="dgc-number" data-gjs-dmode="flow">CH 10</p>
+      <button id="dgc-select-10" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/10" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-10" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="10" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/10" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-10" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="10" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/10" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-10" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-11" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-11" class="dgc-number" data-gjs-dmode="flow">CH 11</p>
+      <button id="dgc-select-11" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/11" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-11" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="11" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/11" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-11" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="11" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/11" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-11" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    <div id="dgc-strip-12" class="dgc-strip" data-gjs-dmode="flow">
+      <p id="dgc-number-12" class="dgc-number" data-gjs-dmode="flow">CH 12</p>
+      <button id="dgc-select-12" class="dgc-key dgc-select" data-gjs-dmode="flow" data-gjs-mode="toggle" data-gjs-osc-enabled="false" data-gjs-message="/fx/select/12" data-gjs-value-on="1" data-gjs-value-off="0">SEL</button>
+      <input id="dgc-fader-12" class="dgc-fader" type="range" step="1" min="0" max="255" orient="vertical" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="12" data-gjs-dmx-count="1" data-gjs-message="/dmx/ch/12" data-gjs-min="0" data-gjs-max="255" data-gjs-value="0" data-gjs-orientation="vertical" data-gjs-listen="true" data-gjs-arg-type="i">
+      <button id="dgc-flash-12" class="dgc-key dgc-flash" data-gjs-dmode="flow" data-gjs-osc-enabled="false" data-gjs-dmx-enabled="true" data-gjs-dmx-protocol="opendmx" data-gjs-dmx-universe="1" data-gjs-dmx-channel="12" data-gjs-dmx-count="1" data-gjs-message="/dmx/flash/12" data-gjs-value-on="1" data-gjs-value-off="0">FLASH</button>
+      <p id="dgc-scribble-12" class="dgc-scribble" data-gjs-dmode="flow">Label</p>
+    </div>
+    </div>
+  </section>
+
+  <aside id="dgc-manual" class="dgc-manual" data-gjs-dmode="flow">
+    <p id="dgc-manual-eyebrow" class="dgc-manual-eyebrow" data-gjs-dmode="flow">How it works</p>
+    <h2 id="dgc-manual-title" class="dgc-manual-title" data-gjs-dmode="flow">12 channels, one effect</h2>
+    <p id="dgc-manual-lead" class="dgc-manual-lead" data-gjs-dmode="flow">Channels 1 to 12, on an Open DMX USB interface, the first found; nothing sends OSC. Patch your fixtures at addresses in that range and write their names on the scribble strips.</p>
+    <dl id="dgc-manual-list" class="dgc-manual-list" data-gjs-dmode="flow">
+      <div id="dgc-manual-row-1" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-1" class="dgc-manual-key" data-gjs-dmode="flow">The faders</dt>
+        <dd id="dgc-manual-address-1" class="dgc-manual-address" data-gjs-dmode="flow">Channels 1 to 12, one each</dd>
+        <dd id="dgc-manual-note-1" class="dgc-manual-note" data-gjs-dmode="flow">Only the faders and the FLASH keys send DMX. Everything else in the effect section drives the faders, and the faders send.</dd>
+      </div>
+      <div id="dgc-manual-row-2" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-2" class="dgc-manual-key" data-gjs-dmode="flow">SEL</dt>
+        <dd id="dgc-manual-address-2" class="dgc-manual-address" data-gjs-dmode="flow">Which channels the effect moves</dd>
+        <dd id="dgc-manual-note-2" class="dgc-manual-note" data-gjs-dmode="flow">Light the SEL key of each channel the effect should move. Start an effect with nothing selected and all twelve are selected for you.</dd>
+      </div>
+      <div id="dgc-manual-row-3" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-3" class="dgc-manual-key" data-gjs-dmode="flow">Effects</dt>
+        <dd id="dgc-manual-address-3" class="dgc-manual-address" data-gjs-dmode="flow">Sine, triangle, square, saw, random, chase</dd>
+        <dd id="dgc-manual-note-3" class="dgc-manual-note" data-gjs-dmode="flow">Press one to start it on the selected channels; press it again, or STOP, to stop. The faders stay where they were when it stopped. Chase lights one channel at a time, in order; random picks a new level every beat.</dd>
+      </div>
+      <div id="dgc-manual-row-4" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-4" class="dgc-manual-key" data-gjs-dmode="flow">Speed</dt>
+        <dd id="dgc-manual-address-4" class="dgc-manual-address" data-gjs-dmode="flow">Beats per minute, 20 to 300</dd>
+        <dd id="dgc-manual-note-4" class="dgc-manual-note" data-gjs-dmode="flow">One cycle of the wave, or one chase step, per beat. TAP sets it from the gap between your last taps.</dd>
+      </div>
+      <div id="dgc-manual-row-5" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-5" class="dgc-manual-key" data-gjs-dmode="flow">Size, base</dt>
+        <dd id="dgc-manual-address-5" class="dgc-manual-address" data-gjs-dmode="flow">How far, and from where</dd>
+        <dd id="dgc-manual-note-5" class="dgc-manual-note" data-gjs-dmode="flow">The fader moves between Base and Base plus Size, clipped at 255. Size 255 and Base 0 is the full travel.</dd>
+      </div>
+      <div id="dgc-manual-row-6" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-6" class="dgc-manual-key" data-gjs-dmode="flow">Spread</dt>
+        <dd id="dgc-manual-address-6" class="dgc-manual-address" data-gjs-dmode="flow">0 to 100% of a cycle</dd>
+        <dd id="dgc-manual-note-6" class="dgc-manual-note" data-gjs-dmode="flow">At 0 every selected channel moves together. Raise it and each one runs a little behind the one before, so the effect travels along the desk as a wave; at 100% they are spaced over one whole cycle. Chase and random ignore it.</dd>
+      </div>
+      <div id="dgc-manual-row-7" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-7" class="dgc-manual-key" data-gjs-dmode="flow">A hand wins</dt>
+        <dd id="dgc-manual-address-7" class="dgc-manual-address" data-gjs-dmode="flow">Touch a fader to take it back</dd>
+        <dd id="dgc-manual-note-7" class="dgc-manual-note" data-gjs-dmode="flow">Moving a fader that the effect is moving, here or on another device, or a level arriving for it from outside, takes that channel out of the effect: its SEL goes off and the fader is yours.</dd>
+      </div>
+      <div id="dgc-manual-row-8" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-8" class="dgc-manual-key" data-gjs-dmode="flow">FLASH</dt>
+        <dd id="dgc-manual-address-8" class="dgc-manual-address" data-gjs-dmode="flow">Full while held</dd>
+        <dd id="dgc-manual-note-8" class="dgc-manual-note" data-gjs-dmode="flow">Each strip's key sends 255 on its channel for as long as it is down, over the fader.</dd>
+      </div>
+      <div id="dgc-manual-row-9" class="dgc-manual-row" data-gjs-dmode="flow">
+        <dt id="dgc-manual-key-9" class="dgc-manual-key" data-gjs-dmode="flow">BLACKOUT</dt>
+        <dd id="dgc-manual-address-9" class="dgc-manual-address" data-gjs-dmode="flow">Every fader to 0</dd>
+        <dd id="dgc-manual-note-9" class="dgc-manual-note" data-gjs-dmode="flow">Stops the effect and puts all twelve faders at 0.</dd>
+      </div>
+    </dl>
+    <p id="dgc-manual-foot" class="dgc-manual-foot" data-gjs-dmode="flow">Run an effect from one device at a time. Another device sees the faders move and the effect key lit, and can stop it, take a channel back or black out.</p>
+  </aside>
+</div>
+<script id="dgc-script" type="module" data-gjs-dmode="flow">
+(function () {
+  var doc = document;
+  var byId = function (id) { return doc.getElementById(id); };
+  var N = 12;
+  var fader = function (n) { return byId("dgc-fader-" + n); };
+  var select = function (n) { return byId("dgc-select-" + n); };
+  if (!fader(1)) return;
+
+  var WAVES = ["sine", "triangle", "square", "saw", "random", "chase"];
+  var key = function (wave) { return byId("dgc-wave-" + wave); };
+  var lit = function (el) { return !!el && el.classList.contains("toggle"); };
+  var clamp = function (v) { return Math.max(0, Math.min(255, Math.round(v))); };
+  var param = function (id) { var el = byId("dgc-" + id); return el ? Number(el.value) : 0; };
+
+  // The effect this device runs, if any. Only a hand here starts one: an
+  // effect key lit by another device is that device's effect, shown, not run.
+  var running = null;
+  var started = 0;
+  // What this script last put on each fader it animates. A fader showing
+  // anything else was moved by someone else: a hand, another device, the rig.
+  var wrote = {};
+  var randoms = {};
+  var lastBeat = -1;
+
+  // A fader moved from here moves as a hand moves it: the widget sends and shares on "input".
+  function setFader(n, value) {
+    var el = fader(n); if (!el) return;
+    var v = String(clamp(value));
+    wrote[n] = v;
+    if (el.value === v) return;
+    el.value = v;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  // The keys are toggles; a click is how the widget flips one, here and on every device.
+  function setLit(el, on) { if (el && lit(el) !== on) el.click(); }
+
+  function stop() {
+    if (running) setLit(key(running), false);
+    running = null;
+    wrote = {};
+  }
+
+  // Someone else has this channel now: out of the effect, and the fader is theirs.
+  function release(n) {
+    delete wrote[n];
+    setLit(select(n), false);
+  }
+
+  function start(wave) {
+    // Starting one effect turns off the one before it, on whichever device it ran.
+    WAVES.forEach(function (w) { if (w !== wave) setLit(key(w), false); });
+    var any = false;
+    for (var n = 1; n <= N; n++) if (lit(select(n))) any = true;
+    if (!any) for (var m = 1; m <= N; m++) setLit(select(m), true);
+    running = wave;
+    started = performance.now();
+    wrote = {};
+    randoms = {};
+    lastBeat = -1;
+  }
+
+  // Read after the widget's own click handler has flipped the key.
+  WAVES.forEach(function (wave) {
+    var el = key(wave); if (!el) return;
+    el.addEventListener("click", function (e) {
+      if (!e.isTrusted) return;
+      setTimeout(function () { if (lit(el)) start(wave); else if (running === wave) stop(); }, 0);
+    });
+  });
+
+  var stopKey = byId("dgc-stop");
+  if (stopKey) stopKey.addEventListener("click", function (e) {
+    if (!e.isTrusted) return;
+    // Whichever device runs it: the lit key is the effect, and turning it off stops it there.
+    running = running || WAVES.filter(function (w) { return lit(key(w)); })[0] || null;
+    stop();
+  });
+
+  var blackout = byId("dgc-blackout");
+  if (blackout) blackout.addEventListener("click", function (e) {
+    if (!e.isTrusted) return;
+    running = running || WAVES.filter(function (w) { return lit(key(w)); })[0] || null;
+    stop();
+    for (var n = 1; n <= N; n++) setFader(n, 0);
+    wrote = {};
+  });
+
+  // Tap tempo: the gap between the last few taps, as beats per minute.
+  var taps = [];
+  var tap = byId("dgc-tap"), speed = byId("dgc-speed");
+  if (tap && speed) tap.addEventListener("pointerdown", function (e) {
+    if (!e.isTrusted) return;
+    var now = performance.now();
+    if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+    taps.push(now);
+    if (taps.length > 5) taps.shift();
+    if (taps.length < 2) return;
+    var gap = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
+    var bpm = Math.max(Number(speed.min), Math.min(Number(speed.max), Math.round(60000 / gap)));
+    speed.value = String(bpm);
+    speed.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  // A hand on a fader the effect is moving takes that channel back at once.
+  for (var h = 1; h <= N; h++) (function (n) {
+    var el = fader(n); if (!el) return;
+    el.addEventListener("pointerdown", function (e) { if (e.isTrusted && n in wrote) release(n); });
+    el.addEventListener("input", function (e) { if (e.isTrusted && n in wrote) release(n); });
+  })(h);
+
+  function shape(wave, t) {
+    var f = t - Math.floor(t);
+    if (wave === "sine") return 0.5 - 0.5 * Math.cos(2 * Math.PI * f);
+    if (wave === "triangle") return 1 - Math.abs(2 * f - 1);
+    if (wave === "square") return f < 0.5 ? 1 : 0;
+    if (wave === "saw") return f;
+    return 0;
+  }
+
+  var readouts = { speed: " BPM", size: "", base: "", spread: "%" };
+  function showReadouts() {
+    Object.keys(readouts).forEach(function (id) {
+      var out = byId("dgc-readout-" + id);
+      var text = param(id) + readouts[id];
+      if (out && out.textContent !== text) out.textContent = text;
+    });
+  }
+
+  function frame() {
+    showReadouts();
+    if (!running) return;
+    // Turned off on another device, or by the host: it stops here too.
+    if (!lit(key(running))) { running = null; wrote = {}; return; }
+
+    var chosen = [];
+    for (var n = 1; n <= N; n++) {
+      if (!lit(select(n))) { delete wrote[n]; continue; }
+      // Not what this script put there: someone else has moved it.
+      if (n in wrote && fader(n) && fader(n).value !== wrote[n]) { release(n); continue; }
+      chosen.push(n);
+    }
+    if (!chosen.length) return;
+
+    var beats = (performance.now() - started) / 60000 * param("speed");
+    var base = param("base"), size = param("size"), spread = param("spread") / 100;
+    var beat = Math.floor(beats);
+
+    chosen.forEach(function (n, i) {
+      var w;
+      if (running === "chase") {
+        w = beat % chosen.length === i ? 1 : 0;
+      } else if (running === "random") {
+        if (beat !== lastBeat || !(n in randoms)) randoms[n] = Math.random();
+        w = randoms[n];
+      } else {
+        w = shape(running, beats - spread * i / chosen.length);
+      }
+      setFader(n, base + size * w);
+    });
+    lastBeat = beat;
+  }
+  setInterval(frame, 40);
+  showReadouts();
+})();
+</script>
+</body>
+</html>
