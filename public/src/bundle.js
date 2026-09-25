@@ -24036,6 +24036,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
         logZone.setAttribute("data-tooltip", "IN lights as a published surface receives, OUT as OSCAR sends for one. Click for the network log.");
         logZone.setAttribute("data-tooltip-pos", "bottom");
       }
+      // The pill just changed width (the count, or going quiet), and the
+      // address keeps its place in the middle relative to it.
+      centerIpLabel();
     }
 
     function refreshLive() {
@@ -24367,6 +24370,25 @@ function initGrape(ipServer, socketPort, oscInPort) {
     active: false,
     disable: true,
   });
+
+  // The address sits in the middle of the top bar -- of the screen when
+  // there is room, else stepped left so it never runs under the toolbar.
+  // Measured, not hard-coded: the pill's width changes with its count and
+  // an extension can widen the toolbar.
+  function centerIpLabel() {
+    var label = document.querySelector(".gjs-pn-devices-c .oscar-ip-label");
+    var options = document.querySelector(".gjs-pn-options");
+    if (!label || !options) return;
+    var w = label.offsetWidth;
+    var pill = document.querySelector(".gjs-pn-devices-c .oscar-live-btn");
+    var leftWall = (pill ? pill.getBoundingClientRect().right : 0) + 16;
+    var rightWall = options.getBoundingClientRect().left - 16;
+    var middle = Math.min(window.innerWidth / 2, rightWall - w / 2);
+    middle = Math.max(middle, leftWall + w / 2);
+    label.style.left = Math.round(middle - w / 2) + "px";
+  }
+  centerIpLabel();
+  window.addEventListener("resize", centerIpLabel);
 
   // ---- tooltips ----------------------------------------------------------
   // GrapesJS renders the panels during init, before any of this runs, and a
