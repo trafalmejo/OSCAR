@@ -2445,13 +2445,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["oscar-file", "oscar-mcp-pill", "oscar-live-pill", "ipButton"]
+    var wanted = ["oscar-file", "oscar-live-pill", "ipButton", "oscar-mcp-pill"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["oscar-file", "oscar-mcp-pill", "oscar-live-pill", "ipButton"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-live-pill", "ipButton", "oscar-mcp-pill"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {

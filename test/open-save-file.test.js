@@ -52,7 +52,7 @@ test("the bar's geography: File first at the left, the screen sizes pilled at th
     "the sizes lead the right half, ahead of Show borders"
   );
   assert.match(editor, /moveButton\("devices-c", "options", id\);/, "the sizes cross panels whole");
-  assert.match(editor, /var wanted = \["oscar-file", "oscar-mcp-pill", "oscar-live-pill", "ipButton"\]/, "the left half's order: File first");
+  assert.match(editor, /var wanted = \["oscar-file", "oscar-live-pill", "ipButton", "oscar-mcp-pill"\]/, "the left half reads File, LIVE, the address, MCP");
   assert.match(editor, /els\[index\]\.classList\.add\("oscar-size-btn"\)/, "the sizes are marked, not wrapped");
   assert.match(editor, /markDevices\(\);\n  \}/, "and every re-arrange re-marks them");
   const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
