@@ -1414,7 +1414,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
       {
-        label: "Paste HTML / CSS\u2026",
+        label: "Import HTML/CSS\u2026",
         run: function () {
           editor.runCommand("gjs-open-import-webpage");
         },
@@ -1422,6 +1422,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
       { rule: true },
       { label: "Save", run: oscarSaveToFile },
       { label: "Save as\u2026", run: oscarSaveAs },
+      { rule: true },
+      {
+        label: "Publish\u2026",
+        run: function () {
+          editor.runCommand("oscar-export");
+        },
+      },
     ].forEach(function (item) {
       if (item.rule) {
         var line = document.createElement("div");
@@ -2494,30 +2501,20 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }),
       { silent: true }
     );
-    // Re-appending pulled the screen sizes out of their pill; put it back.
-    pillDevices();
+    // Rearranging may have been the first sight of freshly moved buttons.
+    markDevices();
   }
 
-  /** The screen sizes wear one pill, at the left edge of the right half. */
-  function pillDevices() {
+  /** The screen sizes, marked so the CSS can centre their icons squarely. */
+  function markDevices() {
     var panel = pn.getPanel("options");
     var row = document.querySelector(".gjs-pn-options .gjs-pn-buttons");
     if (!panel || !row) return;
-    var old = row.querySelector(".oscar-devices-pill");
-    if (old) old.remove();
     var models = panel.get("buttons").models;
     var els = row.querySelectorAll(".gjs-pn-btn");
     if (models.length !== els.length) return;
-    var chosen = [];
     models.forEach(function (model, index) {
-      if (String(model.get("id")).indexOf("set-device-") === 0) chosen.push(els[index]);
-    });
-    if (!chosen.length) return;
-    var pill = document.createElement("span");
-    pill.className = "oscar-devices-pill";
-    row.insertBefore(pill, chosen[0]);
-    chosen.forEach(function (el) {
-      pill.appendChild(el);
+      if (String(model.get("id")).indexOf("set-device-") === 0) els[index].classList.add("oscar-size-btn");
     });
   }
   arrangeToolbar();

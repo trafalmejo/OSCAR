@@ -20,11 +20,12 @@ test("Save goes to the file system: ask once, then write the same file silently"
   assert.match(editor, /projectFormat\.stampProject\(/, "stamped like the library's own save: one format, not two");
 });
 
-test("File holds every way in and out: three opens, a rule, two saves", () => {
+test("File holds every way in and out: three opens, two saves, and Publish", () => {
   assert.ok(editor.indexOf("function showFileMenu()") !== -1);
-  for (const item of ["Open a file\\u2026", "Open a template\\u2026", "Paste HTML / CSS\\u2026", "Save as\\u2026"]) {
+  for (const item of ["Open a file\\u2026", "Open a template\\u2026", "Import HTML/CSS\\u2026", "Save as\\u2026", "Publish\\u2026"]) {
     assert.ok(editor.indexOf(item) !== -1, "the menu offers: " + item);
   }
+  assert.ok(editor.indexOf('editor.runCommand("oscar-export");') !== -1, "Publish opens the publish window");
   assert.ok(editor.indexOf('{ label: "Save", run: oscarSaveToFile }') !== -1, "and a plain Save");
   assert.match(editor, /label: "File",/, "a word, not an icon");
   assert.match(editor, /\.gjs-pn-devices-c \.oscar-file-btn/, "anchored where the button actually lives -- the old menu died of a stale anchor");
@@ -52,9 +53,12 @@ test("the bar's geography: File first at the left, the screen sizes pilled at th
   );
   assert.match(editor, /moveButton\("devices-c", "options", id\);/, "the sizes cross panels whole");
   assert.match(editor, /var wanted = \["oscar-file", "oscar-mcp-pill", "oscar-live-pill", "ipButton"\]/, "the left half's order: File first");
-  assert.match(editor, /pill\.className = "oscar-devices-pill";/, "the sizes wear one pill");
-  assert.match(editor, /pillDevices\(\);\n  \}/, "and every re-arrange puts the pill back");
+  assert.match(editor, /els\[index\]\.classList\.add\("oscar-size-btn"\)/, "the sizes are marked, not wrapped");
+  assert.match(editor, /markDevices\(\);\n  \}/, "and every re-arrange re-marks them");
   const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
-  assert.match(theme, /\.oscar-devices-pill \.gjs-pn-btn \{\n  margin: 0;\n  padding: 2px;\n  border-radius: 999px;/, "the chosen size rounds with its pill");
+  assert.match(theme, /\.gjs-pn-btn\.oscar-size-btn \{\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;/, "the icons sit squarely centred");
   assert.match(theme, /\.oscar-open-menu \{\n  position: fixed;\n[\s\S]{0,120}z-index: 10000;/, "the menu sits above every layer");
+  const tooltip = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_tooltip.css"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(tooltip, /white-space: normal;\n  width: max-content;\n  max-width: 19rem;/, "tooltips wrap instead of cropping");
+  assert.match(tooltip, /\.gjs-pn-devices-c \[data-tooltip-pos="bottom"\]::after \{\n  left: 0;/, "and the left edge's hang rightward");
 });
