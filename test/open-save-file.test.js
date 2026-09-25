@@ -1,9 +1,9 @@
 "use strict";
 
 // Open and Save against the real file system: a project is one .oscar file
-// the person can put anywhere, the Open menu gathers the three ways in (a
-// file, a template, pasted HTML/CSS), and the old library window stays for
-// templates. These hold the editor's wiring to that design.
+// the person can put anywhere, the File menu at the bar's left edge gathers
+// every way in and out, and the old library window stays for templates.
+// These hold the editor's wiring to that design.
 
 const test = require("node:test");
 const assert = require("node:assert");
@@ -13,7 +13,6 @@ const path = require("node:path");
 const editor = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8").replace(/\r\n/g, "\n");
 
 test("Save goes to the file system: ask once, then write the same file silently", () => {
-  assert.match(editor, /oscarSaveToFile\(\);/, "the toolbar's Save");
   assert.match(editor, /window\.showSaveFilePicker/, "a real Save As dialog where the browser has one");
   assert.match(editor, /suggestedName: slugName\(name\) \+ "\.oscar"/, "the file is a .oscar");
   assert.match(editor, /if \(openedFile\.handle\) \{/, "saving again writes the opened file, silently");
@@ -21,16 +20,19 @@ test("Save goes to the file system: ask once, then write the same file silently"
   assert.match(editor, /projectFormat\.stampProject\(/, "stamped like the library's own save: one format, not two");
 });
 
-test("the Open menu holds the three ways in, and the old window stays for templates", () => {
-  const menu = editor.indexOf("function showOpenMenu()");
-  assert.ok(menu !== -1);
-  for (const item of ["Open a file\\u2026", "Open a template\\u2026", "Paste HTML / CSS\\u2026"]) {
+test("File holds every way in and out: three opens, a rule, two saves", () => {
+  assert.ok(editor.indexOf("function showFileMenu()") !== -1);
+  for (const item of ["Open a file\\u2026", "Open a template\\u2026", "Paste HTML / CSS\\u2026", "Save as\\u2026"]) {
     assert.ok(editor.indexOf(item) !== -1, "the menu offers: " + item);
   }
+  assert.ok(editor.indexOf('{ label: "Save", run: oscarSaveToFile }') !== -1, "and a plain Save");
+  assert.match(editor, /label: "File",/, "a word, not an icon");
+  assert.match(editor, /\.gjs-pn-devices-c \.oscar-file-btn/, "anchored where the button actually lives -- the old menu died of a stale anchor");
   assert.match(editor, /editor\.runCommand\("open-projects", \{ type: "Load" \}\)/, "the template way opens the window that always existed");
   assert.match(editor, /editor\.runCommand\("gjs-open-import-webpage"\)/, "the paste box lives on behind the menu");
   assert.match(editor, /pn\.removeButton\("options", "gjs-open-import-webpage"\)/, "and its toolbar seat is retired");
-  assert.match(editor, /"open-load": "Open project"/, "Load project reads Open project now");
+  assert.match(editor, /function oscarSaveAs\(\) \{\n    openedFile\.handle = null;/, "Save as always asks where");
+  assert.match(editor, /oscar-open-menu-rule/, "opens and saves are parted by a rule");
 });
 
 test("opening a file guards the person: format skew refused honestly, changes never lost silently", () => {
@@ -41,7 +43,7 @@ test("opening a file guards the person: format skew refused honestly, changes ne
   assert.match(editor, /accept = "\.oscar,\.json,\.html,\.htm"/, "and .html templates come through the same door");
 });
 
-test("the bar's geography: Open and Save first at the left, the screen sizes pilled at the right", () => {
+test("the bar's geography: File first at the left, the screen sizes pilled at the right", () => {
   const order = require("../lib/toolbar-order");
   assert.deepStrictEqual(
     order.arrange(["x", "sw-visibility", "set-device-desktop", "set-device-tablet", "set-device-mobile"], order.PLACEMENTS).slice(1, 4),
@@ -49,9 +51,10 @@ test("the bar's geography: Open and Save first at the left, the screen sizes pil
     "the sizes lead the right half, ahead of Show borders"
   );
   assert.match(editor, /moveButton\("devices-c", "options", id\);/, "the sizes cross panels whole");
-  assert.match(editor, /moveButton\("options", "devices-c", "open-load"\);/, "Open crosses to the left");
-  assert.match(editor, /moveButton\("options", "devices-c", "open-save"\);/, "Save follows it");
-  assert.match(editor, /var wanted = \["open-load", "open-save", "oscar-mcp-pill", "oscar-live-pill", "ipButton"\]/, "the left half's order, stated");
+  assert.match(editor, /var wanted = \["oscar-file", "oscar-mcp-pill", "oscar-live-pill", "ipButton"\]/, "the left half's order: File first");
   assert.match(editor, /pill\.className = "oscar-devices-pill";/, "the sizes wear one pill");
   assert.match(editor, /pillDevices\(\);\n  \}/, "and every re-arrange puts the pill back");
+  const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(theme, /\.oscar-devices-pill \.gjs-pn-btn \{\n  margin: 0;\n  padding: 2px;\n  border-radius: 999px;/, "the chosen size rounds with its pill");
+  assert.match(theme, /\.oscar-open-menu \{\n  position: fixed;\n[\s\S]{0,120}z-index: 10000;/, "the menu sits above every layer");
 });

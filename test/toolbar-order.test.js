@@ -3,27 +3,34 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { PLACEMENTS, moveAfter, arrange } = require("../lib/toolbar-order");
+const { PLACEMENTS, moveAfter, moveBefore, arrange } = require("../lib/toolbar-order");
 
-// The order the editor's scripts add their buttons in.
+// The order the editor's scripts add their buttons in: the sizes join late
+// (moved over from the left panel), Import is removed after the preset adds
+// it, and Open/Save live under File on the left, holding no seat here.
 const ADDED = [
   "sw-visibility", "preview", "fullscreen", "export-template", "undo", "redo",
-  "gjs-open-import-webpage", "canvas-clear", "open-styles", "open-save", "open-pages",
-  "open-load", "oscar-export", "toggle-lock", "open-info",
+  "canvas-clear", "open-styles", "open-pages", "oscar-export", "toggle-lock", "open-info",
+  "set-device-desktop", "set-device-tablet", "set-device-mobile",
 ];
 
-test("the lock sits beside Push to preview, Pages beside the widget style, and a project's buttons read Open, Save, Publish", () => {
-  // Import holds no seat of its own any more: its paste box lives inside
-  // the Open menu, and the toolbar button is removed after the preset adds it.
+test("the sizes lead the right half, the lock sits beside Push to preview, Pages beside the widget style", () => {
   const order = arrange(ADDED);
+  assert.deepStrictEqual(order.slice(0, 4), ["set-device-desktop", "set-device-tablet", "set-device-mobile", "sw-visibility"], "the pill of sizes, ahead of everything");
   assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
   assert.strictEqual(order[order.indexOf("open-styles") + 1], "open-pages");
-  const load = order.indexOf("open-load");
-  assert.deepStrictEqual(order.slice(load, load + 3), ["open-load", "open-save", "oscar-export"]);
-  assert.ok(!PLACEMENTS.some((p) => p.id === "gjs-open-import-webpage" || p.after === "gjs-open-import-webpage"), "no placement names the retired button");
+  for (const retired of ["gjs-open-import-webpage", "open-load", "open-save"]) {
+    assert.ok(!PLACEMENTS.some((p) => p.id === retired || p.after === retired || p.before === retired), "no placement names " + retired);
+  }
   assert.deepStrictEqual(order.slice().sort(), ADDED.slice().sort(), "nothing added, nothing lost");
   const moved = PLACEMENTS.map((p) => p.id);
   assert.deepStrictEqual(order.filter((id) => !moved.includes(id)), ADDED.filter((id) => !moved.includes(id)), "and the rest keep their order");
+});
+
+test("a before-placement is moveAfter's mirror, and tolerates the missing the same way", () => {
+  assert.deepStrictEqual(moveBefore(["a", "b", "c"], "c", "a"), ["c", "a", "b"]);
+  assert.deepStrictEqual(moveBefore(["a", "b", "c"], "zz", "a"), ["a", "b", "c"]);
+  assert.deepStrictEqual(moveBefore(["a", "b", "c"], "a", "zz"), ["a", "b", "c"]);
 });
 
 test("a move works in either direction and never changes what it was given", () => {

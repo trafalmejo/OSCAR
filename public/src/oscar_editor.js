@@ -1386,13 +1386,19 @@ function initGrape(ipServer, socketPort, oscInPort) {
       });
   }
 
-  function showOpenMenu() {
+  /** Save as...: always ask where, whatever file is held. */
+  function oscarSaveAs() {
+    openedFile.handle = null;
+    oscarSaveToFile();
+  }
+
+  function showFileMenu() {
     var open = document.querySelector(".oscar-open-menu");
     if (open) {
       open.remove();
       return;
     }
-    var anchor = document.querySelector(".gjs-pn-options .oscar-open-btn");
+    var anchor = document.querySelector(".gjs-pn-devices-c .oscar-file-btn");
     if (!anchor) return;
     var at = anchor.getBoundingClientRect();
     var menu = document.createElement("div");
@@ -1413,7 +1419,16 @@ function initGrape(ipServer, socketPort, oscInPort) {
           editor.runCommand("gjs-open-import-webpage");
         },
       },
+      { rule: true },
+      { label: "Save", run: oscarSaveToFile },
+      { label: "Save as\u2026", run: oscarSaveAs },
     ].forEach(function (item) {
+      if (item.rule) {
+        var line = document.createElement("div");
+        line.className = "oscar-open-menu-rule";
+        menu.appendChild(line);
+        return;
+      }
       var row = document.createElement("button");
       row.type = "button";
       row.className = "oscar-open-menu-item";
@@ -1723,17 +1738,32 @@ function initGrape(ipServer, socketPort, oscInPort) {
     );
   });
 
-  pn.addButton("options", {
-    id: "open-save",
-    label: icon("save"),
-    command: function () {
-      // Straight to the file system: the project is a file the person can
-      // see, mail, and keep wherever they keep their work. The first save
-      // asks where; saving again writes the same file silently.
-      oscarSaveToFile();
-    },
-    attributes: { title: "Save project", "data-tooltip-pos": "bottom" },
+  // ---- the bar's geography, first half ------------------------------------
+  // The screen sizes cross to the right half of the bar NOW, before File
+  // and the pills are created on the left: pn.removeButton re-renders the
+  // whole panel, and any click listener wired before it would die with its
+  // element. A button moves panels whole: command, label and state along.
+  function moveButton(fromPanel, toPanel, id) {
+    var button = pn.getButton(fromPanel, id);
+    if (!button) return;
+    var props = {
+      id: id,
+      command: button.get("command"),
+      label: button.get("label"),
+      className: button.get("className"),
+      attributes: button.get("attributes"),
+      active: button.get("active"),
+      togglable: button.get("togglable"),
+      context: button.get("context"),
+    };
+    pn.removeButton(fromPanel, id);
+    pn.addButton(toPanel, props);
+  }
+  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
+    moveButton("devices-c", "options", id);
   });
+
+  // Open and Save live under one word at the bar's left edge: File.
 
   // Not offered while the feature is off; see lib/features.js.
   if (features.PAGES) {
@@ -1747,17 +1777,25 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
   }
 
-  pn.addButton("options", {
-    id: "open-load",
-    className: "oscar-open-btn",
-    label: icon("open"),
-    command: function () {
-      // Three ways in, one door: a file from anywhere, a template from the
-      // list, or pasted HTML/CSS (the old Import, absorbed here).
-      showOpenMenu();
-    },
-    attributes: { title: "Open project", "data-tooltip-pos": "bottom" },
+  // Disabled to GrapesJS with its own click, like the pills: a command
+  // would toggle the button active, and only every other click would run.
+  pn.addButton("devices-c", {
+    id: "oscar-file",
+    className: "oscar-file-btn",
+    label: "File",
+    command: null,
+    attributes: { title: "Open and save", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
   });
+  (function wireFileButton() {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-file-btn");
+    if (!el) return;
+    el.addEventListener("click", function (event) {
+      event.stopPropagation();
+      showFileMenu();
+    });
+  })();
 
   // ---- export ------------------------------------------------------------
   // Distinct from "See code" beside it, which is GrapesJS's own view of the
@@ -2382,32 +2420,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // the toolbar button itself retires.
   pn.removeButton("options", "gjs-open-import-webpage");
 
-  // ---- the bar's geography -------------------------------------------------
-  // Open and Save cross to the far left -- the first thing a hand reaches --
-  // and the screen sizes cross to the right, one pill just left of the
-  // tools. A button moves panels whole: its command, label and state ride
-  // along.
-  function moveButton(fromPanel, toPanel, id) {
-    var button = pn.getButton(fromPanel, id);
-    if (!button) return;
-    var props = {
-      id: id,
-      command: button.get("command"),
-      label: button.get("label"),
-      className: button.get("className"),
-      attributes: button.get("attributes"),
-      active: button.get("active"),
-      togglable: button.get("togglable"),
-      context: button.get("context"),
-    };
-    pn.removeButton(fromPanel, id);
-    pn.addButton(toPanel, props);
-  }
-  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
-    moveButton("devices-c", "options", id);
-  });
-  moveButton("options", "devices-c", "open-load");
-  moveButton("options", "devices-c", "open-save");
+  // (The sizes crossed panels earlier, before anything on the left was
+  // wired: removing a button re-renders the whole panel, and listeners
+  // bound to the old elements die with them.)
 
   // The left half's order, applied the way arrangeToolbar applies the
   // right's: models and elements moved together, silently, because a reset
@@ -2423,13 +2438,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["open-load", "open-save", "oscar-mcp-pill", "oscar-live-pill", "ipButton"]
+    var wanted = ["oscar-file", "oscar-mcp-pill", "oscar-live-pill", "ipButton"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["open-load", "open-save", "oscar-mcp-pill", "oscar-live-pill", "ipButton"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-mcp-pill", "oscar-live-pill", "ipButton"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {
@@ -2538,8 +2553,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
     "canvas-clear": "Clear canvas",
     "toggle-lock": null,
     "open-styles": "Widget style",
-    "open-save": "Save project",
-    "open-load": "Open project",
     "open-pages": "Pages",
     "oscar-export": "Publish your interface",
     "open-info": "About Oscar",
