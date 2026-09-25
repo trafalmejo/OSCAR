@@ -48,6 +48,7 @@ module.exports = function createRouter({
   liveLog,
   templatesDir,
   draftsDir,
+  mcp,
   extensions,
 }) {
   const router = express.Router();
@@ -348,6 +349,19 @@ module.exports = function createRouter({
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="' + req.params.id + '.html"');
     res.send(rebake(page, connection));
+  });
+
+  // The MCP pill's switch: whether assistants may talk to this OSCAR.
+  // Editing-grade, so editorOnly like everything else that changes state.
+  router.get("/mcp-state", editorOnly, (req, res) => {
+    res.json({ available: !!mcp, on: !!(mcp && mcp.isOn()) });
+  });
+
+  router.post("/mcp-state", editorOnly, (req, res) => {
+    if (!mcp) return res.status(404).json({ error: "MCP is not in this OSCAR." });
+    const on = !!(req.body && req.body.on);
+    mcp.setOn(on);
+    res.json({ on });
   });
 
   // What the server has lately done for the published surfaces: the backlog

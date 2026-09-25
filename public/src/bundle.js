@@ -583,6 +583,15 @@ const DEFAULTS = {
    */
   CANVAS_YIELD: false,
 
+  /**
+   * OSCAR for AI assistants: the MCP server at /mcp (lib/mcp/), loopback
+   * only, token in ~/.oscar/mcp.json. Levels one and two: read and
+   * diagnose, and build drafts for a person to review. No tool touches the
+   * wire. This is the off switch the safety story promises: off, the route
+   * does not exist and no handshake file is written.
+   */
+  MCP: true,
+
 };
 
 function isOn(name) {
@@ -23957,6 +23966,71 @@ function initGrape(ipServer, socketPort, oscInPort) {
     },
     attributes: { title: "About Oscar", "data-tooltip-pos": "bottom" },
   });
+
+  // ---- the MCP pill --------------------------------------------------------
+  // To the left of the LIVE pill: whether assistants (Claude and friends, by
+  // MCP) may talk to this OSCAR. On, the pill wears the accent and the
+  // server answers /mcp on this machine; off, the word is struck through,
+  // the route refuses, and the handshake file assistants find OSCAR by is
+  // removed. Added before the LIVE pill on purpose: buttons render in the
+  // order they are added. Same construction as the LIVE pill, for the same
+  // reason: disabled to GrapesJS, its own click, no re-render to wipe it.
+  if (features.MCP) {
+    pn.addButton("devices-c", {
+      id: "oscar-mcp-pill",
+      className: "oscar-mcp-btn",
+      label: '<span class="oscar-mcp-pill"><span class="oscar-mcp-dot"></span><span class="oscar-mcp-word">MCP</span></span>',
+      command: null,
+      active: false,
+      disable: true,
+    });
+
+    (function wireMcpPill() {
+      var known = null;
+
+      function paintMcp(on) {
+        known = !!on;
+        var el = document.querySelector(".gjs-pn-devices-c .oscar-mcp-btn");
+        if (!el) return;
+        el.classList.toggle("oscar-mcp-on", known);
+        el.setAttribute(
+          "data-tooltip",
+          known
+            ? "Assistants (MCP) are on: an assistant on this computer can read this OSCAR and draft surfaces -- never send. Click to turn off."
+            : "Assistants (MCP) are off: the door is closed. Click to turn on."
+        );
+        el.setAttribute("data-tooltip-pos", "bottom");
+      }
+
+      fetch("/mcp-state")
+        .then(function (res) {
+          return res.json();
+        })
+        .then(function (state) {
+          paintMcp(state && state.on);
+        })
+        .catch(function () {});
+
+      var pill = document.querySelector(".gjs-pn-devices-c .oscar-mcp-btn");
+      if (pill) {
+        pill.addEventListener("click", function (event) {
+          event.stopPropagation();
+          fetch("/mcp-state", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ on: !known }),
+          })
+            .then(function (res) {
+              return res.json();
+            })
+            .then(function (state) {
+              if (state && typeof state.on === "boolean") paintMcp(state.on);
+            })
+            .catch(function () {});
+        });
+      }
+    })();
+  }
 
   // ---- the LIVE pill ------------------------------------------------------
   // OSCAR serves published surfaces in the background all the time, and while

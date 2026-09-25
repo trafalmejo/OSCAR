@@ -70,6 +70,32 @@ const settings = new Settings(
 );
 if (process.env.OSCAR_LOCKED === "1") settings.set("locked", true);
 
+// The MCP switch (the pill in the editor's top bar): remembered like Locked,
+// on unless it was turned off. The handshake file is how an assistant's shim
+// finds this OSCAR; off, the file is gone and the route answers 403, so the
+// door is closed on both sides. features.MCP false removes all of it.
+const MCP_HANDSHAKE = process.env.OSCAR_MCP_FILE || path.join(os.homedir(), ".oscar", "mcp.json");
+const mcpOn = () => settings.get("mcp") !== false;
+let mcpToken = null; // minted below, when /mcp is mounted
+function writeMcpHandshake() {
+  if (!mcpToken) return;
+  try {
+    fs.mkdirSync(path.dirname(MCP_HANDSHAKE), { recursive: true });
+    fs.writeFileSync(
+      MCP_HANDSHAKE,
+      JSON.stringify({ url: "http://127.0.0.1:" + HTTP_PORT + "/mcp", token: mcpToken, version: pkg.version }, null, 1) + "\n",
+      { mode: 0o600 }
+    );
+  } catch (err) {
+    console.error("Could not write the MCP handshake file: " + err.message);
+  }
+}
+function removeMcpHandshake() {
+  try {
+    fs.unlinkSync(MCP_HANDSHAKE);
+  } catch {}
+}
+
 const lock = {
   isLocked: () => !!settings.get("locked"),
   setLocked: (value) => settings.set("locked", value),
@@ -228,6 +254,18 @@ app.use(
     // `liveLog` is created below; this only runs once a request arrives.
     liveLog: () => liveLog.slice(),
     draftsDir: DRAFTS_DIR,
+    // The MCP pill's switch. Turning it off closes the door mid-session:
+    // the route refuses and the handshake file is removed.
+    mcp: features.MCP
+      ? {
+          isOn: mcpOn,
+          setOn: (value) => {
+            settings.set("mcp", !!value);
+            if (value) writeMcpHandshake();
+            else removeMcpHandshake();
+          },
+        }
+      : null,
     templatesDir: path.join(__dirname, "public", "templates"),
     extensions,
   })
@@ -630,12 +668,12 @@ extensions.start({
 // Levels one and two (lib/mcp/): read and diagnose, and build drafts for a
 // person to review. Loopback only, a fresh bearer token each boot, and no
 // tool that touches the wire. features.MCP off = the route does not exist.
-let mcpToken = null;
 if (features.MCP) {
   const { buildTools } = require("./lib/mcp/tools");
   const { attachMcp } = require("./lib/mcp/http");
   mcpToken = attachMcp(app, {
     version: pkg.version,
+    enabled: mcpOn,
     tools: buildTools({
       version: pkg.version,
       features: extensions.features(),
@@ -663,16 +701,14 @@ const httpServer = app.listen(HTTP_PORT, () => {
   bannerShown = true;
   // The MCP handshake: where an assistant's shim finds this OSCAR. Written
   // once the port is certain, readable by this user alone, and gone stale
-  // the moment OSCAR restarts (the token dies with the process).
-  if (mcpToken) {
-    const handshake = process.env.OSCAR_MCP_FILE || path.join(os.homedir(), ".oscar", "mcp.json");
-    try {
-      fs.mkdirSync(path.dirname(handshake), { recursive: true });
-      fs.writeFileSync(handshake, JSON.stringify({ url: "http://127.0.0.1:" + HTTP_PORT + "/mcp", token: mcpToken, version: pkg.version }, null, 1) + "\n", { mode: 0o600 });
-      console.log("  Assistants (MCP):     http://127.0.0.1:" + HTTP_PORT + "/mcp -- token in " + handshake);
-    } catch (err) {
-      console.error("Could not write the MCP handshake file: " + err.message);
-    }
+  // the moment OSCAR restarts (the token dies with the process). Switched
+  // off, the stale file is cleared instead, so a shim fails honestly.
+  if (mcpToken && mcpOn()) {
+    writeMcpHandshake();
+    console.log("  Assistants (MCP):     http://127.0.0.1:" + HTTP_PORT + "/mcp -- token in " + MCP_HANDSHAKE);
+  } else if (mcpToken) {
+    removeMcpHandshake();
+    console.log("  Assistants (MCP):     off -- the MCP pill in the editor's top bar turns it on");
   }
   if (oscInLine) console.log(oscInLine);
   if (dmxLine) console.log(dmxLine);

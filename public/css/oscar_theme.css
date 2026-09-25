@@ -344,6 +344,59 @@ a {
   color: var(--o-accent);
 }
 
+/* The MCP pill: whether assistants may talk to this OSCAR. The accent when
+   on -- it is a door standing open, not an alarm -- and grey with the word
+   struck through when closed, the LIVE pill's own off-language. */
+.gjs-pn-btn.oscar-mcp-btn,
+.gjs-pn-btn.oscar-mcp-btn:hover {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  background: none;
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.oscar-mcp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--o-border-strong);
+  color: var(--o-text-faint);
+  font-size: var(--o-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.oscar-mcp-word {
+  text-decoration: line-through;
+}
+.oscar-mcp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--o-text-faint);
+}
+.gjs-pn-btn.oscar-mcp-btn:hover .oscar-mcp-pill {
+  color: var(--o-text-muted);
+}
+.gjs-pn-btn.oscar-mcp-btn.oscar-mcp-on .oscar-mcp-pill {
+  border-color: var(--o-accent-border);
+  background: var(--o-accent-subtle);
+  color: var(--o-accent-text);
+}
+.gjs-pn-btn.oscar-mcp-btn.oscar-mcp-on .oscar-mcp-word {
+  text-decoration: none;
+}
+.gjs-pn-btn.oscar-mcp-btn.oscar-mcp-on .oscar-mcp-dot {
+  background: var(--o-accent);
+  box-shadow: 0 0 5px var(--o-accent);
+}
+.gjs-pn-btn.oscar-mcp-btn.oscar-mcp-on:hover .oscar-mcp-pill {
+  background: var(--o-accent-subtle-hover);
+}
+
 /* The LIVE pill: OSCAR is serving published surfaces in the background, and
    the top bar says so between the screen sizes and the network info. Always
    there, so the place to look never moves: with nothing published it goes

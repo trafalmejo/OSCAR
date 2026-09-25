@@ -212,3 +212,33 @@ test("the switch, the handshake, and the drafts' way into the Load list", () => 
   assert.match(routes, /\/\^\[a-z0-9\]\[a-z0-9-\]\*\\\.html\$\//, "the drafts route takes flat names only");
   assert.match(routes, /listTemplates\(draftsDir, \{ name: "assistant", urlPrefix: "drafts\/" \}\)/, "drafts list like templates");
 });
+
+test("the pill's switch closes the door mid-session: 403 with the right token, and the handshake goes", async () => {
+  const app = fakeApp();
+  let on = true;
+  const token = attachMcp(app, { tools: [], version: "9.9.9", enabled: () => on });
+
+  on = false;
+  const shut = fakeRes();
+  await app.routes["POST /mcp"]({ socket: { remoteAddress: "127.0.0.1" }, headers: { authorization: "Bearer " + token } }, shut);
+  assert.strictEqual(shut.code, 403, "off refuses even the right token");
+  assert.match(shut.body.error, /switched off/);
+
+  const server = readSource("server.js");
+  assert.match(server, /const mcpOn = \(\) => settings\.get\("mcp"\) !== false;/, "on unless turned off: the default is on");
+  assert.match(server, /if \(value\) writeMcpHandshake\(\);\n(\s+)else removeMcpHandshake\(\);/, "the handshake file follows the switch");
+  const routes = readSource("routes", "index.js");
+  assert.match(routes, /router\.get\("\/mcp-state", editorOnly/, "the pill reads the switch");
+  assert.match(routes, /router\.post\("\/mcp-state", editorOnly/, "and throws it");
+});
+
+test("the MCP pill sits to the left of the LIVE pill and speaks plainly", () => {
+  const editor = readSource("public", "src", "oscar_editor.js");
+  const mcpPill = editor.indexOf('id: "oscar-mcp-pill"');
+  const livePill = editor.indexOf('id: "oscar-live-pill"');
+  assert.ok(mcpPill !== -1 && livePill !== -1 && mcpPill < livePill, "added before the LIVE pill, which renders it to its left");
+  assert.match(editor, /if \(features\.MCP\) \{/, "gone when the feature is off");
+  assert.match(editor, /never send\. Click to turn off\./, "the tooltip says what it is and is not");
+  const theme = readSource("public", "css", "oscar_theme.css");
+  assert.match(theme, /\.oscar-mcp-word \{\n  text-decoration: line-through;/, "off is struck through, the LIVE pill's own off-language");
+});
