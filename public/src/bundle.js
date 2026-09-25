@@ -3249,12 +3249,13 @@ function sectionStatus(fields, config) {
  */
 const VIA_OPTIONS = [
   { id: "network", name: "Network" },
-  { id: "serial", name: "Serial cable" },
+  { id: "serial", name: "USB board (serial)" },
 ];
 
 const VIA_HINT =
-  "Where Data out goes: the network, at the Ip and Port below, or down the serial cable to the board " +
-  "chosen in the Serial panel. One cable for the whole of OSCAR, so the cable has no address here.";
+  "Where Data out goes: the network, at the Ip and Port below, or down the USB cable to a board -- an " +
+  "Arduino and its relatives, picked in the Board row this reveals. One cable for the whole of OSCAR, " +
+  "so it has no address here.";
 
 function checkVia(value) {
   if (VIA_OPTIONS.some((option) => option.id === value)) return null;

@@ -727,9 +727,9 @@ so OSCAR opens the serial port for you.
 2. In the editor, open the **Serial** panel (the USB icon in the toolbar),
    pick the board's port and the baud rate in your sketch's `Serial.begin()`
    (115200 in ours), and press **Connect**.
-3. Set the widget's OSC **Via** to **Serial cable**. Its Ip and Port fold
-   away (the cable has no address) and a **Board** row appears: pick the
-   port the board is on. One cable serves the whole of OSCAR, so picking it
+3. Set the widget's OSC **Via** to **USB board (serial)**. Its Ip and Port
+   fold away (the cable has no address) and a **Board** row appears: pick
+   the port the board is on. One cable serves the whole of OSCAR, so picking it
    once picks it everywhere; there is no separate panel. The old spelling,
    Ip set to the word `serial`, still works
 
