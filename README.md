@@ -235,7 +235,10 @@ OSCAR starts, it says so and carries on: sending is unaffected.
 
 A button, slider or XY pad can drive lighting fixtures directly, with no
 lighting software in between. A widget's settings are grouped in collapsible
-sections, one per protocol. DMX only runs one way, from the desk to the
+sections, one per protocol. A section shows its **Data in** and **Data out**
+checkboxes and nothing more; the rest of its settings appear when a direction
+is switched on, and each setting belongs to its direction, so an Out port is
+not on screen when nothing goes out. DMX only runs one way, from the desk to the
 fixture, so its section has the one direction: open **DMX** and tick **Data
 out**. Leave OSC's **Data out** ticked to keep driving software at the same
 time, or untick it to drive the fixture alone. Each section's title carries a

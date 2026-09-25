@@ -2021,7 +2021,7 @@ const button = {
       field("mode", "Mode", "select", { options: MODES }),
       field("valueOn", "Value ON", "text"),
       field("valueOff", "Value OFF", "text", { hint: "Leave it blank and the button says nothing when it is let go: for software whose /go takes no argument and must not hear it twice." }),
-      field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", dir: "out", options: ARG_TYPES }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
     .concat(midiFields())
@@ -2437,7 +2437,7 @@ const colour = {
       field("alpha", "Alpha", "number", { min: 0, max: 1, step: "any", showIf: { key: "format", in: ["rgba"] } }),
       // A hex string is a string by definition; the argument type only has
       // something to say about the numeric formats.
-      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES, showIf: { key: "format", in: ["rgb", "rgba"] } }),
+      field("argType", "Argument type", "select", { section: "osc", dir: "out", options: NUMERIC_ARG_TYPES, showIf: { key: "format", in: ["rgb", "rgba"] } }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
     .concat(midiFields())
@@ -2869,7 +2869,7 @@ const dropdown = {
     .concat([
       field("options", "Options", "text", { placeholder: "Red=1, Green=2, Blue=3" }),
       field("value", "Selected", "text"),
-      field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", dir: "out", options: ARG_TYPES }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
     .concat(midiFields())
@@ -3111,12 +3111,17 @@ module.exports = { dropdown, parseOptions };
  * widget definition outlives the choice of one.
  *
  * Field shape:
- *   { key, label, type, options?, min?, max?, step?, placeholder?, showIf?, section?, hint? }
+ *   { key, label, type, options?, min?, max?, step?, showIf?, dir?, section?, hint? }
  *   type: "text" | "number" | "select" | "checkbox"
  *   showIf: { key, in: [...] } -- the field is only shown while the setting
  *           named by `key` holds one of the listed values. Data rather than a
  *           function, so an adapter can see which setting to watch instead of
  *           being handed a closure it cannot look inside.
+ *   dir: "in" | "out" | "both" -- which of its section's directions the field
+ *           belongs to. A section opens on its Data in and Data out
+ *           checkboxes alone; a field tagged with a direction appears only
+ *           while that direction is on (either, for "both"), so an Out port
+ *           is not on screen when nothing goes out. Requires `section`.
  *   hint: a sentence for whoever hovers over the setting, for the few whose
  *           label cannot say enough in the width a panel gives it.
  *   section: "osc" | "dmx" -- the protocol the setting belongs to. The panel
@@ -3157,6 +3162,10 @@ function field(key, label, type, extra) {
   }
   if (spec.section !== undefined && !SECTIONS.some((section) => section.id === spec.section)) {
     throw new Error(key + ": unknown section " + JSON.stringify(spec.section));
+  }
+  if (spec.dir !== undefined) {
+    if (["in", "out", "both"].indexOf(spec.dir) === -1) throw new Error(key + ': dir is "in", "out" or "both"');
+    if (spec.section === undefined) throw new Error(key + ": dir needs a section whose checkboxes decide it");
   }
   return spec;
 }
@@ -3222,9 +3231,10 @@ function sectionStatus(fields, config) {
  */
 function connection() {
   return [
-    field("ip", "Ip", "text", { section: "osc", placeholder: "localhost, an IP, or " + SERIAL_HOST }),
-    field("port", "Port", "number", { section: "osc", min: 1, max: 65535 }),
-    field("message", "Message", "text", { section: "osc", placeholder: "/address" }),
+    field("ip", "Ip", "text", { section: "osc", dir: "out", placeholder: "localhost, an IP, or " + SERIAL_HOST }),
+    field("port", "Port", "number", { section: "osc", dir: "out", min: 1, max: 65535 }),
+    // The address sent to and the address followed: either direction needs it.
+    field("message", "Message", "text", { section: "osc", dir: "both", placeholder: "/address" }),
   ];
 }
 
@@ -3292,11 +3302,12 @@ function checkSendWhen(value) {
 }
 
 function sendWhenField(key, section) {
-  return field(key, "Send when", "select", { section: section, options: SEND_WHEN_OPTIONS, hint: SEND_WHEN_HINT });
+  return field(key, "Send when", "select", { section: section, dir: "out", options: SEND_WHEN_OPTIONS, hint: SEND_WHEN_HINT });
 }
 
-function loopGuardField(key, section) {
-  return field(key, "Loop guard", "checkbox", { section: section, hint: LOOP_GUARD_HINT });
+/** Only on screen while its Send when bridges: the guard guards nothing else. */
+function loopGuardField(key, section, whenKey) {
+  return field(key, "Loop guard", "checkbox", { section: section, dir: "out", showIf: { key: whenKey, in: ["data"] }, hint: LOOP_GUARD_HINT });
 }
 
 /**
@@ -3319,9 +3330,9 @@ function oscFields(options) {
   const receives = !options || options.receives !== false;
   const fields = [];
   if (receives) fields.push(listen());
-  if (sends) fields.push(oscToggle(), sendWhenField("oscSendWhen", "osc"), loopGuardField("oscLoopGuard", "osc"));
+  if (sends) fields.push(oscToggle(), sendWhenField("oscSendWhen", "osc"), loopGuardField("oscLoopGuard", "osc", "oscSendWhen"));
   if (sends) return fields.concat(connection());
-  return fields.concat([field("message", "Message", "text", { section: "osc", placeholder: "/address" })]);
+  return fields.concat([field("message", "Message", "text", { section: "osc", dir: "in", placeholder: "/address" })]);
 }
 
 /**
@@ -3426,16 +3437,16 @@ function upgradeRouting(config) {
 /**
  * The DMX half of a widget's settings, for a widget with dmx: true.
  *
- * Its own section, led by the checkbox that switches it on. Nothing in it is
- * hidden while it is off: a channel can be set up before the fixture is live.
- * Where OSC needs an address and a port, DMX
+ * Its own section, led by the checkbox that switches it on, which is also
+ * what reveals the rest: a section shows its two directions and nothing
+ * more until one is on. Where OSC needs an address and a port, DMX
  * needs a protocol, a node, a universe and a block of channels: the first
  * channel, and how many from there. A widget's values fill the block in
  * order and the last repeats, so a slider over three channels dims an RGB
  * fixture as a whole and a pad over two lands on pan and tilt.
  */
 function dmxFields() {
-  const only = { section: "dmx" };
+  const only = { section: "dmx", dir: "out" };
   return [
     dmxToggle(),
     // No guard: nothing comes in over DMX, and a repeated level changes no frame.
@@ -4189,7 +4200,7 @@ const mediaBrowser = {
     field("items", "Items", "text", { placeholder: "Forest|7|thumbs/forest.jpg; Waves|12" }),
     field("columns", "Columns", "number", { min: 1, max: MAX_COLUMNS, step: 1 }),
     field("showLabels", "Show labels", "checkbox"),
-    field("argType", "Argument type", "select", { section: "osc", options: ITEM_ARG_TYPES }),
+    field("argType", "Argument type", "select", { section: "osc", dir: "out", options: ITEM_ARG_TYPES }),
   ]),
 
   checks: Object.assign({}, connectionChecks(), {
@@ -4818,12 +4829,15 @@ function midiFields(options) {
     field("midiListen", "Data in", "checkbox", Object.assign({ hint: DATA_IN_HINT }, only)),
     sends ? field("midiEnabled", "Data out", "checkbox", Object.assign({ hint: DATA_OUT_HINT }, only)) : null,
     sends ? sendWhenField("midiSendWhen", "midi") : null,
-    sends ? loopGuardField("midiLoopGuard", "midi") : null,
-    field("midiInPort", "In port", "select", Object.assign({ options: IN_PORTS, hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
-    sends ? field("midiPort", "Out port", "select", Object.assign({ options: OUT_PORTS, hint: PORT_HINT, source: "midi-outputs" }, only)) : null,
-    field("midiChannel", "Channel", "number", Object.assign({ min: 1, max: CHANNELS }, only)),
-    field("midiType", "Type", "select", Object.assign({ options: TYPES }, only)),
-    field("midiNumber", "Number", "number", Object.assign({ min: 0, max: MAX_DATA, hint: NUMBER_HINT }, only)),
+    sends ? loopGuardField("midiLoopGuard", "midi", "midiSendWhen") : null,
+    field("midiInPort", "In port", "select", Object.assign({ dir: "in", options: IN_PORTS, hint: IN_PORT_HINT, source: "midi-inputs" }, only)),
+    sends ? field("midiPort", "Out port", "select", Object.assign({ dir: "out", options: OUT_PORTS, hint: PORT_HINT, source: "midi-outputs" }, only)) : null,
+    // Channel, Type and Number are the two directions' shared vocabulary:
+    // the knob that moves a fader is the knob a motorised controller hears
+    // back about. On screen while either direction is.
+    field("midiChannel", "Channel", "number", Object.assign({ dir: "both", min: 1, max: CHANNELS }, only)),
+    field("midiType", "Type", "select", Object.assign({ dir: "both", options: TYPES }, only)),
+    field("midiNumber", "Number", "number", Object.assign({ dir: "both", min: 0, max: MAX_DATA, hint: NUMBER_HINT }, only)),
   ].filter(Boolean);
 }
 
@@ -5149,7 +5163,7 @@ const numberInput = {
       field("min", "Min", "number", { step: "any", placeholder: "no limit" }),
       field("max", "Max", "number", { step: "any", placeholder: "no limit" }),
       field("step", "Step", "number", { step: "any", min: 0, placeholder: "any" }),
-      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", dir: "out", options: NUMERIC_ARG_TYPES }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
     .concat(midiFields())
@@ -5787,7 +5801,7 @@ const slider = {
       field("value", "Value", "number", { step: "any" }),
       field("orientation", "Orientation", "select", { options: ORIENTATIONS }),
       field("invert", "Invert", "checkbox"),
-      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", dir: "out", options: NUMERIC_ARG_TYPES }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
     .concat(midiFields())
@@ -6075,7 +6089,7 @@ const textInput = {
     .concat([
     field("value", "Value", "text"),
     field("placeholder", "Placeholder", "text"),
-    field("argType", "Argument type", "select", { section: "osc", options: ARG_TYPES }),
+    field("argType", "Argument type", "select", { section: "osc", dir: "out", options: ARG_TYPES }),
   ]),
 
   checks: Object.assign({}, connectionChecks(), {
@@ -6522,7 +6536,7 @@ const xypad = {
       field("maxY", "Max Y", "number", { step: "any" }),
       field("invertX", "Invert X", "checkbox"),
       field("invertY", "Invert Y", "checkbox"),
-      field("argType", "Argument type", "select", { section: "osc", options: NUMERIC_ARG_TYPES }),
+      field("argType", "Argument type", "select", { section: "osc", dir: "out", options: NUMERIC_ARG_TYPES }),
     ])
     // In the order the panel shows them: OSC, MIDI, DMX.
     .concat(midiFields())
@@ -20156,17 +20170,38 @@ function configOf(model, definition) {
 }
 
 /**
+ * Which settings switch each section's directions on. A section of the panel
+ * opens on its Data in and Data out checkboxes alone; every field tagged with
+ * `dir` (lib/widgets/fields.js) appears only while its direction is on, so an
+ * Out port is not on screen when nothing goes out.
+ */
+var SECTION_DIRECTIONS = {
+  osc: { in: "listen", out: "oscEnabled" },
+  midi: { in: "midiListen", out: "midiEnabled" },
+  dmx: { out: "dmxEnabled" },
+};
+
+function directionOn(config, section, dir) {
+  if (dir === "both") return directionOn(config, section, "in") || directionOn(config, section, "out");
+  var key = (SECTION_DIRECTIONS[section] || {})[dir];
+  var value = key ? config[key] : undefined;
+  return value === true || value === "true";
+}
+
+/**
  * The fields that apply to a widget as it is currently configured.
  *
- * A field may carry `showIf: { key, in: [...] }` (lib/widgets/fields.js),
- * which is how the DMX half of a panel stays out of the way of anyone sending
- * only OSC. It is data rather than a callback so this file can also work out
- * which settings it has to watch for the panel to keep up.
+ * A field may carry `dir` -- shown while its section's direction is on --
+ * and `showIf: { key, in: [...] }` -- shown while that setting holds one of
+ * the listed values (lib/widgets/fields.js). Both are data rather than
+ * callbacks so this file can also work out which settings it has to watch
+ * for the panel to keep up.
  */
 function visibleFields(definition, config) {
   return definition.fields.filter(function (field) {
     // A protocol that is switched off (lib/features.js) has no section.
     if (field.section === "midi" && !features.MIDI) return false;
+    if (field.dir && !directionOn(config, field.section, field.dir)) return false;
     var rule = field.showIf;
     return !rule || rule.in.indexOf(config[rule.key]) !== -1;
   });
@@ -20175,8 +20210,16 @@ function visibleFields(definition, config) {
 /** The settings some field's visibility depends on. */
 function revealKeys(definition) {
   var keys = [];
+  var add = function (key) {
+    if (key && keys.indexOf(key) === -1) keys.push(key);
+  };
   definition.fields.forEach(function (field) {
-    if (field.showIf && keys.indexOf(field.showIf.key) === -1) keys.push(field.showIf.key);
+    if (field.showIf) add(field.showIf.key);
+    if (field.dir) {
+      var section = SECTION_DIRECTIONS[field.section] || {};
+      add(section.in);
+      add(section.out);
+    }
   });
   return keys;
 }

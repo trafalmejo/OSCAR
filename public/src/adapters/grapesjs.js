@@ -104,17 +104,38 @@ function configOf(model, definition) {
 }
 
 /**
+ * Which settings switch each section's directions on. A section of the panel
+ * opens on its Data in and Data out checkboxes alone; every field tagged with
+ * `dir` (lib/widgets/fields.js) appears only while its direction is on, so an
+ * Out port is not on screen when nothing goes out.
+ */
+var SECTION_DIRECTIONS = {
+  osc: { in: "listen", out: "oscEnabled" },
+  midi: { in: "midiListen", out: "midiEnabled" },
+  dmx: { out: "dmxEnabled" },
+};
+
+function directionOn(config, section, dir) {
+  if (dir === "both") return directionOn(config, section, "in") || directionOn(config, section, "out");
+  var key = (SECTION_DIRECTIONS[section] || {})[dir];
+  var value = key ? config[key] : undefined;
+  return value === true || value === "true";
+}
+
+/**
  * The fields that apply to a widget as it is currently configured.
  *
- * A field may carry `showIf: { key, in: [...] }` (lib/widgets/fields.js),
- * which is how the DMX half of a panel stays out of the way of anyone sending
- * only OSC. It is data rather than a callback so this file can also work out
- * which settings it has to watch for the panel to keep up.
+ * A field may carry `dir` -- shown while its section's direction is on --
+ * and `showIf: { key, in: [...] }` -- shown while that setting holds one of
+ * the listed values (lib/widgets/fields.js). Both are data rather than
+ * callbacks so this file can also work out which settings it has to watch
+ * for the panel to keep up.
  */
 function visibleFields(definition, config) {
   return definition.fields.filter(function (field) {
     // A protocol that is switched off (lib/features.js) has no section.
     if (field.section === "midi" && !features.MIDI) return false;
+    if (field.dir && !directionOn(config, field.section, field.dir)) return false;
     var rule = field.showIf;
     return !rule || rule.in.indexOf(config[rule.key]) !== -1;
   });
@@ -123,8 +144,16 @@ function visibleFields(definition, config) {
 /** The settings some field's visibility depends on. */
 function revealKeys(definition) {
   var keys = [];
+  var add = function (key) {
+    if (key && keys.indexOf(key) === -1) keys.push(key);
+  };
   definition.fields.forEach(function (field) {
-    if (field.showIf && keys.indexOf(field.showIf.key) === -1) keys.push(field.showIf.key);
+    if (field.showIf) add(field.showIf.key);
+    if (field.dir) {
+      var section = SECTION_DIRECTIONS[field.section] || {};
+      add(section.in);
+      add(section.out);
+    }
   });
   return keys;
 }

@@ -437,11 +437,14 @@ test("the panel is one collapsible section per protocol, under the widget's own 
   const inSection = (id) => names(traits.filter((t) => t.category.id === id));
 
   assert.ok(!names(traits).includes("transport"), "no Output list: the checkboxes say it");
-  // The directions lead: Data in, Data out, then where and how.
-  assert.deepStrictEqual(inSection("osc"), ["listen", "oscEnabled", "oscSendWhen", "oscLoopGuard", "ip", "port", "message", "argType"]);
+  // The directions lead, and decide: a default slider sends OSC and nothing
+  // else, so OSC shows its sending half (the guard waits for a bridging Send
+  // when), DMX is its one checkbox, MIDI its two.
+  assert.deepStrictEqual(inSection("osc"), ["listen", "oscEnabled", "oscSendWhen", "ip", "port", "message", "argType"]);
   const label = (name) => traits.find((t) => t.name === name).label;
   assert.deepStrictEqual([label("listen"), label("oscEnabled"), label("dmxEnabled")], ["Data in", "Data out", "Data out"]);
-  assert.deepStrictEqual(inSection("dmx"), ["dmxEnabled", "dmxSendWhen", "dmxProtocol", "dmxHost", "dmxUniverse", "dmxChannel", "dmxCount"]);
+  assert.deepStrictEqual(inSection("dmx"), ["dmxEnabled"]);
+  assert.deepStrictEqual(inSection("midi"), ["midiListen", "midiEnabled"]);
   // GrapesJS draws categorised traits above uncategorised ones, so the
   // widget's own settings need a section to stay on top. Sections appear in
   // the order their first field does, and Enabled is always first.
@@ -457,7 +460,7 @@ test("the panel is one collapsible section per protocol, under the widget's own 
 
 test("the DMX section is closed on a widget that sends no DMX, and open on one that does", () => {
   const type = registered(slider);
-  const dmxOpen = (traits) => traits.find((t) => t.name === "dmxChannel").category.open;
+  const dmxOpen = (traits) => traits.find((t) => t.name === "dmxEnabled").category.open;
   const oscOpen = (traits) => traits.find((t) => t.name === "ip").category.open;
   assert.strictEqual(dmxOpen(type.model.defaults.traits), false, "one closed line on a plain OSC slider");
   assert.strictEqual(oscOpen(type.model.defaults.traits), true);
@@ -465,7 +468,8 @@ test("the DMX section is closed on a widget that sends no DMX, and open on one t
   const model = fakeModel(Object.assign({}, slider.defaults, { oscEnabled: false, dmxEnabled: true }));
   type.model.init.call(model);
   assert.strictEqual(dmxOpen(model.get("traits")), true, "a loaded DMX slider opens on its channels");
-  assert.ok(model.get("traits").some((t) => t.name === "ip"), "and keeps its OSC settings, to be switched back on");
+  assert.ok(model.get("traits").some((t) => t.name === "oscEnabled"), "and keeps OSC's checkbox, to be switched back on");
+  assert.ok(!model.get("traits").some((t) => t.name === "ip"), "whose fields wait behind it");
 
   // toTrait is handed (field, index) by Array.map; an index is not settings.
   assert.strictEqual(toTrait(slider.fields.find((f) => f.key === "dmxChannel"), 3).category.open, false);
@@ -501,9 +505,13 @@ test("a field shown only for some settings is a trait only then, and follows an 
   assert.ok(!names(model.get("traits")).includes("alpha"));
   assert.ok(!names(model.get("traits")).includes("argType"), "a hex string has no argument type");
 
-  assert.deepStrictEqual(revealKeys(colour), ["format"]);
-  assert.deepStrictEqual(revealKeys(slider), [], "nothing on a slider is hidden any more");
-  assert.strictEqual(visibleFields(slider, {}).length, slider.fields.length);
+  assert.ok(revealKeys(colour).includes("format"));
+  assert.deepStrictEqual(
+    revealKeys(slider),
+    ["listen", "oscEnabled", "oscSendWhen", "midiListen", "midiEnabled", "midiSendWhen", "dmxEnabled"],
+    "the directions, and the bridging combos, decide the rest of a slider's panel"
+  );
+  assert.strictEqual(visibleFields(slider, {}).length, slider.fields.filter((f) => !f.dir).length, "every direction off: a section is its checkboxes");
 });
 
 test("the panel follows a setting whose states show different fields of the same number", () => {
@@ -843,7 +851,7 @@ test("each protocol section carries what it is, and a setting's hint travels wit
   const traits = type.model.defaults.traits;
   const section = (name) => traits.find((t) => t.name === name).category;
   assert.deepStrictEqual(section("ip").attributes, { "data-oscar-section": "osc" });
-  assert.deepStrictEqual(section("dmxChannel").attributes, { "data-oscar-section": "dmx" });
+  assert.deepStrictEqual(section("dmxEnabled").attributes, { "data-oscar-section": "dmx" });
   assert.strictEqual(section("enabled").attributes, undefined, "the widget's own section has no light");
 
   const master = traits.find((t) => t.name === "enabled");
