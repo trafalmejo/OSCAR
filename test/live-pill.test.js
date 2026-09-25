@@ -52,7 +52,7 @@ test("consuming OSC for a published widget says IN; a message nobody follows say
   store.onChange(() => {});
 
   await surfaces.hearOsc(osc("/level", 0.7));
-  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "osc", what: "/level", n: 1 }], "one event, saying what was consumed");
+  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "osc", what: "/level", surface: "stage", n: 1 }], "one event, saying what was consumed and for whom");
 
   await surfaces.hearOsc(osc("/nothing/here", 1));
   assert.strictEqual(activity.length, 1, "a message that moved nothing lights nothing");
@@ -82,7 +82,7 @@ test("MIDI consumed for a published widget says IN with the message spelled out"
   const { surfaces, store, activity } = await venue([tag("oscar-slider", "s5", { enabled: true, midiListen: true, midiType: "cc", midiChannel: 1, midiNumber: 7, min: 0, max: 1 })]);
   store.onChange(() => {});
   await surfaces.hearMidi({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "nanoKONTROL2", true);
-  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "midi", what: "cc 7 ch 1 · nanoKONTROL2", n: 1 }]);
+  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "midi", what: "cc 7 ch 1 · nanoKONTROL2", surface: "stage", n: 1 }]);
 });
 
 test("a widget switched off is driven silently: shown, not sent, and no OUT", async () => {
@@ -138,6 +138,16 @@ test("the log window says the address first, then the traffic, filtered by direc
     assert.ok(editorSource.indexOf("[" + key + "]") !== -1, "a filter for " + key);
   }
   assert.match(editorSource, /if \(!logFilters\[row\.dir\] \|\| !logFilters\[row\.protocol\]\) continue;/, "rows obey the filters");
-  assert.match(editorSource, /title: "Network log"/, "its own window");
+  assert.match(editorSource, /where\.className = "oscar-log-surface"/, "each row names its surface, incoming included");
   assert.match(editorSource, /fetch\("\/live\/log"\)/, "opened onto the backlog, not an empty page");
+});
+
+test("the log floats so the faders stay usable under it: that is what it is for", () => {
+  assert.match(editorSource, /title\.textContent = "Network log"/, "its own window, with its own title bar");
+  assert.ok(editorSource.indexOf("modal.open({ title: \"Network log\"") === -1, "not a modal: a modal blocks the very canvas being debugged");
+  assert.match(editorSource, /bar\.addEventListener\("pointerdown"/, "dragged by the title bar");
+  assert.match(editorSource, /if \(logOpen\(\)\) \{\n        logBox\.style\.display = "none";/, "the lights toggle it");
+  assert.match(themeSource, /\.oscar-live-log \{\n  position: fixed;/, "floating over the editor");
+  assert.match(themeSource, /width: 820px;/, "wide enough to read");
+  assert.match(themeSource, /height: 420px;/, "a fixed height, not one that grows with every row");
 });

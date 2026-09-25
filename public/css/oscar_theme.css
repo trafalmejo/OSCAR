@@ -428,9 +428,49 @@ a {
 }
 
 /* The network log window, behind the pill's IN/OUT half: the address, then
-   what the server has lately heard and sent for the published surfaces. */
-.modal-live-log .gjs-mdl-dialog {
-  max-width: 660px;
+   what the server has lately heard and sent for the published surfaces.
+   A floating window, not a modal: it exists to debug -- the canvas and the
+   panels must stay usable while it is open. Dragged by its title bar. */
+.oscar-live-log {
+  position: fixed;
+  top: 52px;
+  right: 20px;
+  width: 820px;
+  max-width: calc(100vw - 32px);
+  z-index: 900;
+  background: var(--o-panel);
+  border: 1px solid var(--o-border-strong);
+  border-radius: var(--o-radius);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55);
+  padding: 0 0.9rem 0.9rem;
+}
+.oscar-log-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -0.9rem 0.6rem;
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--o-border);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+.oscar-log-title {
+  color: var(--o-text);
+  font-size: var(--o-text-base);
+  font-weight: 600;
+}
+.oscar-log-close {
+  background: none;
+  border: none;
+  color: var(--o-text-muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  cursor: pointer;
+}
+.oscar-log-close:hover {
+  color: var(--o-text);
 }
 .oscar-log-head {
   color: var(--o-text-muted);
@@ -466,7 +506,9 @@ a {
   background: var(--o-border-strong);
 }
 .oscar-log-list {
-  max-height: 46vh;
+  /* Fixed, not fitted: a window that grows with every row cannot be read. */
+  height: 420px;
+  max-height: calc(100vh - 220px);
   overflow-y: auto;
   font-family: var(--o-font-mono);
   font-size: var(--o-text-xs);
@@ -511,6 +553,9 @@ a {
 .oscar-log-what {
   color: var(--o-text);
   overflow-wrap: anywhere;
+}
+.oscar-log-surface {
+  color: var(--o-text-muted);
 }
 .oscar-log-n {
   margin-left: auto;

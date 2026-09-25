@@ -1708,9 +1708,15 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
     // ---- the network log window ------------------------------------------
     // What the server has done for the published surfaces, newest at the
-    // top: the address or MIDI message it consumed, the widget it sent for.
-    // Repeats within a moment arrive as one row with a count (server.js
-    // coalesces them). Filters by direction and protocol.
+    // top: the address or MIDI message it consumed and for which surface,
+    // the widget it sent for. Repeats within a moment arrive as one row
+    // with a count (server.js coalesces them). Filters by direction and
+    // protocol.
+    //
+    // A floating window, not a modal, on purpose: the log is for debugging,
+    // so the editor has to stay usable while it is open -- move a fader,
+    // watch the row appear. Dragged by its title bar, closed by its own
+    // button or by clicking the pill's lights again.
 
     function timeOf(at) {
       var d = new Date(at);
@@ -1738,11 +1744,18 @@ function initGrape(ipServer, socketPort, oscInPort) {
         protocol.textContent = String(row.protocol || "").toUpperCase();
         var what = document.createElement("span");
         what.className = "oscar-log-what";
-        what.textContent = String(row.what || "") + (row.dir === "out" && row.surface ? ' · "' + row.surface + '"' : "");
+        what.textContent = String(row.what || "");
+        var where = null;
+        if (row.surface) {
+          where = document.createElement("span");
+          where.className = "oscar-log-surface";
+          where.textContent = '"' + row.surface + '"';
+        }
         line.appendChild(when);
         line.appendChild(dir);
         line.appendChild(protocol);
         line.appendChild(what);
+        if (where) line.appendChild(where);
         if (row.n > 1) {
           var times = document.createElement("span");
           times.className = "oscar-log-n";
@@ -1762,6 +1775,41 @@ function initGrape(ipServer, socketPort, oscInPort) {
     function buildLogBox() {
       logBox = document.createElement("div");
       logBox.className = "oscar-live-log";
+
+      var bar = document.createElement("div");
+      bar.className = "oscar-log-titlebar";
+      var title = document.createElement("span");
+      title.className = "oscar-log-title";
+      title.textContent = "Network log";
+      bar.appendChild(title);
+      var close = document.createElement("button");
+      close.className = "oscar-log-close";
+      close.type = "button";
+      close.textContent = "×";
+      close.setAttribute("title", "Close the log");
+      close.addEventListener("click", function () {
+        logBox.style.display = "none";
+      });
+      bar.appendChild(close);
+      logBox.appendChild(bar);
+
+      // Dragged by the title bar: the window must be movable off whatever
+      // fader is being debugged under it.
+      var hold = null;
+      bar.addEventListener("pointerdown", function (event) {
+        if (event.target === close) return;
+        hold = { x: event.clientX - logBox.offsetLeft, y: event.clientY - logBox.offsetTop };
+        bar.setPointerCapture(event.pointerId);
+      });
+      bar.addEventListener("pointermove", function (event) {
+        if (!hold) return;
+        logBox.style.left = Math.max(0, Math.min(window.innerWidth - 80, event.clientX - hold.x)) + "px";
+        logBox.style.top = Math.max(0, Math.min(window.innerHeight - 40, event.clientY - hold.y)) + "px";
+        logBox.style.right = "auto";
+      });
+      bar.addEventListener("pointerup", function () {
+        hold = null;
+      });
 
       var head = document.createElement("div");
       head.className = "oscar-log-head";
@@ -1800,10 +1848,21 @@ function initGrape(ipServer, socketPort, oscInPort) {
       logList = document.createElement("div");
       logList.className = "oscar-log-list";
       logBox.appendChild(logList);
+      document.body.appendChild(logBox);
+    }
+
+    function logOpen() {
+      return !!(logBox && logBox.style.display !== "none");
     }
 
     function openLiveLog() {
+      // The lights toggle it: open to watch, the same click to put it away.
+      if (logOpen()) {
+        logBox.style.display = "none";
+        return;
+      }
       if (!logBox) buildLogBox();
+      logBox.style.display = "";
       fetch("/live/log")
         .then(function (res) {
           return res.json();
@@ -1816,7 +1875,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
           renderLog();
         });
       renderLog();
-      modal.open({ title: "Network log", content: logBox, attributes: { class: "modal-live-log" } });
     }
 
     // The zones' own clicks; the button is disabled to GrapesJS, so nothing
@@ -1842,7 +1900,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         if (!row || (row.dir !== "in" && row.dir !== "out")) return;
         logRows.push(row);
         if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
-        if (logList && document.body.contains(logList)) renderLog();
+        if (logOpen()) renderLog();
       });
       editor.socket.on("published:changed", refreshLive);
       // A server that restarted may have a different roster than the one
