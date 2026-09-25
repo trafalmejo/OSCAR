@@ -10,13 +10,17 @@ const { PLACEMENTS, moveAfter, moveBefore, arrange } = require("../lib/toolbar-o
 // it, and Open/Save live under File on the left, holding no seat here.
 const ADDED = [
   "sw-visibility", "preview", "fullscreen", "export-template",
-  "canvas-clear", "open-styles", "open-pages", "oscar-export", "toggle-lock", "open-info",
+  "canvas-clear", "open-styles", "open-pages", "oscar-live-pill", "oscar-mcp-pill", "oscar-export", "toggle-lock", "open-info",
   "set-device-desktop", "set-device-tablet", "set-device-mobile",
 ];
 
 test("the sizes lead the right half, the lock sits beside Push to preview, Pages beside the widget style", () => {
   const order = arrange(ADDED);
-  assert.deepStrictEqual(order.slice(0, 4), ["set-device-desktop", "set-device-tablet", "set-device-mobile", "sw-visibility"], "the pill of sizes, ahead of everything");
+  assert.deepStrictEqual(
+    order.slice(0, 6),
+    ["oscar-live-pill", "oscar-mcp-pill", "set-device-desktop", "set-device-tablet", "set-device-mobile", "sw-visibility"],
+    "the pills first, then the sizes, ahead of everything"
+  );
   assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
   assert.strictEqual(order[order.indexOf("open-styles") + 1], "open-pages");
   for (const retired of ["gjs-open-import-webpage", "open-load", "open-save"]) {

@@ -1770,6 +1770,28 @@ function initGrape(ipServer, socketPort, oscInPort) {
     );
   });
 
+  // ---- the bar answers through one listener --------------------------------
+  // Every word and pill on the bar registers here instead of binding to its
+  // element: a panel re-render -- an extension adding a button, a silent
+  // reset -- replaces the elements, and a listener bound to a dead element
+  // is the bug this bar has now had three times. The document outlives them
+  // all.
+  var barClicks = [];
+  function onBarClick(selector, run) {
+    barClicks.push([selector, run]);
+  }
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest) return;
+    for (var i = 0; i < barClicks.length; i++) {
+      var found = event.target.closest(barClicks[i][0]);
+      if (found) {
+        event.stopPropagation();
+        barClicks[i][1](found);
+        return;
+      }
+    }
+  });
+
   // ---- the bar's geography, first half ------------------------------------
   // The screen sizes cross to the right half of the bar NOW, before File
   // and the pills are created on the left: pn.removeButton re-renders the
@@ -1830,14 +1852,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
     active: false,
     disable: true,
   });
-  (function wireFileButton() {
-    var el = document.querySelector(".gjs-pn-devices-c .oscar-file-btn");
-    if (!el) return;
-    el.addEventListener("click", function (event) {
-      event.stopPropagation();
-      showFileMenu();
-    });
-  })();
+  onBarClick(".oscar-file-btn", function () {
+    showFileMenu();
+  });
 
   pn.addButton("devices-c", {
     id: "oscar-edit",
@@ -1848,14 +1865,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
     active: false,
     disable: true,
   });
-  (function wireEditButton() {
-    var el = document.querySelector(".gjs-pn-devices-c .oscar-edit-btn");
-    if (!el) return;
-    el.addEventListener("click", function (event) {
-      event.stopPropagation();
-      showEditMenu();
-    });
-  })();
+  onBarClick(".oscar-edit-btn", function () {
+    showEditMenu();
+  });
 
   // ---- export ------------------------------------------------------------
   // Distinct from "See code" beside it, which is GrapesJS's own view of the
@@ -2005,7 +2017,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // order they are added. Same construction as the LIVE pill, for the same
   // reason: disabled to GrapesJS, its own click, no re-render to wipe it.
   if (features.MCP) {
-    pn.addButton("devices-c", {
+    pn.addButton("options", {
       id: "oscar-mcp-pill",
       className: "oscar-mcp-btn",
       label: '<span class="oscar-mcp-pill"><span class="oscar-mcp-dot"></span><span class="oscar-mcp-word">MCP</span></span>',
@@ -2019,7 +2031,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
       function paintMcp(on) {
         known = !!on;
-        var el = document.querySelector(".gjs-pn-devices-c .oscar-mcp-btn");
+        var el = document.querySelector(".oscar-mcp-btn");
         if (!el) return;
         el.classList.toggle("oscar-mcp-on", known);
         el.setAttribute(
@@ -2040,24 +2052,20 @@ function initGrape(ipServer, socketPort, oscInPort) {
         })
         .catch(function () {});
 
-      var pill = document.querySelector(".gjs-pn-devices-c .oscar-mcp-btn");
-      if (pill) {
-        pill.addEventListener("click", function (event) {
-          event.stopPropagation();
-          fetch("/mcp-state", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ on: !known }),
+      onBarClick(".oscar-mcp-btn", function () {
+        fetch("/mcp-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ on: !known }),
+        })
+          .then(function (res) {
+            return res.json();
           })
-            .then(function (res) {
-              return res.json();
-            })
-            .then(function (state) {
-              if (state && typeof state.on === "boolean") paintMcp(state.on);
-            })
-            .catch(function () {});
-        });
-      }
+          .then(function (state) {
+            if (state && typeof state.on === "boolean") paintMcp(state.on);
+          })
+          .catch(function () {});
+      });
     })();
   }
 
@@ -2078,7 +2086,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // button active, and GrapesJS re-renders a button whose model changed,
   // which would wipe the count and the lights back to their pristine,
   // hidden state.
-  pn.addButton("devices-c", {
+  pn.addButton("options", {
     id: "oscar-live-pill",
     className: "oscar-live-btn",
     label:
@@ -2109,7 +2117,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var logList = null;
 
     function pillEl() {
-      return document.querySelector(".gjs-pn-devices-c .oscar-live-btn");
+      return document.querySelector(".oscar-live-btn");
     }
 
     function paintLive(rows) {
@@ -2424,18 +2432,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
       };
     }
 
-    // The zones' own clicks; the button is disabled to GrapesJS, so nothing
-    // else answers them.
-    var pill = pillEl();
-    if (pill) {
-      pill.addEventListener("click", function (event) {
-        var zone = event.target.closest ? event.target.closest(".oscar-live-zone") : null;
-        if (!zone) return;
-        event.stopPropagation();
-        if (zone.getAttribute("data-zone") === "publish") editor.runCommand("oscar-export");
-        else openLiveLog();
-      });
-    }
+    // The zones' clicks, through the bar's one listener: re-renders replace
+    // elements, the document does not.
+    onBarClick(".oscar-live-zone", function (zone) {
+      if (zone.getAttribute("data-zone") === "publish") editor.runCommand("oscar-export");
+      else openLiveLog();
+    });
 
     if (editor.socket) {
       editor.socket.on("live:activity", function (msg) {
@@ -2498,13 +2500,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["oscar-file", "oscar-edit", "oscar-live-pill", "oscar-mcp-pill", "ipButton"]
+    var wanted = ["oscar-file", "oscar-edit", "ipButton"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["oscar-file", "oscar-edit", "oscar-live-pill", "oscar-mcp-pill", "ipButton"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-edit", "ipButton"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {
