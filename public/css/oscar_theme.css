@@ -345,17 +345,14 @@ a {
 }
 
 /* The LIVE pill: OSCAR is serving published surfaces in the background, and
-   the top bar says so between the screen sizes and the network info. Hidden
-   entirely while nothing is published -- a "LIVE 0" would be noise. */
+   the top bar says so between the screen sizes and the network info. Always
+   there, so the place to look never moves: with nothing published it goes
+   quiet -- grey, LIVE struck through, a 0 -- instead of disappearing. */
 .gjs-pn-btn.oscar-live-btn {
-  display: none;
-  padding: 0;
-  background: none;
-}
-.gjs-pn-btn.oscar-live-btn.oscar-live-on {
   display: inline-flex;
   align-items: center;
-  cursor: pointer;
+  padding: 0;
+  background: none;
 }
 /* Green on purpose: LIVE is a state of health, not an alarm, and green is
    already what the widget lights use for "sending". The button is disabled
@@ -401,6 +398,26 @@ a {
   background: #2fbf5f;
   box-shadow: 0 0 5px rgba(47, 191, 95, 0.8);
   animation: oscar-live-breathe 2.4s ease-in-out infinite;
+}
+/* The quiet state: nothing published, nothing served. */
+.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-pill {
+  border-color: var(--o-border-strong);
+  background: none;
+  color: var(--o-text-faint);
+}
+.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-zone:hover {
+  color: var(--o-text-muted);
+}
+.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-word {
+  text-decoration: line-through;
+}
+.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-dot {
+  background: var(--o-text-faint);
+  box-shadow: none;
+  animation: none;
+}
+.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-sep {
+  background: var(--o-border-strong);
 }
 @keyframes oscar-live-breathe {
   0%,
@@ -556,6 +573,18 @@ a {
 }
 .oscar-log-surface {
   color: var(--o-text-muted);
+}
+.oscar-log-canvas {
+  color: var(--o-accent-text);
+  font-style: italic;
+}
+/* While the log is being dragged the canvas iframe must not eat the pointer
+   moves, or the drag sticks the moment the pointer crosses it. */
+body.oscar-log-dragging {
+  user-select: none;
+}
+body.oscar-log-dragging iframe {
+  pointer-events: none;
 }
 .oscar-log-n {
   margin-left: auto;

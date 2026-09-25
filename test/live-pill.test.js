@@ -128,7 +128,11 @@ test("the pill sits between the screen sizes and the network info, split into it
   assert.match(editorSource, /editor\.socket\.on\("live:activity"/, "the flickers arrive by socket");
   assert.match(editorSource, /editor\.socket\.on\("live:log"/, "the log listens all along");
   assert.match(editorSource, /editor\.socket\.on\("published:changed", refreshLive\)/, "the count follows the roster");
-  assert.match(themeSource, /\.gjs-pn-btn\.oscar-live-btn \{\n  display: none;/, "hidden while nothing is published");
+  // Always present: with nothing published it goes quiet instead of away,
+  // so the place to look never moves.
+  assert.match(themeSource, /\.gjs-pn-btn\.oscar-live-btn \{\n  display: inline-flex;/, "shown whether or not anything is published");
+  assert.match(themeSource, /:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "LIVE struck through at zero");
+  assert.match(editorSource, /Nothing is published: OSCAR serves no surfaces in the background\./, "the quiet pill says why");
   assert.match(themeSource, /border: 1px solid rgba\(47, 191, 95, 0\.55\)/, "the pill is green");
 });
 
@@ -146,8 +150,24 @@ test("the log floats so the faders stay usable under it: that is what it is for"
   assert.match(editorSource, /title\.textContent = "Network log"/, "its own window, with its own title bar");
   assert.ok(editorSource.indexOf("modal.open({ title: \"Network log\"") === -1, "not a modal: a modal blocks the very canvas being debugged");
   assert.match(editorSource, /bar\.addEventListener\("pointerdown"/, "dragged by the title bar");
+  // The moves are heard by the window and the canvas iframe is shielded for
+  // the drag's duration: an iframe eats pointer moves, which left the drag
+  // sticking the moment the pointer crossed the canvas.
+  assert.match(editorSource, /window\.addEventListener\("pointermove"/, "the drag follows the pointer everywhere");
+  assert.match(editorSource, /document\.body\.classList\.add\("oscar-log-dragging"\)/, "the shield goes up");
+  assert.match(themeSource, /body\.oscar-log-dragging iframe \{\n  pointer-events: none;/, "and the canvas cannot eat the moves");
   assert.match(editorSource, /if \(logOpen\(\)\) \{\n        logBox\.style\.display = "none";/, "the lights toggle it");
   assert.match(themeSource, /\.oscar-live-log \{\n  position: fixed;/, "floating over the editor");
   assert.match(themeSource, /width: 820px;/, "wide enough to read");
   assert.match(themeSource, /height: 420px;/, "a fixed height, not one that grows with every row");
+});
+
+test("the canvas's own sends show in the log, marked and filterable, coalesced like the rest", () => {
+  assert.match(editorSource, /editor\.sendOSC = function \(ip, port, address, args\) \{\n        logCanvas\("osc", address\);/, "OSC hands are seen");
+  assert.match(editorSource, /editor\.sendDMX = function \(request\) \{\n        logCanvas\("dmx"/, "DMX hands are seen");
+  assert.match(editorSource, /editor\.sendMIDI = function \(request\) \{\n        logCanvas\("midi", midiWords\(request\)\);/, "MIDI hands are seen, in the server's words");
+  assert.match(editorSource, /where\.textContent = "canvas"/, "marked as the canvas's own");
+  assert.match(editorSource, /if \(row\.canvas && !logFilters\.canvas\) continue;/, "the Canvas filter hides them");
+  assert.ok(editorSource.indexOf('["canvas", "Canvas"]') !== -1, "a checkbox of their own");
+  assert.match(editorSource, /held\.n\+\+;/, "a ridden fader is one row with a count, not sixty");
 });

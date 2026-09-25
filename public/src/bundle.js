@@ -23992,7 +23992,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // The network log's rows, oldest first, the server's cap mirrored here.
     var LOG_KEEP = 200;
     var logRows = [];
-    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true };
+    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, canvas: true };
     var logBox = null;
     var logList = null;
 
@@ -24015,8 +24015,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
       if (publishZone) {
         publishZone.setAttribute(
           "data-tooltip",
-          (rows.length === 1 ? "OSCAR is serving " + names : "OSCAR is serving " + rows.length + " published surfaces: " + names) +
-            " in the background. Click for the publish window."
+          rows.length === 0
+            ? "Nothing is published: OSCAR serves no surfaces in the background. Click for the publish window."
+            : (rows.length === 1 ? "OSCAR is serving " + names : "OSCAR is serving " + rows.length + " published surfaces: " + names) +
+                " in the background. Click for the publish window."
         );
         publishZone.setAttribute("data-tooltip-pos", "bottom");
       }
@@ -24076,6 +24078,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       for (var i = logRows.length - 1; i >= 0; i--) {
         var row = logRows[i];
         if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
+        if (row.canvas && !logFilters.canvas) continue;
         shown++;
         var line = document.createElement("div");
         line.className = "oscar-log-row";
@@ -24096,6 +24099,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
           where = document.createElement("span");
           where.className = "oscar-log-surface";
           where.textContent = '"' + row.surface + '"';
+        } else if (row.canvas) {
+          where = document.createElement("span");
+          where.className = "oscar-log-surface oscar-log-canvas";
+          where.textContent = "canvas";
         }
         line.appendChild(when);
         line.appendChild(dir);
@@ -24140,21 +24147,29 @@ function initGrape(ipServer, socketPort, oscInPort) {
       logBox.appendChild(bar);
 
       // Dragged by the title bar: the window must be movable off whatever
-      // fader is being debugged under it.
+      // fader is being debugged under it. The moves are listened for on the
+      // window, not the bar, and the canvas iframe is shielded while a drag
+      // holds (the body class below): an iframe eats pointer moves, which
+      // left the drag sticking the moment the pointer crossed the canvas.
       var hold = null;
       bar.addEventListener("pointerdown", function (event) {
-        if (event.target === close) return;
-        hold = { x: event.clientX - logBox.offsetLeft, y: event.clientY - logBox.offsetTop };
-        bar.setPointerCapture(event.pointerId);
+        if (close.contains(event.target)) return;
+        var at = logBox.getBoundingClientRect();
+        hold = { x: event.clientX - at.left, y: event.clientY - at.top };
+        document.body.classList.add("oscar-log-dragging");
+        event.preventDefault();
       });
-      bar.addEventListener("pointermove", function (event) {
+      window.addEventListener("pointermove", function (event) {
         if (!hold) return;
         logBox.style.left = Math.max(0, Math.min(window.innerWidth - 80, event.clientX - hold.x)) + "px";
         logBox.style.top = Math.max(0, Math.min(window.innerHeight - 40, event.clientY - hold.y)) + "px";
         logBox.style.right = "auto";
+        event.preventDefault();
       });
-      bar.addEventListener("pointerup", function () {
+      window.addEventListener("pointerup", function () {
+        if (!hold) return;
         hold = null;
+        document.body.classList.remove("oscar-log-dragging");
       });
 
       var head = document.createElement("div");
@@ -24162,19 +24177,20 @@ function initGrape(ipServer, socketPort, oscInPort) {
       head.textContent = "Server IP: " + ipServer + (oscInPort ? " · Listening Port: " + oscInPort : "");
       logBox.appendChild(head);
 
-      var bar = document.createElement("div");
-      bar.className = "oscar-log-filters";
+      var filterBar = document.createElement("div");
+      filterBar.className = "oscar-log-filters";
       [
         ["in", "Incoming"],
         ["out", "Outgoing"],
         ["osc", "OSC"],
         ["midi", "MIDI"],
         ["dmx", "DMX"],
+        ["canvas", "Canvas"],
       ].forEach(function (pair, index) {
-        if (index === 2) {
+        if (index === 2 || index === 5) {
           var gap = document.createElement("span");
           gap.className = "oscar-log-filter-gap";
-          bar.appendChild(gap);
+          filterBar.appendChild(gap);
         }
         var label = document.createElement("label");
         label.className = "oscar-log-filter";
@@ -24187,9 +24203,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
         });
         label.appendChild(box);
         label.appendChild(document.createTextNode(pair[1]));
-        bar.appendChild(label);
+        filterBar.appendChild(label);
       });
-      logBox.appendChild(bar);
+      logBox.appendChild(filterBar);
 
       logList = document.createElement("div");
       logList.className = "oscar-log-list";
@@ -24221,6 +24237,71 @@ function initGrape(ipServer, socketPort, oscInPort) {
           renderLog();
         });
       renderLog();
+    }
+
+    // ---- canvas sends in the log -----------------------------------------
+    // A hand on the editor's own fader shows in the log too, marked
+    // "canvas": debugging is telling the two apart. These rows are this
+    // page's own -- the server never hears of them, and the LEDs stay
+    // background-only. Wrapped here rather than in the adapter because
+    // everything a canvas widget sends goes through these three, read off
+    // the editor at call time. Coalesced like the server's rows: a fader
+    // ridden for a second is one row with a count, not sixty.
+
+    var canvasPending = {};
+    var canvasTimer = null;
+
+    function flushCanvas() {
+      canvasTimer = null;
+      Object.keys(canvasPending).forEach(function (key) {
+        logRows.push(canvasPending[key]);
+      });
+      canvasPending = {};
+      if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
+      if (logOpen()) renderLog();
+    }
+
+    function logCanvas(protocol, what) {
+      var key = protocol + "|" + what;
+      var held = canvasPending[key];
+      if (held) {
+        held.n++;
+        held.at = Date.now();
+      } else {
+        canvasPending[key] = { at: Date.now(), dir: "out", protocol: protocol, what: what, canvas: true, n: 1 };
+      }
+      if (!canvasTimer) canvasTimer = setTimeout(flushCanvas, 300);
+    }
+
+    /** The same words the server uses for MIDI it hears: "cc 7 ch 1". */
+    function midiWords(request) {
+      var first = request && Array.isArray(request.messages) && request.messages[0];
+      if (!first || !first.length) return "midi";
+      var kinds = { 128: "note off", 144: "note on", 160: "aftertouch", 176: "cc", 192: "program", 224: "bend" };
+      var kind = kinds[first[0] & 0xf0] || "midi";
+      return kind + (first.length > 1 ? " " + first[1] : "") + " ch " + ((first[0] & 0x0f) + 1);
+    }
+
+    if (editor.sendOSC) {
+      var plainOSC = editor.sendOSC;
+      editor.sendOSC = function (ip, port, address, args) {
+        logCanvas("osc", address);
+        return plainOSC(ip, port, address, args);
+      };
+    }
+    if (editor.sendDMX) {
+      var plainDMX = editor.sendDMX;
+      editor.sendDMX = function (request) {
+        logCanvas("dmx", request && request.channel !== undefined ? "ch " + request.channel + (request.universe ? " · u " + request.universe : "") : "frame");
+        return plainDMX(request);
+      };
+    }
+    if (editor.sendMIDI) {
+      var plainMIDI = editor.sendMIDI;
+      editor.sendMIDI = function (request) {
+        logCanvas("midi", midiWords(request));
+        return plainMIDI(request);
+      };
     }
 
     // The zones' own clicks; the button is disabled to GrapesJS, so nothing
