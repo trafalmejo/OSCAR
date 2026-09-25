@@ -27,11 +27,23 @@ function fakeClock() {
       timers.delete(id);
     },
     async advance(ms) {
+      // Settles until nothing due remains: a frame's chain (break, a
+      // millisecond, the levels) sets its next timer only after a few
+      // microtasks, so the scan must look again after letting the chains
+      // run, or a timer born late in the window silently waits for the
+      // next advance -- which was the flake this clock used to have.
       const until = now + ms;
-      for (;;) {
+      for (let guard = 0; ; guard++) {
+        if (guard > 1000) throw new Error("the fake clock cannot settle: something schedules forever");
         let due = null;
-        for (const [id, timer] of timers) if (!due || timer.at < due[1].at) due = [id, timer];
-        if (!due || due[1].at > until) break;
+        for (const [id, timer] of timers) if (timer.at <= until && (!due || timer.at < due[1].at)) due = [id, timer];
+        if (!due) {
+          for (let i = 0; i < 4; i++) await settle();
+          let born = false;
+          for (const timer of timers.values()) if (timer.at <= until) born = true;
+          if (!born) break;
+          continue;
+        }
         now = due[1].at;
         timers.delete(due[0]);
         due[1].fn();
