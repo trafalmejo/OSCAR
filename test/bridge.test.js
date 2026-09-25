@@ -195,3 +195,14 @@ test("the export dialog says a file bridges for itself, one copy only; the featu
   assert.ok(!read("lib/features.js").includes("MIDI_BRIDGE"), "the global switch is retired");
   assert.ok(!read("server.js").includes("MIDI_BRIDGE"));
 });
+
+test("the canvas yields to the show, per widget id, and wears the light that says so", () => {
+  const adapter = read("public/src/adapters/grapesjs.js");
+  assert.match(adapter, /if \(publishedOwners\(editor, model\.getId\(\)\)\.length\) return;/, "a live id sends nothing from the canvas");
+  assert.strictEqual((adapter.match(/publishedOwners\(editor, model\.getId\(\)\)\.length\) return;/g) || []).length, 2, "and shares nothing either");
+  assert.match(adapter, /the published copy is playing, so this control sends nothing from the canvas/);
+  assert.match(adapter, /#2fbf5f/, "green: sends from here");
+  assert.match(adapter, /#e5484d/, "red: yielded");
+  const routes = read("routes/index.js");
+  assert.match(routes, /widgets: html === null \? \[\] : allWidgetsIn\(html\)\.map/, "each published row says which ids it holds");
+});

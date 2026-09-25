@@ -822,6 +822,16 @@ the internet, for phones that are not on your network. Unlike
 `/preview`, which always shows the last push from the editor, a published
 page stays as it was until you publish it again.
 
+**The canvas yields to the show.** Once a control's id is live on a published
+surface, moving it on the canvas sends nothing: the published copy is
+playing, and two masters on one id would fight on the wire. Every control on
+the canvas wears a small light, top right: green, it sends from the canvas;
+red, a published surface owns it, and the light's hover text names which.
+Controls you add while building stay green and live until they are published
+too, and publishing again makes your edits the show, greening nothing --
+ownership simply moves with the copy. The judgement is per control, by id,
+so one canvas can hold live show controls and half-built new ones at once.
+
 **Download**, on each published surface in that list, saves the same page as
 an `.html` file to host on a web server or open on another **computer**. A
 file cannot ask where OSCAR is, so the window that opens is where you say:

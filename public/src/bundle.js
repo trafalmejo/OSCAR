@@ -20464,6 +20464,12 @@ function contextFor(view, editor) {
         console.warn("OSCAR: a widget tried to answer incoming OSC with outgoing OSC; dropped", message);
         return;
       }
+      // The canvas yields to the show: a widget whose id is live on a
+      // published surface sends nothing from here -- the published copy is
+      // playing, and two masters on one id fight on the wire. The light on
+      // the widget says so (publishedOwners below); publishing again is what
+      // makes the canvas the show.
+      if (publishedOwners(editor, model.getId()).length) return;
       if (adopting) {
         // The device that acted already sent this; a second copy from every
         // tablet watching would be a retrigger downstream.
@@ -20522,6 +20528,10 @@ function contextFor(view, editor) {
         console.warn("OSCAR: a widget tried to re-share the state it was handed; dropped", state);
         return;
       }
+      // A yielded widget shares nothing either: its id is the published
+      // copy's, and a shared move would walk every phone's fader with no
+      // output behind it.
+      if (publishedOwners(editor, model.getId()).length) return;
       // Whatever is shared while the rig's message is being delivered is
       // something every device heard, whether or not the widget said so:
       // it is recorded and nobody is told (lib/shared-sync.js).
@@ -21539,6 +21549,106 @@ function refreshChoices(editor) {
   model.set("traits", wanted);
 }
 
+/**
+ * Which published surfaces hold a widget with this id: the owners the canvas
+ * yields to. Told by the editor (tellPublishedWidgets), which polls
+ * /published; empty until it has.
+ */
+function publishedOwners(editor, id) {
+  var live = editor && editor.oscarPublishedWidgets;
+  return (live && id && live[id]) || [];
+}
+
+/**
+ * The editor's word on what is published: { widgetId: [surface, ...] }.
+ * Repaints the lights, so a publish or an unpublish shows on the widgets
+ * within a poll.
+ */
+function tellPublishedWidgets(editor, rows) {
+  var map = {};
+  (rows || []).forEach(function (row) {
+    (row.widgets || []).forEach(function (id) {
+      (map[id] = map[id] || []).push(row.id);
+    });
+  });
+  editor.oscarPublishedWidgets = map;
+  paintWidgetLights(editor);
+}
+
+/**
+ * A light on each widget of the canvas, top right: green, it sends from
+ * here; red, its id is live on a published surface and the canvas yields.
+ * Nothing on a widget whose master is off -- the panel already says that.
+ *
+ * Drawn as an overlay in the canvas document, because half the widgets are
+ * inputs and an input can hold no child. Repositioned on a slow beat and on
+ * every repaint: layouts barely move while someone is editing.
+ */
+function paintWidgetLights(editor) {
+  var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
+  if (!canvas || !canvas.body) return;
+  var layer = canvas.getElementById("oscar-widget-lights");
+  if (!layer) {
+    layer = canvas.createElement("div");
+    layer.id = "oscar-widget-lights";
+    layer.setAttribute("style", "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483000;");
+    canvas.body.appendChild(layer);
+  }
+  var wanted = [];
+  // By component type, not attribute selector: the canvas models carry the
+  // widget type, and find() over attributes misses them.
+  var models = [];
+  if (editor.getWrapper() && typeof editor.getWrapper().onAll === "function") {
+    editor.getWrapper().onAll(function (model) {
+      if (model.get && byType(model.get("type"))) models.push(model);
+    });
+  }
+  models.forEach(function (model) {
+    var view = model.getView && model.getView();
+    var el = view && view.el;
+    if (!el || typeof el.getBoundingClientRect !== "function") return;
+    var definition = byType(model.get("type"));
+    var config = configOf(model, definition);
+    if (!(config.enabled === true || config.enabled === "true")) return;
+    var owners = publishedOwners(editor, model.getId());
+    var rect = el.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    var doc = canvas;
+    var x = rect.right + (doc.defaultView ? doc.defaultView.scrollX : 0);
+    var y = rect.top + (doc.defaultView ? doc.defaultView.scrollY : 0);
+    wanted.push({
+      id: model.getId(),
+      x: x,
+      y: y,
+      live: owners.length === 0,
+      title:
+        owners.length === 0
+          ? "Comms on: this control sends from the canvas."
+          : "Live on " +
+            owners
+              .map(function (name) {
+                return '"' + name + '"';
+              })
+              .join(", ") +
+            ": the published copy is playing, so this control sends nothing from the canvas. Publish again to make your edits the show.",
+    });
+  });
+  // Redrawn whole: there are dozens at most, and bookkeeping would cost more.
+  layer.textContent = "";
+  wanted.forEach(function (dot) {
+    var el = canvas.createElement("span");
+    el.setAttribute("data-oscar-light", dot.id);
+    el.setAttribute("title", dot.title);
+    el.setAttribute(
+      "style",
+      "position:absolute;left:" + Math.round(dot.x - 5) + "px;top:" + Math.round(dot.y - 3) + "px;" +
+        "width:8px;height:8px;border-radius:50%;box-sizing:border-box;border:1px solid rgba(0,0,0,.55);" +
+        "background:" + (dot.live ? "#2fbf5f" : "#e5484d") + ";box-shadow:0 0 4px " + (dot.live ? "rgba(47,191,95,.7)" : "rgba(229,72,77,.8)") + ";"
+    );
+    layer.appendChild(el);
+  });
+}
+
 function fieldOf(definition, key) {
   var fields = definition.fields || [];
   for (var i = 0; i < fields.length; i++) if (fields[i].key === key) return fields[i];
@@ -21576,6 +21686,9 @@ function noSelectingWhile(editor, isPreviewing) {
 }
 
 module.exports = {
+  tellPublishedWidgets: tellPublishedWidgets,
+  paintWidgetLights: paintWidgetLights,
+  publishedOwners: publishedOwners,
   noSelectingWhile: noSelectingWhile,
   sectionLights: sectionLights,
   suggest: suggest,
@@ -22452,7 +22565,8 @@ var htmlDocument = require("../../lib/html-document");
 var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest, refreshChoices } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
-var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
+var adapters = require("./adapters/grapesjs");
+var { widgetPlugins, runOffstage } = adapters;
 
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
@@ -22689,6 +22803,25 @@ function initGrape(ipServer, socketPort, oscInPort) {
       askForMidiPorts();
     });
   }
+
+  // The canvas yields to the show, per widget id: what is published is read
+  // on a slow beat, each widget wears its light (green sends, red yields),
+  // and the dots follow the layout on a faster one (adapters/grapesjs.js).
+  var askForPublished = function () {
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (rows) {
+        if (rows) adapters.tellPublishedWidgets(editor, rows);
+      })
+      .catch(function () {});
+  };
+  askForPublished();
+  setInterval(askForPublished, 5000);
+  setInterval(function () {
+    adapters.paintWidgetLights(editor);
+  }, 1200);
 
   // The serial ports, for a DMX widget's Interface and the OSC Board to
   // choose from, and the cable's own state, for the Board row to say. Asked

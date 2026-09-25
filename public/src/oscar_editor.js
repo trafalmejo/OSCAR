@@ -262,7 +262,8 @@ var htmlDocument = require("../../lib/html-document");
 var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest, refreshChoices } = require("./adapters/grapesjs");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
-var { widgetPlugins, runOffstage } = require("./adapters/grapesjs");
+var adapters = require("./adapters/grapesjs");
+var { widgetPlugins, runOffstage } = adapters;
 
 // Tabs and the page-by-page lock, shared with the /preview page.
 var oscarPages = require("./pages");
@@ -499,6 +500,25 @@ function initGrape(ipServer, socketPort, oscInPort) {
       askForMidiPorts();
     });
   }
+
+  // The canvas yields to the show, per widget id: what is published is read
+  // on a slow beat, each widget wears its light (green sends, red yields),
+  // and the dots follow the layout on a faster one (adapters/grapesjs.js).
+  var askForPublished = function () {
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (rows) {
+        if (rows) adapters.tellPublishedWidgets(editor, rows);
+      })
+      .catch(function () {});
+  };
+  askForPublished();
+  setInterval(askForPublished, 5000);
+  setInterval(function () {
+    adapters.paintWidgetLights(editor);
+  }, 1200);
 
   // The serial ports, for a DMX widget's Interface and the OSC Board to
   // choose from, and the cable's own state, for the Board row to say. Asked

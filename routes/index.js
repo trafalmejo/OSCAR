@@ -8,6 +8,7 @@ const { buildExport } = require("../lib/export");
 const { markServed, rebake } = require("../lib/published");
 const { readConnection } = require("../lib/export/connection");
 const { surfaceStamp } = require("../lib/export/stamp");
+const { allWidgetsIn } = require("../lib/surfaces");
 
 // Where an export finds its runtime, and the only folder it may inline from.
 const PUBLIC_DIR = require("path").join(__dirname, "..", "public");
@@ -302,15 +303,20 @@ module.exports = function createRouter({
   // Each row carries the stamp of its widgets (lib/export/stamp.js), so the
   // editor can say when a published copy is older than the canvas. Computed
   // once per published version: the cache key is the file's date and size.
-  const stamps = new Map(); // id -> { key, stamp }
-  async function stampOf(page) {
+  const stamps = new Map(); // id -> { key, stamp, widgets }
+  async function readingOf(page) {
     const key = String(page.date) + "/" + page.size;
     const held = stamps.get(page.id);
-    if (held && held.key === key) return held.stamp;
+    if (held && held.key === key) return held;
     const html = await published.read(page.id);
-    const stamp = html === null ? "" : surfaceStamp(html);
-    stamps.set(page.id, { key, stamp });
-    return stamp;
+    const reading = {
+      key,
+      stamp: html === null ? "" : surfaceStamp(html),
+      // Which widget ids are live on this page: what the canvas yields for.
+      widgets: html === null ? [] : allWidgetsIn(html).map((entry) => entry.id),
+    };
+    stamps.set(page.id, reading);
+    return reading;
   }
 
   router.get("/published", editorOnly, async (req, res) => {
@@ -318,7 +324,8 @@ module.exports = function createRouter({
       const pages = published ? await published.list() : [];
       const rows = [];
       for (const page of pages) {
-        rows.push(Object.assign({ path: "/show/" + page.id, stamp: await stampOf(page) }, page));
+        const reading = await readingOf(page);
+        rows.push(Object.assign({ path: "/show/" + page.id, stamp: reading.stamp, widgets: reading.widgets }, page));
       }
       res.json(rows);
     } catch (err) {
