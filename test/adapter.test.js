@@ -1041,7 +1041,6 @@ test("the Board is picked where it is used: under Via, one cable for the whole o
   const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "adapters", "grapesjs.js"), "utf8");
   assert.match(src, /oscar-board/);
   assert.match(src, /config\.oscVia === "serial"/, "drawn while Via says the cable");
-  assert.match(src, /listensOnly =/, "and under a listen-only widget's Data in, where no Via exists");
   assert.match(src, /serial\.pick\(select\.value\)/, "picking writes through to the host");
   assert.match(src, /Pick a board\.\.\./, "and nothing is grabbed until a person picks");
   const editor = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");

@@ -1133,13 +1133,7 @@ function sectionLights(editor, options) {
       var viaRow = oscSection.querySelector('[data-oscar-field="oscVia"]');
       var boardRow = oscSection.querySelector(".oscar-board");
       var onCable = config.oscVia === "serial";
-      // A widget that only listens (a meter) has no Via, but a board's OSC
-      // reaches its Data in like the network's does, so the Board is offered
-      // there too -- or nowhere would offer it on a surface of meters.
-      var listensOnly =
-        definition && !fieldOf(definition, "oscVia") && fieldOf(definition, "listen") && (config.listen === true || config.listen === "true");
-      var boardAnchor = onCable ? viaRow : listensOnly ? oscSection.querySelector(".oscar-port-in") || oscSection.querySelector('[data-oscar-field="listen"]') : null;
-      if (!boardAnchor) {
+      if (!onCable || !viaRow) {
         if (boardRow) boardRow.parentNode.removeChild(boardRow);
       } else {
         if (!boardRow) {
@@ -1167,7 +1161,7 @@ function sectionLights(editor, options) {
           boardTrait.appendChild(boardFieldBox);
           boardRow.appendChild(boardTrait);
         }
-        if (boardAnchor.nextSibling !== boardRow) boardAnchor.parentNode.insertBefore(boardRow, boardAnchor.nextSibling);
+        if (viaRow.nextSibling !== boardRow) viaRow.parentNode.insertBefore(boardRow, viaRow.nextSibling);
         var link = serial.state() || {};
         var choices = [{ id: "", name: "Pick a board..." }];
         (suggestions["serial-ports"] || []).forEach(function (entry) {
@@ -1194,9 +1188,7 @@ function sectionLights(editor, options) {
             ? "Connected to " + link.path + " at " + link.bitrate + " baud."
             : link.state === "waiting"
             ? "Waiting for " + link.path + (link.error ? " (" + link.error + ")" : "") + "."
-            : onCable
-            ? "No board yet: pick the port it is on. One cable for the whole of OSCAR."
-            : "A board on USB is heard like the network: pick the port it is on and its OSC moves this widget too. One cable for the whole of OSCAR.";
+            : "No board yet: pick the port it is on. One cable for the whole of OSCAR.";
         boardRow.setAttribute("title", said);
         boardRow.setAttribute("data-serial-state", link.state || "idle");
       }
