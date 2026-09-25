@@ -216,6 +216,9 @@ app.use(
     lock,
     serial,
     published,
+    // Unpublishing has no store event of its own, so the route says it, and
+    // every editor's LIVE pill recounts.
+    onPublishedChanged: () => io.emit("published:changed"),
     templatesDir: path.join(__dirname, "public", "templates"),
     extensions,
   })
@@ -519,7 +522,22 @@ io.on("connection", (socket) => {
 
 // Acting on a published surface with no browser showing it (lib/surfaces.js):
 // which widget and what state, never where to send.
-const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io });
+//
+// onActivity feeds the editor's LIVE pill: IN as the server consumes OSC or
+// MIDI for a published surface, OUT as it sends on one's behalf. Throttled
+// here so a fader at 60 Hz costs a flicker, not a socket message per move.
+const activityAt = { in: 0, out: 0 };
+function tellActivity(dir) {
+  const at = Date.now();
+  if (at - activityAt[dir] < 200) return;
+  activityAt[dir] = at;
+  io.emit("live:activity", { dir });
+}
+const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io, onActivity: tellActivity });
+
+// The pill's count follows publishing without waiting for the editor's next
+// poll. Unpublishing is told by the route that does it (onPublishedChanged).
+surfaces.onPublished(() => io.emit("published:changed"));
 
 // MIDI in. What arrives is handed to every page, as incoming OSC is, and the
 // widgets that listen for it follow (lib/widgets/midi-in.js). A published

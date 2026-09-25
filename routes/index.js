@@ -44,6 +44,7 @@ module.exports = function createRouter({
   serial,
   exportFiles,
   published,
+  onPublishedChanged,
   templatesDir,
   extensions,
 }) {
@@ -350,6 +351,7 @@ module.exports = function createRouter({
   router.delete("/published/:id", editorOnly, async (req, res) => {
     const removed = published ? await published.remove(req.params.id) : false;
     if (!removed) return res.status(404).json({ error: "That surface is no longer published" });
+    if (onPublishedChanged) onPublishedChanged();
     res.json({ msg: "Unpublished" });
   });
 

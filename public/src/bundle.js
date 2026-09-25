@@ -577,10 +577,11 @@ const DEFAULTS = {
    * surface sends and shares nothing from the editor's canvas, and every
    * enabled control wears a light saying whether it sends from here (green)
    * or a published surface owns it (red, the owners in the hover text).
-   * On because two masters on one id fight on the wire; here as a switch in
-   * case an installation prefers the old behaviour, canvas always live.
+   * Off for now, by choice (2026-09-25): built and verified, waiting for a
+   * decision on how it should feel in daily editing. On, it stops the two
+   * masters on one id fighting on the wire; off, the canvas is always live.
    */
-  CANVAS_YIELD: true,
+  CANVAS_YIELD: false,
 
 };
 
@@ -23947,6 +23948,98 @@ function initGrape(ipServer, socketPort, oscInPort) {
     },
     attributes: { title: "About Oscar", "data-tooltip-pos": "bottom" },
   });
+
+  // ---- the LIVE pill ------------------------------------------------------
+  // OSCAR serves published surfaces in the background all the time, and while
+  // editing it is easy to forget the rig is listening to them too. The pill
+  // sits between the screen sizes and the network info and counts them; IN
+  // flickers when the server consumes OSC or MIDI for a published surface,
+  // OUT when it sends on one's behalf -- a bridge, a schedule, a phone. Never
+  // for a hand on this canvas: that send does not pass through the server's
+  // surfaces at all (lib/surfaces.js onActivity). Hidden while nothing is
+  // published. Added before ipButton on purpose: buttons render in the order
+  // they are added, which is what puts it in that gap.
+  pn.addButton("devices-c", {
+    id: "oscar-live-pill",
+    className: "oscar-live-btn",
+    label:
+      '<span class="oscar-live-pill">' +
+      '<span class="oscar-live-dot"></span>' +
+      '<span class="oscar-live-word">LIVE</span>' +
+      '<span class="oscar-live-count">0</span>' +
+      '<span class="oscar-live-led" data-led="in">IN</span>' +
+      '<span class="oscar-live-led" data-led="out">OUT</span>' +
+      "</span>",
+    command: function () {
+      // The roster lives in the publish window; the pill is the way there.
+      editor.runCommand("oscar-export");
+    },
+    active: false,
+  });
+
+  (function wireLivePill() {
+    var flashes = { in: null, out: null };
+
+    function pillEl() {
+      return document.querySelector(".gjs-pn-devices-c .oscar-live-btn");
+    }
+
+    function paintLive(rows) {
+      var el = pillEl();
+      if (!el) return;
+      var count = el.querySelector(".oscar-live-count");
+      if (count) count.textContent = String(rows.length);
+      el.classList.toggle("oscar-live-on", rows.length > 0);
+      var names = rows
+        .map(function (row) {
+          return '"' + row.id + '"';
+        })
+        .join(", ");
+      el.setAttribute(
+        "data-tooltip",
+        rows.length === 1
+          ? "OSCAR is serving " + names + " in the background. IN lights as it receives, OUT as OSCAR sends for it. Click to manage."
+          : "OSCAR is serving " + rows.length + " published surfaces: " + names + ". IN lights as they receive, OUT as OSCAR sends for them. Click to manage."
+      );
+      el.setAttribute("data-tooltip-pos", "bottom");
+    }
+
+    function refreshLive() {
+      fetch("/published")
+        .then(function (res) {
+          return res.json();
+        })
+        .then(function (rows) {
+          paintLive(Array.isArray(rows) ? rows : []);
+        })
+        .catch(function () {});
+    }
+
+    function flash(dir) {
+      var el = pillEl();
+      var led = el && el.querySelector('.oscar-live-led[data-led="' + dir + '"]');
+      if (!led) return;
+      led.classList.add("oscar-live-led-on");
+      if (flashes[dir]) clearTimeout(flashes[dir]);
+      // A hair longer than the server's throttle, so steady traffic reads as
+      // a steady light instead of a strobe.
+      flashes[dir] = setTimeout(function () {
+        led.classList.remove("oscar-live-led-on");
+        flashes[dir] = null;
+      }, 350);
+    }
+
+    if (editor.socket) {
+      editor.socket.on("live:activity", function (msg) {
+        if (msg && (msg.dir === "in" || msg.dir === "out")) flash(msg.dir);
+      });
+      editor.socket.on("published:changed", refreshLive);
+      // A server that restarted may have a different roster than the one
+      // this pill last drew.
+      editor.socket.on("connect", refreshLive);
+    }
+    refreshLive();
+  })();
 
   pn.addButton("devices-c", {
     id: "ipButton",

@@ -344,6 +344,68 @@ a {
   color: var(--o-accent);
 }
 
+/* The LIVE pill: OSCAR is serving published surfaces in the background, and
+   the top bar says so between the screen sizes and the network info. Hidden
+   entirely while nothing is published -- a "LIVE 0" would be noise. */
+.gjs-pn-btn.oscar-live-btn {
+  display: none;
+  padding: 0;
+  background: none;
+}
+.gjs-pn-btn.oscar-live-btn.oscar-live-on {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.oscar-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--o-accent-border);
+  background: var(--o-accent-subtle);
+  color: var(--o-accent-text);
+  font-size: var(--o-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+.gjs-pn-btn.oscar-live-btn:hover .oscar-live-pill {
+  background: var(--o-accent-subtle-hover);
+}
+.oscar-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--o-accent);
+  animation: oscar-live-breathe 2.4s ease-in-out infinite;
+}
+@keyframes oscar-live-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+/* The activity lights: unlit they are legible but quiet; lit, the green of
+   the widget lights -- data moving is the same news in both places. */
+.oscar-live-led {
+  padding: 0 0.35em;
+  border-radius: var(--o-radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.625rem;
+  color: var(--o-text-faint);
+}
+.oscar-live-led-on {
+  color: #eafff1;
+  background: rgba(47, 191, 95, 0.45);
+  border-color: rgba(47, 191, 95, 0.8);
+  box-shadow: 0 0 6px rgba(47, 191, 95, 0.6);
+}
+
 /* The server address is information, not a button. GrapesJS marks it
    disabled and fades it to half opacity, which on top of muted text made the
    one address people need to read the hardest thing on screen to read. */
