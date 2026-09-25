@@ -15,13 +15,15 @@
       </table>
     </div>
     <div class="o-projects-form">
+      <!-- Hidden, not gone: it carries the picked name for the file-system
+           Save (oscarSaveToFile suggests it), and the row selection still
+           writes into it. Saving got its own dialog, so nobody types here. -->
       <input
         id="project-name"
         class="o-input"
         type="text"
-        placeholder="Name your project, or pick one from the list"
         name="name"
-        required
+        style="display: none"
       />
       <%- include('save') %> <%- include('load') %>
     </div>
