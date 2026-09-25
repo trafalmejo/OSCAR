@@ -744,10 +744,6 @@ body.oscar-log-dragging iframe {
   font-variant-numeric: tabular-nums;
   opacity: 1;
   cursor: default;
-  /* A pill like its neighbours: the address is one of the bar's facts. */
-  padding: 0.15rem 0.6rem;
-  border: 1px solid var(--o-border-strong);
-  border-radius: 999px;
 }
 
 /* A locked OSCAR that looked unlocked would be its own hazard, so the lock
