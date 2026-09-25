@@ -3,10 +3,10 @@
 <head>
 <title>Audio Console</title>
 <!--
-  Audio Console: eight channel strips and a master, each a level meter beside
-  a fader, with Mute and Solo under it. For a sound desk driven from a tablet
-  (a digital mixer's OSC remote, Ableton, Reaper, QLab), or for watching
-  levels from the back of the room.
+  Audio Console, in brass and walnut: eight channel strips and a master, each
+  a glass level tube beside a fader, with Mute and Solo under it. For a sound
+  desk driven from a tablet (a digital mixer's OSC remote, Ableton, Reaper,
+  QLab), or for watching levels from the back of the room.
 
   Open it from Load, or paste this whole file into Import. It is ordinary
   HTML and CSS with two OSCAR additions:
@@ -14,14 +14,25 @@
   - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
     OSC address) and data-gjs-dmode="flow", which makes a part move through
     the layout when dragged instead of being pulled out of it.
-  - data-osc-style and data-osc-appearance on <body> pick the widget style.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the whole desk is redrawn in that style's colours: every
+    rule that paints is written for "own" alone, and a short set of rules
+    further down, made of tokens only, dresses it for the others.
+
+  The steampunk dress: walnut strips in a brass bezel with a rivet in each
+  corner, engraved brass name plates, glass tubes for meters with a copper
+  cap at each end, brass lever faders, and push buttons that light up red
+  (Mute) and amber (Solo, Dim). The gears in the header turn while the
+  master is live and stop when it is muted: OSCAR puts the class "toggle" on
+  a button that is down, and the page watches it with :has().
 
   The layout is a CSS grid that rearranges at 992px and 480px, the widths of
   the editor's Tablet and Mobile views, so edits made in those views land in
   the same media queries.
 
   The meters are coloured by level, green to amber to red, the way a desk's
-  are. The scale is painted on the whole meter and the unlit part is covered
+  are. The scale is painted on the whole tube and the unlit part is covered
   from the top, so a colour always means the same level.
 
   The meters only listen: point your software's OSC output at OSCAR and send
@@ -35,73 +46,212 @@
     in   /ch/<n>/level   /master/level/left   /master/level/right
 -->
 <style>
+[data-osc-style="own"] {
+  --osc-background: #1a120b;
+  --osc-foreground: #f3e3c3;
+  --osc-card: #3b2616;
+  --osc-muted: #140d08;
+  --osc-accent: #8a5a2b;
+  --osc-accent-foreground: #fff6e2;
+  --osc-border: #0d0805;
+  --osc-input: #0d0805;
+  --osc-primary: #c9913d;
+  --osc-primary-foreground: #1a120b;
+  --osc-ring: #e8b04a;
+  --osc-radius: 6px;
+  --osc-font: Georgia, "Palatino Linotype", "Book Antiqua", serif;
+}
+
+/* ---- the room: a workshop wall, lamplit ---------------------------------------------------- */
 .acn {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 18px;
   min-height: 100vh;
+  padding: 22px;
+  box-sizing: border-box;
 }
+[data-osc-style="own"] .acn {
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(255, 180, 90, 0.16), rgba(0, 0, 0, 0)),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0 2px, rgba(0, 0, 0, 0) 2px 90px),
+    linear-gradient(180deg, #2a1a0e, #140c06);
+  color: #f3e3c3;
+}
+
+/* ---- the header: a brass nameplate, and gears ---------------------------------------------- */
 .acn-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 12px 20px;
+  border-radius: 8px;
 }
+[data-osc-style="own"] .acn-header {
+  background:
+    radial-gradient(circle at 12px 12px, #5a3a14 0 3px, rgba(0, 0, 0, 0) 4px),
+    radial-gradient(circle at calc(100% - 12px) 12px, #5a3a14 0 3px, rgba(0, 0, 0, 0) 4px),
+    radial-gradient(circle at 12px calc(100% - 12px), #5a3a14 0 3px, rgba(0, 0, 0, 0) 4px),
+    radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), #5a3a14 0 3px, rgba(0, 0, 0, 0) 4px),
+    linear-gradient(180deg, #e7c47a, #c9913d 45%, #8e5f22);
+  box-shadow: inset 0 2px 0 rgba(255, 245, 210, 0.6), inset 0 -3px 4px rgba(60, 30, 5, 0.6), 0 6px 14px rgba(0, 0, 0, 0.6);
+  color: #2b1908;
+}
+
+.acn-plate {
+  display: grid;
+  gap: 2px;
+}
+
 .acn-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.12em;
 }
+[data-osc-style="own"] .acn-title {
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.55);
+}
+
 .acn-hint {
   font-size: 12px;
-  opacity: 0.7;
+  font-style: italic;
+  opacity: 0.8;
 }
+
+.acn-gears {
+  display: flex;
+  align-items: center;
+  flex: none;
+  pointer-events: none;
+}
+
+.acn-gear {
+  display: block;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  animation: acn-turn 14s linear infinite;
+}
+.acn-gear-b {
+  width: 40px;
+  height: 40px;
+  margin-left: -6px;
+  animation-direction: reverse;
+  animation-duration: 9.1s;
+}
+.acn-gear-c {
+  width: 52px;
+  height: 52px;
+  margin-left: -5px;
+  animation-duration: 11.6s;
+}
+[data-osc-style="own"] .acn-gear {
+  background:
+    radial-gradient(circle, rgba(0, 0, 0, 0) 0 17%, #2a1a0a 18% 25%, #6e4a22 26% 34%, #4a3016 35% 62%, rgba(0, 0, 0, 0) 63%),
+    repeating-conic-gradient(#3a2511 0 11deg, rgba(0, 0, 0, 0) 11deg 22.5deg);
+  filter: drop-shadow(0 2px 2px rgba(40, 20, 0, 0.7));
+  -webkit-mask-image: radial-gradient(circle, rgba(0, 0, 0, 0) 0 16%, #000000 17%);
+  mask-image: radial-gradient(circle, rgba(0, 0, 0, 0) 0 16%, #000000 17%);
+}
+
+/* The master muted: the engine stops. */
+.acn:has(#acn-master-mute.toggle) .acn-gear {
+  animation-play-state: paused;
+}
+
+@keyframes acn-turn {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- the strips: walnut in a brass bezel, a rivet in each corner ---------------------------- */
 .acn-strips {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr)) minmax(0, 1.3fr);
-  gap: 10px;
+  gap: 12px;
 }
+
 .acn-strip {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  padding: 10px 8px;
+  padding: 14px 10px 12px;
   border: 1px solid var(--osc-border);
   border-radius: var(--osc-radius);
   background-color: var(--osc-card);
 }
+[data-osc-style="own"] .acn-strip {
+  border: 0;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 7px 7px, #e7c47a 0 2.5px, #6b4418 3px, rgba(0, 0, 0, 0) 3.5px),
+    radial-gradient(circle at calc(100% - 7px) 7px, #e7c47a 0 2.5px, #6b4418 3px, rgba(0, 0, 0, 0) 3.5px),
+    radial-gradient(circle at 7px calc(100% - 7px), #e7c47a 0 2.5px, #6b4418 3px, rgba(0, 0, 0, 0) 3.5px),
+    radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), #e7c47a 0 2.5px, #6b4418 3px, rgba(0, 0, 0, 0) 3.5px),
+    repeating-linear-gradient(87deg, rgba(0, 0, 0, 0.16) 0 3px, rgba(0, 0, 0, 0) 3px 11px, rgba(255, 220, 170, 0.04) 11px 13px, rgba(0, 0, 0, 0) 13px 21px),
+    linear-gradient(180deg, #5a331a, #3b2112);
+  box-shadow: 0 0 0 3px #a8752e, 0 0 0 4px #4a2e10, inset 0 0 18px rgba(0, 0, 0, 0.55), 0 8px 16px rgba(0, 0, 0, 0.55);
+}
+
 .acn-master {
   border-color: var(--osc-primary);
 }
+[data-osc-style="own"] .acn-master {
+  box-shadow: 0 0 0 3px #d9a64d, 0 0 0 4px #4a2e10, inset 0 0 18px rgba(0, 0, 0, 0.55), 0 0 22px rgba(232, 176, 74, 0.25), 0 8px 16px rgba(0, 0, 0, 0.55);
+}
+
+/* The name: an engraved brass plate. */
 .acn-name {
   overflow: hidden;
+  padding: 3px 4px;
+  border-radius: 3px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+[data-osc-style="own"] .acn-name {
+  background: linear-gradient(180deg, #e7c47a, #b8843a);
+  box-shadow: inset 0 1px 0 rgba(255, 245, 210, 0.6), 0 1px 2px rgba(0, 0, 0, 0.6);
+  color: #2b1908;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.45);
+}
+
 .acn-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   justify-items: center;
   gap: 8px;
   min-height: 240px;
 }
 .acn-body-master {
-  grid-template-columns: 14px 14px minmax(0, 1fr);
+  grid-template-columns: 16px 16px minmax(0, 1fr);
 }
+
+/* The meter: a glass tube with a copper cap at each end. */
 .acn-body > .oscar-meter {
   width: 14px;
   height: 100%;
 }
-.acn-body > .oscar-meter[orient="vertical"] {
-  background-image: linear-gradient(to top, #46a758 0%, #46a758 60%, #ffc53d 80%, #e5484d 100%);
+[data-osc-style="own"] .acn-body > .oscar-meter {
+  width: 16px;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px #7a4a1c, 0 -5px 0 1px #b8743a, 0 5px 0 1px #b8743a, inset 0 0 6px rgba(0, 0, 0, 0.5);
+}
+[data-osc-style="own"] .acn-body > .oscar-meter[orient="vertical"] {
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0) 0 25%, rgba(255, 255, 255, 0.35) 35%, rgba(255, 255, 255, 0) 50%),
+    linear-gradient(to top, #6fbf4a 0%, #8fd65a 60%, #f0b43c 80%, #e2542e 100%);
 }
 .acn-body > .oscar-meter[orient="vertical"]::before {
   top: 0;
@@ -109,32 +259,100 @@
   height: calc(100% - var(--oscar-level));
   background: var(--osc-muted);
 }
+[data-osc-style="own"] .acn-body > .oscar-meter[orient="vertical"]::before {
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(90deg, #120b06, #2a1a0e 40%, #120b06);
+}
+
+/* The fader: a brass lever in a dark slot. */
 .acn-body > input {
   width: 40px;
   height: 100%;
 }
+[data-osc-style="own"] .acn-body > input[type="range"] {
+  --osc-primary: #c9913d;
+  --osc-muted: #0d0805;
+  --osc-track-size: 6px;
+  --osc-thumb: 26px;
+}
+[data-osc-style="own"] .acn-body > input[type="range"]::-webkit-slider-thumb {
+  width: 44px;
+  height: 26px;
+  margin-left: -19px;
+  border: 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #f1d38e, #c9913d 40%, #6b4418 52%, #b07a2f 60%, #8e5f22);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 245, 210, 0.7);
+}
+[data-osc-style="own"] .acn-body > input[type="range"]::-moz-range-thumb {
+  width: 44px;
+  height: 26px;
+  border: 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #f1d38e, #c9913d 40%, #6b4418 52%, #b07a2f 60%, #8e5f22);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 245, 210, 0.7);
+}
+
+/* Mute and Solo: brass push buttons, lit when pressed in. */
 .acn-strip > button {
   width: 100%;
   min-height: 40px;
   padding: 0 4px;
   font-size: 12px;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
 }
-.acn-mute.toggle,
-.acn-mute.toggle:hover {
-  border-color: #e5484d;
-  background-color: #e5484d;
-  color: #ffffff;
+[data-osc-style="own"] .acn-strip > button {
+  border: 0;
+  border-radius: 20px;
+  background: radial-gradient(120% 90% at 50% 20%, #f1d38e, #c9913d 50%, #7a4f1c);
+  box-shadow: inset 0 1px 0 rgba(255, 245, 210, 0.7), inset 0 -2px 3px rgba(60, 30, 5, 0.6), 0 3px 0 #3b2410, 0 5px 8px rgba(0, 0, 0, 0.5);
+  color: #2b1908;
 }
-.acn-solo.toggle,
-.acn-solo.toggle:hover {
-  border-color: #ffc53d;
-  background-color: #ffc53d;
-  color: #21201c;
+[data-osc-style="own"] .acn-strip > button:hover {
+  background: radial-gradient(120% 90% at 50% 20%, #f7dfa3, #d49e4a 50%, #85581f);
+}
+.acn-strip > button.toggle {
+  transform: translateY(2px);
+}
+[data-osc-style="own"] .acn-mute.toggle,
+[data-osc-style="own"] .acn-mute.toggle:hover {
+  background: radial-gradient(120% 90% at 50% 30%, #ff8a6a, #c2301f 55%, #6e140c);
+  box-shadow: inset 0 2px 4px rgba(40, 0, 0, 0.6), 0 1px 0 #3b2410, 0 0 14px rgba(226, 84, 46, 0.65);
+  color: #fff1e0;
+}
+[data-osc-style="own"] .acn-solo.toggle,
+[data-osc-style="own"] .acn-solo.toggle:hover {
+  background: radial-gradient(120% 90% at 50% 30%, #ffe08a, #e8a33a 55%, #8a5a12);
+  box-shadow: inset 0 2px 4px rgba(60, 30, 0, 0.5), 0 1px 0 #3b2410, 0 0 14px rgba(240, 180, 60, 0.65);
+  color: #2b1908;
+}
+
+/* ---- under any other widget style: the same desk, in that style's colours ---- */
+body:not([data-osc-style="own"]) .acn {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .acn-header {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-card);
+}
+body:not([data-osc-style="own"]) .acn-gear {
+  border: 3px dotted var(--osc-accent);
+  box-sizing: border-box;
+}
+body:not([data-osc-style="own"]) .acn-mute.toggle,
+body:not([data-osc-style="own"]) .acn-solo.toggle {
+  border-color: var(--osc-primary);
+  background-color: var(--osc-primary);
+  color: var(--osc-primary-foreground);
 }
 
 @media (max-width: 992px) {
   .acn {
     min-height: 0;
+    padding: 16px;
   }
   .acn-strips {
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -150,17 +368,32 @@
 @media (max-width: 480px) {
   .acn {
     gap: 12px;
-    padding: 12px;
+    padding: 10px;
+  }
+  .acn-header {
+    padding: 10px 14px;
   }
   .acn-title {
-    font-size: 16px;
+    font-size: 18px;
   }
   .acn-hint {
     display: none;
   }
+  .acn-gear {
+    width: 40px;
+    height: 40px;
+  }
+  .acn-gear-b {
+    width: 28px;
+    height: 28px;
+  }
+  .acn-gear-c {
+    width: 34px;
+    height: 34px;
+  }
   .acn-strips {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    gap: 10px;
   }
   .acn-master {
     grid-column: span 3;
@@ -169,14 +402,29 @@
     min-height: 170px;
   }
 }
+
+/* ---- for anyone who has asked for less motion ---- */
+@media (prefers-reduced-motion: reduce) {
+
+  .acn-gear {
+    animation: none !important;
+  }
+}
 </style>
 </head>
-<body data-osc-style="tangerine" data-osc-appearance="dark">
+<body data-osc-style="own" data-osc-appearance="dark">
 <div id="acn" class="acn" data-gjs-dmode="flow">
 
   <header id="acn-header" class="acn-header" data-gjs-dmode="flow">
-    <h1 id="acn-title" class="acn-title" data-gjs-dmode="flow">Audio Console</h1>
-    <span id="acn-hint" class="acn-hint" data-gjs-dmode="flow">Meters follow /ch/n/level, 0 to 1</span>
+    <div id="acn-plate" class="acn-plate" data-gjs-dmode="flow">
+      <h1 id="acn-title" class="acn-title" data-gjs-dmode="flow">Audio Console</h1>
+      <span id="acn-hint" class="acn-hint" data-gjs-dmode="flow">Meters follow /ch/n/level, 0 to 1</span>
+    </div>
+    <div id="acn-gears" class="acn-gears" data-gjs-dmode="flow">
+      <span id="acn-gear-a" class="acn-gear" data-gjs-dmode="flow"></span>
+      <span id="acn-gear-b" class="acn-gear acn-gear-b" data-gjs-dmode="flow"></span>
+      <span id="acn-gear-c" class="acn-gear acn-gear-c" data-gjs-dmode="flow"></span>
+    </div>
   </header>
 
   <div id="acn-strips" class="acn-strips" data-gjs-dmode="flow">
