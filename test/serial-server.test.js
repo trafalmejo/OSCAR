@@ -80,7 +80,11 @@ function until(check, ms, what) {
   });
 }
 
-test("a server whose remembered board is unplugged starts, says so, drops honestly and still exits", async (t) => {
+// While SERIAL is off (lib/features.js) the remembered port is deliberately
+// left alone: a hidden feature must not steal COM3 from an Open DMX interface
+// on the same chip. The honest-drop reporting this test once watched for
+// returns to being end-to-end tested when the feature does.
+test("a remembered board is left alone while serial is hidden; the server still starts, drops honestly and exits", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-serial-"));
   const settingsFile = path.join(dir, "settings.json");
   fs.writeFileSync(settingsFile, JSON.stringify({ locked: false, serial: { path: NO_SUCH_PORT, bitrate: 57600 } }));
@@ -135,19 +139,10 @@ test("a server whose remembered board is unplugged starts, says so, drops honest
   assert.strictEqual(report.status, 200);
   assert.ok(Array.isArray(report.body.ports));
 
-  if (serial.supported) {
-    // Remembered, asked for at the remembered rate, and not there.
-    assert.strictEqual(report.body.path, NO_SUCH_PORT);
-    assert.strictEqual(report.body.bitrate, 57600);
-    await until(
-      () => /Serial: waiting for /.test(output),
-      5000,
-      () => "the banner to say what it is waiting for:\n" + output
-    );
-  } else {
-    assert.match(String(report.body.reason), /No serial support in this build/);
-    assert.match(output, /Serial: NOT sending to the remembered port/);
-  }
+  // The remembered port is not reopened while the feature is off: nothing
+  // waits for it, and nothing holds it against whatever else needs the chip.
+  assert.strictEqual(report.body.path, null);
+  assert.ok(!/Serial: waiting for /.test(output), "nothing waits for a port a hidden feature remembered: " + output);
 
   // A widget aimed at the cable, with the empty Port the settings allow
   // there. The browser libraries are optional in a checkout, like elsewhere.

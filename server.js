@@ -416,7 +416,10 @@ const oscIn = oscReceiver({
 // overnight drives it again with nobody there. Down here rather than beside
 // the link because a port that fails at once reports before this returns, and
 // that report reads the banner state declared above.
-{
+// Only while serial is offered (lib/features.js): a remembered port opened by
+// a hidden feature is a port silently stolen from whatever else needs it --
+// an Open DMX interface on the same FTDI cable, say.
+if (features.SERIAL) {
   const complaint = serial.restore();
   if (complaint) serialLine = "  Serial: NOT sending to the remembered port. " + complaint;
 }
