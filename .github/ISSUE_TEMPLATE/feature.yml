@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        No GitHub account? Email [hello@createwithoscar.com](mailto:hello@createwithoscar.com)
+        No GitHub account? Email [hello@createwithoscar.site](mailto:hello@createwithoscar.site)
         — suggestions sent that way are read and tracked the same way.
 
   - type: textarea
