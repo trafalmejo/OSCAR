@@ -8,23 +8,26 @@ const { PLACEMENTS, moveAfter, moveBefore, arrange } = require("../lib/toolbar-o
 // The order the editor's scripts add their buttons in: the sizes join late
 // (moved over from the left panel), Import is removed after the preset adds
 // it, Open/Save live under File on the left, and Show borders, Fullscreen,
-// See code, Clear canvas and the widget style live under Edit: none of those
-// holds a seat here.
+// See code, Clear canvas and the widget style live under Edit, Push to
+// preview and About under File: none of those holds a seat here.
 // The screen sizes have a panel of their own, centred over the canvas.
 const ADDED = [
-  "preview", "open-pages", "oscar-live-pill", "oscar-mcp-pill", "oscar-export", "toggle-lock", "open-info",
+  "open-pages", "oscar-live-pill", "oscar-mcp-pill", "oscar-export", "toggle-lock",
 ];
 
-test("the pills lead the right half, the lock sits beside Push to preview, Pages beside the lock", () => {
+test("the pills lead the right half, the lock follows them, Pages beside the lock", () => {
   const order = arrange(ADDED);
   assert.deepStrictEqual(
     order.slice(0, 3),
-    ["oscar-live-pill", "oscar-mcp-pill", "preview"],
+    ["oscar-live-pill", "oscar-mcp-pill", "toggle-lock"],
     "the pills first, ahead of the tools"
   );
-  assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
   assert.strictEqual(order[order.indexOf("toggle-lock") + 1], "open-pages");
-  for (const retired of ["gjs-open-import-webpage", "open-load", "open-save", "sw-visibility", "fullscreen", "export-template", "canvas-clear", "open-styles"]) {
+  assert.strictEqual(order[order.length - 1], "oscar-export", "Publish last, at the right end");
+  // With Pages off there is no Pages button, and Publish still ends the bar.
+  const noPages = arrange(ADDED.filter((id) => id !== "open-pages"));
+  assert.deepStrictEqual(noPages, ["oscar-live-pill", "oscar-mcp-pill", "toggle-lock", "oscar-export"]);
+  for (const retired of ["gjs-open-import-webpage", "open-load", "open-save", "sw-visibility", "fullscreen", "export-template", "canvas-clear", "open-styles", "preview", "open-info"]) {
     assert.ok(!PLACEMENTS.some((p) => p.id === retired || p.after === retired || p.before === retired), "no placement names " + retired);
   }
   assert.deepStrictEqual(order.slice().sort(), ADDED.slice().sort(), "nothing added, nothing lost");

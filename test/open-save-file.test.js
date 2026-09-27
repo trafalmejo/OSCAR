@@ -70,6 +70,20 @@ test("Edit stands beside File: Undo and Redo under one word, their icons retired
   assert.match(editor, /again stays chosen instead of toggling half-off\.\n      togglable: false,/, "a screen size is a choice, not a switch");
 });
 
+test("File holds Push to preview and About; Edit holds the lock and an extension's items; their bar buttons are gone", () => {
+  const file = editor.slice(editor.indexOf("function showFileMenu()"), editor.indexOf("// A file double-clicked"));
+  const edits = editor.slice(editor.indexOf("function showEditMenu()"), editor.indexOf("function showFileMenu()"));
+  assert.match(file, /label: "Push to preview",\s*run: function \(\) \{\s*editor\.runCommand\("preview"\);/, "Push to preview runs the command itself: there is no eye to press");
+  assert.ok(file.indexOf("About OSCAR") !== -1, "About under File");
+  assert.ok(edits.indexOf("Push to preview") === -1, "not under Edit any more");
+  assert.match(edits, /\.concat\(extraItems\("edit"\)\)/, "an extension's items join Lock editing");
+  assert.match(file, /\.concat\(extraItems\("file"\)\)/, "and File's join Publish");
+  assert.match(editor, /\["sw-visibility", "fullscreen", "export-template", "canvas-clear", "preview"\]\.forEach/, "the eye leaves the bar");
+  assert.ok(editor.indexOf('id: "open-info"') === -1, "the jellyfish is not added");
+  assert.match(editor, /addMenuItem: function \(menu, item\) \{/, "extensions get a place in the menus");
+  assert.match(editor, /if \(!menuExtras\[menu\]\) throw new Error\('A menu item goes in "file" or "edit"'\);/);
+});
+
 test("Show borders is remembered: turned off, it stays off after a refresh", () => {
   assert.match(editor, /localStorage\.setItem\(BORDERS_KEY, on \? "on" : "off"\);/, "the choice is kept when made");
   assert.match(editor, /return localStorage\.getItem\(BORDERS_KEY\) !== "off";/, "on until turned off once");

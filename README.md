@@ -313,7 +313,7 @@ The editor lives at `/`. The control surface lives at `/preview` — the same
 layout with every editing tool stripped out, which is what you open on a phone
 or tablet.
 
-Press **Push to preview** (the eye icon) to send the current layout to it.
+Choose **File → Push to preview** to send the current layout to it.
 Every device showing `/preview` picks the new layout up straight away; there is
 no need to walk over and reload them.
 

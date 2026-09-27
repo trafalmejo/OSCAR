@@ -1896,16 +1896,19 @@ const PLACEMENTS = [
   // over the canvas.)
   // The LIVE and MCP pills lead the right half: the show's state first, then
   // the tools.
-  { id: "oscar-live-pill", before: "preview" },
+  // (Push to preview and About are under File now, and their buttons gone.)
+  { id: "oscar-live-pill", before: "toggle-lock" },
   { id: "oscar-mcp-pill", after: "oscar-live-pill" },
-  // Locking is what you do once a surface is pushed and the doors are about
-  // to open, so it belongs beside the button that pushes it.
-  { id: "toggle-lock", after: "preview" },
+  // The padlock follows the pills: locking is what you do once a surface is
+  // out and the doors are about to open.
+  { id: "toggle-lock", after: "oscar-mcp-pill" },
+  // A project's way in and out lives under File at the bar's left edge;
+  // Publish keeps its own seat, last on the right: after the lock, and
+  // after Pages, which the next line puts between them when it is on.
+  { id: "oscar-export", after: "toggle-lock" },
   // Pages is about the surface as a whole, beside the lock. (The widget
   // style, which it once sat beside, lives under Edit now.)
   { id: "open-pages", after: "toggle-lock" },
-  // A project's way in and out lives under File at the bar's left edge;
-  // Publish keeps its own seat, added late enough to land before About.
 ];
 
 /**
@@ -24005,10 +24008,29 @@ function initGrape(ipServer, socketPort, oscInPort) {
     }
   }
 
+  // Items an extension adds to File or Edit (oscarApi.addMenuItem): Pro's
+  // Schedule, say. Drawn with each opening, so one added or taken away since
+  // shows at once.
+  var menuExtras = { file: [], edit: [] };
+
+  function extraItems(menu) {
+    return menuExtras[menu].map(function (item) {
+      return {
+        label: item.label,
+        run: function () {
+          item.run(editor);
+        },
+      };
+    });
+  }
+
   // Edit holds what acts on the canvas as a whole: undoing, how it is shown,
-  // its code, its style, and emptying it. Their icons retired from the bar.
+  // its code, its style, locking it, and emptying it. Their icons retired
+  // from the bar, except the padlock.
   function showEditMenu() {
-    showBarMenu(".gjs-pn-devices-c .oscar-edit-btn", [
+    showBarMenu(
+      ".gjs-pn-devices-c .oscar-edit-btn",
+      [
       {
         label: "Undo",
         run: function () {
@@ -24038,17 +24060,11 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
       { rule: true },
-      // Also the eye and the padlock on the bar, which stay. Preview goes
-      // through the eye's own button, so the button lights as a click would.
-      {
-        label: "Push to preview",
-        run: function () {
-          var button = pn.getButton("options", "preview");
-          if (button) button.set("active", true);
-          else editor.runCommand("preview");
-        },
-      },
+      // Also the padlock on the bar, which stays.
       { label: "Lock editing", checked: isLockedNow(), run: function () { setLocked(!isLockedNow()); } },
+    ]
+      .concat(extraItems("edit"))
+      .concat([
       { rule: true },
       {
         label: "Clear canvas…",
@@ -24056,7 +24072,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
           editor.runCommand("canvas-clear");
         },
       },
-    ]);
+      ])
+    );
   }
 
   /** Locked as the padlock on the bar shows it: the server's answer, painted there. */
@@ -24090,15 +24107,26 @@ function initGrape(ipServer, socketPort, oscInPort) {
           editor.runCommand("oscar-export");
         },
       },
+      // Both ways the surface leaves the editor, side by side. Its eye on the
+      // bar is retired; GrapesJS's own button over the canvas ends preview.
+      {
+        label: "Push to preview",
+        run: function () {
+          editor.runCommand("preview");
+        },
+      },
+    ]
+      .concat(extraItems("file"))
+      .concat([
       { rule: true },
-      // Also the jellyfish on the bar, which stays: this is where people look for it.
+      // Its jellyfish on the bar is retired: this is where people look for it.
       {
         label: "About OSCAR",
         run: function () {
           editor.runCommand("oscar-about");
         },
       },
-    ]);
+      ]));
   }
 
   // A file double-clicked in the file manager arrives through the server,
@@ -24450,7 +24478,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
   pn.removeButton("options", "redo");
   // Show borders, Fullscreen, See code and Clear canvas join them under Edit
   // (the widget style too, which is never added to the bar at all).
-  ["sw-visibility", "fullscreen", "export-template", "canvas-clear"].forEach(function (id) {
+  // And the eye: Push to preview is under File.
+  ["sw-visibility", "fullscreen", "export-template", "canvas-clear", "preview"].forEach(function (id) {
     pn.removeButton("options", id);
   });
   // Show borders was on from the start because its button said so; with the
@@ -24617,14 +24646,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
     setModal("About OSCAR", "info-panel");
   });
-  pn.addButton("options", {
-    id: "open-info",
-    label: icon("jellyfish"),
-    command: function () {
-      editor.runCommand("oscar-about");
-    },
-    attributes: { title: "About Oscar", "data-tooltip-pos": "bottom" },
-  });
+  // No button of its own: About is under File (showFileMenu).
 
   // ---- resize keeps its hands off flow parts' coordinates -------------------
   // GrapesJS writes top and left along with width and height whenever the
@@ -25374,6 +25396,24 @@ function initGrape(ipServer, socketPort, oscInPort) {
         attributes: { "data-tooltip": title, "data-tooltip-pos": "bottom", "aria-label": title },
       });
       if (button.after) arrangeToolbar([{ id: button.id, after: String(button.after) }]);
+    },
+    /**
+     * An item in File's or Edit's menu: "file" or "edit", { id, label,
+     * run(editor) }. Edit's sit beside Lock editing, File's beside Publish.
+     * The same id again replaces the item.
+     */
+    addMenuItem: function (menu, item) {
+      if (!menuExtras[menu]) throw new Error('A menu item goes in "file" or "edit"');
+      if (!item || !item.id || typeof item.run !== "function") throw new Error("A menu item needs an id and a run function");
+      oscarApi.removeMenuItem(menu, item.id);
+      menuExtras[menu].push({ id: String(item.id), label: String(item.label || item.id), run: item.run });
+    },
+    /** Take an item of the extension's own out of a menu again. */
+    removeMenuItem: function (menu, id) {
+      if (!menuExtras[menu]) return;
+      menuExtras[menu] = menuExtras[menu].filter(function (item) {
+        return item.id !== String(id);
+      });
     },
     /** Take a button of the extension's own out of the toolbar again: one that is only for some accounts. */
     removeToolbarButton: function (id) {
