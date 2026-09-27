@@ -23840,9 +23840,28 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.runCommand("fullscreen", { target: document.documentElement });
   }
 
+  // Show borders is remembered in this browser: on until turned off once, and
+  // off after that, refresh after refresh. A browser that keeps nothing
+  // (private window, locked-down storage) gets the default each time.
+  var BORDERS_KEY = "oscarShowBorders";
+
+  function bordersWanted() {
+    try {
+      return localStorage.getItem(BORDERS_KEY) !== "off";
+    } catch (err) {
+      return true;
+    }
+  }
+
   function toggleBorders() {
-    if (editor.Commands.isActive("sw-visibility")) editor.stopCommand("sw-visibility");
-    else editor.runCommand("sw-visibility");
+    var on = !editor.Commands.isActive("sw-visibility");
+    if (on) editor.runCommand("sw-visibility");
+    else editor.stopCommand("sw-visibility");
+    try {
+      localStorage.setItem(BORDERS_KEY, on ? "on" : "off");
+    } catch (err) {
+      /* shown now, just not remembered */
+    }
   }
 
   // Edit holds what acts on the canvas as a whole: undoing, how it is shown,
@@ -24294,9 +24313,11 @@ function initGrape(ipServer, socketPort, oscInPort) {
     pn.removeButton("options", id);
   });
   // Show borders was on from the start because its button said so; with the
-  // button gone, the editor says so itself.
+  // button gone, the editor sets it itself, as it was last left.
   editor.onReady(function () {
-    if (!editor.Commands.isActive("sw-visibility")) editor.runCommand("sw-visibility");
+    var active = editor.Commands.isActive("sw-visibility");
+    if (bordersWanted() && !active) editor.runCommand("sw-visibility");
+    else if (!bordersWanted() && active) editor.stopCommand("sw-visibility");
   });
 
   // Open and Save live under one word at the bar's left edge: File.

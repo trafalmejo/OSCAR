@@ -70,6 +70,13 @@ test("Edit stands beside File: Undo and Redo under one word, their icons retired
   assert.match(editor, /again stays chosen instead of toggling half-off\.\n      togglable: false,/, "a screen size is a choice, not a switch");
 });
 
+test("Show borders is remembered: turned off, it stays off after a refresh", () => {
+  assert.match(editor, /localStorage\.setItem\(BORDERS_KEY, on \? "on" : "off"\);/, "the choice is kept when made");
+  assert.match(editor, /return localStorage\.getItem\(BORDERS_KEY\) !== "off";/, "on until turned off once");
+  assert.match(editor, /else if \(!bordersWanted\(\) && active\) editor\.stopCommand\("sw-visibility"\);/, "and put back as it was left at startup");
+  assert.doesNotMatch(editor, /editor\.onReady\(function \(\) \{\n    if \(!editor\.Commands\.isActive\("sw-visibility"\)\) editor\.runCommand\("sw-visibility"\);\n  \}\);/, "not forced on at every start");
+});
+
 test("a double-clicked project opens through the same guarded door, once", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8").replace(/\r\n/g, "\n");
   assert.match(main, /app\.on\("open-file"/, "macOS hands the file by event");
