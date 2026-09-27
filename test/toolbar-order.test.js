@@ -10,17 +10,17 @@ const { PLACEMENTS, moveAfter, moveBefore, arrange } = require("../lib/toolbar-o
 // it, Open/Save live under File on the left, and Show borders, Fullscreen,
 // See code, Clear canvas and the widget style live under Edit: none of those
 // holds a seat here.
+// The screen sizes have a panel of their own, centred over the canvas.
 const ADDED = [
   "preview", "open-pages", "oscar-live-pill", "oscar-mcp-pill", "oscar-export", "toggle-lock", "open-info",
-  "set-device-desktop", "set-device-tablet", "set-device-mobile",
 ];
 
-test("the sizes lead the right half, the lock sits beside Push to preview, Pages beside the lock", () => {
+test("the pills lead the right half, the lock sits beside Push to preview, Pages beside the lock", () => {
   const order = arrange(ADDED);
   assert.deepStrictEqual(
-    order.slice(0, 6),
-    ["oscar-live-pill", "oscar-mcp-pill", "set-device-desktop", "set-device-tablet", "set-device-mobile", "preview"],
-    "the pills first, then the sizes, ahead of everything"
+    order.slice(0, 3),
+    ["oscar-live-pill", "oscar-mcp-pill", "preview"],
+    "the pills first, ahead of the tools"
   );
   assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
   assert.strictEqual(order[order.indexOf("toggle-lock") + 1], "open-pages");

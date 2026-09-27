@@ -44,19 +44,16 @@ test("opening a file guards the person: format skew refused honestly, changes ne
   assert.match(editor, /accept = "\.oscar,\.json,\.html,\.htm"/, "and .html templates come through the same door");
 });
 
-test("the bar's geography: File first at the left, the screen sizes pilled at the right", () => {
+test("the bar's geography: File first at the left, the screen sizes centred over the canvas", () => {
   const order = require("../lib/toolbar-order");
-  assert.deepStrictEqual(
-    order.arrange(["x", "preview", "set-device-desktop", "set-device-tablet", "set-device-mobile"], order.PLACEMENTS).slice(1, 4),
-    ["set-device-desktop", "set-device-tablet", "set-device-mobile"],
-    "the sizes lead the right half, ahead of Push to preview"
-  );
-  assert.match(editor, /moveButton\("devices-c", "options", id\);/, "the sizes cross panels whole");
+  assert.ok(!order.PLACEMENTS.some((p) => /^set-device-/.test(p.id)), "the sizes are not placed on the right half");
+  // Created with its buttons in it: a panel added empty never draws buttons added later.
+  assert.match(editor, /pn\.addPanel\(\{ id: "oscar-sizes", visible: true, buttons: sizeButtons \}\);/, "they have a panel of their own, made with them in it");
+  assert.match(editor, /pn\.removeButton\("devices-c", id\);/, "the sizes leave the left panel whole");
   assert.match(editor, /var wanted = \["oscar-file", "oscar-edit", "ipButton"\]/, "the left half reads File, Edit, the address; the pills lead the right");
-  assert.match(editor, /els\[index\]\.classList\.add\("oscar-size-btn"\)/, "the sizes are marked, not wrapped");
-  assert.match(editor, /markDevices\(\);\n  \}/, "and every re-arrange re-marks them");
   const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
-  assert.match(theme, /\.gjs-pn-btn\.oscar-size-btn \{\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;/, "the icons sit squarely centred");
+  assert.match(theme, /\.gjs-pn-panel\.gjs-pn-oscar-sizes \{\n  top: 0;\n  left: 42\.5%;\n  transform: translateX\(-50%\);/, "centred over the canvas (85% of the window), not the window");
+  assert.match(theme, /\.gjs-pn-oscar-sizes \.gjs-pn-btn \{\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;/, "the icons sit squarely centred");
   assert.match(theme, /\.oscar-open-menu \{\n  position: fixed;\n[\s\S]{0,120}z-index: 10000;/, "the menu sits above every layer");
   const tooltip = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_tooltip.css"), "utf8").replace(/\r\n/g, "\n");
   assert.match(tooltip, /white-space: normal;\n  width: max-content;\n  max-width: 19rem;/, "tooltips wrap instead of cropping");
@@ -70,7 +67,7 @@ test("Edit stands beside File: Undo and Redo under one word, their icons retired
   assert.match(editor, /pn\.removeButton\("options", "undo"\);\n  pn\.removeButton\("options", "redo"\);/, "the icons retire early, before the left is wired");
   assert.match(editor, /function showBarMenu\(anchorSelector, items\)/, "File and Edit share one menu builder");
   assert.match(editor, /menu\.contains\(event\.target\) \|\| anchor\.contains\(event\.target\)/, "a second click on the word closes the menu instead of blinking it");
-  assert.match(editor, /button\.set\("togglable", false\)/, "a screen size is a choice, not a switch");
+  assert.match(editor, /again stays chosen instead of toggling half-off\.\n      togglable: false,/, "a screen size is a choice, not a switch");
 });
 
 test("a double-clicked project opens through the same guarded door, once", () => {

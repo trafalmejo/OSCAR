@@ -364,22 +364,36 @@ a {
   background-color: var(--o-surface);
 }
 
-/* The screen sizes, crossed to the right half of the bar, leading the
-   tools: plain buttons, their icons squarely centred, the last one given a
-   breath of air before Show borders. */
-.gjs-pn-btn.oscar-size-btn {
+/* The screen sizes, alone at the middle of the bar over the canvas. The
+   canvas is 85% of the window wide (GrapesJS's own proportion; the right
+   column has the rest), so its middle is at 42.5%, not the window's 50%. */
+.gjs-pn-panel.gjs-pn-oscar-sizes {
+  top: 0;
+  left: 42.5%;
+  transform: translateX(-50%);
+  width: auto;
+  height: 40px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  z-index: 4;
+}
+.gjs-pn-oscar-sizes .gjs-pn-buttons {
+  display: flex;
+  gap: 2px;
+}
+/* Plain buttons, their icons squarely centred. */
+.gjs-pn-oscar-sizes .gjs-pn-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 4px;
 }
-.gjs-pn-btn.oscar-size-btn svg {
+.gjs-pn-oscar-sizes .gjs-pn-btn svg {
   display: block;
   width: 20px;
   height: 20px;
-}
-.gjs-pn-btn.oscar-size-btn + .gjs-pn-btn:not(.oscar-size-btn) {
-  margin-left: 14px;
 }
 
 /* The Open menu, under the Open project button: a file from anywhere, a

@@ -1764,15 +1764,11 @@ module.exports = { SERIAL_HOST, isSerialTarget, viaSerial };
  * Each entry reads "put this button straight after that one".
  */
 const PLACEMENTS = [
-  // The screen sizes cross to the right half of the bar, one pill just left
-  // of the tools (the editor moves them into this panel and wraps them;
-  // here is only their order: first, ahead of everything).
-  { id: "set-device-desktop", before: "preview" },
-  { id: "set-device-tablet", after: "set-device-desktop" },
-  { id: "set-device-mobile", after: "set-device-tablet" },
-  // The LIVE and MCP pills lead the right half, ahead of the sizes: the
-  // show's state first, then the widths, then the tools.
-  { id: "oscar-live-pill", before: "set-device-desktop" },
+  // (The screen sizes are not here: they have a panel of their own, centred
+  // over the canvas.)
+  // The LIVE and MCP pills lead the right half: the show's state first, then
+  // the tools.
+  { id: "oscar-live-pill", before: "preview" },
   { id: "oscar-mcp-pill", after: "oscar-live-pill" },
   // Locking is what you do once a surface is pushed and the doors are about
   // to open, so it belongs beside the button that pushes it.
@@ -24258,29 +24254,33 @@ function initGrape(ipServer, socketPort, oscInPort) {
   });
 
   // ---- the bar's geography, first half ------------------------------------
-  // The screen sizes cross to the right half of the bar NOW, before File
-  // and the pills are created on the left: pn.removeButton re-renders the
-  // whole panel, and any click listener wired before it would die with its
-  // element. A button moves panels whole: command, label and state along.
-  function moveButton(fromPanel, toPanel, id) {
-    var button = pn.getButton(fromPanel, id);
+  // The screen sizes leave the left panel NOW, before File and the pills are
+  // created there: pn.removeButton re-renders the whole panel, and any click
+  // listener wired before it would die with its element. A button moves
+  // whole: command, label and state along.
+  // They sit alone at the middle of the bar over the canvas (not of the
+  // window): a panel of their own, which the CSS places there.
+  // Created with the buttons already in it: a panel added empty draws no
+  // buttons that are added to it later.
+  var sizeButtons = [];
+  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
+    var button = pn.getButton("devices-c", id);
     if (!button) return;
-    var props = {
+    sizeButtons.push({
       id: id,
       command: button.get("command"),
       label: button.get("label"),
       className: button.get("className"),
       attributes: button.get("attributes"),
       active: button.get("active"),
-      togglable: button.get("togglable"),
+      // A screen size is a choice, not a switch: clicking the chosen one
+      // again stays chosen instead of toggling half-off.
+      togglable: false,
       context: button.get("context"),
-    };
-    pn.removeButton(fromPanel, id);
-    pn.addButton(toPanel, props);
-  }
-  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
-    moveButton("devices-c", "options", id);
+    });
+    pn.removeButton("devices-c", id);
   });
+  pn.addPanel({ id: "oscar-sizes", visible: true, buttons: sizeButtons });
   // Undo and Redo live under Edit at the left edge; their icons retire.
   // Removed here, early, for the same re-render reason as above.
   pn.removeButton("options", "undo");
@@ -24294,12 +24294,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // button gone, the editor says so itself.
   editor.onReady(function () {
     if (!editor.Commands.isActive("sw-visibility")) editor.runCommand("sw-visibility");
-  });
-  // A screen size is a choice, not a switch: clicking the chosen one again
-  // stays chosen instead of toggling half-off.
-  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
-    var button = pn.getButton("options", id);
-    if (button) button.set("togglable", false);
   });
 
   // Open and Save live under one word at the bar's left edge: File.
@@ -25036,21 +25030,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }),
       { silent: true }
     );
-    // Rearranging may have been the first sight of freshly moved buttons.
-    markDevices();
-  }
-
-  /** The screen sizes, marked so the CSS can centre their icons squarely. */
-  function markDevices() {
-    var panel = pn.getPanel("options");
-    var row = document.querySelector(".gjs-pn-options .gjs-pn-buttons");
-    if (!panel || !row) return;
-    var models = panel.get("buttons").models;
-    var els = row.querySelectorAll(".gjs-pn-btn");
-    if (models.length !== els.length) return;
-    models.forEach(function (model, index) {
-      if (String(model.get("id")).indexOf("set-device-") === 0) els[index].classList.add("oscar-size-btn");
-    });
   }
   arrangeToolbar();
 
