@@ -153,8 +153,9 @@ test("three pills: LOCAL and PUBLIC open the publish window, OSCAR SERVER the ne
   assert.match(editorSource, /el\.classList\.toggle\("oscar-live-on", connected\);/, "OSCAR SERVER goes quiet when the editor cannot reach it");
   assert.match(themeSource, /\.oscar-live-pill:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "each quiet pill strikes its word");
   assert.match(themeSource, /\.oscar-live-public\.oscar-live-on \{\n  border-color: rgba\(86, 156, 255, 0\.55\);/, "PUBLIC in the internet's blue");
-  const pro = fs.readFileSync(path.join(__dirname, "..", "..", "oscar-pro", "public", "public.js"), "utf8");
-  assert.match(pro, /oscar\.setPublicCount\(\{/, "Pro tells it");
+  // OSCAR Pro is private: its half is checked only where it sits next to this repo, never in CI.
+  const proFile = path.join(__dirname, "..", "..", "oscar-pro", "public", "public.js");
+  if (fs.existsSync(proFile)) assert.match(fs.readFileSync(proFile, "utf8"),/oscar\.setPublicCount\(\{/, "Pro tells it");
 });
 
 test("the pill sits between the screen sizes and the network info, split into its two doors", () => {

@@ -79,9 +79,11 @@ test("File holds Push to preview and About; Edit holds the lock and an extension
   assert.ok(edits.indexOf("Push to preview") === -1, "not under Edit any more");
   assert.match(edits, /\.concat\(extraItems\("edit"\)\)/, "an extension's items join Lock editing");
   assert.match(file, /\{ rule: true \},\n    \]\n[^\n]*\n[^\n]*\n      \.concat\(extraItems\("file"\)\)\n      \.concat\(\[\n[^\n]*\n      \{\n        label: "About OSCAR",/, "and File's open the last group, just above About");
-  const pro = fs.readFileSync(path.join(__dirname, "..", "..", "oscar-pro", "public", "editor.js"), "utf8");
-  assert.match(pro, /label: signedIn \? "Log out(…|\\u2026)" : "Log in(…|\\u2026)",/, "Pro's Log in or Log out, as the account stands");
-  assert.match(pro, /offerSignIn\(!!account\.signedIn\);/, "following the account");
+  // OSCAR Pro is private: its half is checked only where it sits next to this repo, never in CI.
+  const proFile = path.join(__dirname, "..", "..", "oscar-pro", "public", "editor.js");
+  const pro = fs.existsSync(proFile) ? fs.readFileSync(proFile, "utf8") : null;
+  if (pro) assert.match(pro, /label: signedIn \? "Log out(…|\\u2026)" : "Log in(…|\\u2026)",/, "Pro's Log in or Log out, as the account stands");
+  if (pro) assert.match(pro,/offerSignIn\(!!account\.signedIn\);/, "following the account");
   assert.match(editor, /\["sw-visibility", "fullscreen", "export-template", "canvas-clear", "preview"\]\.forEach/, "the eye leaves the bar");
   assert.ok(editor.indexOf('id: "open-info"') === -1, "the jellyfish is not added");
   assert.match(editor, /addMenuItem: function \(menu, item\) \{/, "extensions get a place in the menus");
