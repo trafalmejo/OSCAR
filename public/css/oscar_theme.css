@@ -917,10 +917,19 @@ body.oscar-log-dragging iframe {
   box-sizing: border-box;
   height: 28px;
 }
-.gjs-pn-btn.oscar-lock-btn svg,
+/* The padlock alone in its pill, so larger: 18px still fits the 28px pill. */
+.gjs-pn-btn.oscar-lock-btn svg {
+  width: 18px;
+  height: 18px;
+}
+/* As large as the padlock. The export icon's weight is its box, in its
+   lower two thirds: centred as a whole on the word, the icon read as low.
+   Raised so the box is centred on the capitals; the arrow rises above
+   them, as it should, still inside the pill. */
 .gjs-pn-btn.oscar-publish-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
+  transform: translateY(-3.3px);
 }
 .gjs-pn-btn.oscar-lock-btn:hover,
 .gjs-pn-btn.oscar-publish-btn:hover {
