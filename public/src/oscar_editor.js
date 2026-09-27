@@ -1456,7 +1456,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
     }
     // A command still marked active after Esc would take this click to stop itself.
     if (active) editor.stopCommand("fullscreen");
-    editor.runCommand("fullscreen");
+    // The whole page, not GrapesJS's default of the editor's container: the
+    // browser draws nothing outside the fullscreen element, and File's and
+    // Edit's menus, the alerts and Pro's dialogs all live on the body.
+    editor.runCommand("fullscreen", { target: document.documentElement });
   }
 
   function toggleBorders() {
