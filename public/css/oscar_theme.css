@@ -379,6 +379,11 @@ a {
   background: transparent;
   z-index: 4;
 }
+/* Preview hides every panel with .gjs-hidden, whose display: none the
+   display: flex above outranks: said again here, as specific. */
+.gjs-pn-panel.gjs-pn-oscar-sizes.gjs-hidden {
+  display: none;
+}
 .gjs-pn-oscar-sizes .gjs-pn-buttons {
   display: flex;
   gap: 2px;

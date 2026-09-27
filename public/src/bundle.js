@@ -24115,10 +24115,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
           editor.runCommand("preview");
         },
       },
+      { rule: true },
     ]
+      // An extension's items open the last group, beside About: Pro's Log in
+      // or Log out, which is done in About.
       .concat(extraItems("file"))
       .concat([
-      { rule: true },
       // Its jellyfish on the bar is retired: this is where people look for it.
       {
         label: "About OSCAR",
@@ -25494,7 +25496,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     },
     /**
      * An item in File's or Edit's menu: "file" or "edit", { id, label,
-     * run(editor) }. Edit's sit beside Lock editing, File's beside Publish.
+     * run(editor) }. Edit's sit beside Lock editing, File's just above About.
      * The same id again replaces the item.
      */
     addMenuItem: function (menu, item) {

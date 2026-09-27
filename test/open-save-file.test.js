@@ -54,6 +54,7 @@ test("the bar's geography: File first at the left, the screen sizes centred over
   const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
   assert.match(theme, /\.gjs-pn-panel\.gjs-pn-oscar-sizes \{\n  top: 0;\n  left: 42\.5%;\n  transform: translateX\(-50%\);/, "centred over the canvas (85% of the window), not the window");
   assert.match(theme, /\.gjs-pn-oscar-sizes \.gjs-pn-btn \{\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;/, "the icons sit squarely centred");
+  assert.match(theme, /\.gjs-pn-panel\.gjs-pn-oscar-sizes\.gjs-hidden \{\n  display: none;\n\}/, "and they hide with every other panel in preview: their display: flex would otherwise win");
   assert.match(theme, /\.oscar-open-menu \{\n  position: fixed;\n[\s\S]{0,120}z-index: 10000;/, "the menu sits above every layer");
   const tooltip = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_tooltip.css"), "utf8").replace(/\r\n/g, "\n");
   assert.match(tooltip, /white-space: normal;\n  width: max-content;\n  max-width: 19rem;/, "tooltips wrap instead of cropping");
@@ -77,7 +78,10 @@ test("File holds Push to preview and About; Edit holds the lock and an extension
   assert.ok(file.indexOf("About OSCAR") !== -1, "About under File");
   assert.ok(edits.indexOf("Push to preview") === -1, "not under Edit any more");
   assert.match(edits, /\.concat\(extraItems\("edit"\)\)/, "an extension's items join Lock editing");
-  assert.match(file, /\.concat\(extraItems\("file"\)\)/, "and File's join Publish");
+  assert.match(file, /\{ rule: true \},\n    \]\n[^\n]*\n[^\n]*\n      \.concat\(extraItems\("file"\)\)\n      \.concat\(\[\n[^\n]*\n      \{\n        label: "About OSCAR",/, "and File's open the last group, just above About");
+  const pro = fs.readFileSync(path.join(__dirname, "..", "..", "oscar-pro", "public", "editor.js"), "utf8");
+  assert.match(pro, /label: signedIn \? "Log out(…|\\u2026)" : "Log in(…|\\u2026)",/, "Pro's Log in or Log out, as the account stands");
+  assert.match(pro, /offerSignIn\(!!account\.signedIn\);/, "following the account");
   assert.match(editor, /\["sw-visibility", "fullscreen", "export-template", "canvas-clear", "preview"\]\.forEach/, "the eye leaves the bar");
   assert.ok(editor.indexOf('id: "open-info"') === -1, "the jellyfish is not added");
   assert.match(editor, /addMenuItem: function \(menu, item\) \{/, "extensions get a place in the menus");
