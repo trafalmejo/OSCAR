@@ -2228,23 +2228,35 @@ function initGrape(ipServer, socketPort, oscInPort) {
   pn.addButton("options", {
     id: "oscar-live-pill",
     className: "oscar-live-btn",
+    // Three pills in one button: what is served on this network, what is
+    // public on the internet (both open the publish window), and the server
+    // itself with its traffic meters (the network log).
     label:
-      '<span class="oscar-live-pill">' +
-      '<span class="oscar-live-zone" data-zone="publish">' +
+      '<span class="oscar-live-pills">' +
+      '<span class="oscar-live-pill oscar-live-zone oscar-live-local" data-zone="publish" data-pill="local">' +
       '<span class="oscar-live-dot"></span>' +
-      '<span class="oscar-live-word">LIVE</span>' +
+      '<span class="oscar-live-word">LOCAL</span>' +
       '<span class="oscar-live-count">0</span>' +
       "</span>" +
-      '<span class="oscar-live-sep"></span>' +
-      '<span class="oscar-live-zone" data-zone="log">' +
-      '<span class="oscar-live-led" data-led="in">IN</span>' +
-      '<span class="oscar-live-led" data-led="out">OUT</span>' +
+      '<span class="oscar-live-pill oscar-live-zone oscar-live-public" data-zone="publish" data-pill="public">' +
+      '<span class="oscar-live-dot"></span>' +
+      '<span class="oscar-live-word">PUBLIC</span>' +
+      '<span class="oscar-live-count">0</span>' +
+      "</span>" +
+      '<span class="oscar-live-pill oscar-live-zone oscar-live-server" data-zone="log" data-pill="server">' +
+      '<span class="oscar-live-word">OSCAR SERVER</span>' +
+      '<span class="oscar-live-led" data-led="in">IN<span class="oscar-live-meter"></span></span>' +
+      '<span class="oscar-live-led" data-led="out">OUT<span class="oscar-live-meter"></span></span>' +
       "</span>" +
       "</span>",
     command: null,
     active: false,
     disable: true,
   });
+
+  // What an extension says is public on the internet (Pro's public links),
+  // for the PUBLIC pill: set by oscarApi.setPublicCount below.
+  var livePublic = { set: function () {} };
 
   (function wireLivePill() {
     var flashes = { in: null, out: null };
@@ -2288,13 +2300,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
       for (var i = logRows.length - 1; i >= 0 && i >= logRows.length - LOG_KEEP; i--) {
         if (logRows[i].id === row.id) {
           logRows[i] = row;
-          return;
+          return false;
         }
       }
       var at = logRows.length;
       while (at > 0 && logRows[at - 1].at > row.at) at--;
       logRows.splice(at, 0, row);
       if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
+      return true;
     }
 
     function span(className, text, title) {
@@ -2311,34 +2324,113 @@ function initGrape(ipServer, socketPort, oscInPort) {
       return document.querySelector(".oscar-live-btn");
     }
 
-    function paintLive(rows) {
+    function pill(name) {
       var el = pillEl();
-      if (!el) return;
-      var count = el.querySelector(".oscar-live-count");
-      if (count) count.textContent = String(rows.length);
-      el.classList.toggle("oscar-live-on", rows.length > 0);
-      var names = rows
-        .map(function (row) {
-          return '"' + row.id + '"';
+      return el ? el.querySelector('[data-pill="' + name + '"]') : null;
+    }
+
+    function say(el, text) {
+      el.setAttribute("data-tooltip", text);
+      el.setAttribute("data-tooltip-pos", "bottom");
+    }
+
+    function quoted(ids) {
+      return ids
+        .map(function (id) {
+          return '"' + id + '"';
         })
         .join(", ");
-      var publishZone = el.querySelector('.oscar-live-zone[data-zone="publish"]');
-      if (publishZone) {
-        publishZone.setAttribute(
-          "data-tooltip",
-          rows.length === 0
-            ? "Nothing is published: OSCAR serves no surfaces in the background. Click for the publish window."
-            : (rows.length === 1 ? "OSCAR is serving " + names : "OSCAR is serving " + rows.length + " published surfaces: " + names) +
-                " in the background. Click for the publish window."
-        );
-        publishZone.setAttribute("data-tooltip-pos", "bottom");
-      }
-      var logZone = el.querySelector('.oscar-live-zone[data-zone="log"]');
-      if (logZone) {
-        logZone.setAttribute("data-tooltip", "IN lights as data comes in for a published surface or the canvas, OUT as OSCAR sends for one. Click for the network log.");
-        logZone.setAttribute("data-tooltip-pos", "bottom");
-      }
     }
+
+    // LOCAL: the surfaces OSCAR serves on this network.
+    function paintLive(rows) {
+      var local = pill("local");
+      if (!local) return;
+      local.querySelector(".oscar-live-count").textContent = String(rows.length);
+      local.classList.toggle("oscar-live-on", rows.length > 0);
+      var names = quoted(
+        rows.map(function (row) {
+          return row.id;
+        })
+      );
+      say(
+        local,
+        rows.length === 0
+          ? "Nothing is published: OSCAR serves no surfaces in the background. Click for the publish window."
+          : (rows.length === 1 ? "OSCAR is serving " + names : "OSCAR is serving " + rows.length + " published surfaces: " + names) +
+              " on this network. Click for the publish window."
+      );
+      paintServer();
+    }
+
+    // PUBLIC: the surfaces reachable from the internet, as an extension says
+    // (Pro's public links). Without one, nothing can be, and the pill says why.
+    var publicState = null; // { surfaces: [{ id, online }] }
+    function paintPublic() {
+      var el = pill("public");
+      if (!el) return;
+      var surfaces = (publicState && publicState.surfaces) || [];
+      el.querySelector(".oscar-live-count").textContent = String(surfaces.length);
+      el.classList.toggle("oscar-live-on", surfaces.length > 0);
+      var waiting = surfaces.filter(function (s) {
+        return !s.online;
+      });
+      say(
+        el,
+        !publicState
+          ? "Nothing is public. A public surface is one visitors reach from their own phones, anywhere: part of OSCAR Pro. Click for the publish window."
+          : surfaces.length === 0
+            ? "Nothing is public on the internet. Click for the publish window."
+            : "Public on the internet: " +
+                quoted(
+                  surfaces.map(function (s) {
+                    return s.id;
+                  })
+                ) +
+                (waiting.length ? " (still connecting: " + quoted(waiting.map(function (s) { return s.id; })) + ")" : "") +
+                ". Click for the publish window."
+      );
+    }
+    livePublic.set = function (state) {
+      publicState = state && Array.isArray(state.surfaces) ? state : { surfaces: [] };
+      paintPublic();
+    };
+
+    // OSCAR SERVER: whether this editor reaches it, and its traffic. The
+    // meters read the network log's rows, which carry how many messages
+    // each gathers: messages a second over the last second, filled on a
+    // log scale (1 a second shows, 100 fills it).
+    var traffic = { in: [], out: [] };
+    function countTraffic(row) {
+      if (traffic[row.dir]) traffic[row.dir].push({ at: Date.now(), n: row.n || 1 });
+    }
+    function rateOf(dir) {
+      var since = Date.now() - 1000;
+      traffic[dir] = traffic[dir].filter(function (t) {
+        return t.at >= since;
+      });
+      return traffic[dir].reduce(function (sum, t) {
+        return sum + t.n;
+      }, 0);
+    }
+    function paintServer() {
+      var el = pill("server");
+      if (!el) return;
+      var connected = !!(editor.socket && editor.socket.connected);
+      el.classList.toggle("oscar-live-on", connected);
+      var rates = { in: rateOf("in"), out: rateOf("out") };
+      ["in", "out"].forEach(function (dir) {
+        var meter = el.querySelector('.oscar-live-led[data-led="' + dir + '"] .oscar-live-meter');
+        if (meter) meter.style.width = Math.round(Math.min(1, Math.log(1 + rates[dir]) / Math.log(101)) * 100) + "%";
+      });
+      say(
+        el,
+        connected
+          ? "OSCAR's server: IN " + rates.in + "/s, OUT " + rates.out + "/s. Click for the network log."
+          : "This editor cannot reach OSCAR's server. Click for the network log."
+      );
+    }
+    setInterval(paintServer, 250);
 
     function refreshLive() {
       fetch("/published")
@@ -2692,15 +2784,18 @@ function initGrape(ipServer, socketPort, oscInPort) {
       // happened a minute before it was opened is exactly what it is for.
       editor.socket.on("live:log", function (row) {
         if (!row || (row.dir !== "in" && row.dir !== "out") || !row.id) return;
-        takeRow(row);
+        // An update is the same traffic said again: the meters count it once.
+        if (takeRow(row) && !row.dropped) countTraffic(row);
         if (logOpen()) renderLog();
       });
       editor.socket.on("published:changed", refreshLive);
       // A server that restarted may have a different roster than the one
       // this pill last drew.
       editor.socket.on("connect", refreshLive);
+      editor.socket.on("disconnect", paintServer);
     }
     refreshLive();
+    paintPublic();
   })();
 
   pn.addButton("devices-c", {
@@ -2885,6 +2980,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
       if (!item || !item.id || typeof item.run !== "function") throw new Error("A menu item needs an id and a run function");
       oscarApi.removeMenuItem(menu, item.id);
       menuExtras[menu].push({ id: String(item.id), label: String(item.label || item.id), run: item.run });
+    },
+    /**
+     * What is public on the internet, for the PUBLIC pill: { surfaces: [{ id,
+     * online }] }, every time it changes. Until an extension says, the pill
+     * reads 0 and says public surfaces are OSCAR Pro's.
+     */
+    setPublicCount: function (state) {
+      livePublic.set(state);
     },
     /** Take an item of the extension's own out of a menu again. */
     removeMenuItem: function (menu, id) {

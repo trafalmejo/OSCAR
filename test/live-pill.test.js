@@ -139,6 +139,24 @@ test("every send over a socket carries whose it is to the send function", () => 
   assert.match(serverSource, /sendMIDI\(request, from\);/, "MIDI");
 });
 
+test("three pills: LOCAL and PUBLIC open the publish window, OSCAR SERVER the network log", () => {
+  const pill = editorSource.slice(editorSource.indexOf('id: "oscar-live-pill"'));
+  assert.match(pill, /data-zone="publish" data-pill="local">[\s\S]{0,120}oscar-live-word">LOCAL</, "LOCAL, a count, the publish window");
+  assert.match(pill, /data-zone="publish" data-pill="public">[\s\S]{0,120}oscar-live-word">PUBLIC</, "PUBLIC, a count, the publish window");
+  assert.match(pill, /data-zone="log" data-pill="server">'[\s\S]{0,80}OSCAR SERVER/, "OSCAR SERVER, the network log");
+  assert.match(pill, /data-led="in">IN<span class="oscar-live-meter"><\/span>/, "with an IN meter");
+  assert.match(pill, /data-led="out">OUT<span class="oscar-live-meter"><\/span>/, "and an OUT meter");
+  assert.match(editorSource, /setPublicCount: function \(state\) \{\n      livePublic\.set\(state\);/, "an extension says what is public");
+  assert.match(editorSource, /A public surface is one visitors reach from their own phones, anywhere: part of OSCAR Pro\./, "without one, PUBLIC says why it is 0");
+  assert.match(editorSource, /if \(takeRow\(row\) && !row\.dropped\) countTraffic\(row\);/, "the meters count each row's messages once");
+  assert.match(editorSource, /Math\.log\(1 \+ rates\[dir\]\) \/ Math\.log\(101\)/, "on a log scale: 100 a second fills it");
+  assert.match(editorSource, /el\.classList\.toggle\("oscar-live-on", connected\);/, "OSCAR SERVER goes quiet when the editor cannot reach it");
+  assert.match(themeSource, /\.oscar-live-pill:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "each quiet pill strikes its word");
+  assert.match(themeSource, /\.oscar-live-public\.oscar-live-on \{\n  border-color: rgba\(86, 156, 255, 0\.55\);/, "PUBLIC in the internet's blue");
+  const pro = fs.readFileSync(path.join(__dirname, "..", "..", "oscar-pro", "public", "public.js"), "utf8");
+  assert.match(pro, /oscar\.setPublicCount\(\{/, "Pro tells it");
+});
+
 test("the pill sits between the screen sizes and the network info, split into its two doors", () => {
   const pill = editorSource.indexOf('id: "oscar-live-pill"');
   const ip = editorSource.indexOf('id: "ipButton"');
@@ -162,7 +180,7 @@ test("the pill sits between the screen sizes and the network info, split into it
   assert.match(themeSource, /:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "LIVE struck through at zero");
   assert.match(editorSource, /Nothing is published: OSCAR serves no surfaces in the background\./, "the quiet pill says why");
   assert.match(themeSource, /border: 1px solid rgba\(47, 191, 95, 0\.55\)/, "the pill is green");
-  assert.match(editorSource, /"IN lights as data comes in for a published surface or the canvas, OUT as OSCAR sends for one\. Click for the network log\."/, "and the lights say what they mean");
+  assert.match(editorSource, /"OSCAR's server: IN " \+ rates\.in \+ "\/s, OUT " \+ rates\.out \+ "\/s\. Click for the network log\."/, "and the server pill says its traffic");
 });
 
 test("the log window shows each row as it crossed the wire, and takes updates in place", () => {

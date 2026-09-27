@@ -510,10 +510,11 @@ a {
   background: rgba(47, 191, 95, 0.2);
 }
 
-/* The LIVE pill: OSCAR is serving published surfaces in the background, and
-   the top bar says so between the screen sizes and the network info. Always
-   there, so the place to look never moves: with nothing published it goes
-   quiet -- grey, LIVE struck through, a 0 -- instead of disappearing. */
+/* The live pills: LOCAL, what OSCAR serves on this network; PUBLIC, what is
+   on the internet; OSCAR SERVER, the server itself with its traffic meters.
+   Always there, so the place to look never moves: a pill with nothing to
+   report goes quiet -- grey, its word struck through, a 0 -- instead of
+   disappearing. */
 .gjs-pn-btn.oscar-live-btn {
   display: inline-flex;
   align-items: center;
@@ -528,6 +529,11 @@ a {
 .gjs-pn-btn.oscar-live-btn:hover {
   opacity: 1;
   pointer-events: auto;
+}
+.oscar-live-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 .oscar-live-pill {
   display: inline-flex;
@@ -552,10 +558,18 @@ a {
 .oscar-live-zone:hover {
   color: #c2f4d4;
 }
-.oscar-live-sep {
-  width: 1px;
-  height: 0.85em;
-  background: rgba(47, 191, 95, 0.4);
+/* PUBLIC is the internet's blue, as its rows are in the network log. */
+.oscar-live-public.oscar-live-on {
+  border-color: rgba(86, 156, 255, 0.55);
+  background: rgba(86, 156, 255, 0.12);
+  color: #9cc8ff;
+}
+.oscar-live-public.oscar-live-on:hover {
+  color: #cfe3ff;
+}
+.oscar-live-public.oscar-live-on .oscar-live-dot {
+  background: #569cff;
+  box-shadow: 0 0 5px rgba(86, 156, 255, 0.8);
 }
 .oscar-live-dot {
   width: 7px;
@@ -565,25 +579,22 @@ a {
   box-shadow: 0 0 5px rgba(47, 191, 95, 0.8);
   animation: oscar-live-breathe 2.4s ease-in-out infinite;
 }
-/* The quiet state: nothing published, nothing served. */
-.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-pill {
+/* The quiet state: nothing served, nothing public, no server reached. */
+.oscar-live-pill:not(.oscar-live-on) {
   border-color: var(--o-border-strong);
   background: none;
   color: var(--o-text-faint);
 }
-.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-zone:hover {
+.oscar-live-pill:not(.oscar-live-on):hover {
   color: var(--o-text-muted);
 }
-.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-word {
+.oscar-live-pill:not(.oscar-live-on) .oscar-live-word {
   text-decoration: line-through;
 }
-.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-dot {
+.oscar-live-pill:not(.oscar-live-on) .oscar-live-dot {
   background: var(--o-text-faint);
   box-shadow: none;
   animation: none;
-}
-.gjs-pn-btn.oscar-live-btn:not(.oscar-live-on) .oscar-live-sep {
-  background: var(--o-border-strong);
 }
 @keyframes oscar-live-breathe {
   0%,
@@ -597,11 +608,23 @@ a {
 /* The activity lights: unlit they are legible but quiet; lit, the green of
    the widget lights -- data moving is the same news in both places. */
 .oscar-live-led {
+  position: relative;
+  overflow: hidden;
   padding: 0 0.35em;
   border-radius: var(--o-radius-sm);
   border: 1px solid transparent;
   font-size: 0.625rem;
   color: var(--o-text-faint);
+}
+/* The meter: a line under IN or OUT, as long as the traffic is heavy. */
+.oscar-live-meter {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: #2fbf5f;
+  transition: width 0.2s linear;
 }
 .oscar-live-led-on {
   color: #eafff1;
