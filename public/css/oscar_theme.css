@@ -923,13 +923,15 @@ body.oscar-log-dragging iframe {
   height: 18px;
 }
 /* As large as the padlock. The export icon's weight is its box, in its
-   lower two thirds: centred as a whole on the word, the icon read as low.
-   Raised so the box is centred on the capitals; the arrow rises above
-   them, as it should, still inside the pill. */
+   lower two thirds (rows 7 to 23 of 24): centred as a whole, the icon read
+   as low. Raised by 18 x (15/24 - 1/2) = 2.25px, which puts the box's middle
+   on the pill's, where the word's capitals sit; the arrow rises above them,
+   as it should, inside the pill. Worked from the icon's own shape, not from
+   the font, so it holds at any zoom. */
 .gjs-pn-btn.oscar-publish-btn svg {
   width: 18px;
   height: 18px;
-  transform: translateY(-3.3px);
+  transform: translateY(-2.25px);
 }
 .gjs-pn-btn.oscar-lock-btn:hover,
 .gjs-pn-btn.oscar-publish-btn:hover {
