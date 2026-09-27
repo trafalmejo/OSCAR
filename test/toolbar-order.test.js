@@ -70,16 +70,16 @@ test("every placement names a button the editor really adds", () => {
   }
 });
 
-test("Publish and Import are told apart by their arrows: out is up, in is down", () => {
+test("Publish looks like sharing out to a network, not like Import's arrow", () => {
   const fs = require("node:fs");
   const path = require("node:path");
   const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
-  // Both used to draw the same down arrow, side by side or not.
-  const upload = /upload:\s*"([^"]+)"/.exec(src);
-  assert.ok(upload, "there is an upload icon");
-  assert.match(src, /id:\s*"oscar-export",\s*label:\s*icon\("upload"\)/, "and Publish uses it");
+  const publish = /publish:\s*"([^"]+)"/.exec(src);
+  assert.ok(publish, "there is a publish icon");
+  assert.ok(publish[1].indexOf("M18,16.08C17.24,16.08") === 0, "mdi-share-variant: three joined nodes");
+  assert.match(src, /id:\s*"oscar-export",\s*label:\s*icon\("publish"\)/, "and Publish uses it");
   // The preset's Import icon, which stays as GrapesJS draws it.
-  assert.notStrictEqual(upload[1], "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z");
+  assert.notStrictEqual(publish[1], "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z");
 });
 
 test("an extension's button can be placed beside one of OSCAR's, and taken away again", () => {
