@@ -70,13 +70,13 @@ test("every placement names a button the editor really adds", () => {
   }
 });
 
-test("Publish looks like sharing out to a network, not like Import's arrow", () => {
+test("Publish is an arrow leaving its box, not Import's arrow", () => {
   const fs = require("node:fs");
   const path = require("node:path");
   const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
   const publish = /publish:\s*"([^"]+)"/.exec(src);
   assert.ok(publish, "there is a publish icon");
-  assert.ok(publish[1].indexOf("M18,16.08C17.24,16.08") === 0, "mdi-share-variant: three joined nodes");
+  assert.ok(publish[1].indexOf("M12,1L8,5H11V14H13V5H16M18,23H6") === 0, "mdi-export-variant: an arrow out of a box");
   assert.match(src, /id:\s*"oscar-export",\s*label:\s*icon\("publish"\)/, "and Publish uses it");
   // The preset's Import icon, which stays as GrapesJS draws it.
   assert.notStrictEqual(publish[1], "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z");
