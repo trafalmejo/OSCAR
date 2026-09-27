@@ -1,10 +1,10 @@
 "use strict";
 
-// The LIVE pill: the editor's top bar says OSCAR is serving published
-// surfaces in the background. The server side is surfaces' onActivity --
-// "in" as it consumes OSC or MIDI for a published surface, "out" as it
-// sends on one's behalf -- and the events server.js turns that into. The
-// editor side is a button between the screen sizes and the network info.
+// The LIVE pill and its network log. The log records what crossed the wire
+// (lib/wire-log.js, its own tests in wire-log.test.js): server.js writes a
+// row where each message is read or sent, and surfaces.js says who follows
+// what came in and whose a send is. The editor side is a button between the
+// screen sizes and the network info, and a floating window.
 
 const test = require("node:test");
 const assert = require("node:assert");
@@ -28,80 +28,71 @@ function tag(name, id, settings) {
   return "<" + definition.tag + " " + text + "></" + definition.tag + ">";
 }
 
+/** A published surface, and what the surfaces send, with the meta they send it with. */
 async function venue(widgets) {
   const published = new PublishedStore(fs.mkdtempSync(path.join(os.tmpdir(), "oscar-live-")));
   await published.save("Stage", "<body>" + widgets.join("") + "</body>");
   const store = new SharedState();
-  const activity = [];
+  const sent = [];
   const surfaces = createSurfaces({
     published,
-    sendOSC: () => {},
-    sendDMX: () => {},
-    sendMIDI: () => {},
+    sendOSC: (ip, port, address, args, meta) => sent.push({ protocol: "osc", address, meta }),
+    sendDMX: (request, meta) => sent.push({ protocol: "dmx", request, meta }),
+    sendMIDI: (request, meta) => sent.push({ protocol: "midi", request, meta }),
     shared: { store },
     io: { emit: () => {} },
-    onActivity: (dir) => activity.push(dir),
   });
-  return { surfaces, store, activity };
+  return { surfaces, store, sent };
 }
 
 const osc = (address, ...values) => ({ address, args: values.map((value) => ({ type: "f", value })) });
 
-test("consuming OSC for a published widget says IN; a message nobody follows says nothing", async () => {
-  const { surfaces, store, activity } = await venue([tag("oscar-slider", "s1", { enabled: true, listen: true, message: "/level", min: 0, max: 1 })]);
+async function followers(surfaces, hear) {
+  const said = [];
+  await hear({ followedBy: (id) => said.push(id) });
+  return said;
+}
+
+test("a published widget following a message is said, whether or not its value changed", async () => {
+  const { surfaces, store } = await venue([tag("oscar-slider", "s1", { enabled: true, listen: true, message: "/level", min: 0, max: 1 })]);
   store.onChange(() => {});
-
-  await surfaces.hearOsc(osc("/level", 0.7));
-  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "osc", what: "/level", surface: "stage", n: 1 }], "one event, saying what was consumed and for whom");
-
-  await surfaces.hearOsc(osc("/nothing/here", 1));
-  assert.strictEqual(activity.length, 1, "a message that moved nothing lights nothing");
+  assert.deepStrictEqual(await followers(surfaces, (o) => surfaces.hearOsc(osc("/level", 0.7), o)), ["stage"]);
+  // The same value again moves nothing, but the surface still follows it:
+  // software that repeats itself is not "unfollowed".
+  assert.deepStrictEqual(await followers(surfaces, (o) => surfaces.hearOsc(osc("/level", 0.7), o)), ["stage"]);
+  assert.deepStrictEqual(await followers(surfaces, (o) => surfaces.hearOsc(osc("/nothing/here", 1), o)), [], "what nothing follows says nothing");
 });
 
-test("a drive on a published surface's behalf says OUT, and a bridge says both", async () => {
-  const { surfaces, activity } = await venue([tag("oscar-slider", "s2", { enabled: true, message: "/dim", min: 0, max: 1 })]);
-
-  const driven = await surfaces.drive("stage", "s2", { value: 0.5 });
-  assert.strictEqual(driven.ok, true);
-  assert.deepStrictEqual(
-    activity.map((e) => [e.dir, e.protocol, e.surface]),
-    [["out", "osc", "stage"]],
-    "the send was the server's, for the surface, named per protocol"
-  );
-
-  const bridged = await venue([tag("oscar-slider", "s3", { enabled: true, listen: true, message: "/dim", min: 0, max: 1, oscSendWhen: "data" })]);
-  await bridged.surfaces.hearOsc(osc("/dim", 0.9));
-  assert.deepStrictEqual(
-    bridged.activity.map((e) => [e.dir, e.protocol]),
-    [["out", "osc"], ["in", "osc"]],
-    "what came in went back out: both lights"
-  );
-  assert.strictEqual(bridged.activity[0].origin, "bridge", "and the send says it was a bridge's");
+test("MIDI a published widget follows is said even with nobody watching the surface", async () => {
+  const { surfaces } = await venue([tag("oscar-slider", "s5", { enabled: true, midiListen: true, midiType: "cc", midiChannel: 1, midiNumber: 7, min: 0, max: 1 })]);
+  assert.strictEqual(surfaces.watched(), false, "no page open");
+  assert.deepStrictEqual(await followers(surfaces, (o) => surfaces.hearMidi({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "nanoKONTROL2", true, o)), ["stage"]);
 });
 
-test("a drive says whose move it was when its caller says: a visitor's phone and a schedule apart", async () => {
-  const { surfaces, activity } = await venue([tag("oscar-slider", "s6", { enabled: true, message: "/dim", min: 0, max: 1 })]);
+test("a drive hands its sends whose they are: the surface, the control, and the caller's word", async () => {
+  const { surfaces, sent } = await venue([tag("oscar-slider", "s6", { enabled: true, message: "/dim", min: 0, max: 1 })]);
   await surfaces.drive("stage", "s6", { value: 0.2 }, { origin: "internet" });
   await surfaces.drive("stage", "s6", { value: 0.3 }, { origin: "schedule" });
   await surfaces.drive("stage", "s6", { value: 0.4 });
   assert.deepStrictEqual(
-    activity.map((e) => e.origin),
-    ["internet", "schedule", undefined],
+    sent.map((s) => [s.protocol, s.address, s.meta.origin, s.meta.surface]),
+    [["osc", "/dim", "internet", "stage"], ["osc", "/dim", "schedule", "stage"], ["osc", "/dim", undefined, "stage"]],
     "a caller that says nothing (an older extension) gets no label rather than a wrong one"
   );
+  assert.ok(sent.every((s) => typeof s.meta.widget === "string" && s.meta.widget.length), "the control is named");
 });
 
-test("MIDI consumed for a published widget says IN with the message spelled out", async () => {
-  const { surfaces, store, activity } = await venue([tag("oscar-slider", "s5", { enabled: true, midiListen: true, midiType: "cc", midiChannel: 1, midiNumber: 7, min: 0, max: 1 })]);
+test("a bridge's send is marked a bridge's", async () => {
+  const { surfaces, store, sent } = await venue([tag("oscar-slider", "s3", { enabled: true, listen: true, message: "/dim", min: 0, max: 1, oscSendWhen: "data" })]);
   store.onChange(() => {});
-  await surfaces.hearMidi({ type: "cc", channel: 1, number: 7, unit: 0.5 }, "nanoKONTROL2", true);
-  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "midi", what: "cc 7 ch 1 · nanoKONTROL2", surface: "stage", n: 1 }]);
+  await surfaces.hearOsc(osc("/dim", 0.9));
+  assert.deepStrictEqual(sent.map((s) => [s.protocol, s.meta.origin]), [["osc", "bridge"]]);
 });
 
-test("a widget switched off is driven silently: shown, not sent, and no OUT", async () => {
-  const { surfaces, activity } = await venue([tag("oscar-slider", "s4", { enabled: false, message: "/dim", min: 0, max: 1 })]);
+test("a widget switched off is driven silently: shown, not sent", async () => {
+  const { surfaces, sent } = await venue([tag("oscar-slider", "s4", { enabled: false, message: "/dim", min: 0, max: 1 })]);
   await surfaces.drive("stage", "s4", { value: 0.5 });
-  assert.deepStrictEqual(activity, [], "nothing reached the rig, so nothing lights");
+  assert.deepStrictEqual(sent, [], "nothing reached the rig, so nothing is logged");
 });
 
 // ---- the wiring, read from the sources -----------------------------------
@@ -114,19 +105,38 @@ const editorSource = readSource("public", "src", "oscar_editor.js");
 const themeSource = readSource("public", "css", "oscar_theme.css");
 const routesSource = readSource("routes", "index.js");
 
-test("the server throttles the flickers, keeps the log, and announces the roster's changes", () => {
-  assert.match(serverSource, /io\.emit\("live:activity", \{ dir \}\);/, "the activity event");
-  assert.match(serverSource, /if \(at - activityAt\[dir\] < 200\) return;/, "throttled per direction");
-  assert.match(serverSource, /onActivity: tellActivity/, "handed to the surfaces");
-  assert.match(serverSource, /io\.emit\("live:log", entry\)/, "the log rows flow to every editor");
-  assert.match(serverSource, /held\.n \+= event\.n \|\| 1;/, "repeats coalesce into one row with a count");
-  assert.match(serverSource, /const key = \[event\.dir, event\.protocol, event\.what, event\.surface \|\| "", event\.origin \|\| "", event\.device \|\| "", event\.unfollowed \? "u" : ""\]\.join\("\|"\);/, "but a tablet and a visitor's phone never share a row");
-  assert.match(serverSource, /origin: event\.origin, device: event\.device, unfollowed: event\.unfollowed \|\| undefined, n: event\.n \|\| 1/, "the row carries whose move it was");
-  assert.match(serverSource, /liveLog\.splice\(0, liveLog\.length - LIVE_LOG_KEEP\)/, "the backlog is capped");
+test("the server writes the log where traffic crosses the wire", () => {
+  assert.match(serverSource, /const wireLog = createWireLog\(\{\n  emit: \(row\) => tellEditors\("live:log", row\),\n  flash: \(dir\) => tellEditors\("live:activity", \{ dir \}\),\n\}\);/, "one log, telling the editors rows and lights");
+  assert.match(serverSource, /tellEditors = \(event, payload\) => io\.emit\(event, payload\);/, "once the socket server exists");
+  // Out: in the send functions, after the send, with where it went.
+  assert.match(serverSource, /target\.send\(message, ip, Number\(port\)\);\n    log\(to\);/, "OSC once handed to the socket");
+  assert.match(serverSource, /return log\(to, "malformed"\);/, "a refused OSC message is a dropped row");
+  assert.match(serverSource, /return log\("serial", "the serial cable is not connected"\);/, "so is one the cable could not take");
+  assert.match(serverSource, /dmx\.set\(request\.source, request\);\n[\s\S]{0,300}wireLog\.out\(Object\.assign\(\{ protocol: "dmx" \}, dmxOut\(request\), sentFor\(meta\)\)\);/, "a DMX level change, as set");
+  assert.match(serverSource, /what: event === "open" \? "stream started" : "stream released"/, "the DMX stream's start and release");
+  assert.match(serverSource, /sent === false \? \{ dropped: "not a MIDI message OSCAR can send" \} : \{\}/, "MIDI, marked when refused");
+  // In: as each message is read, before anything acts on it.
+  assert.match(serverSource, /const arrival = wireLog\.arrive\(\{ protocol: "osc", what: message\.address, value: oscValue\(message\.args\), device \}\);\n  io\.emit\("osc:in", tagged\);/, "OSC, with its sender");
+  assert.match(serverSource, /const arrival = wireLog\.arrive\(Object\.assign\(\{ protocol: "midi", device: port \|\| undefined \}, midiIn\(heard\)\)\);/, "MIDI, with its port");
+  assert.match(serverSource, /onUnread: \(packet, from\) => unreadOsc\(unreadWhat\(packet\), from, UNREAD_WHY\),\n  onUnreadable: \(err\) => unreadOsc\("\(not OSC\)", null, reason\(err\)\),/, "what OSCAR could not read, marked");
+  assert.match(serverSource, /listenOn\(port, \(message, from\) => heardOsc\(message, null, from\), \(packet, from\) => unreadOsc\(unreadWhat\(packet\), from, UNREAD_WHY\)\);/, "on the sending ports too");
+  assert.match(serverSource, /liveLog: \(\) => wireLog\.rows\(\),/, "the backlog is the log's");
+  assert.ok(!/tellActivity|onActivity|logArrival/.test(serverSource), "nothing is logged anywhere else");
+  assert.match(serverSource, /const surfaces = createSurfaces\(\{ published, sendOSC, sendDMX, sendMIDI, shared, io \}\);/);
   assert.match(serverSource, /surfaces\.onPublished\(\(id\) => \{\n  io\.emit\("published:changed"\);/, "publishing recounts the pill");
   assert.match(serverSource, /onPublishedChanged: \(\) => io\.emit\("published:changed"\)/, "unpublishing does too");
   assert.match(routesSource, /if \(onPublishedChanged\) onPublishedChanged\(\);/, "from the route that unpublishes");
   assert.match(routesSource, /router\.get\("\/live\/log", editorOnly/, "the backlog behind a freshly opened window");
+  const oscIn = readSource("lib", "osc-in.js");
+  assert.match(oscIn, /function onPacket\(packet, timeTag, info\)/, "osc.js hands the sender third");
+});
+
+test("every send over a socket carries whose it is to the send function", () => {
+  assert.match(serverSource, /const from = socketOrigin\(socket\.handshake\.query && socket\.handshake\.query\.from, socket\.handshake\.address\);/, "each connection says who it is");
+  assert.match(serverSource, /sendOSC\(msg\.ip, msg\.port, msg\.address, msg\.args, from\);/, "OSC from a page or the canvas");
+  assert.match(serverSource, /sendOSC\(ip, port, address, \[\{ type, value \}\], from\);/, "the old single-value form");
+  assert.match(serverSource, /sendDMX\(request, from\);/, "DMX");
+  assert.match(serverSource, /sendMIDI\(request, from\);/, "MIDI");
 });
 
 test("the pill sits between the screen sizes and the network info, split into its two doors", () => {
@@ -152,16 +162,61 @@ test("the pill sits between the screen sizes and the network info, split into it
   assert.match(themeSource, /:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "LIVE struck through at zero");
   assert.match(editorSource, /Nothing is published: OSCAR serves no surfaces in the background\./, "the quiet pill says why");
   assert.match(themeSource, /border: 1px solid rgba\(47, 191, 95, 0\.55\)/, "the pill is green");
+  assert.match(editorSource, /"IN lights as data comes in for a published surface or the canvas, OUT as OSCAR sends for one\. Click for the network log\."/, "and the lights say what they mean");
 });
 
-test("the log window says the address first, then the traffic, filtered by direction and protocol", () => {
+test("the log window shows each row as it crossed the wire, and takes updates in place", () => {
   assert.match(editorSource, /head\.textContent = "Server IP: " \+ ipServer \+ \(oscInPort \? " · Listening Port: " \+ oscInPort : ""\)/, "the address on top");
-  for (const key of ['"in", "Incoming"', '"out", "Outgoing"', '"osc", "OSC"', '"midi", "MIDI"', '"dmx", "DMX"']) {
+  for (const key of ['"in", "Incoming"', '"out", "Outgoing"', '"osc", "OSC"', '"midi", "MIDI"', '"dmx", "DMX"', '"unfollowed", "Unfollowed"', '"dropped", "Dropped"']) {
     assert.ok(editorSource.indexOf("[" + key + "]") !== -1, "a filter for " + key);
   }
   assert.match(editorSource, /if \(!logFilters\[row\.dir\] \|\| !logFilters\[row\.protocol\]\) continue;/, "rows obey the filters");
-  assert.match(editorSource, /where\.className = "oscar-log-surface"/, "each row names its surface, incoming included");
+  assert.match(editorSource, /if \(logRows\[i\]\.id === row\.id\) \{\n          logRows\[i\] = row;/, "an update replaces the row it is about");
+  assert.match(editorSource, /while \(at > 0 && logRows\[at - 1\]\.at > row\.at\) at--;/, "a new row goes where its time says");
+  assert.match(editorSource, /line\.appendChild\(span\("oscar-log-value", "= " \+ row\.value\)\);/, "what it carried");
+  assert.match(editorSource, /line\.appendChild\(span\("oscar-log-from", "→ " \+ row\.to\)\);/, "where it went");
+  assert.match(editorSource, /row\.device === "serial" \? "from the serial cable" : "from " \+ row\.device/, "who sent what came in");
+  assert.match(editorSource, /\(row\.surfaces \|\| \[\]\)\.forEach\(function \(surface\) \{/, "every published surface that follows it");
+  assert.match(editorSource, /span\("oscar-log-chip oscar-log-origin oscar-log-dropped", "Dropped"/, "what was refused, marked");
+  assert.match(editorSource, /return row\.dir === "in" && !row\.dropped && !row\.canvas && !\(row\.surfaces && row\.surfaces\.length\);/, "unfollowed means nothing at all followed it");
   assert.match(editorSource, /fetch\("\/live\/log"\)/, "opened onto the backlog, not an empty page");
+  assert.match(themeSource, /\.oscar-log-dropped \{/);
+});
+
+test("the log labels whose move each send was, and filters by it", () => {
+  for (const key of ['["canvas", "Canvas"]', '["local", "Local"]', '["internet", "Internet"]', '["schedule", "Schedule"]', '["bridge", "Bridge"]']) {
+    assert.ok(editorSource.indexOf(key) !== -1, "a filter for " + key);
+  }
+  assert.match(editorSource, /if \(row\.origin && logFilters\[row\.origin\] === false\) continue;/, "rows obey them; a row without an origin always shows");
+  assert.match(editorSource, /ORIGIN_HINTS\[row\.origin\] \+ \(row\.device \? " \(" \+ row\.device \+ "\)" : ""\)/, "which tablet, on hover");
+  assert.ok(editorSource.indexOf("logCanvas(") === -1, "the page keeps no rows of its own that the backlog would wipe");
+  assert.match(themeSource, /\.oscar-log-origin-internet \{/, "internet stands apart from local");
+});
+
+test("the canvas says what it followed of what came in, and only the canvas is believed", () => {
+  const incomingSource = readSource("lib", "widgets", "incoming.js");
+  const midiSourceSource = readSource("lib", "widgets", "midi-source.js");
+  const adapterSource = readSource("public", "src", "adapters", "grapesjs.js");
+  assert.match(incomingSource, /if \(typeof ctx\.noteHeard === "function"\) ctx\.noteHeard\("osc", message\.address\);/, "an OSC widget that follows a message says so");
+  assert.match(midiSourceSource, /if \(typeof host\.noteHeard === "function"\) host\.noteHeard\("midi", midiIn\(heard\)\.what, port\);/, "and a MIDI one, with its port");
+  assert.match(adapterSource, /if \(typeof editor\.noteHeard === "function"\) editor\.noteHeard\(protocol, what, device\);/, "the canvas hands it to the editor");
+  assert.match(editorSource, /if \(rows\.length\) editor\.socket\.emit\("canvas:heard", rows\);/, "gathered and told to the server");
+  assert.match(serverSource, /if \(from\.origin !== "canvas" \|\| !Array\.isArray\(rows\)\) return;/, "which takes only the canvas's word");
+  assert.match(serverSource, /wireLog\.canvasHeard\(row\.protocol, row\.what\.slice\(0, 200\), typeof row\.device === "string" \? row\.device\.slice\(0, 200\) : undefined\);/, "and writes it on the rows it is about");
+});
+
+test("a widget following a message tells its host, and one that does not stays quiet", () => {
+  const { follow } = require("../lib/widgets/incoming");
+  const noted = [];
+  let deliver = null;
+  const values = { enabled: true, listen: true, message: "/dim" };
+  const ctx = { get: (k) => values[k], onOsc: (fn) => { deliver = fn; return () => {}; }, noteHeard: (p, w) => noted.push([p, w]) };
+  const heard = [];
+  follow(ctx, (v) => heard.push(v));
+  deliver({ address: "/dim", args: [0.5] });
+  deliver({ address: "/other", args: [1] });
+  assert.deepStrictEqual(noted, [["osc", "/dim"]], "only what it followed");
+  assert.strictEqual(heard.length, 1);
 });
 
 test("the log floats so the faders stay usable under it: that is what it is for", () => {
@@ -179,64 +234,6 @@ test("the log floats so the faders stay usable under it: that is what it is for"
   assert.match(themeSource, /\.oscar-live-log \{\n  position: fixed;/, "floating over the editor");
   assert.match(themeSource, /width: 820px;/, "wide enough to read");
   assert.match(themeSource, /height: 420px;/, "a fixed height, not one that grows with every row");
-});
-
-test("every send over a socket is logged by the server, saying whose it was", () => {
-  assert.match(serverSource, /const from = socketOrigin\(socket\.handshake\.query && socket\.handshake\.query\.from, socket\.handshake\.address\);/, "each connection says who it is");
-  assert.match(serverSource, /sendOSC\(msg\.ip, msg\.port, msg\.address, msg\.args\);\n      logOut\("osc", msg\.address\);/, "OSC from a page or the canvas is logged");
-  assert.match(serverSource, /sendOSC\(ip, port, address, \[\{ type, value \}\]\);\n      logOut\("osc", address\);/, "so is the old single-value form");
-  assert.match(serverSource, /sendDMX\(request\);\n      logOut\("dmx", dmxWords\(request\)\);/, "DMX");
-  assert.match(serverSource, /if \(sendMIDI\(request\) !== false\) logOut\("midi", midiWords\(request\)\);/, "MIDI, when it actually went out");
-  assert.match(serverSource, /if \(!event\.unfollowed && !event\.lit\) flashLight\(event\.dir\);/, "the canvas's traffic flashes the lights too; what nothing follows does not");
-  assert.match(serverSource, /entry\.lit = true;\n    claimed = true;\n  \}\n  \/\/ The light flashes as the canvas says so[^\n]*\n  \/\/ [^\n]*\n  flashLight\("in"\);/, "what the canvas follows flashes IN as it says so, once");
-  assert.match(editorSource, /"IN lights as data comes in for a published surface or the canvas, OUT as OSCAR sends for one\. Click for the network log\."/, "and the pill says so");
-});
-
-test("every message that comes in is logged once, with who sent it, followed or not", async () => {
-  // What a published surface follows names the surface and the sender.
-  const { surfaces, store, activity } = await venue([tag("oscar-slider", "s7", { enabled: true, listen: true, message: "/level", min: 0, max: 1 })]);
-  store.onChange(() => {});
-  await surfaces.hearOsc(osc("/level", 0.4), { device: "192.168.1.40" });
-  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "osc", what: "/level", surface: "stage", n: 1, device: "192.168.1.40" }]);
-  // What nothing published follows is logged by the server, marked as such.
-  assert.match(serverSource, /if \(!moved\) logArrival\(\{ protocol: "osc", what: message\.address, device \}\);/, "OSC nobody published follows");
-  assert.match(serverSource, /if \(!moved\) logArrival\(\{ protocol: "midi", what: heardMidiWords\(heard, port\) \}\);/, "and MIDI");
-  assert.match(serverSource, /arrivals\.set\(key, \{ dir: "in", protocol: event\.protocol, what: event\.what, device: event\.device, unfollowed: true, n: 1 \}\);/, "held as unfollowed until the canvas says otherwise");
-  assert.match(serverSource, /onMessage: \(message, from\) => heardOsc\(message, null, from\)/, "the sender comes from the packet");
-  assert.match(serverSource, /listenOn\(port, \(message, from\) => heardOsc\(message, null, from\)\);/, "replies to the sending ports too");
-  const oscIn = readSource("lib", "osc-in.js");
-  assert.match(oscIn, /function onPacket\(packet, timeTag, info\)/, "osc.js hands the sender third");
-});
-
-test("the canvas says what it followed of what came in, and only the canvas is believed", () => {
-  const incomingSource = readSource("lib", "widgets", "incoming.js");
-  const midiSourceSource = readSource("lib", "widgets", "midi-source.js");
-  const adapterSource = readSource("public", "src", "adapters", "grapesjs.js");
-  assert.match(incomingSource, /if \(typeof ctx\.noteHeard === "function"\) ctx\.noteHeard\("osc", message\.address\);/, "an OSC widget that follows a message says so");
-  assert.match(midiSourceSource, /if \(typeof host\.noteHeard === "function"\) host\.noteHeard\("midi", heardMidiWords\(heard, port\)\);/, "and a MIDI one");
-  assert.match(adapterSource, /if \(typeof editor\.noteHeard === "function"\) editor\.noteHeard\(protocol, what\);/, "the canvas hands it to the editor");
-  assert.match(editorSource, /if \(rows\.length\) editor\.socket\.emit\("canvas:heard", rows\);/, "gathered and told to the server");
-  assert.match(serverSource, /if \(from\.origin !== "canvas" \|\| !Array\.isArray\(rows\)\) return;/, "which takes only the canvas's word");
-  assert.match(serverSource, /canvasHeard\(row\.protocol, row\.what\.slice\(0, 200\), n\);/, "and logs it as the canvas's");
-  // One row per message, not an "unfollowed" row and a "canvas" row disagreeing.
-  assert.match(serverSource, /entry\.origin = "canvas";\n    delete entry\.unfollowed;/, "the canvas's word lands on the held row, sender and count kept");
-  assert.match(serverSource, /if \(last && Date\.now\(\) - last < CLAIM_MEMORY_MS\) return;/, "a second editor saying the same is not a second row");
-  assert.match(editorSource, /\}, 150\);/, "told well inside the server's hold");
-  assert.match(serverSource, /const ARRIVAL_HOLD_MS = 700;/);
-});
-
-test("a widget following a message tells its host, and one that does not stays quiet", () => {
-  const { follow } = require("../lib/widgets/incoming");
-  const noted = [];
-  let deliver = null;
-  const values = { enabled: true, listen: true, message: "/dim" };
-  const ctx = { get: (k) => values[k], onOsc: (fn) => { deliver = fn; return () => {}; }, noteHeard: (p, w) => noted.push([p, w]) };
-  const heard = [];
-  follow(ctx, (v) => heard.push(v));
-  deliver({ address: "/dim", args: [0.5] });
-  deliver({ address: "/other", args: [1] });
-  assert.deepStrictEqual(noted, [["osc", "/dim"]], "only what it followed");
-  assert.strictEqual(heard.length, 1);
 });
 
 test("each page says who it is when it connects", () => {
@@ -266,24 +263,6 @@ test("auto-scroll keeps the newest in view, and off keeps what is being read sti
   assert.match(editorSource, /return localStorage\.getItem\(AUTOSCROLL_KEY\) !== "off";/, "on until turned off, remembered");
   assert.match(editorSource, /if \(autoScroll\) \{\n        logList\.scrollTop = 0;/, "the newest is at the top, so on is the top");
   assert.match(editorSource, /anchor = \{ key: logList\.children\[c\]\.getAttribute\("data-key"\), offset: at\.top - top \};/, "off, the first row in view is remembered");
+  assert.match(editorSource, /line\.setAttribute\("data-key", String\(row\.id\)\);/, "by the row's own id");
   assert.match(editorSource, /logList\.scrollTop \+= again\.getBoundingClientRect\(\)\.top - logList\.getBoundingClientRect\(\)\.top - anchor\.offset;/, "and put back where it sat");
-});
-
-test("an incoming row says who sent it, and a message nothing published follows is marked", () => {
-  assert.match(editorSource, /sender\.textContent = row\.device === "serial" \? "from the serial cable" : "from " \+ row\.device;/, "the sender, in words");
-  assert.match(editorSource, /origin\.textContent = "Unfollowed";/, "unfollowed, marked");
-  assert.match(editorSource, /if \(row\.unfollowed && !logFilters\.unfollowed\) continue;/, "and filterable");
-  assert.ok(editorSource.indexOf('["unfollowed", "Unfollowed"]') !== -1, "a checkbox for it");
-  assert.match(editorSource, /var IN_HINTS = \{ canvas: "Followed by a widget on the editor's canvas" \};/, "an incoming Canvas row means the canvas followed it");
-});
-
-test("the log labels whose move each row was, and filters by it", () => {
-  for (const key of ['["canvas", "Canvas"]', '["local", "Local"]', '["internet", "Internet"]', '["schedule", "Schedule"]', '["bridge", "Bridge"]']) {
-    assert.ok(editorSource.indexOf(key) !== -1, "a filter for " + key);
-  }
-  assert.match(editorSource, /if \(row\.origin && logFilters\[row\.origin\] === false\) continue;/, "rows obey them; a row without an origin always shows");
-  assert.match(editorSource, /origin\.className = "oscar-log-chip oscar-log-origin oscar-log-origin-" \+ row\.origin;/, "a chip per origin");
-  assert.match(editorSource, /var hint = \(row\.dir === "in" && IN_HINTS\[row\.origin\]\) \|\| ORIGIN_HINTS\[row\.origin\];\n          origin\.setAttribute\("title", hint \+ \(row\.device \? " \(" \+ row\.device \+ "\)" : ""\)\);/, "which tablet, on hover");
-  assert.ok(editorSource.indexOf("logCanvas(") === -1, "the page no longer keeps rows of its own that the backlog would wipe");
-  assert.match(themeSource, /\.oscar-log-origin-internet \{/, "internet stands apart from local");
 });

@@ -794,7 +794,26 @@ a {
   color: #8fe3ae;
   border-color: rgba(47, 191, 95, 0.5);
 }
-/* Arrived, and no published surface follows it. */
+/* Refused: a malformed message either way, a packet that is not OSC. */
+.oscar-log-dropped {
+  color: #ff9a9a;
+  border-color: rgba(255, 99, 99, 0.55);
+}
+.oscar-log-row-dropped .oscar-log-what {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 99, 99, 0.6);
+}
+/* What the latest message carried. */
+.oscar-log-value {
+  flex: none;
+  color: var(--o-text);
+  font-size: var(--o-text-sm);
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Arrived, and nothing follows it. */
 .oscar-log-unfollowed {
   color: var(--o-text-muted);
   border-style: dashed;

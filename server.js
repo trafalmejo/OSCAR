@@ -24,7 +24,8 @@ const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
 const { createSurfaces, allWidgetsIn } = require("./lib/surfaces");
-const { socketOrigin, deviceOf, midiWords, heardMidiWords, dmxWords } = require("./lib/activity");
+const { socketOrigin, deviceOf, oscValue, midiOut, midiIn, dmxOut, dmxTo } = require("./lib/activity");
+const { createWireLog } = require("./lib/wire-log");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -201,24 +202,48 @@ function diagnostics() {
 // phone across the internet included. The raw message still goes to every
 // page, for the editor's canvas and the widgets OSCAR cannot yet follow for.
 // `surfaces` is made further down; nothing arrives before it is.
+// ---- The network log --------------------------------------------------------
+// What crossed the wire, written where it crosses it (lib/wire-log.js): every
+// message read, as it is read, with its sender; every message sent, as it is
+// handed to the socket, port or stream, with where it went; what was refused,
+// marked. Who caused a send, and who followed what came in, are written on
+// the same row. The editors are told as rows appear and change, the LIVE
+// pill's lights flash with it, and GET /live/log hands a window opening now
+// the latest 200. Created up here because sending can start before the
+// socket server below exists; the editors are reached once it does.
+let tellEditors = function () {};
+const wireLog = createWireLog({
+  emit: (row) => tellEditors("live:log", row),
+  flash: (dir) => tellEditors("live:activity", { dir }),
+});
+
+/** The part of a send's meta the log writes: { origin, surface, widget, device }. */
+function sentFor(meta) {
+  if (!meta || typeof meta !== "object") return {};
+  return { origin: meta.origin, surface: meta.surface, widget: meta.widget, device: meta.device };
+}
+
 function heardOsc(message, source, from) {
   // Tagged at the door: the widgets' From (oscListenFrom) reads it wherever
   // the message is read -- here, on published pages, in the editor.
   const tagged = Object.assign({}, message, { source: source === "serial" ? "serial" : "network" });
-  io.emit("osc:in", tagged);
-  // Who sent it, for the network log only: the pages are not told.
+  // Who sent it is the log's alone: the pages are not told.
   const device = source === "serial" ? "serial" : from ? deviceOf(from.address) : undefined;
-  if (surfaces) {
-    surfaces
-      .hearOsc(tagged, { device })
-      .then((moved) => {
-        // What no published surface follows is logged too, once, as it
-        // arrived: "is the rig even sending?" is the first question. The
-        // editor says for itself whether its canvas followed it.
-        if (!moved) logArrival({ protocol: "osc", what: message.address, device });
-      })
-      .catch((err) => console.error("OSC in: " + reason(err)));
-  }
+  const arrival = wireLog.arrive({ protocol: "osc", what: message.address, value: oscValue(message.args), device });
+  io.emit("osc:in", tagged);
+  if (surfaces) surfaces.hearOsc(tagged, { followedBy: arrival.followedBy }).catch((err) => console.error("OSC in: " + reason(err)));
+}
+
+const UNREAD_WHY = "OSC, but not a message OSCAR acts on (a bad address, or too many values)";
+
+/** What an unread OSC packet was about, as far as it says. */
+function unreadWhat(packet) {
+  return packet && typeof packet.address === "string" && packet.address ? packet.address.slice(0, 200) : "(no address)";
+}
+
+/** A packet on an OSC port that OSCAR could not read: a row, marked, then nothing. */
+function unreadOsc(what, from, why) {
+  wireLog.arrive({ protocol: "osc", what, device: from ? deviceOf(from.address) : undefined, dropped: why });
 }
 
 const MIDI_EVENTS = { open: "sending to", closed: "let go of", listening: "listening to", deaf: "stopped listening to" };
@@ -231,10 +256,19 @@ const midi = createRemoteMidi({
   onError: (err) => console.error("MIDI: " + reason(err)),
 });
 
-function sendMIDI(input) {
-  // False for a malformed request as well as for a port that is not there;
-  // the second has already been said, once, by onError.
-  return midi.send(input);
+function sendMIDI(input, meta) {
+  // False for a malformed request (and, in-process, for a port that is not
+  // there, which onError has already said). The supervised worker cannot say
+  // about the port: a request it takes is logged as sent.
+  const sent = midi.send(input);
+  let words;
+  try {
+    words = midiOut(input);
+  } catch (err) {
+    words = { what: "midi", value: "", to: "" };
+  }
+  wireLog.out(Object.assign({ protocol: "midi" }, words, sentFor(meta), sent === false ? { dropped: "not a MIDI message OSCAR can send" } : {}));
+  return sent;
 }
 
 // ---- The serial cable ------------------------------------------------------
@@ -320,8 +354,8 @@ app.use(
     // every editor's LIVE pill recounts.
     onPublishedChanged: () => io.emit("published:changed"),
     // The pill's network log, backlog for a window that has just opened.
-    // `liveLog` is created below; this only runs once a request arrives.
-    liveLog: () => liveLog.slice(),
+    // The network log is created above; this only runs once a request arrives.
+    liveLog: () => wireLog.rows(),
     // The double-clicked project, claimed by the first editor to ask.
     takeBootFile: () => {
       const taken = bootFile;
@@ -389,12 +423,15 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
   // code means the socket itself, and is worth every line.
   port.on("error", (err) => {
     if (err && err.code) console.error("OSC " + label + " socket error:", reason(err));
-    else badPacket(err);
+    else {
+      badPacket(err);
+      unreadOsc("(not OSC)", null, reason(err));
+    }
   });
   port.open();
   // Software that answers to the port a request came from sends its reply
   // here, not to the OSC-in port; a widget following the rig hears both.
-  listenOn(port, (message, from) => heardOsc(message, null, from));
+  listenOn(port, (message, from) => heardOsc(message, null, from), (packet, from) => unreadOsc(unreadWhat(packet), from, UNREAD_WHY));
 }
 
 /**
@@ -403,24 +440,30 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
  * @param {string} address
  * @param {Array} args - one entry per value; an XY pad sends two, a colour three
  */
-function sendOSC(ip, port, address, args) {
+function sendOSC(ip, port, address, args, meta) {
   const message = buildMessage(address, args);
+  const log = (to, dropped) =>
+    wireLog.out(Object.assign({ protocol: "osc", what: String(address), value: oscValue(message ? message.args : args), to }, sentFor(meta), dropped ? { dropped } : {}));
 
   // The cable has no ports, so the port is not looked at; the message is held
   // to exactly the same standard as one bound for the network.
   if (isSerialTarget(ip)) {
     if (!message) {
       console.error("Ignoring a malformed OSC message for", address);
-      return;
+      return log("serial", "malformed");
     }
-    if (serial.send(message)) console.log("Sending", address, JSON.stringify(message.args), "to serial");
-    else reportSerialDrop(address);
-    return;
+    if (serial.send(message)) {
+      console.log("Sending", address, JSON.stringify(message.args), "to serial");
+      return log("serial");
+    }
+    reportSerialDrop(address);
+    return log("serial", "the serial cable is not connected");
   }
 
+  const to = String(ip) + ":" + String(port);
   if (!message || !isPort(port)) {
     console.error("Ignoring a malformed OSC message for", address);
-    return;
+    return log(to, "malformed");
   }
 
   const target = ip === "localhost" || ip === "127.0.0.1" ? udpLocal : udpLan;
@@ -428,8 +471,10 @@ function sendOSC(ip, port, address, args) {
   console.log("Sending", address, JSON.stringify(message.args), "to", ip + ":" + port);
   try {
     target.send(message, ip, Number(port));
+    log(to);
   } catch (err) {
     console.error("Could not send OSC message:", err.message);
+    log(to, err.message);
   }
 }
 
@@ -482,18 +527,24 @@ const dmx = createDmxOutput(sendDmxFrame, {
       ? stream.protocol + " on " + (stream.host || "the first USB interface")
       : stream.protocol + " universe " + stream.universe + " at " + stream.host + ":" + stream.port;
     console.log(event === "open" ? "DMX: driving " + where : "DMX: released " + where);
+    wireLog.out({ protocol: "dmx", what: event === "open" ? "stream started" : "stream released", value: "universe " + stream.universe, to: dmxTo(stream.protocol, stream.host) });
     // The zero frame has gone; the serial port can be let go of.
     if (event === "release" && isUsb(stream.protocol)) usbDmx.release(stream.protocol, stream.host).catch(() => {});
   },
 });
 
-function sendDMX(input) {
+function sendDMX(input, meta) {
   const request = buildDmxRequest(input);
   if (!request) {
     console.error("Ignoring a malformed DMX request");
-    return;
+    const said = input && typeof input === "object" ? input : {};
+    return wireLog.out(Object.assign({ protocol: "dmx", what: "ch " + String(said.channel), to: dmxTo(said.protocol, said.host) }, sentFor(meta), { dropped: "malformed" }));
   }
   dmx.set(request.source, request);
+  // A level change, as the stream will carry it from the next frame on. The
+  // frames themselves go out continuously; the stream's start and release
+  // are rows of their own (onStream above).
+  wireLog.out(Object.assign({ protocol: "dmx" }, dmxOut(request), sentFor(meta)));
 }
 
 const io = new Server(SOCKET_PORT, {
@@ -506,6 +557,7 @@ const io = new Server(SOCKET_PORT, {
 // tablet next to the one that toggled a button draws it on too, and its next
 // press sends the right edge (lib/shared-sync.js).
 const shared = sharedSync(io);
+tellEditors = (event, payload) => io.emit(event, payload);
 
 // ---- OSC coming back ------------------------------------------------------
 
@@ -545,6 +597,8 @@ const oscIn = oscReceiver({
     );
   },
   onBadPacket: reportBadPacket("OSC-in"),
+  onUnread: (packet, from) => unreadOsc(unreadWhat(packet), from, UNREAD_WHY),
+  onUnreadable: (err) => unreadOsc("(not OSC)", null, reason(err)),
 });
 
 // Back to the board chosen last time, so an installation that reboots
@@ -565,17 +619,16 @@ io.on("connection", (socket) => {
   // Who this connection sends for, for the network log: the editor's canvas
   // or a page on this network, and which surface (lib/activity.js).
   const from = socketOrigin(socket.handshake.query && socket.handshake.query.from, socket.handshake.address);
-  const logOut = (protocol, what) => tellActivity(Object.assign({ dir: "out", protocol, what }, from));
 
   // The editor's canvas saying what incoming data it followed, gathered a
-  // few times a second: [{ protocol, what, n }]. Only the canvas's word is
+  // few times a second: [{ protocol, what, device }]. Written on the rows of
+  // the messages it is about (lib/wire-log.js). Only the canvas's word is
   // taken; it is a label in a log and changes nothing else.
   socket.on("canvas:heard", (rows) => {
     if (from.origin !== "canvas" || !Array.isArray(rows)) return;
     for (const row of rows.slice(0, 50)) {
       if (!row || (row.protocol !== "osc" && row.protocol !== "midi") || typeof row.what !== "string") continue;
-      const n = Number.isInteger(row.n) && row.n > 0 ? Math.min(row.n, 100000) : 1;
-      canvasHeard(row.protocol, row.what.slice(0, 200), n);
+      wireLog.canvasHeard(row.protocol, row.what.slice(0, 200), typeof row.device === "string" ? row.device.slice(0, 200) : undefined);
     }
   });
 
@@ -583,8 +636,7 @@ io.on("connection", (socket) => {
   socket.on("osc", (msg) => {
     try {
       if (!msg) return;
-      sendOSC(msg.ip, msg.port, msg.address, msg.args);
-      logOut("osc", msg.address);
+      sendOSC(msg.ip, msg.port, msg.address, msg.args, from);
     } catch (err) {
       console.error("Bad OSC message:", err.message);
     }
@@ -594,8 +646,7 @@ io.on("connection", (socket) => {
   // against it, including custom code inside someone's project.
   socket.on("message", (clientIP, ip, port, address, type, value) => {
     try {
-      sendOSC(ip, port, address, [{ type, value }]);
-      logOut("osc", address);
+      sendOSC(ip, port, address, [{ type, value }], from);
     } catch (err) {
       console.error("Bad OSC message:", err.message);
     }
@@ -604,8 +655,7 @@ io.on("connection", (socket) => {
   // One widget's block of channels: { source, protocol, host, universe, channel, levels }.
   socket.on("dmx", (request) => {
     try {
-      sendDMX(request);
-      logOut("dmx", dmxWords(request));
+      sendDMX(request, from);
     } catch (err) {
       console.error("Bad DMX request:", err.message);
     }
@@ -614,8 +664,7 @@ io.on("connection", (socket) => {
   // One widget's MIDI: { port, messages }.
   socket.on("midi", (request) => {
     try {
-      // Only what went out: a port that is not there has already been said.
-      if (sendMIDI(request) !== false) logOut("midi", midiWords(request));
+      sendMIDI(request, from);
     } catch (err) {
       console.error("Bad MIDI request:", err.message);
     }
@@ -672,110 +721,7 @@ io.on("connection", (socket) => {
 // Acting on a published surface with no browser showing it (lib/surfaces.js):
 // which widget and what state, never where to send.
 //
-// onActivity feeds the editor's LIVE pill: IN as the server consumes OSC or
-// MIDI for a published surface, OUT as it sends on one's behalf. Each OUT
-// row says whose move it was (`origin`, lib/activity.js). The lights flash
-// for the canvas too -- its sends, and what it follows of what comes in --
-// but not for a message nothing follows. The lights are throttled so a fader at 60 Hz costs a flicker, not a socket message
-// per move; the log coalesces repeats of the same event into one row with a
-// count, flushed a few times a second, and keeps the latest rows for the
-// window to read when it opens (GET /live/log).
-const activityAt = { in: 0, out: 0 };
-const LIVE_LOG_KEEP = 200;
-const LIVE_LOG_FLUSH_MS = 300;
-const liveLog = [];
-let liveLogPending = new Map(); // key -> entry being coalesced
-let liveLogTimer = null;
-
-function flushLiveLog() {
-  liveLogTimer = null;
-  for (const entry of liveLogPending.values()) {
-    liveLog.push(entry);
-    io.emit("live:log", entry);
-  }
-  if (liveLog.length > LIVE_LOG_KEEP) liveLog.splice(0, liveLog.length - LIVE_LOG_KEEP);
-  liveLogPending = new Map();
-}
-
-function flashLight(dir) {
-  const at = Date.now();
-  if (at - activityAt[dir] < 200) return;
-  activityAt[dir] = at;
-  io.emit("live:activity", { dir });
-}
-
-function tellActivity(event) {
-  if (!event || !event.dir) return;
-  const at = Date.now();
-  // Not for a message nothing follows; and not twice for one the canvas
-  // claimed, which flashed when the canvas said so (canvasHeard).
-  if (!event.unfollowed && !event.lit) flashLight(event.dir);
-  // Origin and device are in the key: a tablet and a visitor's phone on the
-  // same fader are two rows, not one with their counts added up.
-  const key = [event.dir, event.protocol, event.what, event.surface || "", event.origin || "", event.device || "", event.unfollowed ? "u" : ""].join("|");
-  const held = liveLogPending.get(key);
-  if (held) {
-    held.n += event.n || 1;
-    held.at = at;
-  } else {
-    liveLogPending.set(key, { at, dir: event.dir, protocol: event.protocol, what: event.what, surface: event.surface, origin: event.origin, device: event.device, unfollowed: event.unfollowed || undefined, n: event.n || 1 });
-  }
-  if (!liveLogTimer) liveLogTimer = setTimeout(flushLiveLog, LIVE_LOG_FLUSH_MS);
-}
-// What came in and no published surface follows is held a moment before it
-// is logged, so the editor's word that its canvas followed it can land on the
-// same row: one line saying who sent it, that the canvas followed it, and how
-// many arrived -- not an "unfollowed" line and a "canvas" line disagreeing.
-// The canvas's word takes a round trip and its own gathering (oscar_editor.js),
-// hence the hold. A second editor saying the same thing is not a second row:
-// what was claimed a moment ago is not claimed again.
-const ARRIVAL_HOLD_MS = 700;
-const CLAIM_MEMORY_MS = 1500;
-let arrivals = new Map(); // protocol|what|device -> entry
-let arrivalTimer = null;
-const claimedAt = new Map(); // protocol|what -> when the canvas last claimed it
-
-function logArrival(event) {
-  const key = event.protocol + "|" + event.what + "|" + (event.device || "");
-  const held = arrivals.get(key);
-  if (held) held.n += 1;
-  else arrivals.set(key, { dir: "in", protocol: event.protocol, what: event.what, device: event.device, unfollowed: true, n: 1 });
-  if (!arrivalTimer) arrivalTimer = setTimeout(flushArrivals, ARRIVAL_HOLD_MS);
-}
-
-function flushArrivals() {
-  arrivalTimer = null;
-  const now = Date.now();
-  for (const entry of arrivals.values()) {
-    if (entry.origin === "canvas") claimedAt.set(entry.protocol + "|" + entry.what, now);
-    tellActivity(entry);
-  }
-  arrivals = new Map();
-  for (const [key, at] of claimedAt) if (now - at > CLAIM_MEMORY_MS) claimedAt.delete(key);
-}
-
-function canvasHeard(protocol, what, n) {
-  let claimed = false;
-  for (const entry of arrivals.values()) {
-    if (entry.protocol !== protocol || entry.what !== what) continue;
-    entry.origin = "canvas";
-    delete entry.unfollowed;
-    entry.lit = true;
-    claimed = true;
-  }
-  // The light flashes as the canvas says so, not when the held row is
-  // written a moment later.
-  flashLight("in");
-  const key = protocol + "|" + what;
-  if (claimed) return claimedAt.set(key, Date.now());
-  const last = claimedAt.get(key);
-  if (last && Date.now() - last < CLAIM_MEMORY_MS) return;
-  // Nothing held to claim: a message a published surface moved too (its row
-  // is the surface's), or one that arrived before the hold. Its own row.
-  tellActivity({ dir: "in", protocol, what, origin: "canvas", n });
-}
-
-const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io, onActivity: tellActivity });
+const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io });
 
 // The pill's count follows publishing without waiting for the editor's next
 // poll. Unpublishing is told by the route that does it (onPublishedChanged).
@@ -804,13 +750,9 @@ surfaces.onPublished((id) => {
 // drive it, here, once (lib/surfaces.js hearMidi); the rest are recorded
 // while anybody is watching the states, as OSC is (hearOsc).
 midi.onMessage((heard, port, first) => {
+  const arrival = wireLog.arrive(Object.assign({ protocol: "midi", device: port || undefined }, midiIn(heard)));
   io.emit("midi:in", { heard, port, first });
-  surfaces
-    .hearMidi(heard, port, first)
-    .then((moved) => {
-      if (!moved) logArrival({ protocol: "midi", what: heardMidiWords(heard, port) });
-    })
-    .catch((err) => console.error("MIDI in: " + reason(err)));
+  surfaces.hearMidi(heard, port, first, { followedBy: arrival.followedBy }).catch((err) => console.error("MIDI in: " + reason(err)));
 });
 
 // Only the inputs somebody wants are opened: on Windows an input belongs to
@@ -871,7 +813,7 @@ if (features.MCP) {
       store,
       published,
       midi,
-      liveLog: () => liveLog.slice(),
+      liveLog: () => wireLog.rows(),
       lock,
       draftsDir: DRAFTS_DIR,
     }),

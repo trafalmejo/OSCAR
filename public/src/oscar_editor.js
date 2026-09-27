@@ -2232,7 +2232,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // The network log's rows, oldest first, the server's cap mirrored here.
     var LOG_KEEP = 200;
     var logRows = [];
-    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, unfollowed: true, canvas: true, local: true, internet: true, schedule: true, bridge: true };
+    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, unfollowed: true, dropped: true, canvas: true, local: true, internet: true, schedule: true, bridge: true };
     // Whose move an outgoing row was (lib/activity.js), as the row says it.
     var ORIGIN_WORDS = { canvas: "Canvas", local: "Local", internet: "Internet", schedule: "Schedule", bridge: "Bridge" };
     var ORIGIN_HINTS = {
@@ -2242,8 +2242,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
       schedule: "Sent by a schedule",
       bridge: "Passed on from what came in (Send when)",
     };
-    // An incoming row's origin says who followed it rather than who sent it.
-    var IN_HINTS = { canvas: "Followed by a widget on the editor's canvas" };
 
     // Auto-scroll: the newest row is kept in view as rows arrive (the list
     // runs newest first). Off, the rows being read stay where they are while
@@ -2257,8 +2255,35 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }
     })();
 
-    function rowKey(row) {
-      return [row.at, row.dir, row.protocol, row.what, row.surface || "", row.origin || "", row.device || "", row.unfollowed ? "u" : ""].join("|");
+    /** An incoming message nothing followed: no published surface, not the canvas. */
+    function unfollowed(row) {
+      return row.dir === "in" && !row.dropped && !row.canvas && !(row.surfaces && row.surfaces.length);
+    }
+
+    /**
+     * A row from the server, new or updated (lib/wire-log.js). An update --
+     * the canvas saying it followed a message, a surface found to follow it --
+     * replaces the row it is about; a new row goes where its own time says.
+     */
+    function takeRow(row) {
+      for (var i = logRows.length - 1; i >= 0 && i >= logRows.length - LOG_KEEP; i--) {
+        if (logRows[i].id === row.id) {
+          logRows[i] = row;
+          return;
+        }
+      }
+      var at = logRows.length;
+      while (at > 0 && logRows[at - 1].at > row.at) at--;
+      logRows.splice(at, 0, row);
+      if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
+    }
+
+    function span(className, text, title) {
+      var el = document.createElement("span");
+      el.className = className;
+      el.textContent = text;
+      if (title) el.setAttribute("title", title);
+      return el;
     }
     var logBox = null;
     var logList = null;
@@ -2322,12 +2347,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
     }
 
     // ---- the network log window ------------------------------------------
-    // Everything OSCAR has sent and consumed, newest at the top: the address
-    // or MIDI message it consumed and for which surface; what it sent, for
-    // which surface, and whose move it was -- the canvas, a device on this
-    // network, a phone on the internet, a schedule or a bridge. Repeats
-    // within a moment arrive as one row with a count (server.js coalesces
-    // them). Filters by direction, protocol and origin.
+    // What OSCAR's server actually received and sent, newest at the top
+    // (lib/wire-log.js): each message with what it carried, where it came
+    // from or went, and on the same row why -- whose move a send was, which
+    // published surfaces and whether the canvas followed what came in. What
+    // was refused is there too, marked Dropped. Repeats within a moment are
+    // one row with a count. Filters by direction, protocol and origin.
     //
     // A floating window, not a modal, on purpose: the log is for debugging,
     // so the editor has to stay usable while it is open -- move a fader,
@@ -2380,55 +2405,39 @@ function initGrape(ipServer, socketPort, oscInPort) {
         kept++;
         if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
         if (row.origin && logFilters[row.origin] === false) continue;
-        if (row.unfollowed && !logFilters.unfollowed) continue;
+        if (unfollowed(row) && !logFilters.unfollowed) continue;
+        if (row.dropped && !logFilters.dropped) continue;
         shown++;
         var line = document.createElement("div");
-        line.className = "oscar-log-row";
-        line.setAttribute("data-key", rowKey(row));
-        var when = document.createElement("span");
-        when.className = "oscar-log-time";
-        when.textContent = timeOf(row.at);
-        var dir = document.createElement("span");
-        dir.className = "oscar-log-chip oscar-log-" + row.dir;
-        dir.textContent = row.dir === "in" ? "IN" : "OUT";
-        var protocol = document.createElement("span");
-        protocol.className = "oscar-log-chip oscar-log-protocol";
-        protocol.textContent = String(row.protocol || "").toUpperCase();
-        var what = document.createElement("span");
-        what.className = "oscar-log-what";
-        what.textContent = String(row.what || "");
-        var origin = null;
-        if (row.origin && ORIGIN_WORDS[row.origin]) {
-          origin = document.createElement("span");
-          origin.className = "oscar-log-chip oscar-log-origin oscar-log-origin-" + row.origin;
-          origin.textContent = ORIGIN_WORDS[row.origin];
+        line.className = "oscar-log-row" + (row.dropped ? " oscar-log-row-dropped" : "");
+        line.setAttribute("data-key", String(row.id));
+        line.appendChild(span("oscar-log-time", timeOf(row.at)));
+        line.appendChild(span("oscar-log-chip oscar-log-" + row.dir, row.dir === "in" ? "IN" : "OUT"));
+        line.appendChild(span("oscar-log-chip oscar-log-protocol", String(row.protocol || "").toUpperCase()));
+        // One label: dropped outranks the rest, then whose send it was, or
+        // for what came in, whether the canvas or nothing at all followed it.
+        if (row.dropped) {
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-dropped", "Dropped", "Not " + (row.dir === "in" ? "acted on" : "sent") + ": " + row.dropped));
+        } else if (row.dir === "out" && row.origin && ORIGIN_WORDS[row.origin]) {
           // Which tablet, when two share a surface: its address on this network.
-          var hint = (row.dir === "in" && IN_HINTS[row.origin]) || ORIGIN_HINTS[row.origin];
-          origin.setAttribute("title", hint + (row.device ? " (" + row.device + ")" : ""));
-        } else if (row.unfollowed) {
-          origin = document.createElement("span");
-          origin.className = "oscar-log-chip oscar-log-origin oscar-log-unfollowed";
-          origin.textContent = "Unfollowed";
-          origin.setAttribute("title", "No published surface follows this. A Canvas row beside it means the editor's canvas does.");
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-" + row.origin, ORIGIN_WORDS[row.origin], ORIGIN_HINTS[row.origin] + (row.device ? " (" + row.device + ")" : "")));
+        } else if (row.dir === "in" && row.canvas) {
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-canvas", "Canvas", "Followed by a widget on the editor's canvas"));
+        } else if (unfollowed(row)) {
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-unfollowed", "Unfollowed", "Nothing follows this: no published surface, and not the editor's canvas."));
         }
-        var where = null;
-        if (row.surface) {
-          where = document.createElement("span");
-          where.className = "oscar-log-surface";
-          where.textContent = '"' + row.surface + '"';
-        }
-        line.appendChild(when);
-        line.appendChild(dir);
-        line.appendChild(protocol);
-        if (origin) line.appendChild(origin);
-        line.appendChild(what);
-        if (where) line.appendChild(where);
-        // Who sent what came in: it is the first thing to know about it.
-        if (row.dir === "in" && row.device) {
-          var sender = document.createElement("span");
-          sender.className = "oscar-log-from";
-          sender.textContent = row.device === "serial" ? "from the serial cable" : "from " + row.device;
-          line.appendChild(sender);
+        line.appendChild(span("oscar-log-what", String(row.what || "")));
+        // What the latest of them carried.
+        if (row.value) line.appendChild(span("oscar-log-value", "= " + row.value));
+        if (row.dir === "out") {
+          if (row.to) line.appendChild(span("oscar-log-from", "→ " + row.to));
+          if (row.surface) line.appendChild(span("oscar-log-surface", '"' + row.surface + '"', row.widget ? "Sent for " + row.widget : ""));
+        } else {
+          // Who sent what came in: it is the first thing to know about it.
+          if (row.device) line.appendChild(span("oscar-log-from", row.device === "serial" ? "from the serial cable" : "from " + row.device));
+          (row.surfaces || []).forEach(function (surface) {
+            line.appendChild(span("oscar-log-surface", '"' + surface + '"', "Followed on this published surface"));
+          });
         }
         if (row.n > 1) {
           var times = document.createElement("span");
@@ -2542,6 +2551,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         ["midi", "MIDI"],
         ["dmx", "DMX"],
         ["unfollowed", "Unfollowed"],
+        ["dropped", "Dropped"],
         ["canvas", "Canvas"],
         ["local", "Local"],
         ["internet", "Internet"],
@@ -2554,7 +2564,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
           filterBar.appendChild(gap);
         }
         // Whose move it was gets a row of its own, named.
-        if (index === 6) {
+        if (index === 7) {
           var rowBreak = document.createElement("span");
           rowBreak.className = "oscar-log-filter-break";
           filterBar.appendChild(rowBreak);
@@ -2630,11 +2640,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // a fader ridden from outside is one line with a count.
     var heardPending = {};
     var heardTimer = null;
-    editor.noteHeard = function (protocol, what) {
+    editor.noteHeard = function (protocol, what, device) {
       if (!editor.socket) return;
-      var key = protocol + "|" + what;
-      if (heardPending[key]) heardPending[key].n++;
-      else heardPending[key] = { protocol: protocol, what: String(what), n: 1 };
+      var key = protocol + "|" + what + "|" + (device || "");
+      if (!heardPending[key]) heardPending[key] = device ? { protocol: protocol, what: String(what), device: String(device) } : { protocol: protocol, what: String(what) };
       if (!heardTimer) {
         heardTimer = setTimeout(function () {
           heardTimer = null;
@@ -2663,9 +2672,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
       // The log listens all along, not only while its window is open: what
       // happened a minute before it was opened is exactly what it is for.
       editor.socket.on("live:log", function (row) {
-        if (!row || (row.dir !== "in" && row.dir !== "out")) return;
-        logRows.push(row);
-        if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
+        if (!row || (row.dir !== "in" && row.dir !== "out") || !row.id) return;
+        takeRow(row);
         if (logOpen()) renderLog();
       });
       editor.socket.on("published:changed", refreshLive);

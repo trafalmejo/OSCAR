@@ -7,7 +7,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { socketOrigin, deviceOf, midiWords, dmxWords, ORIGINS } = require("../lib/activity");
+const { socketOrigin, deviceOf, ORIGINS } = require("../lib/activity");
 
 test("the editor is the canvas, and carries no device: it is the one at the keyboard", () => {
   assert.deepStrictEqual(socketOrigin("canvas", "::ffff:192.168.1.20"), { origin: "canvas" });
@@ -32,15 +32,6 @@ test("devices read the way people know them", () => {
   assert.strictEqual(deviceOf("::ffff:192.168.1.20"), "192.168.1.20");
   assert.strictEqual(deviceOf("::1"), "::1");
   assert.strictEqual(deviceOf(undefined), undefined);
-});
-
-test("DMX and MIDI rows use the same words as before", () => {
-  assert.strictEqual(dmxWords({ channel: 12, universe: 1 }), "ch 12 · u 1");
-  assert.strictEqual(dmxWords({ channel: 3, universe: 0 }), "ch 3");
-  assert.strictEqual(dmxWords({}), "frame");
-  assert.strictEqual(midiWords({ messages: [[0xb0, 7, 64]] }), "cc 7 ch 1");
-  assert.strictEqual(midiWords({ port: "IAC Bus 1", messages: [[0x91, 60, 100]] }), "note on 60 ch 2 · IAC Bus 1");
-  assert.strictEqual(midiWords({ messages: [] }), "midi");
 });
 
 test("the origins the log offers are the five it can tell apart", () => {
