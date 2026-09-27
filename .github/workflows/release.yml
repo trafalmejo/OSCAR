@@ -107,10 +107,14 @@ jobs:
         if: env.HAS_PRO_KEY == 'true'
         shell: bash
         run: |
-          asar=$(find release-builds -name app.asar | head -1)
-          test -n "$asar"
-          # Windows lists the archive with backslashes, so the separator is not named. grep reads it all: -q would cut the pipe short and fail it.
-          npx --yes @electron/asar list "$asar" | grep -E '^.extensions.pro.package[.]json$' > /dev/null && echo "Pro is in $asar"
+          # Every architecture's package, not just the first found: each is packed separately.
+          archives=$(find release-builds -name app.asar)
+          test -n "$archives"
+          for asar in $archives; do
+            # Windows lists the archive with backslashes, so the separator is not named. grep reads it all: -q would cut the pipe short and fail it.
+            npx --yes @electron/asar list "$asar" | grep -E '^.extensions.pro.package[.]json$' > /dev/null
+            echo "Pro is in $asar"
+          done
 
       # Keeps the installers available from the run even if publishing is
       # skipped (for example on a workflow_dispatch dry run).
