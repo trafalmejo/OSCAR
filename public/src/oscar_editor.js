@@ -2025,7 +2025,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   pn.addButton("options", {
     id: "oscar-export",
-    label: icon("publish"),
+    className: "oscar-publish-btn",
+    // A pill like its neighbours: the icon and the word.
+    label: icon("publish") + '<span class="oscar-bar-pill-word">Publish</span>',
     command: function () {
       editor.runCommand("oscar-export");
     },

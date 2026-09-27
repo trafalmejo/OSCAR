@@ -77,7 +77,10 @@ test("Publish is an arrow leaving its box, not Import's arrow", () => {
   const publish = /publish:\s*"([^"]+)"/.exec(src);
   assert.ok(publish, "there is a publish icon");
   assert.ok(publish[1].indexOf("M12,1L8,5H11V14H13V5H16M18,23H6") === 0, "mdi-export-variant: an arrow out of a box");
-  assert.match(src, /id:\s*"oscar-export",\s*label:\s*icon\("publish"\)/, "and Publish uses it");
+  assert.match(src, /id: "oscar-export",\s*className: "oscar-publish-btn",[\s\S]{0,80}label: icon\("publish"\) \+ '<span class="oscar-bar-pill-word">Publish<\/span>',/, "and Publish uses it, with its word, as a pill");
+  const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(theme, /\.gjs-pn-btn\.oscar-lock-btn,\n\.gjs-pn-btn\.oscar-publish-btn \{\n  display: inline-flex;[\s\S]{0,200}border-radius: 999px;/, "the padlock and Publish are pills like the live pills");
+  assert.match(theme, /\.gjs-pn-btn\.oscar-locked,\n\.gjs-pn-btn\.oscar-locked:hover \{\n  background-color: var\(--o-accent-subtle\);\n  border-color: var\(--o-accent\);/, "and a locked padlock's pill says so in colour");
   // The preset's Import icon, which stays as GrapesJS draws it.
   assert.notStrictEqual(publish[1], "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z");
 });

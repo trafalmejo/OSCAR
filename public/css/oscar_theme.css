@@ -615,6 +615,9 @@ a {
 .oscar-live-led {
   position: relative;
   overflow: hidden;
+  /* Its border inside the pill's 21px line, so OSCAR SERVER is as tall as
+     the pills beside it. */
+  line-height: 19px;
   padding: 0 0.35em;
   border-radius: var(--o-radius-sm);
   border: 1px solid transparent;
@@ -889,11 +892,51 @@ body.oscar-log-dragging iframe {
   display: flex;
 }
 
+/* The padlock and Publish are pills, to match the live pills beside them:
+   the same height, border and small bold capitals. GrapesJS's square
+   30px button is undone for them. */
+.gjs-pn-btn.oscar-lock-btn,
+.gjs-pn-btn.oscar-publish-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  min-height: 0;
+  min-width: 0;
+  margin: 0 0 0 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--o-border-strong);
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  /* GrapesJS's own button line, which the live pills inherit: one height,
+     28px, whether the pill holds a word or only an icon. */
+  line-height: 21px;
+  box-sizing: border-box;
+  height: 28px;
+}
+.gjs-pn-btn.oscar-lock-btn svg,
+.gjs-pn-btn.oscar-publish-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.gjs-pn-btn.oscar-lock-btn:hover,
+.gjs-pn-btn.oscar-publish-btn:hover {
+  background-color: var(--o-surface);
+  color: var(--o-text);
+}
+.oscar-bar-pill-word {
+  text-transform: uppercase;
+}
+
 /* A locked OSCAR that looked unlocked would be its own hazard, so the lock
-   button states its condition in colour as well as shape. */
+   pill states its condition in colour as well as shape. */
 .gjs-pn-btn.oscar-locked,
 .gjs-pn-btn.oscar-locked:hover {
   background-color: var(--o-accent-subtle);
+  border-color: var(--o-accent);
   color: var(--o-accent);
 }
 
