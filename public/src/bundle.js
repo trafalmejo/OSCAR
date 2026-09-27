@@ -23879,6 +23879,18 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
       { rule: true },
+      // Also the eye and the padlock on the bar, which stay. Preview goes
+      // through the eye's own button, so the button lights as a click would.
+      {
+        label: "Push to preview",
+        run: function () {
+          var button = pn.getButton("options", "preview");
+          if (button) button.set("active", true);
+          else editor.runCommand("preview");
+        },
+      },
+      { label: "Lock editing", checked: isLockedNow(), run: function () { setLocked(!isLockedNow()); } },
+      { rule: true },
       {
         label: "Clear canvas…",
         run: function () {
@@ -23886,6 +23898,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
     ]);
+  }
+
+  /** Locked as the padlock on the bar shows it: the server's answer, painted there. */
+  function isLockedNow() {
+    var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
+    return !!(el && el.classList.contains("oscar-locked"));
   }
 
   function showFileMenu() {
@@ -23911,6 +23929,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
         label: "Publish\u2026",
         run: function () {
           editor.runCommand("oscar-export");
+        },
+      },
+      { rule: true },
+      // Also the jellyfish on the bar, which stays: this is where people look for it.
+      {
+        label: "About OSCAR",
+        run: function () {
+          editor.runCommand("oscar-about");
         },
       },
     ]);
@@ -24420,18 +24446,23 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // OSCAR's words (aboutDialog.addSection below): what this OSCAR is, to whom.
   var aboutSections = [];
   var aboutExtras = document.getElementById("about-extras");
+  // A command of its own, so the jellyfish on the bar and File's "About
+  // OSCAR" open the same thing.
+  editor.Commands.add("oscar-about", function () {
+    aboutSections.forEach(function (section) {
+      try {
+        section.draw(section.box);
+      } catch (err) {
+        console.error("A section of About failed:", err);
+      }
+    });
+    setModal("About OSCAR", "info-panel");
+  });
   pn.addButton("options", {
     id: "open-info",
     label: icon("jellyfish"),
     command: function () {
-      aboutSections.forEach(function (section) {
-        try {
-          section.draw(section.box);
-        } catch (err) {
-          console.error("A section of About failed:", err);
-        }
-      });
-      setModal("About OSCAR", "info-panel");
+      editor.runCommand("oscar-about");
     },
     attributes: { title: "About Oscar", "data-tooltip-pos": "bottom" },
   });
