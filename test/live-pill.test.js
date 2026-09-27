@@ -115,8 +115,8 @@ const themeSource = readSource("public", "css", "oscar_theme.css");
 const routesSource = readSource("routes", "index.js");
 
 test("the server throttles the flickers, keeps the log, and announces the roster's changes", () => {
-  assert.match(serverSource, /io\.emit\("live:activity", \{ dir: event\.dir \}\)/, "the activity event");
-  assert.match(serverSource, /at - activityAt\[event\.dir\] >= 200/, "throttled per direction");
+  assert.match(serverSource, /io\.emit\("live:activity", \{ dir \}\);/, "the activity event");
+  assert.match(serverSource, /if \(at - activityAt\[dir\] < 200\) return;/, "throttled per direction");
   assert.match(serverSource, /onActivity: tellActivity/, "handed to the surfaces");
   assert.match(serverSource, /io\.emit\("live:log", entry\)/, "the log rows flow to every editor");
   assert.match(serverSource, /held\.n \+= event\.n \|\| 1;/, "repeats coalesce into one row with a count");
@@ -187,7 +187,9 @@ test("every send over a socket is logged by the server, saying whose it was", ()
   assert.match(serverSource, /sendOSC\(ip, port, address, \[\{ type, value \}\]\);\n      logOut\("osc", address\);/, "so is the old single-value form");
   assert.match(serverSource, /sendDMX\(request\);\n      logOut\("dmx", dmxWords\(request\)\);/, "DMX");
   assert.match(serverSource, /if \(sendMIDI\(request\) !== false\) logOut\("midi", midiWords\(request\)\);/, "MIDI, when it actually went out");
-  assert.match(serverSource, /if \(event\.origin !== "canvas" && !event\.unfollowed && at - activityAt\[event\.dir\] >= 200\)/, "the canvas is logged but does not flash the background lights, nor does what nothing published follows");
+  assert.match(serverSource, /if \(!event\.unfollowed && !event\.lit\) flashLight\(event\.dir\);/, "the canvas's traffic flashes the lights too; what nothing follows does not");
+  assert.match(serverSource, /entry\.lit = true;\n    claimed = true;\n  \}\n  \/\/ The light flashes as the canvas says so[^\n]*\n  \/\/ [^\n]*\n  flashLight\("in"\);/, "what the canvas follows flashes IN as it says so, once");
+  assert.match(editorSource, /"IN lights as data comes in for a published surface or the canvas, OUT as OSCAR sends for one\. Click for the network log\."/, "and the pill says so");
 });
 
 test("every message that comes in is logged once, with who sent it, followed or not", async () => {

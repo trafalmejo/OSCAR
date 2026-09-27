@@ -24758,7 +24758,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       }
       var logZone = el.querySelector('.oscar-live-zone[data-zone="log"]');
       if (logZone) {
-        logZone.setAttribute("data-tooltip", "IN lights as a published surface receives, OUT as OSCAR sends for one. Click for the network log.");
+        logZone.setAttribute("data-tooltip", "IN lights as data comes in for a published surface or the canvas, OUT as OSCAR sends for one. Click for the network log.");
         logZone.setAttribute("data-tooltip-pos", "bottom");
       }
     }

@@ -674,9 +674,9 @@ io.on("connection", (socket) => {
 //
 // onActivity feeds the editor's LIVE pill: IN as the server consumes OSC or
 // MIDI for a published surface, OUT as it sends on one's behalf. Each OUT
-// row says whose move it was (`origin`, lib/activity.js); the canvas's own
-// sends are logged but do not flash the lights, which are about what runs in
-// the background. The lights are throttled so a fader at 60 Hz costs a flicker, not a socket message
+// row says whose move it was (`origin`, lib/activity.js). The lights flash
+// for the canvas too -- its sends, and what it follows of what comes in --
+// but not for a message nothing follows. The lights are throttled so a fader at 60 Hz costs a flicker, not a socket message
 // per move; the log coalesces repeats of the same event into one row with a
 // count, flushed a few times a second, and keeps the latest rows for the
 // window to read when it opens (GET /live/log).
@@ -697,15 +697,19 @@ function flushLiveLog() {
   liveLogPending = new Map();
 }
 
+function flashLight(dir) {
+  const at = Date.now();
+  if (at - activityAt[dir] < 200) return;
+  activityAt[dir] = at;
+  io.emit("live:activity", { dir });
+}
+
 function tellActivity(event) {
   if (!event || !event.dir) return;
   const at = Date.now();
-  // The lights are the background at work: not the canvas, and not a
-  // message nothing published follows.
-  if (event.origin !== "canvas" && !event.unfollowed && at - activityAt[event.dir] >= 200) {
-    activityAt[event.dir] = at;
-    io.emit("live:activity", { dir: event.dir });
-  }
+  // Not for a message nothing follows; and not twice for one the canvas
+  // claimed, which flashed when the canvas said so (canvasHeard).
+  if (!event.unfollowed && !event.lit) flashLight(event.dir);
   // Origin and device are in the key: a tablet and a visitor's phone on the
   // same fader are two rows, not one with their counts added up.
   const key = [event.dir, event.protocol, event.what, event.surface || "", event.origin || "", event.device || "", event.unfollowed ? "u" : ""].join("|");
@@ -756,8 +760,12 @@ function canvasHeard(protocol, what, n) {
     if (entry.protocol !== protocol || entry.what !== what) continue;
     entry.origin = "canvas";
     delete entry.unfollowed;
+    entry.lit = true;
     claimed = true;
   }
+  // The light flashes as the canvas says so, not when the held row is
+  // written a moment later.
+  flashLight("in");
   const key = protocol + "|" + what;
   if (claimed) return claimedAt.set(key, Date.now());
   const last = claimedAt.get(key);
