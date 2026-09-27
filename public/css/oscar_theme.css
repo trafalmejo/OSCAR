@@ -643,8 +643,21 @@ a {
   font-size: var(--o-text-base);
   font-weight: 600;
 }
-.oscar-log-clear {
+.oscar-log-autoscroll {
   margin-left: auto;
+  margin-right: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+  cursor: pointer;
+}
+.oscar-log-autoscroll input {
+  accent-color: #2fbf5f;
+  cursor: pointer;
+}
+.oscar-log-clear {
   margin-right: 0.7rem;
   background: none;
   border: 1px solid var(--o-border-strong);
@@ -780,6 +793,17 @@ a {
 .oscar-log-origin-local {
   color: #8fe3ae;
   border-color: rgba(47, 191, 95, 0.5);
+}
+/* Arrived, and no published surface follows it. */
+.oscar-log-unfollowed {
+  color: var(--o-text-muted);
+  border-style: dashed;
+}
+/* Who sent what came in. */
+.oscar-log-from {
+  flex: none;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
 }
 .oscar-log-origin-internet {
   color: #9cc8ff;

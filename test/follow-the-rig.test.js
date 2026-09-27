@@ -149,9 +149,9 @@ test("OSC is always followed; MIDI is heard once, for the watchers and for the w
   assert.deepStrictEqual(await surfaces.midiPorts(), [], "and no port is opened for it");
   assert.deepStrictEqual(told, []);
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.match(server, /if \(surfaces\) surfaces\.hearOsc\(tagged\)/, "every message goes tagged with its door");
+  assert.match(server, /surfaces\n      \.hearOsc\(tagged, \{ device \}\)/, "every message goes tagged with its door, and who sent it");
   assert.match(server, /heardOsc\(message, "serial"\)/, "the cable tags its own");
-  assert.match(server, /surfaces\.hearMidi\(heard, port, first\)/);
+  assert.match(server, /surfaces\n    \.hearMidi\(heard, port, first\)/);
   assert.strictEqual((server.match(/io\.emit\("osc:in"/g) || []).length, 1, "one place tells the pages, so one place follows");
 });
 

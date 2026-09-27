@@ -370,7 +370,7 @@ test("sending onward is each widget's own Send when, and by default nothing brid
   }
   assert.strictEqual(require("../lib/features").MIDI_BRIDGE, undefined, "the global switch is retired");
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.match(server, /surfaces\.hearMidi\(heard, port, first\)/, "the server hears MIDI once, for the watchers and the bridges");
+  assert.match(server, /surfaces\n    \.hearMidi\(heard, port, first\)/, "the server hears MIDI once, for the watchers and the bridges");
   assert.match(server, /io\.emit\("midi:in", \{ heard, port, first \}\);/, "and tells the pages either way");
 });
 

@@ -24,7 +24,7 @@ const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
 const { createSurfaces, allWidgetsIn } = require("./lib/surfaces");
-const { socketOrigin, midiWords, dmxWords } = require("./lib/activity");
+const { socketOrigin, deviceOf, midiWords, heardMidiWords, dmxWords } = require("./lib/activity");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -201,12 +201,24 @@ function diagnostics() {
 // phone across the internet included. The raw message still goes to every
 // page, for the editor's canvas and the widgets OSCAR cannot yet follow for.
 // `surfaces` is made further down; nothing arrives before it is.
-function heardOsc(message, source) {
+function heardOsc(message, source, from) {
   // Tagged at the door: the widgets' From (oscListenFrom) reads it wherever
   // the message is read -- here, on published pages, in the editor.
   const tagged = Object.assign({}, message, { source: source === "serial" ? "serial" : "network" });
   io.emit("osc:in", tagged);
-  if (surfaces) surfaces.hearOsc(tagged).catch((err) => console.error("OSC in: " + reason(err)));
+  // Who sent it, for the network log only: the pages are not told.
+  const device = source === "serial" ? "serial" : from ? deviceOf(from.address) : undefined;
+  if (surfaces) {
+    surfaces
+      .hearOsc(tagged, { device })
+      .then((moved) => {
+        // What no published surface follows is logged too, once, as it
+        // arrived: "is the rig even sending?" is the first question. The
+        // editor says for itself whether its canvas followed it.
+        if (!moved) logArrival({ protocol: "osc", what: message.address, device });
+      })
+      .catch((err) => console.error("OSC in: " + reason(err)));
+  }
 }
 
 const MIDI_EVENTS = { open: "sending to", closed: "let go of", listening: "listening to", deaf: "stopped listening to" };
@@ -382,7 +394,7 @@ for (const [label, port] of [["LAN", udpLan], ["local", udpLocal]]) {
   port.open();
   // Software that answers to the port a request came from sends its reply
   // here, not to the OSC-in port; a widget following the rig hears both.
-  listenOn(port, (message) => heardOsc(message));
+  listenOn(port, (message, from) => heardOsc(message, null, from));
 }
 
 /**
@@ -517,7 +529,7 @@ function announceOscIn(line) {
 const oscIn = oscReceiver({
   port: OSC_IN_PORT,
   UDPPort: osc.UDPPort,
-  onMessage: (message) => heardOsc(message),
+  onMessage: (message, from) => heardOsc(message, null, from),
   onReady: () => announceOscIn("  Listening for OSC on:  UDP " + OSC_IN_PORT),
   onError: (err) => {
     // A port that cannot be opened must not take OSCAR down with it. The
@@ -554,6 +566,18 @@ io.on("connection", (socket) => {
   // or a page on this network, and which surface (lib/activity.js).
   const from = socketOrigin(socket.handshake.query && socket.handshake.query.from, socket.handshake.address);
   const logOut = (protocol, what) => tellActivity(Object.assign({ dir: "out", protocol, what }, from));
+
+  // The editor's canvas saying what incoming data it followed, gathered a
+  // few times a second: [{ protocol, what, n }]. Only the canvas's word is
+  // taken; it is a label in a log and changes nothing else.
+  socket.on("canvas:heard", (rows) => {
+    if (from.origin !== "canvas" || !Array.isArray(rows)) return;
+    for (const row of rows.slice(0, 50)) {
+      if (!row || (row.protocol !== "osc" && row.protocol !== "midi") || typeof row.what !== "string") continue;
+      const n = Number.isInteger(row.n) && row.n > 0 ? Math.min(row.n, 100000) : 1;
+      canvasHeard(row.protocol, row.what.slice(0, 200), n);
+    }
+  });
 
   // One message, any number of values: { ip, port, address, args }.
   socket.on("osc", (msg) => {
@@ -676,22 +700,73 @@ function flushLiveLog() {
 function tellActivity(event) {
   if (!event || !event.dir) return;
   const at = Date.now();
-  if (event.origin !== "canvas" && at - activityAt[event.dir] >= 200) {
+  // The lights are the background at work: not the canvas, and not a
+  // message nothing published follows.
+  if (event.origin !== "canvas" && !event.unfollowed && at - activityAt[event.dir] >= 200) {
     activityAt[event.dir] = at;
     io.emit("live:activity", { dir: event.dir });
   }
   // Origin and device are in the key: a tablet and a visitor's phone on the
   // same fader are two rows, not one with their counts added up.
-  const key = [event.dir, event.protocol, event.what, event.surface || "", event.origin || "", event.device || ""].join("|");
+  const key = [event.dir, event.protocol, event.what, event.surface || "", event.origin || "", event.device || "", event.unfollowed ? "u" : ""].join("|");
   const held = liveLogPending.get(key);
   if (held) {
     held.n += event.n || 1;
     held.at = at;
   } else {
-    liveLogPending.set(key, { at, dir: event.dir, protocol: event.protocol, what: event.what, surface: event.surface, origin: event.origin, device: event.device, n: event.n || 1 });
+    liveLogPending.set(key, { at, dir: event.dir, protocol: event.protocol, what: event.what, surface: event.surface, origin: event.origin, device: event.device, unfollowed: event.unfollowed || undefined, n: event.n || 1 });
   }
   if (!liveLogTimer) liveLogTimer = setTimeout(flushLiveLog, LIVE_LOG_FLUSH_MS);
 }
+// What came in and no published surface follows is held a moment before it
+// is logged, so the editor's word that its canvas followed it can land on the
+// same row: one line saying who sent it, that the canvas followed it, and how
+// many arrived -- not an "unfollowed" line and a "canvas" line disagreeing.
+// The canvas's word takes a round trip and its own gathering (oscar_editor.js),
+// hence the hold. A second editor saying the same thing is not a second row:
+// what was claimed a moment ago is not claimed again.
+const ARRIVAL_HOLD_MS = 700;
+const CLAIM_MEMORY_MS = 1500;
+let arrivals = new Map(); // protocol|what|device -> entry
+let arrivalTimer = null;
+const claimedAt = new Map(); // protocol|what -> when the canvas last claimed it
+
+function logArrival(event) {
+  const key = event.protocol + "|" + event.what + "|" + (event.device || "");
+  const held = arrivals.get(key);
+  if (held) held.n += 1;
+  else arrivals.set(key, { dir: "in", protocol: event.protocol, what: event.what, device: event.device, unfollowed: true, n: 1 });
+  if (!arrivalTimer) arrivalTimer = setTimeout(flushArrivals, ARRIVAL_HOLD_MS);
+}
+
+function flushArrivals() {
+  arrivalTimer = null;
+  const now = Date.now();
+  for (const entry of arrivals.values()) {
+    if (entry.origin === "canvas") claimedAt.set(entry.protocol + "|" + entry.what, now);
+    tellActivity(entry);
+  }
+  arrivals = new Map();
+  for (const [key, at] of claimedAt) if (now - at > CLAIM_MEMORY_MS) claimedAt.delete(key);
+}
+
+function canvasHeard(protocol, what, n) {
+  let claimed = false;
+  for (const entry of arrivals.values()) {
+    if (entry.protocol !== protocol || entry.what !== what) continue;
+    entry.origin = "canvas";
+    delete entry.unfollowed;
+    claimed = true;
+  }
+  const key = protocol + "|" + what;
+  if (claimed) return claimedAt.set(key, Date.now());
+  const last = claimedAt.get(key);
+  if (last && Date.now() - last < CLAIM_MEMORY_MS) return;
+  // Nothing held to claim: a message a published surface moved too (its row
+  // is the surface's), or one that arrived before the hold. Its own row.
+  tellActivity({ dir: "in", protocol, what, origin: "canvas", n });
+}
+
 const surfaces = createSurfaces({ published, sendOSC, sendDMX, sendMIDI, shared, io, onActivity: tellActivity });
 
 // The pill's count follows publishing without waiting for the editor's next
@@ -722,7 +797,12 @@ surfaces.onPublished((id) => {
 // while anybody is watching the states, as OSC is (hearOsc).
 midi.onMessage((heard, port, first) => {
   io.emit("midi:in", { heard, port, first });
-  surfaces.hearMidi(heard, port, first).catch((err) => console.error("MIDI in: " + reason(err)));
+  surfaces
+    .hearMidi(heard, port, first)
+    .then((moved) => {
+      if (!moved) logArrival({ protocol: "midi", what: heardMidiWords(heard, port) });
+    })
+    .catch((err) => console.error("MIDI in: " + reason(err)));
 });
 
 // Only the inputs somebody wants are opened: on Windows an input belongs to

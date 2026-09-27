@@ -2232,7 +2232,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // The network log's rows, oldest first, the server's cap mirrored here.
     var LOG_KEEP = 200;
     var logRows = [];
-    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, canvas: true, local: true, internet: true, schedule: true, bridge: true };
+    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, unfollowed: true, canvas: true, local: true, internet: true, schedule: true, bridge: true };
     // Whose move an outgoing row was (lib/activity.js), as the row says it.
     var ORIGIN_WORDS = { canvas: "Canvas", local: "Local", internet: "Internet", schedule: "Schedule", bridge: "Bridge" };
     var ORIGIN_HINTS = {
@@ -2242,6 +2242,24 @@ function initGrape(ipServer, socketPort, oscInPort) {
       schedule: "Sent by a schedule",
       bridge: "Passed on from what came in (Send when)",
     };
+    // An incoming row's origin says who followed it rather than who sent it.
+    var IN_HINTS = { canvas: "Followed by a widget on the editor's canvas" };
+
+    // Auto-scroll: the newest row is kept in view as rows arrive (the list
+    // runs newest first). Off, the rows being read stay where they are while
+    // new ones gather above. Remembered in this browser.
+    var AUTOSCROLL_KEY = "oscarLogAutoScroll";
+    var autoScroll = (function () {
+      try {
+        return localStorage.getItem(AUTOSCROLL_KEY) !== "off";
+      } catch (err) {
+        return true;
+      }
+    })();
+
+    function rowKey(row) {
+      return [row.at, row.dir, row.protocol, row.what, row.surface || "", row.origin || "", row.device || "", row.unfollowed ? "u" : ""].join("|");
+    }
     var logBox = null;
     var logList = null;
 
@@ -2340,6 +2358,19 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
     function renderLog() {
       if (!logList) return;
+      // With auto-scroll off, remember the first row in view and where it
+      // sat, to put it back there once the list is redrawn.
+      var anchor = null;
+      if (!autoScroll) {
+        var top = logList.getBoundingClientRect().top;
+        for (var c = 0; c < logList.children.length; c++) {
+          var at = logList.children[c].getBoundingClientRect();
+          if (at.bottom > top) {
+            anchor = { key: logList.children[c].getAttribute("data-key"), offset: at.top - top };
+            break;
+          }
+        }
+      }
       logList.textContent = "";
       var shown = 0;
       var kept = 0;
@@ -2349,9 +2380,11 @@ function initGrape(ipServer, socketPort, oscInPort) {
         kept++;
         if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
         if (row.origin && logFilters[row.origin] === false) continue;
+        if (row.unfollowed && !logFilters.unfollowed) continue;
         shown++;
         var line = document.createElement("div");
         line.className = "oscar-log-row";
+        line.setAttribute("data-key", rowKey(row));
         var when = document.createElement("span");
         when.className = "oscar-log-time";
         when.textContent = timeOf(row.at);
@@ -2370,7 +2403,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
           origin.className = "oscar-log-chip oscar-log-origin oscar-log-origin-" + row.origin;
           origin.textContent = ORIGIN_WORDS[row.origin];
           // Which tablet, when two share a surface: its address on this network.
-          origin.setAttribute("title", ORIGIN_HINTS[row.origin] + (row.device ? " (" + row.device + ")" : ""));
+          var hint = (row.dir === "in" && IN_HINTS[row.origin]) || ORIGIN_HINTS[row.origin];
+          origin.setAttribute("title", hint + (row.device ? " (" + row.device + ")" : ""));
+        } else if (row.unfollowed) {
+          origin = document.createElement("span");
+          origin.className = "oscar-log-chip oscar-log-origin oscar-log-unfollowed";
+          origin.textContent = "Unfollowed";
+          origin.setAttribute("title", "No published surface follows this. A Canvas row beside it means the editor's canvas does.");
         }
         var where = null;
         if (row.surface) {
@@ -2384,6 +2423,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
         if (origin) line.appendChild(origin);
         line.appendChild(what);
         if (where) line.appendChild(where);
+        // Who sent what came in: it is the first thing to know about it.
+        if (row.dir === "in" && row.device) {
+          var sender = document.createElement("span");
+          sender.className = "oscar-log-from";
+          sender.textContent = row.device === "serial" ? "from the serial cable" : "from " + row.device;
+          line.appendChild(sender);
+        }
         if (row.n > 1) {
           var times = document.createElement("span");
           times.className = "oscar-log-n";
@@ -2402,6 +2448,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
             : "Nothing yet: nothing has been sent or heard.";
         logList.appendChild(quiet);
       }
+      if (autoScroll) {
+        logList.scrollTop = 0;
+      } else if (anchor) {
+        var again = logList.querySelector('[data-key="' + (window.CSS && CSS.escape ? CSS.escape(anchor.key) : anchor.key) + '"]');
+        if (again) logList.scrollTop += again.getBoundingClientRect().top - logList.getBoundingClientRect().top - anchor.offset;
+      }
     }
 
     function buildLogBox() {
@@ -2414,6 +2466,24 @@ function initGrape(ipServer, socketPort, oscInPort) {
       title.className = "oscar-log-title";
       title.textContent = "Network log";
       bar.appendChild(title);
+      var scrollLabel = document.createElement("label");
+      scrollLabel.className = "oscar-log-autoscroll";
+      scrollLabel.setAttribute("title", "Keep the newest message in view as messages arrive");
+      var scrollBox = document.createElement("input");
+      scrollBox.type = "checkbox";
+      scrollBox.checked = autoScroll;
+      scrollBox.addEventListener("change", function () {
+        autoScroll = scrollBox.checked;
+        try {
+          localStorage.setItem(AUTOSCROLL_KEY, autoScroll ? "on" : "off");
+        } catch (err) {
+          /* kept for this session only */
+        }
+        if (autoScroll && logList) logList.scrollTop = 0;
+      });
+      scrollLabel.appendChild(scrollBox);
+      scrollLabel.appendChild(document.createTextNode("Auto-scroll"));
+      bar.appendChild(scrollLabel);
       var clear = document.createElement("button");
       clear.className = "oscar-log-clear";
       clear.type = "button";
@@ -2439,7 +2509,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       // left the drag sticking the moment the pointer crossed the canvas.
       var hold = null;
       bar.addEventListener("pointerdown", function (event) {
-        if (close.contains(event.target) || clear.contains(event.target)) return;
+        if (close.contains(event.target) || clear.contains(event.target) || scrollLabel.contains(event.target)) return;
         var at = logBox.getBoundingClientRect();
         hold = { x: event.clientX - at.left, y: event.clientY - at.top };
         document.body.classList.add("oscar-log-dragging");
@@ -2471,19 +2541,20 @@ function initGrape(ipServer, socketPort, oscInPort) {
         ["osc", "OSC"],
         ["midi", "MIDI"],
         ["dmx", "DMX"],
+        ["unfollowed", "Unfollowed"],
         ["canvas", "Canvas"],
         ["local", "Local"],
         ["internet", "Internet"],
         ["schedule", "Schedule"],
         ["bridge", "Bridge"],
       ].forEach(function (pair, index) {
-        if (index === 2) {
+        if (index === 2 || index === 5) {
           var gap = document.createElement("span");
           gap.className = "oscar-log-filter-gap";
           filterBar.appendChild(gap);
         }
         // Whose move it was gets a row of its own, named.
-        if (index === 5) {
+        if (index === 6) {
           var rowBreak = document.createElement("span");
           rowBreak.className = "oscar-log-filter-break";
           filterBar.appendChild(rowBreak);
@@ -2551,6 +2622,32 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // (server.js, origin "canvas"), so every editor and the MCP server see
     // them, and opening the window keeps them instead of replacing them with
     // the server's backlog.
+    //
+    // What the canvas follows of what comes in only the canvas knows: its
+    // widgets decide for themselves (follow() in lib/widgets/incoming.js,
+    // midi-source.js) and say so through ctx.noteHeard. Gathered here and
+    // told to the server a few times a second, which logs it as "canvas";
+    // a fader ridden from outside is one line with a count.
+    var heardPending = {};
+    var heardTimer = null;
+    editor.noteHeard = function (protocol, what) {
+      if (!editor.socket) return;
+      var key = protocol + "|" + what;
+      if (heardPending[key]) heardPending[key].n++;
+      else heardPending[key] = { protocol: protocol, what: String(what), n: 1 };
+      if (!heardTimer) {
+        heardTimer = setTimeout(function () {
+          heardTimer = null;
+          var rows = Object.keys(heardPending).map(function (k) {
+            return heardPending[k];
+          });
+          heardPending = {};
+          if (rows.length) editor.socket.emit("canvas:heard", rows);
+          // Well inside the server's hold (ARRIVAL_HOLD_MS), so the word
+          // lands on the row of the message it is about.
+        }, 150);
+      }
+    };
 
     // The zones' clicks, through the bar's one listener: re-renders replace
     // elements, the document does not.

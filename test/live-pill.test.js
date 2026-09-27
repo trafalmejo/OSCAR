@@ -120,8 +120,8 @@ test("the server throttles the flickers, keeps the log, and announces the roster
   assert.match(serverSource, /onActivity: tellActivity/, "handed to the surfaces");
   assert.match(serverSource, /io\.emit\("live:log", entry\)/, "the log rows flow to every editor");
   assert.match(serverSource, /held\.n \+= event\.n \|\| 1;/, "repeats coalesce into one row with a count");
-  assert.match(serverSource, /const key = \[event\.dir, event\.protocol, event\.what, event\.surface \|\| "", event\.origin \|\| "", event\.device \|\| ""\]\.join\("\|"\);/, "but a tablet and a visitor's phone never share a row");
-  assert.match(serverSource, /origin: event\.origin, device: event\.device, n: event\.n \|\| 1/, "the row carries whose move it was");
+  assert.match(serverSource, /const key = \[event\.dir, event\.protocol, event\.what, event\.surface \|\| "", event\.origin \|\| "", event\.device \|\| "", event\.unfollowed \? "u" : ""\]\.join\("\|"\);/, "but a tablet and a visitor's phone never share a row");
+  assert.match(serverSource, /origin: event\.origin, device: event\.device, unfollowed: event\.unfollowed \|\| undefined, n: event\.n \|\| 1/, "the row carries whose move it was");
   assert.match(serverSource, /liveLog\.splice\(0, liveLog\.length - LIVE_LOG_KEEP\)/, "the backlog is capped");
   assert.match(serverSource, /surfaces\.onPublished\(\(id\) => \{\n  io\.emit\("published:changed"\);/, "publishing recounts the pill");
   assert.match(serverSource, /onPublishedChanged: \(\) => io\.emit\("published:changed"\)/, "unpublishing does too");
@@ -187,7 +187,54 @@ test("every send over a socket is logged by the server, saying whose it was", ()
   assert.match(serverSource, /sendOSC\(ip, port, address, \[\{ type, value \}\]\);\n      logOut\("osc", address\);/, "so is the old single-value form");
   assert.match(serverSource, /sendDMX\(request\);\n      logOut\("dmx", dmxWords\(request\)\);/, "DMX");
   assert.match(serverSource, /if \(sendMIDI\(request\) !== false\) logOut\("midi", midiWords\(request\)\);/, "MIDI, when it actually went out");
-  assert.match(serverSource, /if \(event\.origin !== "canvas" && at - activityAt\[event\.dir\] >= 200\)/, "the canvas is logged but does not flash the background lights");
+  assert.match(serverSource, /if \(event\.origin !== "canvas" && !event\.unfollowed && at - activityAt\[event\.dir\] >= 200\)/, "the canvas is logged but does not flash the background lights, nor does what nothing published follows");
+});
+
+test("every message that comes in is logged once, with who sent it, followed or not", async () => {
+  // What a published surface follows names the surface and the sender.
+  const { surfaces, store, activity } = await venue([tag("oscar-slider", "s7", { enabled: true, listen: true, message: "/level", min: 0, max: 1 })]);
+  store.onChange(() => {});
+  await surfaces.hearOsc(osc("/level", 0.4), { device: "192.168.1.40" });
+  assert.deepStrictEqual(activity, [{ dir: "in", protocol: "osc", what: "/level", surface: "stage", n: 1, device: "192.168.1.40" }]);
+  // What nothing published follows is logged by the server, marked as such.
+  assert.match(serverSource, /if \(!moved\) logArrival\(\{ protocol: "osc", what: message\.address, device \}\);/, "OSC nobody published follows");
+  assert.match(serverSource, /if \(!moved\) logArrival\(\{ protocol: "midi", what: heardMidiWords\(heard, port\) \}\);/, "and MIDI");
+  assert.match(serverSource, /arrivals\.set\(key, \{ dir: "in", protocol: event\.protocol, what: event\.what, device: event\.device, unfollowed: true, n: 1 \}\);/, "held as unfollowed until the canvas says otherwise");
+  assert.match(serverSource, /onMessage: \(message, from\) => heardOsc\(message, null, from\)/, "the sender comes from the packet");
+  assert.match(serverSource, /listenOn\(port, \(message, from\) => heardOsc\(message, null, from\)\);/, "replies to the sending ports too");
+  const oscIn = readSource("lib", "osc-in.js");
+  assert.match(oscIn, /function onPacket\(packet, timeTag, info\)/, "osc.js hands the sender third");
+});
+
+test("the canvas says what it followed of what came in, and only the canvas is believed", () => {
+  const incomingSource = readSource("lib", "widgets", "incoming.js");
+  const midiSourceSource = readSource("lib", "widgets", "midi-source.js");
+  const adapterSource = readSource("public", "src", "adapters", "grapesjs.js");
+  assert.match(incomingSource, /if \(typeof ctx\.noteHeard === "function"\) ctx\.noteHeard\("osc", message\.address\);/, "an OSC widget that follows a message says so");
+  assert.match(midiSourceSource, /if \(typeof host\.noteHeard === "function"\) host\.noteHeard\("midi", heardMidiWords\(heard, port\)\);/, "and a MIDI one");
+  assert.match(adapterSource, /if \(typeof editor\.noteHeard === "function"\) editor\.noteHeard\(protocol, what\);/, "the canvas hands it to the editor");
+  assert.match(editorSource, /if \(rows\.length\) editor\.socket\.emit\("canvas:heard", rows\);/, "gathered and told to the server");
+  assert.match(serverSource, /if \(from\.origin !== "canvas" \|\| !Array\.isArray\(rows\)\) return;/, "which takes only the canvas's word");
+  assert.match(serverSource, /canvasHeard\(row\.protocol, row\.what\.slice\(0, 200\), n\);/, "and logs it as the canvas's");
+  // One row per message, not an "unfollowed" row and a "canvas" row disagreeing.
+  assert.match(serverSource, /entry\.origin = "canvas";\n    delete entry\.unfollowed;/, "the canvas's word lands on the held row, sender and count kept");
+  assert.match(serverSource, /if \(last && Date\.now\(\) - last < CLAIM_MEMORY_MS\) return;/, "a second editor saying the same is not a second row");
+  assert.match(editorSource, /\}, 150\);/, "told well inside the server's hold");
+  assert.match(serverSource, /const ARRIVAL_HOLD_MS = 700;/);
+});
+
+test("a widget following a message tells its host, and one that does not stays quiet", () => {
+  const { follow } = require("../lib/widgets/incoming");
+  const noted = [];
+  let deliver = null;
+  const values = { enabled: true, listen: true, message: "/dim" };
+  const ctx = { get: (k) => values[k], onOsc: (fn) => { deliver = fn; return () => {}; }, noteHeard: (p, w) => noted.push([p, w]) };
+  const heard = [];
+  follow(ctx, (v) => heard.push(v));
+  deliver({ address: "/dim", args: [0.5] });
+  deliver({ address: "/other", args: [1] });
+  assert.deepStrictEqual(noted, [["osc", "/dim"]], "only what it followed");
+  assert.strictEqual(heard.length, 1);
 });
 
 test("each page says who it is when it connects", () => {
@@ -209,7 +256,23 @@ test("Clear hides what is listed so far, in this window only, by the server's cl
   assert.match(editorSource, /if \(row\.at <= clearedThrough\) continue;/, "so the backlog fetched on reopening stays cleared too");
   assert.ok(!/fetch\("\/live\/log", \{ method: "DELETE"/.test(editorSource), "the server's log, shared with other editors and assistants, is left whole");
   assert.match(editorSource, /"Cleared at " \+ clearedAtWords \+ "\. Waiting for new messages\."/, "an empty log says why it is empty");
-  assert.match(editorSource, /if \(close\.contains\(event\.target\) \|\| clear\.contains\(event\.target\)\) return;/, "pressing it does not start a drag");
+  assert.match(editorSource, /if \(close\.contains\(event\.target\) \|\| clear\.contains\(event\.target\) \|\| scrollLabel\.contains\(event\.target\)\) return;/, "pressing it does not start a drag");
+});
+
+test("auto-scroll keeps the newest in view, and off keeps what is being read still", () => {
+  assert.match(editorSource, /scrollLabel\.appendChild\(document\.createTextNode\("Auto-scroll"\)\);/, "a switch in the title bar");
+  assert.match(editorSource, /return localStorage\.getItem\(AUTOSCROLL_KEY\) !== "off";/, "on until turned off, remembered");
+  assert.match(editorSource, /if \(autoScroll\) \{\n        logList\.scrollTop = 0;/, "the newest is at the top, so on is the top");
+  assert.match(editorSource, /anchor = \{ key: logList\.children\[c\]\.getAttribute\("data-key"\), offset: at\.top - top \};/, "off, the first row in view is remembered");
+  assert.match(editorSource, /logList\.scrollTop \+= again\.getBoundingClientRect\(\)\.top - logList\.getBoundingClientRect\(\)\.top - anchor\.offset;/, "and put back where it sat");
+});
+
+test("an incoming row says who sent it, and a message nothing published follows is marked", () => {
+  assert.match(editorSource, /sender\.textContent = row\.device === "serial" \? "from the serial cable" : "from " \+ row\.device;/, "the sender, in words");
+  assert.match(editorSource, /origin\.textContent = "Unfollowed";/, "unfollowed, marked");
+  assert.match(editorSource, /if \(row\.unfollowed && !logFilters\.unfollowed\) continue;/, "and filterable");
+  assert.ok(editorSource.indexOf('["unfollowed", "Unfollowed"]') !== -1, "a checkbox for it");
+  assert.match(editorSource, /var IN_HINTS = \{ canvas: "Followed by a widget on the editor's canvas" \};/, "an incoming Canvas row means the canvas followed it");
 });
 
 test("the log labels whose move each row was, and filters by it", () => {
@@ -218,7 +281,7 @@ test("the log labels whose move each row was, and filters by it", () => {
   }
   assert.match(editorSource, /if \(row\.origin && logFilters\[row\.origin\] === false\) continue;/, "rows obey them; a row without an origin always shows");
   assert.match(editorSource, /origin\.className = "oscar-log-chip oscar-log-origin oscar-log-origin-" \+ row\.origin;/, "a chip per origin");
-  assert.match(editorSource, /ORIGIN_HINTS\[row\.origin\] \+ \(row\.device \? " \(" \+ row\.device \+ "\)" : ""\)/, "which tablet, on hover");
+  assert.match(editorSource, /var hint = \(row\.dir === "in" && IN_HINTS\[row\.origin\]\) \|\| ORIGIN_HINTS\[row\.origin\];\n          origin\.setAttribute\("title", hint \+ \(row\.device \? " \(" \+ row\.device \+ "\)" : ""\)\);/, "which tablet, on hover");
   assert.ok(editorSource.indexOf("logCanvas(") === -1, "the page no longer keeps rows of its own that the backlog would wipe");
   assert.match(themeSource, /\.oscar-log-origin-internet \{/, "internet stands apart from local");
 });

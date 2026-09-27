@@ -342,6 +342,13 @@ function contextFor(view, editor) {
     },
   };
 
+  // What the canvas followed, for the editor's network log (oscar_editor.js
+  // sets editor.noteHeard); asked at call time, so the order they load in
+  // does not matter, and a page with no log -- the preview -- says nothing.
+  ctx.noteHeard = function (protocol, what) {
+    if (typeof editor.noteHeard === "function") editor.noteHeard(protocol, what);
+  };
+
   // Only a host that can receive offers onOsc at all; the widgets check for
   // it (through follow() in lib/widgets/incoming.js) rather than assume it.
   if (editor.onOscIn) {
