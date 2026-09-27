@@ -22819,7 +22819,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       "grapesjs-tooltip",
     ],
     pluginsOpts: {
-      oscar_socket: { ipserver: ipServer, socketPort: socketPort },
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort, from: "canvas" },
       "grapesjs-tooltip": {},
       "gjs-blocks-basic": { flexGrid: true },
       "grapesjs-preset-webpage": {
@@ -24589,7 +24589,16 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // The network log's rows, oldest first, the server's cap mirrored here.
     var LOG_KEEP = 200;
     var logRows = [];
-    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, canvas: true };
+    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, canvas: true, local: true, internet: true, schedule: true, bridge: true };
+    // Whose move an outgoing row was (lib/activity.js), as the row says it.
+    var ORIGIN_WORDS = { canvas: "Canvas", local: "Local", internet: "Internet", schedule: "Schedule", bridge: "Bridge" };
+    var ORIGIN_HINTS = {
+      canvas: "Sent from the editor's canvas",
+      local: "Sent from a device on this network",
+      internet: "Sent from a visitor's phone, through the public link",
+      schedule: "Sent by a schedule",
+      bridge: "Passed on from what came in (Send when)",
+    };
     var logBox = null;
     var logList = null;
 
@@ -24652,11 +24661,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
     }
 
     // ---- the network log window ------------------------------------------
-    // What the server has done for the published surfaces, newest at the
-    // top: the address or MIDI message it consumed and for which surface,
-    // the widget it sent for. Repeats within a moment arrive as one row
-    // with a count (server.js coalesces them). Filters by direction and
-    // protocol.
+    // Everything OSCAR has sent and consumed, newest at the top: the address
+    // or MIDI message it consumed and for which surface; what it sent, for
+    // which surface, and whose move it was -- the canvas, a device on this
+    // network, a phone on the internet, a schedule or a bridge. Repeats
+    // within a moment arrive as one row with a count (server.js coalesces
+    // them). Filters by direction, protocol and origin.
     //
     // A floating window, not a modal, on purpose: the log is for debugging,
     // so the editor has to stay usable while it is open -- move a fader,
@@ -24675,7 +24685,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       for (var i = logRows.length - 1; i >= 0; i--) {
         var row = logRows[i];
         if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
-        if (row.canvas && !logFilters.canvas) continue;
+        if (row.origin && logFilters[row.origin] === false) continue;
         shown++;
         var line = document.createElement("div");
         line.className = "oscar-log-row";
@@ -24691,19 +24701,24 @@ function initGrape(ipServer, socketPort, oscInPort) {
         var what = document.createElement("span");
         what.className = "oscar-log-what";
         what.textContent = String(row.what || "");
+        var origin = null;
+        if (row.origin && ORIGIN_WORDS[row.origin]) {
+          origin = document.createElement("span");
+          origin.className = "oscar-log-chip oscar-log-origin oscar-log-origin-" + row.origin;
+          origin.textContent = ORIGIN_WORDS[row.origin];
+          // Which tablet, when two share a surface: its address on this network.
+          origin.setAttribute("title", ORIGIN_HINTS[row.origin] + (row.device ? " (" + row.device + ")" : ""));
+        }
         var where = null;
         if (row.surface) {
           where = document.createElement("span");
           where.className = "oscar-log-surface";
           where.textContent = '"' + row.surface + '"';
-        } else if (row.canvas) {
-          where = document.createElement("span");
-          where.className = "oscar-log-surface oscar-log-canvas";
-          where.textContent = "canvas";
         }
         line.appendChild(when);
         line.appendChild(dir);
         line.appendChild(protocol);
+        if (origin) line.appendChild(origin);
         line.appendChild(what);
         if (where) line.appendChild(where);
         if (row.n > 1) {
@@ -24717,7 +24732,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       if (!shown) {
         var quiet = document.createElement("div");
         quiet.className = "oscar-log-quiet";
-        quiet.textContent = logRows.length ? "Nothing matches these filters." : "Nothing yet: the published surfaces are quiet.";
+        quiet.textContent = logRows.length ? "Nothing matches these filters." : "Nothing yet: nothing has been sent or heard.";
         logList.appendChild(quiet);
       }
     }
@@ -24783,11 +24798,25 @@ function initGrape(ipServer, socketPort, oscInPort) {
         ["midi", "MIDI"],
         ["dmx", "DMX"],
         ["canvas", "Canvas"],
+        ["local", "Local"],
+        ["internet", "Internet"],
+        ["schedule", "Schedule"],
+        ["bridge", "Bridge"],
       ].forEach(function (pair, index) {
-        if (index === 2 || index === 5) {
+        if (index === 2) {
           var gap = document.createElement("span");
           gap.className = "oscar-log-filter-gap";
           filterBar.appendChild(gap);
+        }
+        // Whose move it was gets a row of its own, named.
+        if (index === 5) {
+          var rowBreak = document.createElement("span");
+          rowBreak.className = "oscar-log-filter-break";
+          filterBar.appendChild(rowBreak);
+          var fromWord = document.createElement("span");
+          fromWord.className = "oscar-log-filter-word";
+          fromWord.textContent = "Sent from";
+          filterBar.appendChild(fromWord);
         }
         var label = document.createElement("label");
         label.className = "oscar-log-filter";
@@ -24844,70 +24873,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
       renderLog();
     }
 
-    // ---- canvas sends in the log -----------------------------------------
-    // A hand on the editor's own fader shows in the log too, marked
-    // "canvas": debugging is telling the two apart. These rows are this
-    // page's own -- the server never hears of them, and the LEDs stay
-    // background-only. Wrapped here rather than in the adapter because
-    // everything a canvas widget sends goes through these three, read off
-    // the editor at call time. Coalesced like the server's rows: a fader
-    // ridden for a second is one row with a count, not sixty.
-
-    var canvasPending = {};
-    var canvasTimer = null;
-
-    function flushCanvas() {
-      canvasTimer = null;
-      Object.keys(canvasPending).forEach(function (key) {
-        logRows.push(canvasPending[key]);
-      });
-      canvasPending = {};
-      if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
-      if (logOpen()) renderLog();
-    }
-
-    function logCanvas(protocol, what) {
-      var key = protocol + "|" + what;
-      var held = canvasPending[key];
-      if (held) {
-        held.n++;
-        held.at = Date.now();
-      } else {
-        canvasPending[key] = { at: Date.now(), dir: "out", protocol: protocol, what: what, canvas: true, n: 1 };
-      }
-      if (!canvasTimer) canvasTimer = setTimeout(flushCanvas, 300);
-    }
-
-    /** The same words the server uses for MIDI it hears: "cc 7 ch 1". */
-    function midiWords(request) {
-      var first = request && Array.isArray(request.messages) && request.messages[0];
-      if (!first || !first.length) return "midi";
-      var kinds = { 128: "note off", 144: "note on", 160: "aftertouch", 176: "cc", 192: "program", 224: "bend" };
-      var kind = kinds[first[0] & 0xf0] || "midi";
-      return kind + (first.length > 1 ? " " + first[1] : "") + " ch " + ((first[0] & 0x0f) + 1);
-    }
-
-    if (editor.sendOSC) {
-      var plainOSC = editor.sendOSC;
-      editor.sendOSC = function (ip, port, address, args) {
-        logCanvas("osc", address);
-        return plainOSC(ip, port, address, args);
-      };
-    }
-    if (editor.sendDMX) {
-      var plainDMX = editor.sendDMX;
-      editor.sendDMX = function (request) {
-        logCanvas("dmx", request && request.channel !== undefined ? "ch " + request.channel + (request.universe ? " · u " + request.universe : "") : "frame");
-        return plainDMX(request);
-      };
-    }
-    if (editor.sendMIDI) {
-      var plainMIDI = editor.sendMIDI;
-      editor.sendMIDI = function (request) {
-        logCanvas("midi", midiWords(request));
-        return plainMIDI(request);
-      };
-    }
+    // The canvas's own sends are logged by the server like every other
+    // (server.js, origin "canvas"), so every editor and the MCP server see
+    // them, and opening the window keeps them instead of replacing them with
+    // the server's backlog.
 
     // The zones' clicks, through the bar's one listener: re-renders replace
     // elements, the document does not.
@@ -25228,7 +25197,7 @@ function initGrape(ipServer, socketPort) {
     pluginsOpts: {
       // `surface`: this page is a device showing the layout, so it agrees with
       // the others on what each widget shows. The editor never sets it.
-      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true },
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true, from: "preview" },
     },
   });
 

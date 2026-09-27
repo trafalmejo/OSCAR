@@ -61,7 +61,7 @@ function initGrape(ipServer, socketPort) {
     pluginsOpts: {
       // `surface`: this page is a device showing the layout, so it agrees with
       // the others on what each widget shows. The editor never sets it.
-      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true },
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true, from: "preview" },
     },
   });
 

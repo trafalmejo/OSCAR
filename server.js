@@ -24,6 +24,7 @@ const { sharedSync } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
 const { createSurfaces, allWidgetsIn } = require("./lib/surfaces");
+const { socketOrigin, midiWords, dmxWords } = require("./lib/activity");
 const createRouter = require("./routes/index");
 
 const pkg = require("./package.json");
@@ -549,11 +550,17 @@ if (features.SERIAL) {
 io.on("connection", (socket) => {
   console.log("Editor connected (" + socket.id + ")");
 
+  // Who this connection sends for, for the network log: the editor's canvas
+  // or a page on this network, and which surface (lib/activity.js).
+  const from = socketOrigin(socket.handshake.query && socket.handshake.query.from, socket.handshake.address);
+  const logOut = (protocol, what) => tellActivity(Object.assign({ dir: "out", protocol, what }, from));
+
   // One message, any number of values: { ip, port, address, args }.
   socket.on("osc", (msg) => {
     try {
       if (!msg) return;
       sendOSC(msg.ip, msg.port, msg.address, msg.args);
+      logOut("osc", msg.address);
     } catch (err) {
       console.error("Bad OSC message:", err.message);
     }
@@ -564,6 +571,7 @@ io.on("connection", (socket) => {
   socket.on("message", (clientIP, ip, port, address, type, value) => {
     try {
       sendOSC(ip, port, address, [{ type, value }]);
+      logOut("osc", address);
     } catch (err) {
       console.error("Bad OSC message:", err.message);
     }
@@ -573,6 +581,7 @@ io.on("connection", (socket) => {
   socket.on("dmx", (request) => {
     try {
       sendDMX(request);
+      logOut("dmx", dmxWords(request));
     } catch (err) {
       console.error("Bad DMX request:", err.message);
     }
@@ -581,7 +590,8 @@ io.on("connection", (socket) => {
   // One widget's MIDI: { port, messages }.
   socket.on("midi", (request) => {
     try {
-      sendMIDI(request);
+      // Only what went out: a port that is not there has already been said.
+      if (sendMIDI(request) !== false) logOut("midi", midiWords(request));
     } catch (err) {
       console.error("Bad MIDI request:", err.message);
     }
@@ -639,8 +649,10 @@ io.on("connection", (socket) => {
 // which widget and what state, never where to send.
 //
 // onActivity feeds the editor's LIVE pill: IN as the server consumes OSC or
-// MIDI for a published surface, OUT as it sends on one's behalf. The lights
-// are throttled so a fader at 60 Hz costs a flicker, not a socket message
+// MIDI for a published surface, OUT as it sends on one's behalf. Each OUT
+// row says whose move it was (`origin`, lib/activity.js); the canvas's own
+// sends are logged but do not flash the lights, which are about what runs in
+// the background. The lights are throttled so a fader at 60 Hz costs a flicker, not a socket message
 // per move; the log coalesces repeats of the same event into one row with a
 // count, flushed a few times a second, and keeps the latest rows for the
 // window to read when it opens (GET /live/log).
@@ -664,17 +676,19 @@ function flushLiveLog() {
 function tellActivity(event) {
   if (!event || !event.dir) return;
   const at = Date.now();
-  if (at - activityAt[event.dir] >= 200) {
+  if (event.origin !== "canvas" && at - activityAt[event.dir] >= 200) {
     activityAt[event.dir] = at;
     io.emit("live:activity", { dir: event.dir });
   }
-  const key = event.dir + "|" + event.protocol + "|" + event.what + "|" + (event.surface || "");
+  // Origin and device are in the key: a tablet and a visitor's phone on the
+  // same fader are two rows, not one with their counts added up.
+  const key = [event.dir, event.protocol, event.what, event.surface || "", event.origin || "", event.device || ""].join("|");
   const held = liveLogPending.get(key);
   if (held) {
     held.n += event.n || 1;
     held.at = at;
   } else {
-    liveLogPending.set(key, { at, dir: event.dir, protocol: event.protocol, what: event.what, surface: event.surface, n: event.n || 1 });
+    liveLogPending.set(key, { at, dir: event.dir, protocol: event.protocol, what: event.what, surface: event.surface, origin: event.origin, device: event.device, n: event.n || 1 });
   }
   if (!liveLogTimer) liveLogTimer = setTimeout(flushLiveLog, LIVE_LOG_FLUSH_MS);
 }

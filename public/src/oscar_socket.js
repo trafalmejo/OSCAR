@@ -18,12 +18,15 @@ function oscar_socket(editor, options) {
   editor.ipserver = host;
   // `socket` is a connection made some other way and shaped like this one: a
   // surface reaching OSCAR through a relay (relay_socket.js).
-  editor.socket =
-    (options && options.socket) ||
-    io("http://" + host + ":" + port, {
-      transports: ["websocket", "polling"],
-      reconnectionDelayMax: 5000,
-    });
+  // `from` says who this page is, for the network log's labels and nothing
+  // else: "canvas" for the editor, "preview", or "show:<surface id>"
+  // (lib/activity.js).
+  var connectOptions = {
+    transports: ["websocket", "polling"],
+    reconnectionDelayMax: 5000,
+  };
+  if (options && typeof options.from === "string") connectOptions.query = { from: options.from };
+  editor.socket = (options && options.socket) || io("http://" + host + ":" + port, connectOptions);
 
   /**
    * Send an OSC message. `args` may be a single value or a list -- a button

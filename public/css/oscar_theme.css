@@ -666,7 +666,7 @@ a {
 .oscar-log-filters {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.35rem 0.9rem;
   flex-wrap: wrap;
   margin-bottom: 0.6rem;
 }
@@ -682,6 +682,14 @@ a {
 .oscar-log-filter input {
   accent-color: #2fbf5f;
   cursor: pointer;
+}
+.oscar-log-filter-break {
+  flex-basis: 100%;
+  height: 0;
+}
+.oscar-log-filter-word {
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
 }
 .oscar-log-filter-gap {
   width: 1px;
@@ -740,9 +748,27 @@ a {
 .oscar-log-surface {
   color: var(--o-text-muted);
 }
-.oscar-log-canvas {
+/* Whose move an outgoing row was. The two that matter most apart get the
+   strongest contrast: Local green like the pill, Internet blue. */
+.oscar-log-origin {
+  min-width: 4.8em;
+  text-align: center;
+  cursor: default;
+  color: var(--o-text-muted);
+  border: 1px solid var(--o-border-strong);
+}
+.oscar-log-origin-canvas {
   color: var(--o-accent-text);
+  border-color: var(--o-accent-border);
   font-style: italic;
+}
+.oscar-log-origin-local {
+  color: #8fe3ae;
+  border-color: rgba(47, 191, 95, 0.5);
+}
+.oscar-log-origin-internet {
+  color: #9cc8ff;
+  border-color: rgba(86, 156, 255, 0.55);
 }
 /* While the log is being dragged the canvas iframe must not eat the pointer
    moves, or the drag sticks the moment the pointer crosses it. */

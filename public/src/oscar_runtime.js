@@ -11,6 +11,16 @@ var standalone = require("./adapters/standalone");
 var oscarSocket = require("./oscar_socket");
 var relaySocket = require("./relay_socket");
 
+/**
+ * Who this page is, for OSCAR's network log: "show:<id>" for a surface OSCAR
+ * serves at /show/<id>, "file" for a copy opened from disk or served
+ * elsewhere.
+ */
+function pageFrom(location) {
+  var match = /^\/show\/([a-z0-9][a-z0-9-]*)\/?$/.exec((location && location.pathname) || "");
+  return match ? "show:" + match[1] : "file";
+}
+
 function boot() {
   standalone.start({
     document: document,
@@ -37,7 +47,7 @@ function boot() {
       typeof io === "function"
         ? function (host, port) {
             var bridge = {};
-            oscarSocket(bridge, { ipserver: host, socketPort: port, surface: true });
+            oscarSocket(bridge, { ipserver: host, socketPort: port, surface: true, from: pageFrom(window.location) });
             return bridge;
           }
         : null,

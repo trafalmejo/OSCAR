@@ -76,6 +76,19 @@ test("a drive on a published surface's behalf says OUT, and a bridge says both",
     [["out", "osc"], ["in", "osc"]],
     "what came in went back out: both lights"
   );
+  assert.strictEqual(bridged.activity[0].origin, "bridge", "and the send says it was a bridge's");
+});
+
+test("a drive says whose move it was when its caller says: a visitor's phone and a schedule apart", async () => {
+  const { surfaces, activity } = await venue([tag("oscar-slider", "s6", { enabled: true, message: "/dim", min: 0, max: 1 })]);
+  await surfaces.drive("stage", "s6", { value: 0.2 }, { origin: "internet" });
+  await surfaces.drive("stage", "s6", { value: 0.3 }, { origin: "schedule" });
+  await surfaces.drive("stage", "s6", { value: 0.4 });
+  assert.deepStrictEqual(
+    activity.map((e) => e.origin),
+    ["internet", "schedule", undefined],
+    "a caller that says nothing (an older extension) gets no label rather than a wrong one"
+  );
 });
 
 test("MIDI consumed for a published widget says IN with the message spelled out", async () => {
@@ -107,6 +120,8 @@ test("the server throttles the flickers, keeps the log, and announces the roster
   assert.match(serverSource, /onActivity: tellActivity/, "handed to the surfaces");
   assert.match(serverSource, /io\.emit\("live:log", entry\)/, "the log rows flow to every editor");
   assert.match(serverSource, /held\.n \+= event\.n \|\| 1;/, "repeats coalesce into one row with a count");
+  assert.match(serverSource, /const key = \[event\.dir, event\.protocol, event\.what, event\.surface \|\| "", event\.origin \|\| "", event\.device \|\| ""\]\.join\("\|"\);/, "but a tablet and a visitor's phone never share a row");
+  assert.match(serverSource, /origin: event\.origin, device: event\.device, n: event\.n \|\| 1/, "the row carries whose move it was");
   assert.match(serverSource, /liveLog\.splice\(0, liveLog\.length - LIVE_LOG_KEEP\)/, "the backlog is capped");
   assert.match(serverSource, /surfaces\.onPublished\(\(id\) => \{\n  io\.emit\("published:changed"\);/, "publishing recounts the pill");
   assert.match(serverSource, /onPublishedChanged: \(\) => io\.emit\("published:changed"\)/, "unpublishing does too");
@@ -166,12 +181,34 @@ test("the log floats so the faders stay usable under it: that is what it is for"
   assert.match(themeSource, /height: 420px;/, "a fixed height, not one that grows with every row");
 });
 
-test("the canvas's own sends show in the log, marked and filterable, coalesced like the rest", () => {
-  assert.match(editorSource, /editor\.sendOSC = function \(ip, port, address, args\) \{\n        logCanvas\("osc", address\);/, "OSC hands are seen");
-  assert.match(editorSource, /editor\.sendDMX = function \(request\) \{\n        logCanvas\("dmx"/, "DMX hands are seen");
-  assert.match(editorSource, /editor\.sendMIDI = function \(request\) \{\n        logCanvas\("midi", midiWords\(request\)\);/, "MIDI hands are seen, in the server's words");
-  assert.match(editorSource, /where\.textContent = "canvas"/, "marked as the canvas's own");
-  assert.match(editorSource, /if \(row\.canvas && !logFilters\.canvas\) continue;/, "the Canvas filter hides them");
-  assert.ok(editorSource.indexOf('["canvas", "Canvas"]') !== -1, "a checkbox of their own");
-  assert.match(editorSource, /held\.n\+\+;/, "a ridden fader is one row with a count, not sixty");
+test("every send over a socket is logged by the server, saying whose it was", () => {
+  assert.match(serverSource, /const from = socketOrigin\(socket\.handshake\.query && socket\.handshake\.query\.from, socket\.handshake\.address\);/, "each connection says who it is");
+  assert.match(serverSource, /sendOSC\(msg\.ip, msg\.port, msg\.address, msg\.args\);\n      logOut\("osc", msg\.address\);/, "OSC from a page or the canvas is logged");
+  assert.match(serverSource, /sendOSC\(ip, port, address, \[\{ type, value \}\]\);\n      logOut\("osc", address\);/, "so is the old single-value form");
+  assert.match(serverSource, /sendDMX\(request\);\n      logOut\("dmx", dmxWords\(request\)\);/, "DMX");
+  assert.match(serverSource, /if \(sendMIDI\(request\) !== false\) logOut\("midi", midiWords\(request\)\);/, "MIDI, when it actually went out");
+  assert.match(serverSource, /if \(event\.origin !== "canvas" && at - activityAt\[event\.dir\] >= 200\)/, "the canvas is logged but does not flash the background lights");
+});
+
+test("each page says who it is when it connects", () => {
+  const socketSource = readSource("public", "src", "oscar_socket.js");
+  const previewSource = readSource("public", "src", "oscar_preview.js");
+  const runtimeSource = readSource("public", "src", "oscar_runtime.js");
+  assert.match(socketSource, /if \(options && typeof options\.from === "string"\) connectOptions\.query = \{ from: options\.from \};/, "the handshake carries it");
+  assert.match(editorSource, /oscar_socket: \{ ipserver: ipServer, socketPort: socketPort, from: "canvas" \}/, "the editor is the canvas");
+  assert.match(previewSource, /surface: true, from: "preview" \}/, "the preview is itself");
+  assert.match(runtimeSource, /surface: true, from: pageFrom\(window\.location\) \}/, "a published page names its surface");
+  assert.match(runtimeSource, /return match \? "show:" \+ match\[1\] : "file";/, "from its /show/ address, or is a file");
+  assert.doesNotMatch(runtimeSource, /relaySocket\(url\), surface: true, from/, "a phone through the relay says nothing: the relay's path is what makes it internet");
+});
+
+test("the log labels whose move each row was, and filters by it", () => {
+  for (const key of ['["canvas", "Canvas"]', '["local", "Local"]', '["internet", "Internet"]', '["schedule", "Schedule"]', '["bridge", "Bridge"]']) {
+    assert.ok(editorSource.indexOf(key) !== -1, "a filter for " + key);
+  }
+  assert.match(editorSource, /if \(row\.origin && logFilters\[row\.origin\] === false\) continue;/, "rows obey them; a row without an origin always shows");
+  assert.match(editorSource, /origin\.className = "oscar-log-chip oscar-log-origin oscar-log-origin-" \+ row\.origin;/, "a chip per origin");
+  assert.match(editorSource, /ORIGIN_HINTS\[row\.origin\] \+ \(row\.device \? " \(" \+ row\.device \+ "\)" : ""\)/, "which tablet, on hover");
+  assert.ok(editorSource.indexOf("logCanvas(") === -1, "the page no longer keeps rows of its own that the backlog would wipe");
+  assert.match(themeSource, /\.oscar-log-origin-internet \{/, "internet stands apart from local");
 });
