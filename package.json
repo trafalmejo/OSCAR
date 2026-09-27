@@ -75,6 +75,7 @@
       "public/**/*",
       "extensions/**/*"
     ],
+    "afterPack": "scripts/after-pack.js",
     "win": {
       "target": [
         {
