@@ -24699,12 +24699,32 @@ function initGrape(ipServer, socketPort, oscInPort) {
       return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
     }
 
+    // Clear hides, it does not delete: the server's log is shared with every
+    // editor and with an assistant's recent_activity, so it stays whole, and
+    // a refresh brings it all back. What is hidden is every row up to the
+    // newest one on screen, by the server's own clock -- not this device's,
+    // which on a tablet may be minutes out -- so the backlog fetched when
+    // the window reopens stays cleared too.
+    var clearedThrough = 0;
+    var clearedAtWords = "";
+
+    function clearLog() {
+      for (var i = 0; i < logRows.length; i++) {
+        if (logRows[i].at > clearedThrough) clearedThrough = logRows[i].at;
+      }
+      clearedAtWords = timeOf(Date.now());
+      renderLog();
+    }
+
     function renderLog() {
       if (!logList) return;
       logList.textContent = "";
       var shown = 0;
+      var kept = 0;
       for (var i = logRows.length - 1; i >= 0; i--) {
         var row = logRows[i];
+        if (row.at <= clearedThrough) continue;
+        kept++;
         if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
         if (row.origin && logFilters[row.origin] === false) continue;
         shown++;
@@ -24753,7 +24773,11 @@ function initGrape(ipServer, socketPort, oscInPort) {
       if (!shown) {
         var quiet = document.createElement("div");
         quiet.className = "oscar-log-quiet";
-        quiet.textContent = logRows.length ? "Nothing matches these filters." : "Nothing yet: nothing has been sent or heard.";
+        quiet.textContent = kept
+          ? "Nothing matches these filters."
+          : clearedAtWords
+            ? "Cleared at " + clearedAtWords + ". Waiting for new messages."
+            : "Nothing yet: nothing has been sent or heard.";
         logList.appendChild(quiet);
       }
     }
@@ -24768,6 +24792,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
       title.className = "oscar-log-title";
       title.textContent = "Network log";
       bar.appendChild(title);
+      var clear = document.createElement("button");
+      clear.className = "oscar-log-clear";
+      clear.type = "button";
+      clear.textContent = "Clear";
+      clear.setAttribute("title", "Hide what is listed so far, to watch only what comes next");
+      clear.addEventListener("click", clearLog);
+      bar.appendChild(clear);
       var close = document.createElement("button");
       close.className = "oscar-log-close";
       close.type = "button";
@@ -24786,7 +24817,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       // left the drag sticking the moment the pointer crossed the canvas.
       var hold = null;
       bar.addEventListener("pointerdown", function (event) {
-        if (close.contains(event.target)) return;
+        if (close.contains(event.target) || clear.contains(event.target)) return;
         var at = logBox.getBoundingClientRect();
         hold = { x: event.clientX - at.left, y: event.clientY - at.top };
         document.body.classList.add("oscar-log-dragging");

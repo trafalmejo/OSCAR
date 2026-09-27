@@ -643,6 +643,21 @@ a {
   font-size: var(--o-text-base);
   font-weight: 600;
 }
+.oscar-log-clear {
+  margin-left: auto;
+  margin-right: 0.7rem;
+  background: none;
+  border: 1px solid var(--o-border-strong);
+  border-radius: var(--o-radius-sm);
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+  padding: 0.1rem 0.55rem;
+  cursor: pointer;
+}
+.oscar-log-clear:hover {
+  color: var(--o-text);
+  border-color: var(--o-text-muted);
+}
 .oscar-log-close {
   background: none;
   border: none;

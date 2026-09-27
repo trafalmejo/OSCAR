@@ -202,6 +202,16 @@ test("each page says who it is when it connects", () => {
   assert.doesNotMatch(runtimeSource, /relaySocket\(url\), surface: true, from/, "a phone through the relay says nothing: the relay's path is what makes it internet");
 });
 
+test("Clear hides what is listed so far, in this window only, by the server's clock", () => {
+  assert.match(editorSource, /clear\.textContent = "Clear";/, "a Clear button");
+  assert.match(editorSource, /clear\.addEventListener\("click", clearLog\);/, "that clears");
+  assert.match(editorSource, /if \(logRows\[i\]\.at > clearedThrough\) clearedThrough = logRows\[i\]\.at;/, "up to the newest row's own time, not this device's clock");
+  assert.match(editorSource, /if \(row\.at <= clearedThrough\) continue;/, "so the backlog fetched on reopening stays cleared too");
+  assert.ok(!/fetch\("\/live\/log", \{ method: "DELETE"/.test(editorSource), "the server's log, shared with other editors and assistants, is left whole");
+  assert.match(editorSource, /"Cleared at " \+ clearedAtWords \+ "\. Waiting for new messages\."/, "an empty log says why it is empty");
+  assert.match(editorSource, /if \(close\.contains\(event\.target\) \|\| clear\.contains\(event\.target\)\) return;/, "pressing it does not start a drag");
+});
+
 test("the log labels whose move each row was, and filters by it", () => {
   for (const key of ['["canvas", "Canvas"]', '["local", "Local"]', '["internet", "Internet"]', '["schedule", "Schedule"]', '["bridge", "Bridge"]']) {
     assert.ok(editorSource.indexOf(key) !== -1, "a filter for " + key);
