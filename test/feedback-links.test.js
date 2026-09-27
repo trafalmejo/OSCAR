@@ -66,5 +66,5 @@ test("issue forms carry the fields that make a report usable", () => {
 test("routes that need no GitHub account are offered alongside", () => {
   const config = fs.readFileSync(path.join(TEMPLATES, "config.yml"), "utf8");
   assert.match(config, /contact_links:/);
-  assert.match(config, /mailto:hello@createwithoscar\.com/, "an email route for people without accounts");
+  assert.match(config, /mailto:hello@createwithoscar\.site/, "an email route for people without accounts");
 });

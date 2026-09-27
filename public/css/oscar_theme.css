@@ -411,6 +411,18 @@ a {
 .oscar-open-menu-item:hover {
   background: var(--o-surface);
 }
+/* A switch in a menu (Edit's Show borders, Fullscreen): room for a tick, and
+   the tick when it is on. */
+.oscar-open-menu-item[aria-checked] {
+  position: relative;
+  padding-left: 28px;
+}
+.oscar-open-menu-item[aria-checked="true"]::before {
+  content: "\2713";
+  position: absolute;
+  left: 10px;
+  color: var(--o-accent, currentColor);
+}
 .oscar-open-menu-rule {
   height: 1px;
   margin: 4px 6px;

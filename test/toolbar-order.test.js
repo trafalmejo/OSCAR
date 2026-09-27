@@ -7,23 +7,24 @@ const { PLACEMENTS, moveAfter, moveBefore, arrange } = require("../lib/toolbar-o
 
 // The order the editor's scripts add their buttons in: the sizes join late
 // (moved over from the left panel), Import is removed after the preset adds
-// it, and Open/Save live under File on the left, holding no seat here.
+// it, Open/Save live under File on the left, and Show borders, Fullscreen,
+// See code, Clear canvas and the widget style live under Edit: none of those
+// holds a seat here.
 const ADDED = [
-  "sw-visibility", "preview", "fullscreen", "export-template",
-  "canvas-clear", "open-styles", "open-pages", "oscar-live-pill", "oscar-mcp-pill", "oscar-export", "toggle-lock", "open-info",
+  "preview", "open-pages", "oscar-live-pill", "oscar-mcp-pill", "oscar-export", "toggle-lock", "open-info",
   "set-device-desktop", "set-device-tablet", "set-device-mobile",
 ];
 
-test("the sizes lead the right half, the lock sits beside Push to preview, Pages beside the widget style", () => {
+test("the sizes lead the right half, the lock sits beside Push to preview, Pages beside the lock", () => {
   const order = arrange(ADDED);
   assert.deepStrictEqual(
     order.slice(0, 6),
-    ["oscar-live-pill", "oscar-mcp-pill", "set-device-desktop", "set-device-tablet", "set-device-mobile", "sw-visibility"],
+    ["oscar-live-pill", "oscar-mcp-pill", "set-device-desktop", "set-device-tablet", "set-device-mobile", "preview"],
     "the pills first, then the sizes, ahead of everything"
   );
   assert.strictEqual(order[order.indexOf("preview") + 1], "toggle-lock");
-  assert.strictEqual(order[order.indexOf("open-styles") + 1], "open-pages");
-  for (const retired of ["gjs-open-import-webpage", "open-load", "open-save"]) {
+  assert.strictEqual(order[order.indexOf("toggle-lock") + 1], "open-pages");
+  for (const retired of ["gjs-open-import-webpage", "open-load", "open-save", "sw-visibility", "fullscreen", "export-template", "canvas-clear", "open-styles"]) {
     assert.ok(!PLACEMENTS.some((p) => p.id === retired || p.after === retired || p.before === retired), "no placement names " + retired);
   }
   assert.deepStrictEqual(order.slice().sort(), ADDED.slice().sort(), "nothing added, nothing lost");

@@ -1767,7 +1767,7 @@ const PLACEMENTS = [
   // The screen sizes cross to the right half of the bar, one pill just left
   // of the tools (the editor moves them into this panel and wraps them;
   // here is only their order: first, ahead of everything).
-  { id: "set-device-desktop", before: "sw-visibility" },
+  { id: "set-device-desktop", before: "preview" },
   { id: "set-device-tablet", after: "set-device-desktop" },
   { id: "set-device-mobile", after: "set-device-tablet" },
   // The LIVE and MCP pills lead the right half, ahead of the sizes: the
@@ -1777,9 +1777,9 @@ const PLACEMENTS = [
   // Locking is what you do once a surface is pushed and the doors are about
   // to open, so it belongs beside the button that pushes it.
   { id: "toggle-lock", after: "preview" },
-  // Pages and the widget style are both about the surface as a whole, not
-  // about getting a project in or out.
-  { id: "open-pages", after: "open-styles" },
+  // Pages is about the surface as a whole, beside the lock. (The widget
+  // style, which it once sat beside, lives under Edit now.)
+  { id: "open-pages", after: "toggle-lock" },
   // A project's way in and out lives under File at the bar's left edge;
   // Publish keeps its own seat, added late enough to land before About.
 ];
@@ -23799,6 +23799,11 @@ function initGrape(ipServer, socketPort, oscInPort) {
       row.type = "button";
       row.className = "oscar-open-menu-item";
       row.textContent = item.label;
+      // A switch says where it stands: a tick when on, the tick's room when off.
+      if (typeof item.checked === "boolean") {
+        row.setAttribute("role", "menuitemcheckbox");
+        row.setAttribute("aria-checked", String(item.checked));
+      }
       row.onclick = function () {
         menu.remove();
         item.run();
@@ -23819,6 +23824,30 @@ function initGrape(ipServer, socketPort, oscInPort) {
     }, 0);
   }
 
+  /** Fullscreen as the window has it: Esc leaves fullscreen without telling the command. */
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  function toggleFullscreen() {
+    var active = editor.Commands.isActive("fullscreen");
+    if (isFullscreen()) {
+      if (active) editor.stopCommand("fullscreen");
+      else if (document.exitFullscreen) document.exitFullscreen();
+      return;
+    }
+    // A command still marked active after Esc would take this click to stop itself.
+    if (active) editor.stopCommand("fullscreen");
+    editor.runCommand("fullscreen");
+  }
+
+  function toggleBorders() {
+    if (editor.Commands.isActive("sw-visibility")) editor.stopCommand("sw-visibility");
+    else editor.runCommand("sw-visibility");
+  }
+
+  // Edit holds what acts on the canvas as a whole: undoing, how it is shown,
+  // its code, its style, and emptying it. Their icons retired from the bar.
   function showEditMenu() {
     showBarMenu(".gjs-pn-devices-c .oscar-edit-btn", [
       {
@@ -23831,6 +23860,29 @@ function initGrape(ipServer, socketPort, oscInPort) {
         label: "Redo",
         run: function () {
           editor.runCommand("core:redo");
+        },
+      },
+      { rule: true },
+      { label: "Show borders", checked: editor.Commands.isActive("sw-visibility"), run: toggleBorders },
+      { label: "Fullscreen", checked: isFullscreen(), run: toggleFullscreen },
+      { rule: true },
+      {
+        label: "See code",
+        run: function () {
+          editor.runCommand("export-template");
+        },
+      },
+      {
+        label: "Widget style…",
+        run: function () {
+          editor.runCommand("open-styles");
+        },
+      },
+      { rule: true },
+      {
+        label: "Clear canvas…",
+        run: function () {
+          editor.runCommand("canvas-clear");
         },
       },
     ]);
@@ -24123,14 +24175,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     modal.open({ title: "Widget style", content: stylePanel, attributes: { class: "modal-login" } });
   });
 
-  pn.addButton("options", {
-    id: "open-styles",
-    label: icon("palette"),
-    command: function () {
-      editor.runCommand("open-styles");
-    },
-    attributes: { title: "Widget style", "data-tooltip-pos": "bottom" },
-  });
+  // No button of its own: Widget style is under Edit (showEditMenu).
 
   // Reset to style: a widget someone recoloured by hand keeps that colour when
   // the surface changes style, which reads as switching "not working". This
@@ -24214,6 +24259,16 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // Removed here, early, for the same re-render reason as above.
   pn.removeButton("options", "undo");
   pn.removeButton("options", "redo");
+  // Show borders, Fullscreen, See code and Clear canvas join them under Edit
+  // (the widget style too, which is never added to the bar at all).
+  ["sw-visibility", "fullscreen", "export-template", "canvas-clear"].forEach(function (id) {
+    pn.removeButton("options", id);
+  });
+  // Show borders was on from the start because its button said so; with the
+  // button gone, the editor says so itself.
+  editor.onReady(function () {
+    if (!editor.Commands.isActive("sw-visibility")) editor.runCommand("sw-visibility");
+  });
   // A screen size is a choice, not a switch: clicking the chosen one again
   // stays chosen instead of toggling half-off.
   ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
@@ -24255,7 +24310,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     className: "oscar-edit-btn",
     label: "Edit",
     command: null,
-    attributes: { title: "Undo and redo", "data-tooltip-pos": "bottom" },
+    attributes: { title: "Undo, the canvas and its style", "data-tooltip-pos": "bottom" },
     active: false,
     disable: true,
   });
@@ -24986,17 +25041,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 
   retitle("options", {
-    "sw-visibility": "Show borders",
     // "Push", not "Preview": this is also what sends the layout to the
     // /preview page, which keeps showing the last pushed version until it is.
     preview: "Push to preview",
-    fullscreen: "Fullscreen",
-    "export-template": "See code",
     // something in, and templates -- the other thing one might import -- are
     // opened from Load.
-    "canvas-clear": "Clear canvas",
     "toggle-lock": null,
-    "open-styles": "Widget style",
     "open-pages": "Pages",
     "oscar-export": "Publish your interface",
     "open-info": "About Oscar",
@@ -25022,7 +25072,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     features: features,
     /**
      * A button in the top toolbar: at the end, or straight after one of
-     * OSCAR's own (`after`, a button id such as "open-styles").
+     * OSCAR's own (`after`, a button id such as "toggle-lock").
      * { id, title, iconPath (the d of a 24x24 SVG path), run(editor), after? }
      */
     addToolbarButton: function (button) {
