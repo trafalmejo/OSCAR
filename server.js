@@ -767,18 +767,24 @@ function listenForMidi() {
   for (const wanted of midiWanted.values()) for (const part of wanted) parts.add(part);
   midi.listenFor(Array.from(parts));
 }
-if (midi.supported) {
-  const askPublished = () =>
-    surfaces
-      .midiPorts()
-      .then((parts) => {
-        publishedWant = parts;
-        listenForMidi();
-      })
-      .catch((err) => console.error("MIDI in: " + reason(err)));
-  askPublished();
-  setInterval(askPublished, 3000).unref();
-}
+// Asked always, never only "if (midi.supported)" once at start: MIDI lives in
+// a worker (lib/midi/remote.js) that says it is supported only after it has
+// booted, a moment after this line runs, and again after every restart. Asked
+// once, the answer was always no, and a published bridge heard MIDI only
+// while some page happened to want the same port (found on a Raspberry Pi,
+// 2026-09-28: the light followed the LPD8 only with a browser tab open).
+const askPublished = () => {
+  if (!midi.supported) return;
+  surfaces
+    .midiPorts()
+    .then((parts) => {
+      publishedWant = parts;
+      listenForMidi();
+    })
+    .catch((err) => console.error("MIDI in: " + reason(err)));
+};
+askPublished();
+setInterval(askPublished, 3000).unref();
 
 // Last, so an extension finds everything it is handed already working.
 extensions.start({
