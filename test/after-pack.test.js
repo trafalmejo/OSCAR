@@ -7,7 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const afterPack = require("../scripts/after-pack");
-const { binaryArch, pruneForeignBinaries } = afterPack;
+const { binaryArch, checkBinaries } = afterPack;
 
 function elf(machine) {
   const b = Buffer.alloc(64);
@@ -55,54 +55,73 @@ test("reads the CPU of Linux, macOS and Windows binaries", () => {
   assert.strictEqual(binaryArch(Buffer.from("not a binary at all, just some text padding it out to 64 bytes")), null);
 });
 
-// What CI shipped on 2026-09-25: the arm64 Linux package with an x64 midi.node in build/Release.
-test("an x64 build/ binary is taken out of an arm64 package, so the arm64 prebuild loads", (t) => {
-  const nm = fakeNodeModules(t);
-  const midi = path.join(nm, "@julusian", "midi");
-  write(path.join(midi, "build", "Release", "midi.node"), elf(0x3e));
-  write(path.join(midi, "prebuilds", "midi-linux-arm64", "node-napi-v7.node"), elf(0xb7));
 
-  const removed = pruneForeignBinaries(nm, "linux", "arm64");
+// Both drivers OSCAR needs, each with only its prebuild for this platform and CPU.
+function prebuiltOnly(nm, platform, arch, machine) {
+  write(path.join(nm, "@julusian", "midi", "prebuilds", "midi-" + platform + "-" + arch, "node-napi-v7.node"), machine);
+  write(path.join(nm, "@serialport", "bindings-cpp", "prebuilds", platform + "-" + arch, "node.napi.node"), machine);
+}
 
-  assert.deepStrictEqual(removed.map((r) => r.found), ["x64"]);
-  assert.ok(!fs.existsSync(path.join(midi, "build", "Release", "midi.node")));
-  assert.ok(fs.existsSync(path.join(midi, "prebuilds", "midi-linux-arm64", "node-napi-v7.node")));
+test("package.json leaves the drivers' build/ folders out, so every package loads its prebuild", () => {
+  const files = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")).build.files;
+  assert.ok(files.includes("!node_modules/@julusian/midi/build/**/*"));
+  assert.ok(files.includes("!node_modules/@serialport/bindings-cpp/build/**/*"));
 });
 
-test("a build/ binary for the package's own CPU stays", (t) => {
+test("prebuilds alone pass", (t) => {
   const nm = fakeNodeModules(t);
-  const file = path.join(nm, "@serialport", "bindings-cpp", "build", "Release", "bindings.node");
-  write(file, elf(0x3e));
+  prebuiltOnly(nm, "linux", "arm64", elf(0xb7));
+  assert.deepStrictEqual(checkBinaries(nm, "linux", "arm64"), []);
+});
 
-  assert.deepStrictEqual(pruneForeignBinaries(nm, "linux", "x64"), []);
-  assert.ok(fs.existsSync(file));
+// What CI shipped on 2026-09-25: the arm64 Linux package with an x64 midi.node in build/Release.
+test("an x64 build/ binary in an arm64 package is named, even with the right prebuild beside it", (t) => {
+  const nm = fakeNodeModules(t);
+  prebuiltOnly(nm, "linux", "arm64", elf(0xb7));
+  write(path.join(nm, "@julusian", "midi", "build", "Release", "midi.node"), elf(0x3e));
+
+  const problems = checkBinaries(nm, "linux", "arm64");
+  assert.strictEqual(problems.length, 1);
+  assert.match(problems[0], /midi\.node is x64 in the linux-arm64 package/);
+});
+
+test("a build/ binary for the package's own CPU passes", (t) => {
+  const nm = fakeNodeModules(t);
+  prebuiltOnly(nm, "linux", "x64", elf(0x3e));
+  write(path.join(nm, "@serialport", "bindings-cpp", "build", "Release", "bindings.node"), elf(0x3e));
+  assert.deepStrictEqual(checkBinaries(nm, "linux", "x64"), []);
 });
 
 test("a combined darwin-x64+arm64 prebuild counts for both Macs", (t) => {
   const nm = fakeNodeModules(t);
-  const pkg = path.join(nm, "@serialport", "bindings-cpp");
-  write(path.join(pkg, "build", "Release", "bindings.node"), macho(0x0100000c));
-  write(path.join(pkg, "prebuilds", "darwin-x64+arm64", "@serialport+bindings-cpp.node"), Buffer.alloc(64));
-
-  assert.strictEqual(pruneForeignBinaries(nm, "darwin", "x64").length, 1);
+  write(path.join(nm, "@julusian", "midi", "prebuilds", "midi-darwin-x64", "node-napi-v7.node"), macho(0x01000007));
+  write(path.join(nm, "@serialport", "bindings-cpp", "prebuilds", "darwin-x64+arm64", "node.napi.node"), Buffer.alloc(64));
+  assert.deepStrictEqual(checkBinaries(nm, "darwin", "x64"), []);
 });
 
-test("the build fails when a wrong-CPU binary was the only one there was", (t) => {
+test("a driver with nothing for this CPU is named", (t) => {
   const nm = fakeNodeModules(t);
-  const pkg = path.join(nm, "@julusian", "midi");
-  write(path.join(pkg, "build", "Release", "midi.node"), elf(0x3e));
-  write(path.join(pkg, "prebuilds", "midi-linux-x64", "node-napi-v7.node"), elf(0x3e));
-
-  assert.throws(() => pruneForeignBinaries(nm, "linux", "arm64"), /linux-arm64.*@julusian[\\/]midi/);
+  prebuiltOnly(nm, "linux", "x64", elf(0x3e));
+  const problems = checkBinaries(nm, "linux", "arm64");
+  assert.deepStrictEqual(problems, [
+    "@julusian/midi has no linux-arm64 binary at all",
+    "@serialport/bindings-cpp has no linux-arm64 binary at all",
+  ]);
 });
 
-test("afterPack finds the unpacked modules of a Linux package and prunes them", async (t) => {
+test("serial on Windows on ARM is the one known gap, and is let through", (t) => {
+  const nm = fakeNodeModules(t);
+  write(path.join(nm, "@julusian", "midi", "prebuilds", "midi-win32-arm64", "node-napi-v7.node"), pe(0xaa64));
+  assert.deepStrictEqual(checkBinaries(nm, "win32", "arm64"), []);
+});
+
+test("afterPack fails a Linux package with a wrong-CPU driver in it", async (t) => {
   const out = fakeNodeModules(t);
-  const file = path.join(out, "resources", "app.asar.unpacked", "node_modules", "@julusian", "midi", "build", "Release", "midi.node");
-  write(file, elf(0x3e));
-  write(path.join(path.dirname(file), "..", "..", "prebuilds", "midi-linux-arm64", "node-napi-v7.node"), elf(0xb7));
+  const nm = path.join(out, "resources", "app.asar.unpacked", "node_modules");
+  prebuiltOnly(nm, "linux", "arm64", elf(0xb7));
+  const context = { appOutDir: out, arch: 3, electronPlatformName: "linux", packager: { appInfo: { productFilename: "OSCAR" } } };
 
-  await afterPack({ appOutDir: out, arch: 3, electronPlatformName: "linux", packager: { appInfo: { productFilename: "OSCAR" } } });
-
-  assert.ok(!fs.existsSync(file));
+  await afterPack(context);
+  write(path.join(nm, "@julusian", "midi", "build", "Release", "midi.node"), elf(0x3e));
+  await assert.rejects(afterPack(context), /midi\.node is x64 in the linux-arm64 package/);
 });

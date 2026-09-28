@@ -1,20 +1,22 @@
 "use strict";
 
 /**
- * electron-builder afterPack: take compiled drivers for the wrong CPU out of a package.
+ * electron-builder afterPack: fail a package whose native drivers are for another CPU.
  *
  * MIDI (@julusian/midi) and serial (@serialport/bindings-cpp) ship prebuilt
  * binaries for every platform under prebuilds/, but their loaders try
  * build/Release first and stop at the first file that exists. `npm ci` compiles
- * build/Release for the machine doing the build, and electron-builder packs it
- * into every architecture it makes from there. So the arm64 Linux package built
- * on an x64 runner carried an x64 midi.node, the Pi could not load it, and the
- * correct prebuilds/midi-linux-arm64 sitting next to it was never reached.
+ * build/Release for the machine doing the build, and electron-builder packed it
+ * into every architecture it made from there: the arm64 Linux package built on
+ * an x64 runner carried an x64 midi.node, and a Raspberry Pi 5 could not use
+ * MIDI or serial.
  *
- * A build/ binary for another CPU is deleted, which lets the loader fall
- * through to the prebuild. If there is no prebuild for this platform and CPU
- * either, the build fails: shipping an OSCAR whose MIDI silently is not there is
- * the surprise this exists to prevent.
+ * The cure is in package.json: "files" leaves those build/ folders out, so every
+ * package loads its prebuild. It cannot be done here: by afterPack the asar's
+ * index is written, and still lists a file deleted from app.asar.unpacked, so
+ * the loader finds it "there" and fails to open it. (Tried 2026-09-27; the Pi
+ * said "cannot open shared object file".) This hook only checks, so the build
+ * fails instead of shipping an OSCAR whose MIDI silently is not there.
  */
 
 const fs = require("fs");
@@ -22,6 +24,11 @@ const path = require("path");
 
 // electron-builder's Arch enum, as handed to afterPack.
 const ARCH_NAMES = { 0: "ia32", 1: "x64", 2: "armv7l", 3: "arm64", 4: "universal" };
+
+// The drivers OSCAR needs, and the one platform where one is known to be missing:
+// serialport publishes no Windows on ARM binary (the README says so).
+const REQUIRED = ["@julusian/midi", "@serialport/bindings-cpp"];
+const KNOWN_MISSING = { "win32-arm64": ["@serialport/bindings-cpp"] };
 
 /** The CPU a compiled .node file is for, or null when it can't tell (or it is universal). */
 function binaryArch(buffer) {
@@ -102,33 +109,31 @@ function hasPrebuild(pkg, platform, arch) {
 }
 
 /**
- * Remove the wrong-CPU build/ binaries under one unpacked node_modules.
- * Returns what was removed; throws when a package is left with nothing to load.
+ * What is wrong with the drivers under one unpacked node_modules, as sentences.
+ * Empty when every build/ binary is for this CPU and every required driver has
+ * something to load.
  */
-function pruneForeignBinaries(nodeModules, platform, arch) {
-  const removed = [];
-  const stranded = [];
+function checkBinaries(nodeModules, platform, arch) {
+  const problems = [];
   for (const pkg of packagesWithBuilds(nodeModules)) {
-    const build = path.join(pkg, "build");
-    let dropped = false;
-    for (const file of nodeFilesIn(build)) {
+    for (const file of nodeFilesIn(path.join(pkg, "build"))) {
       const found = binaryArch(readHead(file));
       if (found && found !== arch) {
-        fs.rmSync(file);
-        removed.push({ file, found });
-        dropped = true;
+        problems.push(
+          path.relative(nodeModules, file) + " is " + found + " in the " + platform + "-" + arch +
+            " package: leave the folder out in package.json's build.files"
+        );
       }
     }
-    const left = nodeFilesIn(build).length > 0;
-    if (dropped && !left && !hasPrebuild(pkg, platform, arch)) stranded.push(path.relative(nodeModules, pkg));
   }
-  if (stranded.length) {
-    throw new Error(
-      "No " + platform + "-" + arch + " binary is left for " + stranded.join(", ") +
-        ": its build/ was compiled for another CPU and it has no prebuild for this one."
-    );
+  const excused = KNOWN_MISSING[platform + "-" + arch] || [];
+  for (const name of REQUIRED) {
+    if (excused.includes(name)) continue;
+    const pkg = path.join(nodeModules, name);
+    if (nodeFilesIn(path.join(pkg, "build")).length || hasPrebuild(pkg, platform, arch)) continue;
+    problems.push(name + " has no " + platform + "-" + arch + " binary at all");
   }
-  return removed;
+  return problems;
 }
 
 function unpackedDir(context) {
@@ -142,13 +147,11 @@ function unpackedDir(context) {
 async function afterPack(context) {
   const arch = ARCH_NAMES[context.arch];
   if (!arch || arch === "universal") return;
-  const platform = context.electronPlatformName;
-  for (const { file, found } of pruneForeignBinaries(unpackedDir(context), platform, arch)) {
-    console.log("  • removed " + found + " driver from the " + platform + "-" + arch + " package: " + file);
-  }
+  const problems = checkBinaries(unpackedDir(context), context.electronPlatformName, arch);
+  if (problems.length) throw new Error("Native drivers in the wrong shape:\n  " + problems.join("\n  "));
 }
 
 module.exports = afterPack;
 module.exports.default = afterPack;
 module.exports.binaryArch = binaryArch;
-module.exports.pruneForeignBinaries = pruneForeignBinaries;
+module.exports.checkBinaries = checkBinaries;

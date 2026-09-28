@@ -73,7 +73,9 @@
       "lib/**/*",
       "routes/**/*",
       "public/**/*",
-      "extensions/**/*"
+      "extensions/**/*",
+      "!node_modules/@julusian/midi/build/**/*",
+      "!node_modules/@serialport/bindings-cpp/build/**/*"
     ],
     "afterPack": "scripts/after-pack.js",
     "win": {
