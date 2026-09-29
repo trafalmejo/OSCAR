@@ -1302,11 +1302,15 @@ function initGrape(ipServer, socketPort, oscInPort) {
       $.alert('"' + fileName + '" is not an OSCAR project file.');
       return;
     }
-    if (typeof parsed.oscarFormat === "number" && parsed.oscarFormat > projectFormat.CURRENT_FORMAT) {
-      $.alert("This project was saved by a newer OSCAR (format " + parsed.oscarFormat + "). Update OSCAR to open it; nothing here was changed.");
+    // openProject answers { status, data }: the project is its data, once
+    // read, migrated and tidied. (This once checked the answer itself for
+    // pages, and refused every file.)
+    var opened = projectFormat.openProject(parsed);
+    if (opened.status === "too-new") {
+      $.alert("This project was saved by a newer OSCAR (format " + opened.format + "). Update OSCAR to open it; nothing here was changed.");
       return;
     }
-    var data = projectFormat.openProject(parsed);
+    var data = opened.status === "ok" ? opened.data : null;
     if (!isProjectData(data)) {
       $.alert('"' + fileName + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
       return;

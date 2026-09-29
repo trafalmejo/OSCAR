@@ -37,8 +37,9 @@ test("File holds every way in and out: three opens, two saves, and Publish", () 
 });
 
 test("opening a file guards the person: format skew refused honestly, changes never lost silently", () => {
-  assert.match(editor, /parsed\.oscarFormat > projectFormat\.CURRENT_FORMAT/, "a newer OSCAR's file is refused, not mangled");
-  assert.match(editor, /saved by a newer OSCAR \(format " \+ parsed\.oscarFormat/, "and the refusal says why");
+  assert.match(editor, /if \(opened\.status === "too-new"\) \{/, "a newer OSCAR's file is refused, not mangled");
+  assert.match(editor, /saved by a newer OSCAR \(format " \+ opened\.format/, "and the refusal says why");
+  assert.match(editor, /var data = opened\.status === "ok" \? opened\.data : null;\n    if \(!isProjectData\(data\)\) \{/, "the project is the answer's data, not the answer");
   assert.match(editor, /is not an OSCAR 2 project, so it cannot be opened\. Your current project has not been changed\./, "a wrong file changes nothing");
   assert.match(editor, /you will lose all unsaved changes in the current project/, "opening always asks first");
   assert.match(editor, /accept = "\.oscar,\.json,\.html,\.htm"/, "and .html templates come through the same door");
@@ -110,4 +111,22 @@ test("a double-clicked project opens through the same guarded door, once", () =>
   assert.match(editor, /openPicked\(file\.name, file\.text, null\)/, "and the ordinary Open flow, confirmation included, takes over");
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
   assert.deepStrictEqual(pkg.build.fileAssociations[0].ext, "oscar", "the installer registers .oscar for double-clicking");
+});
+
+// The round trip, not the source: what Save writes, Open must read. Open once
+// checked openProject's answer for pages instead of the project inside it,
+// and refused every file ("is not an OSCAR 2 project").
+test("a project saved to a file opens again", () => {
+  const projectFormat = require("../lib/project-format");
+  const project = { assets: [], styles: [], pages: [{ name: "Page 1", frames: [{ component: { type: "wrapper", components: [] } }] }], symbols: [], dataSources: [] };
+  const saved = JSON.parse(JSON.stringify(projectFormat.stampProject({ name: "DMX 9CH", data: projectFormat.stripEditorState(project), grapesjs: "0.23.6" })));
+  const opened = projectFormat.openProject(saved);
+  assert.strictEqual(opened.status, "ok");
+  // The editor's own test, applied to what it now passes it.
+  assert.strictEqual(projectFormat.isGrapesProject(opened.data), true, "the data inside the answer is a project");
+  assert.strictEqual(projectFormat.isGrapesProject(opened), false, "the answer itself is not: checking it refused every file");
+  // A file from a newer OSCAR says so, by the field files really carry.
+  const newer = projectFormat.openProject(Object.assign({}, saved, { format: projectFormat.CURRENT_FORMAT + 1 }));
+  assert.strictEqual(newer.status, "too-new");
+  assert.strictEqual(newer.format, projectFormat.CURRENT_FORMAT + 1);
 });
