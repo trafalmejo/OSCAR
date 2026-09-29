@@ -270,3 +270,26 @@ test("whoever keeps a copy elsewhere is told of a publish, and a listener that t
   await store.save("Lobby", "<p>three</p>");
   assert.deepStrictEqual(told, ["lobby", "lobby"]);
 });
+
+test("whoever keeps a copy elsewhere is told of an unpublish, and only of one that happened", async () => {
+  const store = new PublishedStore(fs.mkdtempSync(path.join(os.tmpdir(), "oscar-published-")));
+  const told = [];
+  store.onRemoved(() => { throw new Error("mine"); });
+  const stop = store.onRemoved((id) => told.push(id));
+  await store.save("Lobby", "<p>one</p>");
+  assert.strictEqual(await store.remove("lobby"), true);
+  assert.strictEqual(await store.remove("lobby"), false, "nothing left to remove");
+  assert.deepStrictEqual(told, ["lobby"], "told once, for the unpublish that happened");
+  await store.save("Stage", "<p>two</p>");
+  stop();
+  await store.remove("stage");
+  assert.deepStrictEqual(told, ["lobby"]);
+  // And extensions hear it through surfaces, beside onPublished.
+  const { createSurfaces } = require("../lib/surfaces");
+  const surfaces = createSurfaces({ published: store, sendOSC() {}, sendDMX() {} });
+  const heard = [];
+  surfaces.onUnpublished((id) => heard.push(id));
+  await store.save("Foyer", "<p>three</p>");
+  await store.remove("foyer");
+  assert.deepStrictEqual(heard, ["foyer"]);
+});
