@@ -246,3 +246,38 @@ test("a pad, a colour, a line of text and a tile, driven", async () => {
   assert.strictEqual((await surfaces.drive("stage", "clips", { value: "99" })).ok, false, "only a tile the surface has");
   assert.deepStrictEqual(osc, []);
 });
+
+// ---- a record per surface ----------------------------------------------------------
+
+test("two surfaces made from one template: driving one, or the rig moving one, leaves the other as it was", async () => {
+  const { sharedSync } = require("../lib/shared-sync");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-surfaces-"));
+  const published = new PublishedStore(dir);
+  // The same page twice: every widget id is on both.
+  await published.save("Lobby", PAGE);
+  await published.save("Bar", PAGE);
+  const told = [];
+  const io = {
+    on() {},
+    emit: (event, payload) => told.push(["everyone", event, payload]),
+    to: (room) => ({ emit: (event, payload) => told.push([room, event, payload]) }),
+  };
+  const shared = sharedSync(io, { scopeOf: () => "" });
+  const surfaces = createSurfaces({ published, sendOSC() {}, sendDMX() {}, shared, io });
+
+  const seen = [];
+  surfaces.onState((id, state, info) => seen.push([info.surface, id, state]));
+
+  assert.strictEqual((await surfaces.drive("lobby", "dim", { value: 50 })).ok, true);
+  assert.deepStrictEqual(surfaces.snapshot("lobby").dim, { value: 50 });
+  assert.strictEqual(surfaces.snapshot("bar").dim, undefined, "the other surface's slider did not move");
+  assert.deepStrictEqual(seen, [["lobby", "dim", { value: 50 }]], "and whoever follows is told which surface it was");
+  // Its own devices, and the pages that do not say what they show; never the other surface's.
+  assert.deepStrictEqual(told.map((entry) => entry[0]), ["state:lobby", "state:"]);
+
+  // And the other way round: each keeps its own record.
+  told.length = 0;
+  await surfaces.drive("bar", "dim", { value: 10 });
+  assert.deepStrictEqual([surfaces.snapshot("lobby").dim, surfaces.snapshot("bar").dim], [{ value: 50 }, { value: 10 }]);
+  assert.deepStrictEqual(told.map((entry) => entry[0]), ["state:bar", "state:"]);
+});

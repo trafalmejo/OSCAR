@@ -344,7 +344,8 @@ app.use(
     onPreviewPush: () => {
       // The widget ids in the old records may not exist in the new layout,
       // and a stale position on a fresh surface is worse than none at all.
-      shared.reset();
+      // Only the preview's record: a live surface keeps what it shows.
+      shared.reset("preview");
       io.emit("preview:updated");
     },
     lock,
@@ -555,8 +556,14 @@ const io = new Server(SOCKET_PORT, {
 
 // What every device showing the surface agrees each widget is doing, so the
 // tablet next to the one that toggled a button draws it on too, and its next
-// press sends the right edge (lib/shared-sync.js).
-const shared = sharedSync(io);
+// press sends the right edge (lib/shared-sync.js). A record per surface,
+// by what the page says it shows -- "show:<id>", "preview" -- so two surfaces
+// made from one template do not move each other's controls.
+const shared = sharedSync(io, {
+  scopeOf: (socket) => socketOrigin(socket.handshake.query && socket.handshake.query.from, socket.handshake.address).surface || "",
+});
+// A surface that is unpublished takes its record with it.
+published.onRemoved((id) => shared.reset(id));
 tellEditors = (event, payload) => io.emit(event, payload);
 
 // ---- OSC coming back ------------------------------------------------------

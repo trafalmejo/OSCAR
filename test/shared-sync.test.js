@@ -503,3 +503,80 @@ test("over a real socket.io server: A sets, only B hears; B echoes, nobody hears
   sync.reset();
   assert.deepStrictEqual(await Promise.all(everyone), [{}, {}], "a new layout clears every device");
 });
+
+// --- a record per surface ----------------------------------------------------
+
+test("over a real socket.io server: each surface has its own record, and the preview its own", {
+  skip: !ioClient && "browser libraries not installed (run npm install)",
+}, async (t) => {
+  const { Server } = require("socket.io");
+  const io = new Server(0, { cors: { origin: "*" } });
+  // As server.js places a device: by what the page says it shows.
+  const sync = sharedSync(io, { scopeOf: (socket) => String((socket.handshake.query && socket.handshake.query.shows) || "") });
+  const port = io.httpServer.address().port;
+  const clients = [];
+  const connect = async (shows) => {
+    const client = ioClient("http://127.0.0.1:" + port, { transports: ["websocket"], forceNew: true, query: shows ? { shows } : {} });
+    clients.push(client);
+    const all = await once(client, "state:all");
+    return { client, all };
+  };
+  t.after(async () => {
+    for (const client of clients) client.close();
+    await new Promise((resolve) => io.close(resolve));
+  });
+
+  const lobbyA = await connect("lobby");
+  const lobbyB = await connect("lobby");
+  const bar = await connect("bar");
+  const file = await connect("");
+
+  // The same widget id on two surfaces: a template used twice.
+  const sameSurface = within(lobbyB.client, "state:changed", 2000);
+  const otherSurface = within(bar.client, "state:changed", 300);
+  const noSurface = within(file.client, "state:changed", 300);
+  lobbyA.client.emit("state:set", { id: "w1", state: { value: 40 } });
+  assert.deepStrictEqual(await sameSurface, { id: "w1", state: { value: 40 } });
+  assert.strictEqual(await otherSurface, null, "another surface with the same widget id is not moved");
+  assert.strictEqual(await noSurface, null);
+  assert.deepStrictEqual(sync.storeFor("lobby").get("w1"), { value: 40 });
+  assert.strictEqual(sync.storeFor("bar").get("w1"), null);
+
+  const late = await connect("bar");
+  assert.deepStrictEqual(late.all, {}, "a device joining another surface is not handed this one's state");
+
+  // What the server does for a surface (a schedule, the rig) reaches that
+  // surface, and the pages that do not say what they show, as it always did.
+  const told = [lobbyB, bar, file].map((d) => within(d.client, "state:changed", 400));
+  sync.tell("lobby", "state:changed", { id: "w1", state: { value: 7 } });
+  assert.deepStrictEqual(await Promise.all(told), [{ id: "w1", state: { value: 7 } }, null, { id: "w1", state: { value: 7 } }]);
+
+  // Whoever follows the states is told which surface a change was on.
+  const seen = [];
+  const stop = sync.onChange((id, state, info) => seen.push([id, state, info.surface]));
+  assert.strictEqual(sync.watched(), true);
+  const barHears = within(late.client, "state:changed", 2000);
+  bar.client.emit("state:set", { id: "w1", state: { value: 9 } });
+  await barHears;
+  assert.deepStrictEqual(seen, [["w1", { value: 9 }, "bar"]]);
+  stop();
+  assert.strictEqual(sync.watched(), false);
+
+  // A new layout pushed to one surface clears that surface and no other.
+  const cleared = within(late.client, "state:all", 2000);
+  const kept = within(lobbyB.client, "state:all", 300);
+  sync.reset("bar");
+  assert.deepStrictEqual(await cleared, {});
+  assert.strictEqual(await kept, null, "the other surface keeps what it shows");
+  assert.deepStrictEqual(sync.storeFor("lobby").get("w1"), { value: 40 });
+});
+
+test("a page inventing surfaces is not handed a record each: past the limit it shares the common one", () => {
+  const { MAX_SCOPES } = require("../lib/shared-sync");
+  const room = fakeRoom();
+  let n = 0;
+  const sync = sharedSync(room, { scopeOf: () => "s" + n++ });
+  for (let i = 0; i < MAX_SCOPES + 5; i++) room.connect();
+  assert.strictEqual(sync.storeFor("s" + (MAX_SCOPES + 2)), sync.store, "the newcomer shares the record of the pages that said nothing");
+  assert.notStrictEqual(sync.storeFor("s1"), sync.store, "and a surface that was there keeps its own");
+});
