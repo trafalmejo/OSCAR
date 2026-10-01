@@ -8,7 +8,7 @@ const cors = require("cors");
 const osc = require("osc");
 const { Server } = require("socket.io");
 
-const { lanAddress, isLoopbackAddress } = require("./lib/net");
+const { lanAddress, lanAddresses, isLoopbackAddress } = require("./lib/net");
 const { ProjectStore } = require("./lib/projects");
 const { PublishedStore } = require("./lib/published");
 const { createUpdateChecker, repoFromUrl } = require("./lib/updates");
@@ -615,6 +615,9 @@ tellEditors = (event, payload) => io.emit(event, payload);
 // be worse than saying nothing.
 let oscInLine = null;
 let bannerShown = false;
+// Whether the OSC-in port opened, for an assistant asking what this
+// installation can hear (lib/mcp/installation.js).
+const oscInState = { port: OSC_IN_PORT, listening: false, why: "not open yet" };
 
 function announceOscIn(line) {
   oscInLine = line;
@@ -625,7 +628,11 @@ const oscIn = oscReceiver({
   port: OSC_IN_PORT,
   UDPPort: osc.UDPPort,
   onMessage: (message, from) => heardOsc(message, null, from),
-  onReady: () => announceOscIn("  Listening for OSC on:  UDP " + OSC_IN_PORT),
+  onReady: () => {
+    oscInState.listening = true;
+    oscInState.why = null;
+    announceOscIn("  Listening for OSC on:  UDP " + OSC_IN_PORT);
+  },
   onError: (err) => {
     // A port that cannot be opened must not take OSCAR down with it. The
     // editor, the tablets and sending all work without listening, and a show
@@ -634,6 +641,8 @@ const oscIn = oscReceiver({
       err && err.code === "EADDRINUSE"
         ? "is already in use"
         : "could not be opened (" + ((err && err.code) || reason(err)) + ")";
+    oscInState.listening = false;
+    oscInState.why = why;
     announceOscIn(
       "  NOT listening for OSC: UDP " + OSC_IN_PORT + " " + why + ".\n" +
         "  Sending still works. Set OSCAR_OSC_IN_PORT to a free port to receive."
@@ -882,6 +891,9 @@ if (features.MCP) {
     liveLog: () => wireLog.rows(),
     lock,
     draftsDir: DRAFTS_DIR,
+    addresses: () => lanAddresses(),
+    oscIn: () => Object.assign({}, oscInState),
+    serialPorts: () => serial.list(),
   });
   const mcpTitles = Object.fromEntries(mcpTools.map((tool) => [tool.name, tool.title]));
   mcpToken = attachMcp(app, {

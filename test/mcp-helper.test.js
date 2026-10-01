@@ -88,7 +88,7 @@ test("with OSCAR running, the helper is OSCAR: its tools, their answers, its ins
     const listed = await client.listTools();
     assert.deepStrictEqual(
       listed.tools.map((t) => t.name),
-      ["status", "list_projects", "read_project", "list_published", "read_published", "midi_ports", "recent_activity", "describe_widgets", "validate_draft", "create_draft"]
+      ["status", "list_projects", "read_project", "list_published", "read_published", "installation_map", "midi_ports", "recent_activity", "describe_widgets", "validate_draft", "create_draft"]
     );
     assert.strictEqual(listed.tools[0].annotations.readOnlyHint, true, "the annotations come through");
 
@@ -115,14 +115,14 @@ test("with OSCAR stopped, an assistant still sees the tools, and a call says to 
     // Stopped without tidying up: the handshake file is still there, with nobody behind it.
     await running.stop();
     const stale = await client.listTools();
-    assert.strictEqual(stale.tools.length, 10, "the copy the helper carries");
+    assert.strictEqual(stale.tools.length, 11, "the copy the helper carries");
     const refused = await client.callTool({ name: "status", arguments: {} });
     assert.strictEqual(refused.isError, true);
     assert.match(text(refused), /OSCAR is not running on this computer, or its MCP switch is off\. Start OSCAR/, "in words to pass on, not 'fetch failed'");
 
     // Quit properly, or the MCP pill switched off: no handshake file at all.
     fs.unlinkSync(running.handshake);
-    assert.strictEqual((await client.listTools()).tools.length, 10);
+    assert.strictEqual((await client.listTools()).tools.length, 11);
     assert.match(text(await client.callTool({ name: "status", arguments: {} })), /Start OSCAR and check that the MCP pill/);
 
     // A file that is not what OSCAR writes.
@@ -141,7 +141,7 @@ test("a token OSCAR does not know is a restart, said so; OSCAR's own refusals ke
     const refused = await client.callTool({ name: "status", arguments: {} });
     assert.strictEqual(refused.isError, true);
     assert.match(text(refused), /did not accept this helper/);
-    assert.strictEqual((await client.listTools()).tools.length, 10, "and the tools are still listed");
+    assert.strictEqual((await client.listTools()).tools.length, 11, "and the tools are still listed");
 
     running.write(running.token);
     assert.ok(!(await client.callTool({ name: "status", arguments: {} })).isError, "the file is read afresh each time: no restart of the assistant");

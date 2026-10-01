@@ -534,8 +534,13 @@ passes each request on. When OSCAR is not running the assistant still sees
 the tools, and is told to ask you to start it.
 
 The tools: `status`, `list_projects`, `read_project`, `list_published`,
-`read_published`, `midi_ports`, `recent_activity`, `describe_widgets`,
-`validate_draft` and `create_draft`, the only one that writes anything.
+`read_published`, `installation_map`, `midi_ports`, `recent_activity`,
+`describe_widgets`, `validate_draft` and `create_draft`, the only one that
+writes anything. `installation_map` is the whole installation in one answer:
+everything the published interfaces talk to and listen for (each OSC
+destination, MIDI port and DMX output, with the controls behind it), what
+this computer has plugged in, and what does not add up. It is worked out
+from settings and sends nothing onto the network.
 
 OSCAR's own endpoint is `http://127.0.0.1:<port>/mcp`, with the token from
 that same file as a bearer token. It answers this machine only, the token is
