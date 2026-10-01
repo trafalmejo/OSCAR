@@ -1477,3 +1477,50 @@ body.oscar-log-dragging iframe {
   background: #46a758;
   box-shadow: 0 0 0 3px color-mix(in srgb, #46a758 25%, transparent);
 }
+
+/* The project's title, beside File and Edit: click it to rename. Bold, in
+   the text's own colour, with a quiet edge so it reads as a field; long
+   titles end in an ellipsis rather than push the bar about. */
+.gjs-pn-btn.oscar-title-btn,
+.gjs-pn-btn.oscar-title-btn:hover {
+  max-width: 260px;
+  margin-left: 6px;
+  padding: 3px 10px;
+  overflow: hidden;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  color: var(--o-text);
+  font-size: var(--o-text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 1;
+  pointer-events: auto;
+  cursor: text;
+}
+.gjs-pn-btn.oscar-title-btn:hover {
+  border-color: var(--o-border-strong);
+  background-color: var(--o-surface);
+}
+
+/* How the project stands with OSCAR: Saving, Saved, Not saved. Words, not a
+   button: nothing to press, since every change saves itself. */
+.gjs-pn-btn.oscar-save-state,
+.gjs-pn-btn.oscar-save-state:hover {
+  padding: 4px 6px;
+  background: none;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  white-space: nowrap;
+  opacity: 1;
+  pointer-events: auto;
+  cursor: default;
+}
+.gjs-pn-btn.oscar-save-state:empty {
+  display: none;
+}
+.gjs-pn-btn.oscar-save-state[data-state="unsaved"],
+.gjs-pn-btn.oscar-save-state[data-state="conflict"] {
+  color: #f1a10d;
+  font-weight: 600;
+}

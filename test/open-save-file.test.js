@@ -1,9 +1,10 @@
 "use strict";
 
-// Open and Save against the real file system: a project is one .oscar file
-// the person can put anywhere, the File menu at the bar's left edge gathers
-// every way in and out, and the old library window stays for templates.
-// These hold the editor's wiring to that design.
+// A project lives in OSCAR and is saved as it is edited; an .oscar file is a
+// copy of one, written by Export a copy and brought in by Open a file. The
+// File menu at the bar's left edge gathers every way in and out, and the
+// projects window lists what is in OSCAR, with the templates. These hold
+// the editor's wiring to that design.
 
 const test = require("node:test");
 const assert = require("node:assert");
@@ -12,36 +13,54 @@ const path = require("node:path");
 
 const editor = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8").replace(/\r\n/g, "\n");
 
-test("Save goes to the file system: ask once, then write the same file silently", () => {
-  assert.match(editor, /window\.showSaveFilePicker/, "a real Save As dialog where the browser has one");
-  assert.match(editor, /suggestedName: slugName\(name\) \+ "\.oscar"/, "the file is a .oscar");
-  assert.match(editor, /if \(openedFile\.handle\) \{/, "saving again writes the opened file, silently");
+test("Export a copy writes an .oscar file wherever the person says; the project stays in OSCAR", () => {
+  assert.match(editor, /function exportCopy\(\) \{\n    projectSync\.flush\(\)\.then\(function \(\) \{/, "what is waiting is saved first, so the file holds what the canvas shows");
+  assert.match(editor, /window\.showSaveFilePicker/, "a real save dialog where the browser has one");
+  assert.match(editor, /suggestedName: slugName\(name\) \+ "\.oscar"/, "the file is a .oscar, named after the project");
   assert.match(editor, /a\.download = slugName\(name\) \+ "\.oscar";/, "a browser without pickers still gets the file");
-  assert.match(editor, /projectFormat\.stampProject\(/, "stamped like the library's own save: one format, not two");
+  assert.match(editor, /projectFormat\.stampProject\(\{ name: name, data: data, grapesjs: grapesjs\.version, id: id \}\)/, "stamped as OSCAR keeps a project, with who it is: brought back in, it is known");
+  assert.ok(!/openedFile|oscarSaveToFile|oscarSaveAs/.test(editor), "no file is held, and nothing saves to one behind the person's back");
 });
 
-test("File holds every way in and out: three opens, two saves, and Publish", () => {
+test("File holds every way in and out, and no Save: a new project, three opens, a copy, a file, two ways back, and Publish", () => {
   assert.ok(editor.indexOf("function showFileMenu()") !== -1);
-  for (const item of ["Open a file\\u2026", "Open a template\\u2026", "Import HTML/CSS\\u2026", "Save as\\u2026", "Publish\\u2026"]) {
-    assert.ok(editor.indexOf(item) !== -1, "the menu offers: " + item);
-  }
+  const menu = editor.slice(editor.indexOf("function showFileMenu()"), editor.indexOf("// A file double-clicked"));
+  const labels = (menu.match(/label: "[^"]*"/g) || []).map((l) => l.slice(8, -1));
+  assert.deepStrictEqual(labels, [
+    "New project",
+    "Open\\u2026",
+    "Open a file\\u2026",
+    "Import HTML/CSS\\u2026",
+    "Make a copy",
+    "Export a copy\\u2026",
+    "Revert to how it was when opened\\u2026",
+    "Revert to the published version\\u2026",
+    "Publish\\u2026",
+    "Push to preview",
+    "About OSCAR",
+  ]);
   assert.ok(editor.indexOf('editor.runCommand("oscar-export");') !== -1, "Publish opens the publish window");
-  assert.match(editor, /label: "Save",\s*run: function \(\) \{\s*oscarSaveToFile\(\);/, "and a plain Save, handed nothing: only Save as makes another project");
+  assert.ok(!/label: "Save/.test(menu), "nothing to press to save: every change saves itself");
   assert.match(editor, /label: "File",/, "a word, not an icon");
   assert.match(editor, /\.gjs-pn-devices-c \.oscar-file-btn/, "anchored where the button actually lives -- the old menu died of a stale anchor");
-  assert.match(editor, /editor\.runCommand\("open-projects", \{ type: "Load" \}\)/, "the template way opens the window that always existed");
+  assert.match(editor, /editor\.runCommand\("open-projects", \{ type: "Load" \}\)/, "Open is the projects window, with the templates in it");
   assert.match(editor, /editor\.runCommand\("gjs-open-import-webpage"\)/, "the paste box lives on behind the menu");
   assert.match(editor, /pn\.removeButton\("options", "gjs-open-import-webpage"\)/, "and its toolbar seat is retired");
-  assert.match(editor, /function oscarSaveAs\(\) \{\n    openedFile\.handle = null;/, "Save as always asks where");
-  assert.match(editor, /oscar-open-menu-rule/, "opens and saves are parted by a rule");
+  assert.match(editor, /oscar-open-menu-rule/, "the groups are parted by a rule");
 });
 
-test("opening a file guards the person: format skew refused honestly, changes never lost silently", () => {
+test("opening a file guards the person: format skew refused honestly, and a project already here is asked about", () => {
   assert.match(editor, /if \(opened\.status === "too-new"\) \{/, "a newer OSCAR's file is refused, not mangled");
   assert.match(editor, /saved by a newer OSCAR \(format " \+ opened\.format/, "and the refusal says why");
   assert.match(editor, /var data = opened\.status === "ok" \? opened\.data : null;\n    if \(!isProjectData\(data\)\) \{/, "the project is the answer's data, not the answer");
   assert.match(editor, /is not an OSCAR 2 project, so it cannot be opened\. Your current project has not been changed\./, "a wrong file changes nothing");
-  assert.match(editor, /you will lose all unsaved changes in the current project/, "opening always asks first");
+  assert.ok(!/you will lose all unsaved changes/.test(editor), "nothing warns of unsaved changes: there are none to lose");
+  // A file comes in as a project. One that is already here: replace it, or keep both.
+  assert.match(editor, /if \(res\.status === 409 && res\.body && res\.body\.exists\) \{/);
+  assert.match(editor, /text: "Replace it",\s*btnClass: "btn-red",\s*action: function \(\) \{\s*importProject\(project, "replace"\);/);
+  assert.match(editor, /text: "Keep both",\s*action: function \(\) \{\s*importProject\(project, "copy"\);/);
+  assert.match(editor, /if \(res\.body\.id === openProject\.get\(\)\.id\) return projectSync\.reload\(\);/, "replacing the one on the canvas shows the file, and does not save the old canvas over it");
+  assert.match(editor, /id: projectFormat\.isProjectId\(parsed\.id\) \? parsed\.id : undefined,/, "a file says who it is; one from before ids is a new project");
   assert.match(editor, /accept = "\.oscar,\.json,\.html,\.htm"/, "and .html templates come through the same door");
 });
 
@@ -51,7 +70,7 @@ test("the bar's geography: File first at the left, the screen sizes centred over
   // Created with its buttons in it: a panel added empty never draws buttons added later.
   assert.match(editor, /pn\.addPanel\(\{ id: "oscar-sizes", visible: true, buttons: sizeButtons \}\);/, "they have a panel of their own, made with them in it");
   assert.match(editor, /pn\.removeButton\("devices-c", id\);/, "the sizes leave the left panel whole");
-  assert.match(editor, /var wanted = \["oscar-file", "oscar-edit", "ipButton"\]/, "the left half reads File, Edit, the address; the pills lead the right");
+  assert.match(editor, /var wanted = \["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "ipButton"\]/, "the left half reads File, Edit, the project's title and how it stands, the address; the pills lead the right");
   const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
   assert.match(theme, /\.gjs-pn-panel\.gjs-pn-oscar-sizes \{\n  top: 0;\n  left: 42\.5%;\n  transform: translateX\(-50%\);/, "centred over the canvas (85% of the window), not the window");
   assert.match(theme, /\.gjs-pn-oscar-sizes \.gjs-pn-btn \{\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;/, "the icons sit squarely centred");
@@ -98,7 +117,7 @@ test("Show borders is remembered: turned off, it stays off after a refresh", () 
   assert.doesNotMatch(editor, /editor\.onReady\(function \(\) \{\n    if \(!editor\.Commands\.isActive\("sw-visibility"\)\) editor\.runCommand\("sw-visibility"\);\n  \}\);/, "not forced on at every start");
 });
 
-test("a double-clicked project opens through the same guarded door, once", () => {
+test("a double-clicked project comes in through the same door as a picked file, once", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8").replace(/\r\n/g, "\n");
   assert.match(main, /app\.on\("open-file"/, "macOS hands the file by event");
   assert.match(main, /OSCAR_OPEN_FILE: fileToOpen/, "the server is told which file");
@@ -108,7 +127,7 @@ test("a double-clicked project opens through the same guarded door, once", () =>
   const routes = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8").replace(/\r\n/g, "\n");
   assert.match(routes, /router\.get\("\/boot-file", editorOnly/, "handed over on the editor's own terms");
   assert.match(editor, /fetch\("\/boot-file"\)/, "the editor asks at startup");
-  assert.match(editor, /openPicked\(file\.name, file\.text, null\)/, "and the ordinary Open flow, confirmation included, takes over");
+  assert.match(editor, /openPicked\(file\.name, file\.text\)/, "and the ordinary Open a file flow takes over: it becomes a project in OSCAR");
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
   assert.deepStrictEqual(pkg.build.fileAssociations[0].ext, "oscar", "the installer registers .oscar for double-clicking");
 });

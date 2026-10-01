@@ -557,7 +557,7 @@ module.exports = {
   readWidget,
 };
 
-},{"../widgets":24}],5:[function(require,module,exports){
+},{"../widgets":25}],5:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1035,22 +1035,25 @@ module.exports = {
 /**
  * Which project the canvas in this browser is.
  *
- * The canvas autosaves into the browser (the editor's storageManager), and
- * until now nothing beside it said what it was: a reload kept the layout and
- * forgot the name. A published surface remembers the project it was made
- * from by that project's id (lib/published.js), so the canvas has to know
- * its own -- across a reload, and before it has ever been saved to a file.
+ * A project lives in OSCAR (lib/projects.js); the canvas in a browser is one
+ * of them being edited, or a canvas that is nobody yet. The browser keeps the
+ * canvas itself (the editor's storageManager), and beside it this: who it is,
+ * and how it stands against what OSCAR holds. Across a reload, that is what
+ * lets the editor pick up where it was, and send what it had not yet sent.
  *
  * Kept in the browser, beside the canvas, and not on the server: each
  * browser has a canvas of its own, and one "open project" for all of them
  * would be wrong for every browser but one.
  *
  *   id     the project's identity, or null for a canvas that is nobody yet
- *          (a template just loaded, a first launch)
- *   name   what it is called
- *   saved  whether it has been saved to, or opened from, a file or the
- *          library: Save as on such a project makes a new project, with a
- *          new id; the first save of one that has not keeps the id it has
+ *   name   its title
+ *   rev    the revision of it this browser last saw OSCAR hold (0: none)
+ *   dirty  true from the first change until the save that covers it is
+ *          confirmed: what is on the canvas has not all reached OSCAR
+ *   fresh  true for a canvas that is nobody yet and was put there, not made:
+ *          a template just opened, a first launch. It becomes a project at
+ *          its first change. A canvas with no id that is not fresh is one
+ *          from before projects lived in OSCAR, and is carried over.
  *
  * `storage` is localStorage's shape (getItem, setItem, removeItem), handed in
  * so a test needs no browser. A storage that throws -- private browsing, a
@@ -1060,14 +1063,15 @@ module.exports = {
 const { isProjectId, newProjectId } = require("./project-format");
 
 const KEY = "oscarProject.open";
-const NOBODY = Object.freeze({ id: null, name: "", saved: false });
 
 function tidy(pointer) {
-  const given = pointer && typeof pointer === "object" ? pointer : {};
+  const given = pointer && typeof pointer === "object" && !Array.isArray(pointer) ? pointer : {};
   return {
     id: isProjectId(given.id) ? given.id : null,
     name: typeof given.name === "string" ? given.name.trim().slice(0, 200) : "",
-    saved: given.saved === true,
+    rev: Number.isInteger(given.rev) && given.rev > 0 ? given.rev : 0,
+    dirty: given.dirty === true,
+    fresh: given.fresh === true,
   };
 }
 
@@ -1086,8 +1090,10 @@ function createOpenProject(storage, options) {
   function keep(pointer) {
     held = tidy(pointer);
     try {
-      if (!held.id && !held.name) storage.removeItem(KEY);
-      else storage.setItem(KEY, JSON.stringify(held));
+      // Always written, even for a canvas that is nobody: "fresh" has to
+      // outlive a reload, or a template that was only looked at would be
+      // taken for work from before and made a project.
+      storage.setItem(KEY, JSON.stringify(held));
     } catch (err) {
       // Remembered for as long as the page lives, then.
     }
@@ -1095,30 +1101,23 @@ function createOpenProject(storage, options) {
   }
 
   return {
-    /** { id, name, saved } as it stands. */
+    /** { id, name, rev, dirty, fresh } as it stands. */
     get() {
       if (!held) held = load();
       return Object.assign({}, held);
     },
 
-    /** The canvas is this project now: opened, loaded, or saved under it. */
+    /** The canvas is this now. */
     set(pointer) {
       return keep(pointer);
     },
 
     /** The canvas is nobody's: a template, an import, a fresh start. A name may come with it. */
     clear(name) {
-      return keep(Object.assign({}, NOBODY, { name: typeof name === "string" ? name : "" }));
+      return keep({ id: null, name: typeof name === "string" ? name : "", rev: 0, dirty: false, fresh: true });
     },
 
-    /** The project's id, made now if the canvas had none: publishing needs one to be remembered by. */
-    ensureId() {
-      const now = this.get();
-      if (now.id) return now.id;
-      return keep(Object.assign(now, { id: makeId() })).id;
-    },
-
-    /** A fresh id, not kept: for a Save as that may yet be called off. */
+    /** A fresh id, not kept. */
     newId: () => makeId(),
   };
 }
@@ -1602,7 +1601,7 @@ function planPorts(args, env) {
 module.exports = { portsFromEnv, planPorts, DEFAULTS, VARIABLES, isPort };
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":38}],13:[function(require,module,exports){
+},{"_process":39}],13:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1791,7 +1790,7 @@ function formatFor(data) {
  * only when there is one, and is not a reason to bump the format: an OSCAR
  * from before it reads the file as it always did.
  */
-function stampProject({ name, data, oscar, grapesjs, id, now = () => new Date() }) {
+function stampProject({ name, data, oscar, grapesjs, id, rev, now = () => new Date() }) {
   const record = {
     format: formatFor(data),
     oscar: oscar || null,
@@ -1801,6 +1800,10 @@ function stampProject({ name, data, oscar, grapesjs, id, now = () => new Date() 
     data,
   };
   if (isProjectId(id)) record.id = id;
+  // How many times a project kept in OSCAR has been written: what tells a
+  // save made from an older copy of it apart (lib/projects.js). A file
+  // exported or saved by hand has none.
+  if (Number.isInteger(rev) && rev > 0) record.rev = rev;
   return record;
 }
 
@@ -1849,6 +1852,386 @@ module.exports = {
 };
 
 },{}],14:[function(require,module,exports){
+"use strict";
+
+/**
+ * Keeping the project on the canvas saved in OSCAR as it is edited.
+ *
+ * A project lives in OSCAR, on the computer OSCAR runs on (lib/projects.js),
+ * under one title; there is no Save to press. This is the part that makes
+ * that true from the editor's side, and it is kept apart from the editor so
+ * that every path through it can be driven by a test with no browser:
+ *
+ *   - a change is sent a moment after the last one of a burst, one save at
+ *     a time, and a change that arrives while one is on its way is sent
+ *     after it;
+ *   - nothing is forgotten until OSCAR has answered that it holds it: the
+ *     canvas stays in the browser as it always did, and the pointer beside
+ *     it (lib/open-project.js) says "dirty" from the first change until the
+ *     save that covers it is confirmed. A browser closed in between sends
+ *     what it has the next time it opens;
+ *   - a save that fails is tried again, slower each time, and says so;
+ *   - a project that was written somewhere else since this window last saw
+ *     it is never written over without asking (the revision, lib/projects.js);
+ *   - a canvas that is nobody yet -- a template just opened, a first launch
+ *     -- becomes a project at its first change, so one that was only looked
+ *     at leaves nothing behind.
+ *
+ * What it is told of (deps):
+ *   pointer    lib/open-project.js: get(), set()
+ *   api        { read(id), create(body), write(id, body), copy(id) }, each a
+ *              promise of { ok, status, body }; rejected when OSCAR cannot
+ *              be reached at all
+ *   getData()  the project on the canvas, tidied as it would be saved
+ *   loadData(data)   put a project on the canvas
+ *   isEmpty()  whether the canvas holds nothing at all
+ *   onStatus(status, detail)   "new" | "saving" | "saved" | "unsaved" | "conflict"
+ *   onName(name)     the title changed
+ *   conflict({ name })   ask the person; a promise of "mine" or "theirs"
+ *   keepOpened(id, data)   remember a project as it was when opened, for Revert
+ *   grapesjs   the editor library's version, recorded in what is saved
+ *   setTimer, clearTimer   setTimeout's shape; a test hands in its own
+ */
+
+const SAVE_AFTER = 1200;
+const SETTLE_AFTER = 400;
+const RETRY_FIRST = 3000;
+const RETRY_MAX = 15000;
+
+function createProjectSync(deps) {
+  const setTimer = deps.setTimer || setTimeout;
+  const clearTimer = deps.clearTimer || clearTimeout;
+  const pointer = deps.pointer;
+  const api = deps.api;
+
+  let status = "new";
+  let timer = null; // the save that is waiting for the burst to end
+  let retryAfter = RETRY_FIRST;
+  let saving = null; // the save on its way
+  let again = false; // something changed while it was
+  let lastSaved = null; // what OSCAR is known to hold, as text; null when not known
+  let muted = 0; // loading a project is not the person editing it
+  let renamed = false; // the title changed and OSCAR has not been told
+  // Which canvas this is, counted: an answer to a save that was sent for a
+  // canvas since replaced (another project opened, this one deleted) is not
+  // this canvas's news, and must not put the old project's name back on it.
+  let era = 0;
+
+  function say(next, detail) {
+    status = next;
+    if (deps.onStatus) deps.onStatus(next, detail || "");
+  }
+
+  function text() {
+    return JSON.stringify(deps.getData());
+  }
+
+  function keep(changes) {
+    return pointer.set(Object.assign({}, pointer.get(), changes));
+  }
+
+  function wait(ms) {
+    if (timer) clearTimer(timer);
+    timer = setTimer(function () {
+      timer = null;
+      save();
+    }, ms);
+  }
+
+  function failed(detail) {
+    say("unsaved", detail);
+    wait(retryAfter);
+    retryAfter = Math.min(RETRY_MAX, retryAfter * 2);
+  }
+
+  /** OSCAR holds `sent` as revision `answer.rev`: whatever changed since is still to go. */
+  function confirmed(answer, sent, sentIn) {
+    if (sentIn !== era) return;
+    lastSaved = sent;
+    retryAfter = RETRY_FIRST;
+    renamed = false;
+    const ahead = text() !== sent;
+    keep({ id: answer.id, name: answer.name, rev: answer.rev, dirty: ahead, fresh: false });
+    if (deps.onName) deps.onName(answer.name);
+    if (ahead) again = true;
+    else say("saved");
+  }
+
+  /** Put a project on the canvas without that counting as a change by the person. */
+  function show(data, then) {
+    muted++;
+    deps.loadData(data);
+    // The editor goes on settling for a moment after a load (frames render,
+    // components are given ids): what it holds then is the baseline, so that
+    // settling is not taken for an edit and saved back.
+    setTimer(function () {
+      muted--;
+      lastSaved = text();
+      if (then) then();
+    }, SETTLE_AFTER);
+  }
+
+  function opened(project) {
+    era++;
+    keep({ id: project.id, name: project.name, rev: project.rev, dirty: false, fresh: false });
+    if (deps.keepOpened) deps.keepOpened(project.id, project.data);
+    if (deps.onName) deps.onName(project.name);
+    say("saved");
+    return new Promise(function (resolve) {
+      show(project.data, resolve);
+    });
+  }
+
+  /** One round of saving. Resolves when it is over, whatever came of it; never rejects. */
+  function attempt() {
+    const now = pointer.get();
+    const sent = text();
+    const sentIn = era;
+
+    // Nothing to send: what is here is what OSCAR holds, or a canvas that
+    // was only looked at.
+    if (sent === lastSaved && !renamed) {
+      keep({ dirty: false });
+      say(now.id ? "saved" : "new");
+      return Promise.resolve();
+    }
+
+    say("saving");
+    const data = JSON.parse(sent);
+    const name = now.name || "Untitled";
+    const request = now.id
+      ? api.write(now.id, { data: data, name: name, baseRev: now.rev, grapesjs: deps.grapesjs })
+      : api.create({ name: name, data: data, grapesjs: deps.grapesjs });
+
+    return request
+      .then(function (res) {
+        if (res.ok) return confirmed(res.body, sent, sentIn);
+
+        // It is not in OSCAR: deleted somewhere else, or a canvas from before
+        // projects lived here that only this browser knew. It is made again,
+        // as who it was.
+        if (res.status === 404 && now.id) {
+          return api.create({ id: now.id, name: name, data: data, grapesjs: deps.grapesjs, ifExists: "replace" }).then(function (made) {
+            if (made.ok) return confirmed(made.body, sent, sentIn);
+            failed((made.body && made.body.error) || "");
+          });
+        }
+
+        // Written somewhere else since this window last saw it. Never over
+        // the top without asking.
+        if (res.status === 409 && res.body && res.body.conflict) {
+          say("conflict", res.body.error || "");
+          if (!deps.conflict) return undefined;
+          return deps.conflict({ name: res.body.name || name }).then(
+            function (choice) {
+              if (choice === "theirs") return reopen(now.id);
+              if (choice !== "mine") return undefined;
+              say("saving");
+              return api.write(now.id, { data: data, name: name, grapesjs: deps.grapesjs }).then(function (forced) {
+                if (forced.ok) return confirmed(forced.body, sent, sentIn);
+                failed((forced.body && forced.body.error) || "");
+              });
+            },
+            function () {
+              // No answer: it stays as it is, and the next change asks again.
+            }
+          );
+        }
+
+        failed((res.body && res.body.error) || "");
+      })
+      .catch(function () {
+        failed("OSCAR could not be reached.");
+      });
+  }
+
+  function save() {
+    if (saving) {
+      again = true;
+      return saving;
+    }
+    saving = attempt().then(function () {
+      saving = null;
+      if (again) {
+        again = false;
+        return save();
+      }
+    });
+    return saving;
+  }
+
+  function reopen(id) {
+    return api.read(id).then(function (res) {
+      if (!res.ok) throw new Error((res.body && res.body.error) || "That project could not be opened.");
+      return opened(res.body);
+    });
+  }
+
+  return {
+    /** "new" | "saving" | "saved" | "unsaved" | "conflict" */
+    status: function () {
+      return status;
+    },
+
+    /**
+     * As the editor opens: square what this browser holds with what OSCAR
+     * holds. Resolves when that is done; never rejects.
+     */
+    start: function () {
+      const now = pointer.get();
+
+      if (!now.id) {
+        // Nobody yet. A template or an empty canvas waits for its first
+        // change; a canvas with work on it, from before projects lived in
+        // OSCAR, becomes a project now.
+        if (now.fresh || deps.isEmpty()) {
+          lastSaved = text();
+          keep({ dirty: false, fresh: true });
+          say("new");
+          return Promise.resolve();
+        }
+        return save();
+      }
+
+      return api
+        .read(now.id)
+        .then(function (res) {
+          if (res.status === 404) return save(); // only this browser knew it: attempt() makes it
+          if (!res.ok) return failed((res.body && res.body.error) || "");
+
+          const theirs = res.body;
+          if (now.dirty) {
+            // Unsaved work here. Sent against the revision this browser last
+            // saw: accepted if nobody wrote since, asked about if somebody did.
+            lastSaved = null;
+            return save();
+          }
+          if (theirs.rev !== now.rev) return opened(theirs); // changed elsewhere, nothing unsaved here
+          // The same revision, and nothing unsaved: what is on the canvas is it.
+          lastSaved = text();
+          keep({ name: theirs.name });
+          if (deps.keepOpened) deps.keepOpened(theirs.id, theirs.data);
+          if (deps.onName) deps.onName(theirs.name);
+          say("saved");
+        })
+        .catch(function () {
+          failed("OSCAR could not be reached.");
+        });
+    },
+
+    /** The person changed something. */
+    changed: function () {
+      if (muted) return;
+      if (!pointer.get().dirty) keep({ dirty: true });
+      // Said at once, not when the burst ends: "Saved" beside work that has
+      // not been sent would be a small lie, a second long.
+      if (status === "saved" || status === "new") say("saving");
+      wait(SAVE_AFTER);
+    },
+
+    /** Save now, without waiting for the burst to end. Resolves when it is over. */
+    flush: function () {
+      if (timer) clearTimer(timer);
+      timer = null;
+      return save();
+    },
+
+    /** A new title. Said to OSCAR with the next save, which is now. */
+    rename: function (name) {
+      const title = String(name == null ? "" : name).trim().slice(0, 200);
+      if (!title || title === pointer.get().name) return Promise.resolve();
+      keep({ name: title });
+      if (deps.onName) deps.onName(title);
+      // A canvas that is nobody yet is only named; it becomes a project at its first change.
+      if (!pointer.get().id) return Promise.resolve();
+      renamed = true;
+      return this.flush();
+    },
+
+    /** Open another project that is in OSCAR. What is on the canvas is saved first. */
+    open: function (id) {
+      return this.flush().then(function () {
+        return reopen(id);
+      });
+    },
+
+    /**
+     * Show the open project as OSCAR holds it now, without first saving what
+     * is on the canvas: for when it was replaced on purpose (a file brought
+     * in over it), and the canvas is what is out of date.
+     */
+    reload: function () {
+      if (timer) clearTimer(timer);
+      timer = null;
+      keep({ dirty: false });
+      return reopen(pointer.get().id);
+    },
+
+    /**
+     * A canvas that is nobody yet: a template, an empty start. `put` places
+     * its content; it becomes a project at its first change. What was on the
+     * canvas is saved first -- unless it is being discarded, because the
+     * project it was has just been deleted.
+     */
+    begin: function (name, put, options) {
+      const discard = !!(options && options.discard);
+      if (discard) {
+        if (timer) clearTimer(timer);
+        timer = null;
+        keep({ id: null, dirty: false });
+      }
+      return (discard ? Promise.resolve() : this.flush()).then(function () {
+        era++;
+        keep({ id: null, name: String(name || "").trim().slice(0, 200), rev: 0, dirty: false, fresh: true });
+        if (deps.onName) deps.onName(pointer.get().name);
+        say("new");
+        return new Promise(function (resolve) {
+          muted++;
+          put();
+          setTimer(function () {
+            muted--;
+            lastSaved = text();
+            resolve();
+          }, SETTLE_AFTER);
+        });
+      });
+    },
+
+    /** Make the canvas a project now, without waiting for a change: publishing needs one to belong to. */
+    materialise: function () {
+      if (pointer.get().id) return this.flush();
+      lastSaved = null;
+      return this.flush();
+    },
+
+    /** Put other content in the open project -- an earlier version of it -- and save that. */
+    replaceWith: function (data) {
+      const self = this;
+      return new Promise(function (resolve) {
+        show(data, resolve);
+      }).then(function () {
+        lastSaved = null;
+        keep({ dirty: true });
+        return self.flush();
+      });
+    },
+
+    /** A second project like this one, opened in its place. */
+    copy: function () {
+      const self = this;
+      return this.materialise().then(function () {
+        return api.copy(pointer.get().id).then(function (res) {
+          if (!res.ok) throw new Error((res.body && res.body.error) || "The project could not be copied.");
+          return self.open(res.body.id);
+        });
+      });
+    },
+  };
+}
+
+module.exports = { createProjectSync, SAVE_AFTER, SETTLE_AFTER, RETRY_FIRST, RETRY_MAX };
+
+},{}],15:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1937,7 +2320,7 @@ const DEFAULT_SORT = { key: "date", direction: "descending" };
 
 module.exports = { formatSize, sortProjects, orderProjects, nextSort, DEFAULT_SORT };
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1963,7 +2346,7 @@ function surfaceAddress(host, httpPort, path) {
 
 module.exports = { surfaceAddress };
 
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 "use strict";
 
 /**
@@ -2011,7 +2394,7 @@ function viaSerial(config) {
 
 module.exports = { SERIAL_HOST, isSerialTarget, viaSerial };
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 "use strict";
 
 /**
@@ -2076,7 +2459,7 @@ function arrange(ids, placements) {
 
 module.exports = { PLACEMENTS, moveAfter, moveBefore, arrange };
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 "use strict";
 
 /**
@@ -2254,7 +2637,7 @@ module.exports = {
   withoutAppearance,
 };
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 "use strict";
 
 const {
@@ -2588,7 +2971,7 @@ function checkValueOff(value, config) {
 
 module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 
-},{"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],20:[function(require,module,exports){
+},{"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],21:[function(require,module,exports){
 "use strict";
 
 const {
@@ -3073,7 +3456,7 @@ function checkWholeNumbers(value, config) {
 
 module.exports = { colour, FORMATS, SCALES, parseHex, normaliseHex, fromWire };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],21:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],22:[function(require,module,exports){
 "use strict";
 
 const {
@@ -3420,7 +3803,7 @@ function checkValue(value, config) {
 
 module.exports = { dropdown, parseOptions };
 
-},{"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33,"./typed":36}],22:[function(require,module,exports){
+},{"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34,"./typed":37}],23:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4016,7 +4399,7 @@ module.exports = {
   IPV4: IPV4,
 };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../ports":12,"../serial-target":16}],23:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../ports":12,"../serial-target":17}],24:[function(require,module,exports){
 "use strict";
 
 const { matchesAddress } = require("../osc-address");
@@ -4110,7 +4493,7 @@ function follow(ctx, fn, addresses) {
 
 module.exports = { incoming, follow };
 
-},{"../osc-address":10}],24:[function(require,module,exports){
+},{"../osc-address":10}],25:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4376,7 +4759,7 @@ for (const widget of WIDGETS) {
 
 module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
 
-},{"./outgoing":31,"./registry":32}],25:[function(require,module,exports){
+},{"./outgoing":32,"./registry":33}],26:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -4880,7 +5263,7 @@ module.exports = {
   COLUMNS_PROPERTY,
 };
 
-},{"../osc-args":11,"./fields":22,"./incoming":23,"./outgoing":31,"./shared":33,"./typed":36}],26:[function(require,module,exports){
+},{"../osc-args":11,"./fields":23,"./incoming":24,"./outgoing":32,"./shared":34,"./typed":37}],27:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, checkMessage, checkNumber, checkListenFrom, ORIENTATIONS } = require("./fields");
@@ -5162,7 +5545,7 @@ function checkPeakHold(value) {
 
 module.exports = { meter, PEAK_CLASS };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./shared":33}],27:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./shared":34}],28:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5274,7 +5657,7 @@ function midiChecks(values, options) {
 
 module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiChecks: midiChecks };
 
-},{"../midi/spec":8,"./fields":22}],28:[function(require,module,exports){
+},{"../midi/spec":8,"./fields":23}],29:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5415,7 +5798,7 @@ function followMidi(definition, read, showing) {
 
 module.exports = { stateFromMidi: stateFromMidi, valuesOf: valuesOf, followMidi: followMidi, inputOf: inputOf };
 
-},{"../midi/spec":8,"../osc-args":11}],29:[function(require,module,exports){
+},{"../midi/spec":8,"../osc-args":11}],30:[function(require,module,exports){
 "use strict";
 
 const { followMidi } = require("./midi-in");
@@ -5465,7 +5848,7 @@ var midiKeys = 0;
 
 module.exports = { midiSource: midiSource };
 
-},{"../activity":1,"../midi/spec":8,"./midi-in":28}],30:[function(require,module,exports){
+},{"../activity":1,"../midi/spec":8,"./midi-in":29}],31:[function(require,module,exports){
 "use strict";
 
 const {
@@ -5842,7 +6225,7 @@ function checkValue(value, config) {
 
 module.exports = { numberInput };
 
-},{"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33,"./typed":36}],31:[function(require,module,exports){
+},{"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34,"./typed":37}],32:[function(require,module,exports){
 "use strict";
 
 const { toArgs } = require("../osc-args");
@@ -6027,7 +6410,7 @@ function routing(ctx) {
 
 module.exports = { outgoing, only, routing, asCtx };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../serial-target":16,"./fields":22}],32:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../serial-target":17,"./fields":23}],33:[function(require,module,exports){
 "use strict";
 
 /**
@@ -6051,7 +6434,7 @@ module.exports = [
   require("./media-browser").mediaBrowser,
 ];
 
-},{"./button":19,"./colour":20,"./dropdown":21,"./media-browser":25,"./meter":26,"./number-input":30,"./slider":34,"./text-input":35,"./xypad":37}],33:[function(require,module,exports){
+},{"./button":20,"./colour":21,"./dropdown":22,"./media-browser":26,"./meter":27,"./number-input":31,"./slider":35,"./text-input":36,"./xypad":38}],34:[function(require,module,exports){
 "use strict";
 
 /**
@@ -6118,7 +6501,7 @@ function onShared(ctx, fn) {
 
 module.exports = { share, onShared };
 
-},{}],34:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 "use strict";
 
 const {
@@ -6419,7 +6802,7 @@ function checkValue(value, config) {
 // this is where it used to be, and a caller that learned it here keeps working.
 module.exports = { slider, ORIENTATIONS };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],35:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],36:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -6618,7 +7001,7 @@ function checkValue(value, config) {
 
 module.exports = { textInput };
 
-},{"../osc-args":11,"./fields":22,"./incoming":23,"./outgoing":31,"./shared":33,"./typed":36}],36:[function(require,module,exports){
+},{"../osc-args":11,"./fields":23,"./incoming":24,"./outgoing":32,"./shared":34,"./typed":37}],37:[function(require,module,exports){
 "use strict";
 
 const { isSendable, toNumber } = require("../osc-args");
@@ -6837,7 +7220,7 @@ function dmxRange(min, max) {
 
 module.exports = { commitOn, refusal, checkArgType, levelOf, dmxRange };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../osc-args":11}],37:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../osc-args":11}],38:[function(require,module,exports){
 "use strict";
 
 const {
@@ -7248,7 +7631,7 @@ function within(value, min, max) {
 
 module.exports = { xypad, SEND_MODES };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],38:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],39:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -7434,7 +7817,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 /*!
  * jquery-confirm v3.3.4 (http://craftpip.github.io/jquery-confirm/)
  * Author: Boniface Pereira
@@ -7445,7 +7828,7 @@ process.umask = function() { return 0; };
  * Licensed under MIT (https://github.com/craftpip/jquery-confirm/blob/master/LICENSE)
  */
 (function(factory){if(typeof define==="function"&&define.amd){define(["jquery"],factory);}else{if(typeof module==="object"&&module.exports){module.exports=function(root,jQuery){if(jQuery===undefined){if(typeof window!=="undefined"){jQuery=require("jquery");}else{jQuery=require("jquery")(root);}}factory(jQuery);return jQuery;};}else{factory(jQuery);}}}(function($){var w=window;$.fn.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}$(this).each(function(){var $this=$(this);if($this.attr("jc-attached")){console.warn("jConfirm has already been attached to this element ",$this[0]);return;}$this.on("click",function(e){e.preventDefault();var jcOption=$.extend({},options);if($this.attr("data-title")){jcOption.title=$this.attr("data-title");}if($this.attr("data-content")){jcOption.content=$this.attr("data-content");}if(typeof jcOption.buttons==="undefined"){jcOption.buttons={};}jcOption["$target"]=$this;if($this.attr("href")&&Object.keys(jcOption.buttons).length===0){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];jcOption.buttons=buttons;jcOption.buttons[firstBtn].action=function(){location.href=$this.attr("href");};}jcOption.closeIcon=false;var instance=$.confirm(jcOption);});$this.attr("jc-attached",true);});return $(this);};$.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});options.buttons=buttons;}return w.jconfirm(options);};$.alert=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];options.buttons[firstBtn]=buttons[firstBtn];}return w.jconfirm(options);};$.dialog=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false,closeIcon:function(){}};}options.buttons={};if(typeof options.closeIcon==="undefined"){options.closeIcon=function(){};}options.confirmKeys=[13];return w.jconfirm(options);};w.jconfirm=function(options){if(typeof options==="undefined"){options={};}var pluginOptions=$.extend(true,{},w.jconfirm.pluginDefaults);if(w.jconfirm.defaults){pluginOptions=$.extend(true,pluginOptions,w.jconfirm.defaults);}pluginOptions=$.extend(true,{},pluginOptions,options);var instance=new w.Jconfirm(pluginOptions);w.jconfirm.instances.push(instance);return instance;};w.Jconfirm=function(options){$.extend(this,options);this._init();};w.Jconfirm.prototype={_init:function(){var that=this;if(!w.jconfirm.instances.length){w.jconfirm.lastFocused=$("body").find(":focus");}this._id=Math.round(Math.random()*99999);this.contentParsed=$(document.createElement("div"));if(!this.lazyOpen){setTimeout(function(){that.open();},0);}},_buildHTML:function(){var that=this;this._parseAnimation(this.animation,"o");this._parseAnimation(this.closeAnimation,"c");this._parseBgDismissAnimation(this.backgroundDismissAnimation);this._parseColumnClass(this.columnClass);this._parseTheme(this.theme);this._parseType(this.type);var template=$(this.template);template.find(".jconfirm-box").addClass(this.animationParsed).addClass(this.backgroundDismissAnimationParsed).addClass(this.typeParsed);if(this.typeAnimated){template.find(".jconfirm-box").addClass("jconfirm-type-animated");}if(this.useBootstrap){template.find(".jc-bs3-row").addClass(this.bootstrapClasses.row);template.find(".jc-bs3-row").addClass("justify-content-md-center justify-content-sm-center justify-content-xs-center justify-content-lg-center");template.find(".jconfirm-box-container").addClass(this.columnClassParsed);if(this.containerFluid){template.find(".jc-bs3-container").addClass(this.bootstrapClasses.containerFluid);}else{template.find(".jc-bs3-container").addClass(this.bootstrapClasses.container);}}else{template.find(".jconfirm-box").css("width",this.boxWidth);}if(this.titleClass){template.find(".jconfirm-title-c").addClass(this.titleClass);}template.addClass(this.themeParsed);var ariaLabel="jconfirm-box"+this._id;template.find(".jconfirm-box").attr("aria-labelledby",ariaLabel).attr("tabindex",-1);template.find(".jconfirm-content").attr("id",ariaLabel);if(this.bgOpacity!==null){template.find(".jconfirm-bg").css("opacity",this.bgOpacity);}if(this.rtl){template.addClass("jconfirm-rtl");}this.$el=template.appendTo(this.container);this.$jconfirmBoxContainer=this.$el.find(".jconfirm-box-container");this.$jconfirmBox=this.$body=this.$el.find(".jconfirm-box");this.$jconfirmBg=this.$el.find(".jconfirm-bg");this.$title=this.$el.find(".jconfirm-title");this.$titleContainer=this.$el.find(".jconfirm-title-c");this.$content=this.$el.find("div.jconfirm-content");this.$contentPane=this.$el.find(".jconfirm-content-pane");this.$icon=this.$el.find(".jconfirm-icon-c");this.$closeIcon=this.$el.find(".jconfirm-closeIcon");this.$holder=this.$el.find(".jconfirm-holder");this.$btnc=this.$el.find(".jconfirm-buttons");this.$scrollPane=this.$el.find(".jconfirm-scrollpane");that.setStartingPoint();this._contentReady=$.Deferred();this._modalReady=$.Deferred();this.$holder.css({"padding-top":this.offsetTop,"padding-bottom":this.offsetBottom,});this.setTitle();this.setIcon();this._setButtons();this._parseContent();this.initDraggable();if(this.isAjax){this.showLoading(false);}$.when(this._contentReady,this._modalReady).then(function(){if(that.isAjaxLoading){setTimeout(function(){that.isAjaxLoading=false;that.setContent();that.setTitle();that.setIcon();setTimeout(function(){that.hideLoading(false);that._updateContentMaxHeight();},100);if(typeof that.onContentReady==="function"){that.onContentReady();}},50);}else{that._updateContentMaxHeight();that.setTitle();that.setIcon();if(typeof that.onContentReady==="function"){that.onContentReady();}}if(that.autoClose){that._startCountDown();}}).then(function(){that._watchContent();});if(this.animation==="none"){this.animationSpeed=1;this.animationBounce=1;}this.$body.css(this._getCSS(this.animationSpeed,this.animationBounce));this.$contentPane.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBg.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBoxContainer.css(this._getCSS(this.animationSpeed,1));},_typePrefix:"jconfirm-type-",typeParsed:"",_parseType:function(type){this.typeParsed=this._typePrefix+type;},setType:function(type){var oldClass=this.typeParsed;this._parseType(type);this.$jconfirmBox.removeClass(oldClass).addClass(this.typeParsed);},themeParsed:"",_themePrefix:"jconfirm-",setTheme:function(theme){var previous=this.theme;this.theme=theme||this.theme;this._parseTheme(this.theme);if(previous){this.$el.removeClass(previous);}this.$el.addClass(this.themeParsed);this.theme=theme;},_parseTheme:function(theme){var that=this;theme=theme.split(",");$.each(theme,function(k,a){if(a.indexOf(that._themePrefix)===-1){theme[k]=that._themePrefix+$.trim(a);}});this.themeParsed=theme.join(" ").toLowerCase();},backgroundDismissAnimationParsed:"",_bgDismissPrefix:"jconfirm-hilight-",_parseBgDismissAnimation:function(bgDismissAnimation){var animation=bgDismissAnimation.split(",");var that=this;$.each(animation,function(k,a){if(a.indexOf(that._bgDismissPrefix)===-1){animation[k]=that._bgDismissPrefix+$.trim(a);}});this.backgroundDismissAnimationParsed=animation.join(" ").toLowerCase();},animationParsed:"",closeAnimationParsed:"",_animationPrefix:"jconfirm-animation-",setAnimation:function(animation){this.animation=animation||this.animation;this._parseAnimation(this.animation,"o");},_parseAnimation:function(animation,which){which=which||"o";var animations=animation.split(",");var that=this;$.each(animations,function(k,a){if(a.indexOf(that._animationPrefix)===-1){animations[k]=that._animationPrefix+$.trim(a);}});var a_string=animations.join(" ").toLowerCase();if(which==="o"){this.animationParsed=a_string;}else{this.closeAnimationParsed=a_string;}return a_string;},setCloseAnimation:function(closeAnimation){this.closeAnimation=closeAnimation||this.closeAnimation;this._parseAnimation(this.closeAnimation,"c");},setAnimationSpeed:function(speed){this.animationSpeed=speed||this.animationSpeed;},columnClassParsed:"",setColumnClass:function(colClass){if(!this.useBootstrap){console.warn("cannot set columnClass, useBootstrap is set to false");return;}this.columnClass=colClass||this.columnClass;this._parseColumnClass(this.columnClass);this.$jconfirmBoxContainer.addClass(this.columnClassParsed);},_updateContentMaxHeight:function(){var height=$(window).height()-(this.$jconfirmBox.outerHeight()-this.$contentPane.outerHeight())-(this.offsetTop+this.offsetBottom);this.$contentPane.css({"max-height":height+"px"});},setBoxWidth:function(width){if(this.useBootstrap){console.warn("cannot set boxWidth, useBootstrap is set to true");return;}this.boxWidth=width;this.$jconfirmBox.css("width",width);},_parseColumnClass:function(colClass){colClass=colClass.toLowerCase();var p;switch(colClass){case"xl":case"xlarge":p="col-md-12";break;case"l":case"large":p="col-md-8 col-md-offset-2";break;case"m":case"medium":p="col-md-6 col-md-offset-3";break;case"s":case"small":p="col-md-4 col-md-offset-4";break;case"xs":case"xsmall":p="col-md-2 col-md-offset-5";break;default:p=colClass;}this.columnClassParsed=p;},initDraggable:function(){var that=this;var $t=this.$titleContainer;this.resetDrag();if(this.draggable){$t.on("mousedown",function(e){$t.addClass("jconfirm-hand");that.mouseX=e.clientX;that.mouseY=e.clientY;that.isDrag=true;});$(window).on("mousemove."+this._id,function(e){if(that.isDrag){that.movingX=e.clientX-that.mouseX+that.initialX;that.movingY=e.clientY-that.mouseY+that.initialY;that.setDrag();}});$(window).on("mouseup."+this._id,function(){$t.removeClass("jconfirm-hand");if(that.isDrag){that.isDrag=false;that.initialX=that.movingX;that.initialY=that.movingY;}});}},resetDrag:function(){this.isDrag=false;this.initialX=0;this.initialY=0;this.movingX=0;this.movingY=0;this.mouseX=0;this.mouseY=0;this.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");},setDrag:function(){if(!this.draggable){return;}this.alignMiddle=false;var boxWidth=this.$jconfirmBox.outerWidth();var boxHeight=this.$jconfirmBox.outerHeight();var windowWidth=$(window).width();var windowHeight=$(window).height();var that=this;var dragUpdate=1;if(that.movingX%dragUpdate===0||that.movingY%dragUpdate===0){if(that.dragWindowBorder){var leftDistance=(windowWidth/2)-boxWidth/2;var topDistance=(windowHeight/2)-boxHeight/2;topDistance-=that.dragWindowGap;leftDistance-=that.dragWindowGap;if(leftDistance+that.movingX<0){that.movingX=-leftDistance;}else{if(leftDistance-that.movingX<0){that.movingX=leftDistance;}}if(topDistance+that.movingY<0){that.movingY=-topDistance;}else{if(topDistance-that.movingY<0){that.movingY=topDistance;}}}that.$jconfirmBoxContainer.css("transform","translate("+that.movingX+"px, "+that.movingY+"px)");}},_scrollTop:function(){if(typeof pageYOffset!=="undefined"){return pageYOffset;}else{var B=document.body;var D=document.documentElement;D=(D.clientHeight)?D:B;return D.scrollTop;}},_watchContent:function(){var that=this;if(this._timer){clearInterval(this._timer);}var prevContentHeight=0;this._timer=setInterval(function(){if(that.smoothContent){var contentHeight=that.$content.outerHeight()||0;if(contentHeight!==prevContentHeight){prevContentHeight=contentHeight;}var wh=$(window).height();var total=that.offsetTop+that.offsetBottom+that.$jconfirmBox.height()-that.$contentPane.height()+that.$content.height();if(total<wh){that.$contentPane.addClass("no-scroll");}else{that.$contentPane.removeClass("no-scroll");}}},this.watchInterval);},_overflowClass:"jconfirm-overflow",_hilightAnimating:false,highlight:function(){this.hiLightModal();},hiLightModal:function(){var that=this;if(this._hilightAnimating){return;}that.$body.addClass("hilight");var duration=parseFloat(that.$body.css("animation-duration"))||2;this._hilightAnimating=true;setTimeout(function(){that._hilightAnimating=false;that.$body.removeClass("hilight");},duration*1000);},_bindEvents:function(){var that=this;this.boxClicked=false;this.$scrollPane.click(function(e){if(!that.boxClicked){var buttonName=false;var shouldClose=false;var str;if(typeof that.backgroundDismiss==="function"){str=that.backgroundDismiss();}else{str=that.backgroundDismiss;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}else{that.hiLightModal();}}that.boxClicked=false;});this.$jconfirmBox.click(function(e){that.boxClicked=true;});var isKeyDown=false;$(window).on("jcKeyDown."+that._id,function(e){if(!isKeyDown){isKeyDown=true;}});$(window).on("keyup."+that._id,function(e){if(isKeyDown){that.reactOnKey(e);isKeyDown=false;}});$(window).on("resize."+this._id,function(){that._updateContentMaxHeight();setTimeout(function(){that.resetDrag();},100);});},_cubic_bezier:"0.36, 0.55, 0.19",_getCSS:function(speed,bounce){return{"-webkit-transition-duration":speed/1000+"s","transition-duration":speed/1000+"s","-webkit-transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")","transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")"};},_setButtons:function(){var that=this;var total_buttons=0;if(typeof this.buttons!=="object"){this.buttons={};}$.each(this.buttons,function(key,button){total_buttons+=1;if(typeof button==="function"){that.buttons[key]=button={action:button};}that.buttons[key].text=button.text||key;that.buttons[key].btnClass=button.btnClass||"btn-default";that.buttons[key].action=button.action||function(){};that.buttons[key].keys=button.keys||[];that.buttons[key].isHidden=button.isHidden||false;that.buttons[key].isDisabled=button.isDisabled||false;$.each(that.buttons[key].keys,function(i,a){that.buttons[key].keys[i]=a.toLowerCase();});var button_element=$('<button type="button" class="btn"></button>').html(that.buttons[key].text).addClass(that.buttons[key].btnClass).prop("disabled",that.buttons[key].isDisabled).css("display",that.buttons[key].isHidden?"none":"").click(function(e){e.preventDefault();var res=that.buttons[key].action.apply(that,[that.buttons[key]]);that.onAction.apply(that,[key,that.buttons[key]]);that._stopCountDown();if(typeof res==="undefined"||res){that.close();}});that.buttons[key].el=button_element;that.buttons[key].setText=function(text){button_element.html(text);};that.buttons[key].addClass=function(className){button_element.addClass(className);};that.buttons[key].removeClass=function(className){button_element.removeClass(className);};that.buttons[key].disable=function(){that.buttons[key].isDisabled=true;button_element.prop("disabled",true);};that.buttons[key].enable=function(){that.buttons[key].isDisabled=false;button_element.prop("disabled",false);};that.buttons[key].show=function(){that.buttons[key].isHidden=false;button_element.css("display","");};that.buttons[key].hide=function(){that.buttons[key].isHidden=true;button_element.css("display","none");};that["$_"+key]=that["$$"+key]=button_element;that.$btnc.append(button_element);});if(total_buttons===0){this.$btnc.hide();}if(this.closeIcon===null&&total_buttons===0){this.closeIcon=true;}if(this.closeIcon){if(this.closeIconClass){var closeHtml='<i class="'+this.closeIconClass+'"></i>';this.$closeIcon.html(closeHtml);}this.$closeIcon.click(function(e){e.preventDefault();var buttonName=false;var shouldClose=false;var str;if(typeof that.closeIcon==="function"){str=that.closeIcon();}else{str=that.closeIcon;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}});this.$closeIcon.show();}else{this.$closeIcon.hide();}},setTitle:function(string,force){force=force||false;if(typeof string!=="undefined"){if(typeof string==="string"){this.title=string;}else{if(typeof string==="function"){if(typeof string.promise==="function"){console.error("Promise was returned from title function, this is not supported.");}var response=string();if(typeof response==="string"){this.title=response;}else{this.title=false;}}else{this.title=false;}}}if(this.isAjaxLoading&&!force){return;}this.$title.html(this.title||"");this.updateTitleContainer();},setIcon:function(iconClass,force){force=force||false;if(typeof iconClass!=="undefined"){if(typeof iconClass==="string"){this.icon=iconClass;}else{if(typeof iconClass==="function"){var response=iconClass();if(typeof response==="string"){this.icon=response;}else{this.icon=false;}}else{this.icon=false;}}}if(this.isAjaxLoading&&!force){return;}this.$icon.html(this.icon?'<i class="'+this.icon+'"></i>':"");this.updateTitleContainer();},updateTitleContainer:function(){if(!this.title&&!this.icon){this.$titleContainer.hide();}else{this.$titleContainer.show();}},setContentPrepend:function(content,force){if(!content){return;}this.contentParsed.prepend(content);},setContentAppend:function(content){if(!content){return;}this.contentParsed.append(content);},setContent:function(content,force){force=!!force;var that=this;if(content){this.contentParsed.html("").append(content);}if(this.isAjaxLoading&&!force){return;}this.$content.html("");this.$content.append(this.contentParsed);setTimeout(function(){that.$body.find("input[autofocus]:visible:first").focus();},100);},loadingSpinner:false,showLoading:function(disableButtons){this.loadingSpinner=true;this.$jconfirmBox.addClass("loading");if(disableButtons){this.$btnc.find("button").prop("disabled",true);}},hideLoading:function(enableButtons){this.loadingSpinner=false;this.$jconfirmBox.removeClass("loading");if(enableButtons){this.$btnc.find("button").prop("disabled",false);}},ajaxResponse:false,contentParsed:"",isAjax:false,isAjaxLoading:false,_parseContent:function(){var that=this;var e="&nbsp;";if(typeof this.content==="function"){var res=this.content.apply(this);if(typeof res==="string"){this.content=res;}else{if(typeof res==="object"&&typeof res.always==="function"){this.isAjax=true;this.isAjaxLoading=true;res.always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});this.content=e;}else{this.content=e;}}}if(typeof this.content==="string"&&this.content.substr(0,4).toLowerCase()==="url:"){this.isAjax=true;this.isAjaxLoading=true;var u=this.content.substring(4,this.content.length);$.get(u).done(function(html){that.contentParsed.html(html);}).always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});}if(!this.content){this.content=e;}if(!this.isAjax){this.contentParsed.html(this.content);this.setContent();that._contentReady.resolve();}},_stopCountDown:function(){clearInterval(this.autoCloseInterval);if(this.$cd){this.$cd.remove();}},_startCountDown:function(){var that=this;var opt=this.autoClose.split("|");if(opt.length!==2){console.error("Invalid option for autoClose. example 'close|10000'");return false;}var button_key=opt[0];var time=parseInt(opt[1]);if(typeof this.buttons[button_key]==="undefined"){console.error("Invalid button key '"+button_key+"' for autoClose");return false;}var seconds=Math.ceil(time/1000);this.$cd=$('<span class="countdown"> ('+seconds+")</span>").appendTo(this["$_"+button_key]);this.autoCloseInterval=setInterval(function(){that.$cd.html(" ("+(seconds-=1)+") ");if(seconds<=0){that["$$"+button_key].trigger("click");that._stopCountDown();}},1000);},_getKey:function(key){switch(key){case 192:return"tilde";case 13:return"enter";case 16:return"shift";case 9:return"tab";case 20:return"capslock";case 17:return"ctrl";case 91:return"win";case 18:return"alt";case 27:return"esc";case 32:return"space";}var initial=String.fromCharCode(key);if(/^[A-z0-9]+$/.test(initial)){return initial.toLowerCase();}else{return false;}},reactOnKey:function(e){var that=this;var a=$(".jconfirm");if(a.eq(a.length-1)[0]!==this.$el[0]){return false;}var key=e.which;if(this.$content.find(":input").is(":focus")&&/13|32/.test(key)){return false;}var keyChar=this._getKey(key);if(keyChar==="esc"&&this.escapeKey){if(this.escapeKey===true){this.$scrollPane.trigger("click");}else{if(typeof this.escapeKey==="string"||typeof this.escapeKey==="function"){var buttonKey;if(typeof this.escapeKey==="function"){buttonKey=this.escapeKey();}else{buttonKey=this.escapeKey;}if(buttonKey){if(typeof this.buttons[buttonKey]==="undefined"){console.warn("Invalid escapeKey, no buttons found with key "+buttonKey);}else{this["$_"+buttonKey].trigger("click");}}}}}$.each(this.buttons,function(key,button){if(button.keys.indexOf(keyChar)!==-1){that["$_"+key].trigger("click");}});},setDialogCenter:function(){console.info("setDialogCenter is deprecated, dialogs are centered with CSS3 tables");},_unwatchContent:function(){clearInterval(this._timer);},close:function(onClosePayload){var that=this;if(typeof this.onClose==="function"){this.onClose(onClosePayload);}this._unwatchContent();$(window).unbind("resize."+this._id);$(window).unbind("keyup."+this._id);$(window).unbind("jcKeyDown."+this._id);if(this.draggable){$(window).unbind("mousemove."+this._id);$(window).unbind("mouseup."+this._id);this.$titleContainer.unbind("mousedown");}that.$el.removeClass(that.loadedClass);$("body").removeClass("jconfirm-no-scroll-"+that._id);that.$jconfirmBoxContainer.removeClass("jconfirm-no-transition");setTimeout(function(){that.$body.addClass(that.closeAnimationParsed);that.$jconfirmBg.addClass("jconfirm-bg-h");var closeTimer=(that.closeAnimation==="none")?1:that.animationSpeed;setTimeout(function(){that.$el.remove();var l=w.jconfirm.instances;var i=w.jconfirm.instances.length-1;for(i;i>=0;i--){if(w.jconfirm.instances[i]._id===that._id){w.jconfirm.instances.splice(i,1);}}if(!w.jconfirm.instances.length){if(that.scrollToPreviousElement&&w.jconfirm.lastFocused&&w.jconfirm.lastFocused.length&&$.contains(document,w.jconfirm.lastFocused[0])){var $lf=w.jconfirm.lastFocused;if(that.scrollToPreviousElementAnimate){var st=$(window).scrollTop();var ot=w.jconfirm.lastFocused.offset().top;var wh=$(window).height();if(!(ot>st&&ot<(st+wh))){var scrollTo=(ot-Math.round((wh/3)));$("html, body").animate({scrollTop:scrollTo},that.animationSpeed,"swing",function(){$lf.focus();});}else{$lf.focus();}}else{$lf.focus();}w.jconfirm.lastFocused=false;}}if(typeof that.onDestroy==="function"){that.onDestroy();}},closeTimer*0.4);},50);return true;},open:function(){if(this.isOpen()){return false;}this._buildHTML();this._bindEvents();this._open();return true;},setStartingPoint:function(){var el=false;if(this.animateFromElement!==true&&this.animateFromElement){el=this.animateFromElement;w.jconfirm.lastClicked=false;}else{if(w.jconfirm.lastClicked&&this.animateFromElement===true){el=w.jconfirm.lastClicked;w.jconfirm.lastClicked=false;}else{return false;}}if(!el){return false;}var offset=el.offset();var iTop=el.outerHeight()/2;var iLeft=el.outerWidth()/2;iTop-=this.$jconfirmBox.outerHeight()/2;iLeft-=this.$jconfirmBox.outerWidth()/2;var sourceTop=offset.top+iTop;sourceTop=sourceTop-this._scrollTop();var sourceLeft=offset.left+iLeft;var wh=$(window).height()/2;var ww=$(window).width()/2;var targetH=wh-this.$jconfirmBox.outerHeight()/2;var targetW=ww-this.$jconfirmBox.outerWidth()/2;sourceTop-=targetH;sourceLeft-=targetW;if(Math.abs(sourceTop)>wh||Math.abs(sourceLeft)>ww){return false;}this.$jconfirmBoxContainer.css("transform","translate("+sourceLeft+"px, "+sourceTop+"px)");},_open:function(){var that=this;if(typeof that.onOpenBefore==="function"){that.onOpenBefore();}this.$body.removeClass(this.animationParsed);this.$jconfirmBg.removeClass("jconfirm-bg-h");this.$body.focus();that.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");setTimeout(function(){that.$body.css(that._getCSS(that.animationSpeed,1));that.$body.css({"transition-property":that.$body.css("transition-property")+", margin"});that.$jconfirmBoxContainer.addClass("jconfirm-no-transition");that._modalReady.resolve();if(typeof that.onOpen==="function"){that.onOpen();}that.$el.addClass(that.loadedClass);},this.animationSpeed);},loadedClass:"jconfirm-open",isClosed:function(){return !this.$el||this.$el.parent().length===0;},isOpen:function(){return !this.isClosed();},toggle:function(){if(!this.isOpen()){this.open();}else{this.close();}}};w.jconfirm.instances=[];w.jconfirm.lastFocused=false;w.jconfirm.pluginDefaults={template:'<div class="jconfirm"><div class="jconfirm-bg jconfirm-bg-h"></div><div class="jconfirm-scrollpane"><div class="jconfirm-row"><div class="jconfirm-cell"><div class="jconfirm-holder"><div class="jc-bs3-container"><div class="jc-bs3-row"><div class="jconfirm-box-container jconfirm-animated"><div class="jconfirm-box" role="dialog" aria-labelledby="labelled" tabindex="-1"><div class="jconfirm-closeIcon">&times;</div><div class="jconfirm-title-c"><span class="jconfirm-icon-c"></span><span class="jconfirm-title"></span></div><div class="jconfirm-content-pane"><div class="jconfirm-content"></div></div><div class="jconfirm-buttons"></div><div class="jconfirm-clear"></div></div></div></div></div></div></div></div></div></div>',title:"Hello",titleClass:"",type:"default",typeAnimated:true,draggable:true,dragWindowGap:15,dragWindowBorder:true,animateFromElement:true,alignMiddle:true,smoothContent:true,content:"Are you sure to continue?",buttons:{},defaultButtons:{ok:{action:function(){}},close:{action:function(){}}},contentLoaded:function(){},icon:"",lazyOpen:false,bgOpacity:null,theme:"light",animation:"scale",closeAnimation:"scale",animationSpeed:400,animationBounce:1,escapeKey:true,rtl:false,container:"body",containerFluid:false,backgroundDismiss:false,backgroundDismissAnimation:"shake",autoClose:false,closeIcon:null,closeIconClass:false,watchInterval:100,columnClass:"col-md-4 col-md-offset-4 col-sm-6 col-sm-offset-3 col-xs-10 col-xs-offset-1",boxWidth:"50%",scrollToPreviousElement:true,scrollToPreviousElementAnimate:true,useBootstrap:true,offsetTop:40,offsetBottom:40,bootstrapClasses:{container:"container",containerFluid:"container-fluid",row:"row"},onContentReady:function(){},onOpenBefore:function(){},onOpen:function(){},onClose:function(){},onDestroy:function(){},onAction:function(){}};var keyDown=false;$(window).on("keydown",function(e){if(!keyDown){var $target=$(e.target);var pass=false;if($target.closest(".jconfirm-box").length){pass=true;}if(pass){$(window).trigger("jcKeyDown");}keyDown=true;}});$(window).on("keyup",function(){keyDown=false;});w.jconfirm.lastClicked=false;$(document).on("mousedown","button, a, [jc-source]",function(){w.jconfirm.lastClicked=$(this);});}));
-},{"jquery":40}],40:[function(require,module,exports){
+},{"jquery":41}],41:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -18163,7 +18546,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],41:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -20462,7 +20845,7 @@ var qrcode = function() {
     return qrcode;
 }));
 
-},{}],42:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 /**
  * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
  *
@@ -22050,7 +22433,7 @@ module.exports = {
   revealKeys: revealKeys,
 };
 
-},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":24,"../../../lib/widgets/fields":22,"../../../lib/widgets/midi-source":29}],43:[function(require,module,exports){
+},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":25,"../../../lib/widgets/fields":23,"../../../lib/widgets/midi-source":30}],44:[function(require,module,exports){
 /**
  * "Export" in the editor: turning the canvas into one file that works.
  *
@@ -22682,7 +23065,9 @@ function install(editor, options) {
     if (!returning) return;
     returning = false;
     // A tick later: the modal is still closing, and would close the dialog with it.
-    setTimeout(open, 0);
+    setTimeout(function () {
+      open();
+    }, 0);
   });
 
   downloadButton.onclick = function () {
@@ -22854,7 +23239,15 @@ function install(editor, options) {
     publish(publishingAs(), false);
   };
 
-  editor.Commands.add("oscar-export", open);
+  // The canvas is made a project first, when it is nobody yet: what is
+  // published has to belong to one. If that cannot be done -- OSCAR is not
+  // answering -- the window opens all the same and says what it can.
+  editor.Commands.add("oscar-export", function () {
+    if (!options.beforeOpen) return open();
+    Promise.resolve()
+      .then(options.beforeOpen)
+      .then(open, open);
+  });
 
   return {
     /**
@@ -22916,7 +23309,7 @@ function install(editor, options) {
 
 module.exports = { install: install, fileStem: fileStem };
 
-},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":15,"./adapters/grapesjs":42,"qrcode-generator":41}],44:[function(require,module,exports){
+},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":16,"./adapters/grapesjs":43,"qrcode-generator":42}],45:[function(require,module,exports){
 "use strict";
 
 /**
@@ -22985,7 +23378,7 @@ function openWelcome(deps) {
 
 module.exports = { isFirstRun: isFirstRun, openWelcome: openWelcome, WELCOME: WELCOME, AUTOSAVE_KEY: AUTOSAVE_KEY };
 
-},{}],45:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 window.$ = $ = window.jQuery = require("jquery");
 
 // jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
@@ -23260,6 +23653,7 @@ var welcome = require("./first_run");
 
 var oscarExport = require("./export_dialog");
 var { createOpenProject } = require("../../lib/open-project");
+var { createProjectSync } = require("../../lib/project-sync");
 var toolbarOrder = require("../../lib/toolbar-order");
 
 var isProjectData = projectFormat.isGrapesProject;
@@ -23676,6 +24070,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   function openProjects(mode) {
     projectsMode = mode;
+    selectedRow = null;
     // Save leaves templates out of the list, so one picked in Load must not
     // linger as the name a project is saved under.
     if (mode === "Save" && selectedTemplate) {
@@ -23778,6 +24173,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
           badge.textContent = isDraft ? "Draft" : "Template";
           if (isDraft) badge.setAttribute("title", "Written by an assistant through MCP. Review it before it goes anywhere near the rig.");
           name.appendChild(badge);
+        } else if (row.id && row.id === openProject.get().id) {
+          // The one on the canvas.
+          var here = document.createElement("span");
+          here.className = "o-badge";
+          here.textContent = "Open";
+          name.appendChild(here);
         }
         tr.appendChild(name);
         tr.appendChild(projectCell(projectsTable.formatSize(row.size), "o-num"));
@@ -23820,6 +24221,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // Marks the row in place rather than re-rendering, so a keyboard user's
   // focus stays on the row they just chose.
   function selectProject(row, tr) {
+    selectedRow = row;
     selectedTemplate = row.template ? row._id : null;
     $("#project-name").val(row.name).attr("id-project", row.template ? "" : row._id);
     templateUrl = row.template ? row.url : null;
@@ -23859,10 +24261,21 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var remove = function (takeDown) {
       var call = draft
         ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
-        : $.ajax({ type: "DELETE", url: "/remove/" + row._id });
+        : $.ajax({ type: "DELETE", url: row.id ? "/projects/" + encodeURIComponent(row.id) : "/remove/" + row._id });
       call
         .done(function (data) {
           if (takeDown && live && !data.error) fetch("/published/" + encodeURIComponent(live.id), { method: "DELETE" }).catch(function () {});
+          // The one on the canvas is gone: the canvas starts again as nobody,
+          // and what was on it is not saved back.
+          if (!draft && !data.error && row.id && row.id === openProject.get().id) {
+            projectSync.begin(
+              "",
+              function () {
+                loadTemplate("");
+              },
+              { discard: true }
+            );
+          }
           refreshProjects();
           $.alert(data.error || data.msg);
         })
@@ -23900,127 +24313,286 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
   }
 
-  // ---- save --------------------------------------------------------------
+  // ---- the project on the canvas -------------------------------------------
+  // A project lives in OSCAR, on the computer it runs on, under one title
+  // (lib/projects.js). The canvas is one of them being edited: every change
+  // is saved a moment after it is made (lib/project-sync.js), and what OSCAR
+  // has not yet confirmed stays in this browser. There is no Save to press.
   var projectName = document.getElementById("project-name");
-
-  // Which project the canvas is (lib/open-project.js): kept in this browser
-  // beside the autosaved canvas, so a reload brings back who it is as well as
-  // what is on it, and what it publishes is known as that project.
   var openProject = createOpenProject(window.localStorage);
-  if (projectName && !projectName.value) projectName.value = openProject.get().name;
+  var selectedRow = null; // the row picked in the projects list
 
-  document.getElementById("save-button").onclick = function () {
-    var name = (projectName.value || "").trim();
-    if (!name) {
-      $.alert("Give your project a name first");
-      return;
-    }
-    saveProject(name, false);
-  };
-
-  function saveProject(name, overwrite) {
-    showLoader();
-
-    // The project JSON is sent flat alongside OSCAR's own `name`/`overwrite`
-    // fields; the server strips those two before writing the file.
-    var body = Object.assign(
-      { name: name, overwrite: overwrite, grapesjs: grapesjs.version },
-      editor.getProjectData()
-    );
-
-    postJSON("/save", body)
-      .then(function (res) {
-        hideLoader();
-
-        if (!res || res.error) {
-          $.alert((res && res.error) || "Could not be saved");
-          return;
-        }
-
-        if (res.confirm) {
-          $.confirm({
-            title: "Overwriting",
-            content: res.confirm,
-            buttons: {
-              confirm: function () {
-                saveProject(name, true);
-              },
-              cancel: function () {},
-            },
-          });
-          return;
-        }
-
-        refreshProjects();
-        $.alert(res.msg);
-        modal.close();
-      })
-      .catch(function () {
-        hideLoader();
-        $.alert("Could not reach the OSCAR server");
-      });
+  /** Text a person typed, made safe to put in a dialog (its content is markup). */
+  function plain(text) {
+    return String(text == null ? "" : text).replace(/[<>&"]/g, "");
   }
 
-  // ---- load --------------------------------------------------------------
-  var templateUrl = null;
+  /** OSCAR's projects over HTTP: each answers { ok, status, body }, and fails only when OSCAR cannot be reached. */
+  function projectCall(method, url, body) {
+    return fetch(url, {
+      method: method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (res) {
+      return res.json().then(
+        function (json) {
+          return { ok: res.ok, status: res.status, body: json };
+        },
+        function () {
+          return { ok: res.ok, status: res.status, body: {} };
+        }
+      );
+    });
+  }
+  var projectApi = {
+    read: function (id) {
+      return projectCall("GET", "/projects/" + encodeURIComponent(id));
+    },
+    create: function (body) {
+      return projectCall("POST", "/projects", body);
+    },
+    write: function (id, body) {
+      return projectCall("PUT", "/projects/" + encodeURIComponent(id), body);
+    },
+    copy: function (id) {
+      return projectCall("POST", "/projects/" + encodeURIComponent(id) + "/copy");
+    },
+  };
 
-  document.getElementById("load-button").onclick = function () {
-    var id = projectName.getAttribute("id-project");
-    if (templateUrl) {
-      confirmLoadTemplate(templateUrl);
-      return;
-    }
-    if (!id) {
-      $.alert("Pick a project from the list first");
-      return;
-    }
+  // The project as it was when this window opened it: what File > Revert
+  // goes back to. Kept for this tab only; another tab has its own.
+  var OPENED_KEY = "oscarProject.opened";
 
+  function keepOpened(id, data) {
+    try {
+      sessionStorage.setItem(OPENED_KEY, JSON.stringify({ id: id, data: data }));
+    } catch (err) {
+      // No room, or no storage: Revert has nothing to offer, and says so.
+    }
+  }
+
+  function openedCopy() {
+    try {
+      var held = JSON.parse(sessionStorage.getItem(OPENED_KEY));
+      return held && held.id === openProject.get().id && isProjectData(held.data) ? held.data : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // The title and how it stands, in the top bar beside File and Edit.
+  var SAVE_STATES = {
+    new: ["", "Nothing to save yet: this becomes a project at its first change."],
+    saving: ["Saving\u2026", "Sending your changes to OSCAR."],
+    saved: ["Saved", "Every change is saved in OSCAR as you make it."],
+    unsaved: ["Not saved", "OSCAR could not be reached. Your changes are kept in this browser and sent as soon as it answers."],
+    conflict: ["Changed elsewhere", "This project was saved from another window or device. Change something here to choose which version to keep."],
+  };
+
+  function paintTitle() {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-title-btn");
+    if (el) el.textContent = openProject.get().name || "Untitled";
+  }
+
+  function paintSaveState(status, detail) {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-save-state");
+    if (!el) return;
+    var words = SAVE_STATES[status] || SAVE_STATES.new;
+    el.textContent = words[0];
+    el.setAttribute("data-state", status);
+    el.setAttribute("data-tooltip", status === "unsaved" && detail ? "Not saved: " + detail + " Your changes are kept in this browser meanwhile." : words[1]);
+    el.setAttribute("data-tooltip-pos", "bottom");
+  }
+
+  /** Saved from two places: which version stays is the person's call, never OSCAR's. */
+  function askConflict(info) {
+    return new Promise(function (resolve) {
+      $.confirm({
+        title: "Changed somewhere else",
+        content: '"' + plain(info.name) + '" was saved from another window or device since this one opened it. Which version do you keep?',
+        boxWidth: "520px",
+        useBootstrap: false,
+        buttons: {
+          mine: {
+            text: "Keep this window's",
+            action: function () {
+              resolve("mine");
+            },
+          },
+          theirs: {
+            text: "Load the other one",
+            action: function () {
+              resolve("theirs");
+            },
+          },
+        },
+      });
+    });
+  }
+
+  var projectSync = createProjectSync({
+    pointer: openProject,
+    api: projectApi,
+    // Tidied as a saved project is: no editor state, every page named.
+    getData: function () {
+      return projectFormat.namePages(projectFormat.stripEditorState(editor.getProjectData()));
+    },
+    loadData: function (data) {
+      editor.loadProjectData(data);
+      editor.UndoManager.clear();
+    },
+    isEmpty: function () {
+      return editor.getWrapper().components().length === 0;
+    },
+    onStatus: paintSaveState,
+    onName: paintTitle,
+    conflict: askConflict,
+    keepOpened: keepOpened,
+    grapesjs: grapesjs.version,
+  });
+
+  // Any change to the project is a change to save.
+  editor.on("update", function () {
+    projectSync.changed();
+  });
+  editor.onReady(function () {
+    projectSync.start();
+  });
+
+  // Ctrl+S is in everybody's fingers. It sends what is waiting, now.
+  document.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && String(event.key).toLowerCase() === "s") {
+      event.preventDefault();
+      projectSync.flush();
+    }
+  });
+
+  /** Click the title: a new one. The address of a published interface does not move with it. */
+  function renameProject() {
     $.confirm({
-      title: "Load",
-      content:
-        "If you load this project, you will lose all unsaved changes in the current one.",
+      title: "Rename project",
+      // The title is in the field as the dialog draws, not put there after:
+      // plain() has taken out what could end the attribute.
+      content: '<input type="text" class="o-input oscar-rename-input" maxlength="200" aria-label="Project title" value="' + plain(openProject.get().name || "Untitled") + '" />',
+      onContentReady: function () {
+        var dialog = this;
+        var input = dialog.$content.find("input");
+        input.trigger("focus").trigger("select");
+        input.on("keydown", function (event) {
+          if (event.key === "Enter") dialog.$$confirm.trigger("click");
+        });
+      },
       buttons: {
-        confirm: function () {
-          showLoader();
-
-          fetch("/load/" + encodeURIComponent(id) + "?envelope=1")
-            .then(function (res) {
-              return res.json();
-            })
-            .then(function (answer) {
-              hideLoader();
-              var data = answer && answer.data;
-
-              if (!answer || answer.error || !data || !Object.keys(data).length) {
-                $.alert((answer && answer.error) || "That project could not be found");
-                return;
-              }
-
-              // loadProjectData tears down the current page before reading
-              // the new one, so a file that isn't a GrapesJS 0.21+ project
-              // leaves the editor with no page at all. Check the shape first.
-              if (!isProjectData(data)) {
-                $.alert(
-                  "This file isn't an OSCAR 2 project, so it can't be opened. " +
-                    "Your current project hasn't been changed."
-                );
-                return;
-              }
-
-              editor.loadProjectData(data);
-              openedFile = { handle: null, name: answer.name || "" };
-              openProject.set({ id: answer.id, name: answer.name, saved: true });
-              $.alert("Loaded successfully");
-              modal.close();
-            })
-            .catch(function () {
-              hideLoader();
-              $.alert("Could not reach the OSCAR server");
-            });
+        confirm: {
+          text: "Rename",
+          action: function () {
+            projectSync.rename(this.$content.find("input").val());
+          },
         },
         cancel: function () {},
       },
     });
+  }
+
+  /** File > New project: an empty canvas, nobody until its first change. */
+  function newProject() {
+    projectSync.begin("", function () {
+      loadTemplate("");
+    });
+  }
+
+  /** File > Make a copy: a second project like this one, opened in its place. */
+  function copyProject() {
+    projectSync.copy().then(null, function (err) {
+      $.alert(plain(err && err.message) || "The project could not be copied.");
+    });
+  }
+
+  // ---- revert ------------------------------------------------------------
+  // With every change saved there is no "close without saving". These are
+  // the two ways back: how the project was when this window opened it, and
+  // the version that is published.
+  function revertWith(data, what) {
+    $.confirm({
+      title: "Revert",
+      content: "Put this project back as " + what + "? What you changed since is replaced.",
+      buttons: {
+        confirm: {
+          text: "Revert",
+          action: function () {
+            projectSync.replaceWith(data);
+          },
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function revertToOpened() {
+    var data = openedCopy();
+    if (!data) {
+      $.alert("There is nothing to go back to: this project was not opened in this window, or has only just been made.");
+      return;
+    }
+    revertWith(data, "it was when this window opened it");
+  }
+
+  function revertToPublished() {
+    var id = openProject.get().id;
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : [];
+      })
+      .then(function (pages) {
+        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
+          return id && page.project === id && page.editable;
+        })[0];
+        if (!live) {
+          $.alert("This project has no published version to go back to.");
+          return null;
+        }
+        return fetch("/published/" + encodeURIComponent(live.id) + "/project")
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (answer) {
+            if (!answer || !isProjectData(answer.data)) {
+              $.alert(plain(answer && answer.error) || "The published version could not be read.");
+              return;
+            }
+            revertWith(answer.data, "it is published at /show/" + live.id);
+          });
+      })
+      .catch(function () {
+        $.alert("Could not reach the OSCAR server");
+      });
+  }
+
+  // ---- open, from the list -------------------------------------------------
+  // Nothing asks about unsaved changes any more: there are none to lose.
+  var templateUrl = null;
+
+  document.getElementById("load-button").onclick = function () {
+    var row = selectedRow;
+    if (!row) {
+      $.alert("Pick a project from the list first");
+      return;
+    }
+    if (row.template) {
+      openTemplate(row.url, row.name);
+      return;
+    }
+    showLoader();
+    projectSync.open(row.id).then(
+      function () {
+        hideLoader();
+        modal.close();
+      },
+      function (err) {
+        hideLoader();
+        $.alert(plain(err && err.message) || "That project could not be opened");
+      }
+    );
   };
 
   // ---- pages -------------------------------------------------------------
@@ -24199,44 +24771,35 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   /**
    * Open a template: an HTML file with its CSS, read exactly the way Import
-   * reads pasted code. Everything in the current surface is replaced, and the
-   * name is cleared so the first save asks for a new one rather than
-   * suggesting the template's.
+   * reads pasted code. It starts a new project, named after the template,
+   * which joins the list at its first change: one that was only looked at
+   * leaves nothing behind. What was on the canvas is a project, and saved.
    */
-  function confirmLoadTemplate(url) {
-    $.confirm({
-      title: "Load",
-      content:
-        "If you load this template, you will lose all unsaved changes in the current project.",
-      buttons: {
-        confirm: function () {
-          showLoader();
-
-          fetch(url)
-            .then(function (res) {
-              if (!res.ok) throw new Error("status " + res.status);
-              return res.text();
-            })
-            .then(function (html) {
-              hideLoader();
-              loadTemplate(html);
-              selectedTemplate = null;
-              templateUrl = null;
-              $("#project-name").val("").attr("id-project", "");
-              // A template on the canvas is nobody's project until it is saved or published.
-              openedFile = { handle: null, name: "" };
-              openProject.clear();
-              $.alert("Loaded successfully");
-              modal.close();
-            })
-            .catch(function () {
-              hideLoader();
-              $.alert("That template could not be opened");
-            });
+  function openTemplate(url, name) {
+    showLoader();
+    fetch(url)
+      .then(function (res) {
+        if (!res.ok) throw new Error("status " + res.status);
+        return res.text();
+      })
+      .then(function (html) {
+        return projectSync.begin(name || "", function () {
+          loadTemplate(html);
+        });
+      })
+      .then(
+        function () {
+          hideLoader();
+          selectedTemplate = null;
+          templateUrl = null;
+          selectedRow = null;
+          modal.close();
         },
-        cancel: function () {},
-      },
-    });
+        function () {
+          hideLoader();
+          $.alert("That template could not be opened");
+        }
+      );
   }
 
   function loadTemplate(html) {
@@ -24247,116 +24810,127 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.getWrapper().setAttributes({});
     editor.setComponents(html);
     editor.UndoManager.clear();
-    // A template on the canvas is nobody's project until it is saved or published.
-    openProject.clear();
   }
 
   // ---- a project as a file --------------------------------------------
-  // Open and Save against the real file system: a project is one .oscar
-  // file (the library's own JSON, stamped the same way) the person can put
-  // anywhere -- a band's shared drive, an email, a community repo -- and a
-  // .html template opens through the same door. The Load window stays for
-  // templates and the local library; this is for everything else.
-  var openedFile = { handle: null, name: "" };
+  // A project lives in OSCAR. An .oscar file is a copy of one: to keep as a
+  // backup, to send to a colleague, to carry to another OSCAR. Export a
+  // copy writes one; Open a file brings one in as a project. A .html
+  // template opens through the same door, as a template does.
 
   function slugName(name) {
     var slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    return slug || "surface";
+    return slug || "untitled";
   }
 
   function projectRecord(name, id) {
-    // The same stamping the library's save does on the server, so a .oscar
-    // file and a library project are one format, not two. The id is who the
-    // project is: what a published interface remembers it was made from.
+    // The same stamping OSCAR does when it keeps a project, so an exported
+    // file and a project in OSCAR are one format, not two. The id is who the
+    // project is: brought back in, the file is known as this project.
     var data = projectFormat.stripEditorState(editor.getProjectData());
     return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version, id: id });
   }
 
-  /**
-   * @param {{ asNew?: boolean }} [how] asNew: Save as on a project that has
-   *        been saved before makes another project, with an id of its own.
-   *        The id is only kept once the file is written: a picker closed
-   *        without saving changes nothing.
-   */
-  function oscarSaveToFile(how) {
-    var name = (projectName.value || "").trim() || openedFile.name || "surface";
-    var asNew = !!(how && how.asNew) && openProject.get().saved;
-    var id = asNew ? openProject.newId() : openProject.get().id || openProject.newId();
-    var text = JSON.stringify(projectRecord(name, id), null, 2);
-    var saved = function (as) {
-      openProject.set({ id: id, name: as || name, saved: true });
-    };
+  /** File > Export a copy: an .oscar file wherever the person says. The project stays in OSCAR. */
+  function exportCopy() {
+    projectSync.flush().then(function () {
+      var now = openProject.get();
+      var name = now.name || "Untitled";
+      var text = JSON.stringify(projectRecord(name, now.id || undefined), null, 2);
 
-    var fallback = function () {
-      // No file pickers in this browser: the file lands in Downloads.
-      var blob = new Blob([text], { type: "application/json" });
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = slugName(name) + ".oscar";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      saved();
-      setTimeout(function () {
-        URL.revokeObjectURL(a.href);
-      }, 5000);
-    };
+      var fallback = function () {
+        // No file pickers in this browser: the file lands in Downloads.
+        var blob = new Blob([text], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = slugName(name) + ".oscar";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(a.href);
+        }, 5000);
+      };
 
-    if (openedFile.handle) {
-      // Saving again writes the file that was opened or saved before,
-      // silently, the way every desktop app's Save works.
-      openedFile.handle
-        .createWritable()
-        .then(function (writable) {
-          return writable.write(text).then(function () {
-            return writable.close();
-          });
+      if (!window.showSaveFilePicker) return fallback();
+      window
+        .showSaveFilePicker({
+          suggestedName: slugName(name) + ".oscar",
+          types: [{ description: "OSCAR project", accept: { "application/json": [".oscar"] } }],
         })
-        .then(function () {
-          saved();
-          $.alert('Saved to "' + openedFile.handle.name + '"');
-        })
-        .catch(function () {
-          // The file moved or the permission lapsed: ask where, once more.
-          openedFile.handle = null;
-          oscarSaveToFile(how);
-        });
-      return;
-    }
-
-    if (!window.showSaveFilePicker) return fallback();
-    window
-      .showSaveFilePicker({
-        suggestedName: slugName(name) + ".oscar",
-        types: [{ description: "OSCAR project", accept: { "application/json": [".oscar"] } }],
-      })
-      .then(function (handle) {
-        return handle
-          .createWritable()
-          .then(function (writable) {
-            return writable.write(text).then(function () {
-              return writable.close();
+        .then(function (handle) {
+          return handle
+            .createWritable()
+            .then(function (writable) {
+              return writable.write(text).then(function () {
+                return writable.close();
+              });
+            })
+            .then(function () {
+              $.alert('Exported a copy to "' + plain(handle.name) + '". The project itself stays in OSCAR.');
             });
-          })
-          .then(function () {
-            openedFile = { handle: handle, name: name };
-            projectName.value = name;
-            saved();
-            $.alert('Saved to "' + handle.name + '"');
+        })
+        .catch(function (err) {
+          if (err && err.name === "AbortError") return; // they closed the picker
+          fallback();
+        });
+    });
+  }
+
+  /**
+   * Bring a project in: one more in OSCAR's list, opened. A file says who it
+   * is; when that project is already here the person chooses -- replace it,
+   * or keep both -- because either answer is right for somebody.
+   */
+  function importProject(project, ifExists) {
+    return projectApi
+      .create({ id: project.id, name: project.name, data: project.data, grapesjs: grapesjs.version, ifExists: ifExists })
+      .then(function (res) {
+        if (res.status === 409 && res.body && res.body.exists) {
+          $.confirm({
+            title: "Already in OSCAR",
+            content: '"' + plain(res.body.name) + '" is already one of your projects. Replace it with this file, or keep both?',
+            boxWidth: "520px",
+            useBootstrap: false,
+            buttons: {
+              replace: {
+                text: "Replace it",
+                btnClass: "btn-red",
+                action: function () {
+                  importProject(project, "replace");
+                },
+              },
+              both: {
+                text: "Keep both",
+                action: function () {
+                  importProject(project, "copy");
+                },
+              },
+              cancel: function () {},
+            },
           });
+          return null;
+        }
+        if (!res.ok) {
+          $.alert(plain(res.body && res.body.error) || "That file could not be brought in.");
+          return null;
+        }
+        // The one on the canvas was replaced: show what it is now, without
+        // first saving what it was over the top of it.
+        if (res.body.id === openProject.get().id) return projectSync.reload();
+        return projectSync.open(res.body.id);
       })
-      .catch(function (err) {
-        if (err && err.name === "AbortError") return; // they closed the picker
-        fallback();
+      .catch(function () {
+        $.alert("Could not reach the OSCAR server");
       });
   }
 
-  function openProjectText(fileName, text, handle) {
+  function openProjectText(fileName, text) {
     var parsed;
     try {
       parsed = JSON.parse(text);
     } catch (err) {
-      $.alert('"' + fileName + '" is not an OSCAR project file.');
+      $.alert('"' + plain(fileName) + '" is not an OSCAR project file.');
       return;
     }
     // openProject answers { status, data }: the project is its data, once
@@ -24369,51 +24943,28 @@ function initGrape(ipServer, socketPort, oscInPort) {
     }
     var data = opened.status === "ok" ? opened.data : null;
     if (!isProjectData(data)) {
-      $.alert('"' + fileName + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
+      $.alert('"' + plain(fileName) + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
       return;
     }
-    $.confirm({
-      title: "Open",
-      content: "If you open this file, you will lose all unsaved changes in the current project.",
-      buttons: {
-        confirm: function () {
-          editor.loadProjectData(data);
-          openedFile = { handle: handle || null, name: parsed.name || fileName.replace(/\.(oscar|json)$/i, "") };
-          projectName.value = openedFile.name;
-          projectName.setAttribute("id-project", "");
-          // Who the file says it is; a file from before projects had ids is
-          // given one, which the next Save writes into it.
-          openProject.set({ id: projectFormat.isProjectId(parsed.id) ? parsed.id : openProject.newId(), name: openedFile.name, saved: true });
-          $.alert("Opened successfully");
-        },
-        cancel: function () {},
-      },
+    importProject({
+      // Who the file says it is; one from before projects had ids is a new project.
+      id: projectFormat.isProjectId(parsed.id) ? parsed.id : undefined,
+      name: (typeof parsed.name === "string" && parsed.name.trim()) || fileName.replace(/\.(oscar|json)$/i, ""),
+      data: data,
     });
   }
 
   function openHtmlText(fileName, text) {
+    // An HTML page is a template: a new project, named after the page.
     var title = /<title[^>]*>([^<]*)<\/title>/i.exec(text);
-    $.confirm({
-      title: "Open",
-      content: "If you open this file, you will lose all unsaved changes in the current project.",
-      buttons: {
-        confirm: function () {
-          loadTemplate(text);
-          openedFile = { handle: null, name: (title && title[1].trim()) || fileName.replace(/\.html?$/i, "") };
-          projectName.value = openedFile.name;
-          projectName.setAttribute("id-project", "");
-          // An HTML page is a template: nobody's project, though it brings a name.
-          openProject.clear(openedFile.name);
-          $.alert("Opened successfully");
-        },
-        cancel: function () {},
-      },
+    projectSync.begin((title && title[1].trim()) || fileName.replace(/\.html?$/i, ""), function () {
+      loadTemplate(text);
     });
   }
 
-  function openPicked(fileName, text, handle) {
+  function openPicked(fileName, text) {
     if (/\.html?$/i.test(fileName) || (!/^\s*\{/.test(text) && /^\s*</.test(text))) openHtmlText(fileName, text);
-    else openProjectText(fileName, text, handle);
+    else openProjectText(fileName, text);
   }
 
   // The fallback for browsers without file pickers.
@@ -24427,7 +24978,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     openFileInput.value = "";
     if (!file) return;
     file.text().then(function (text) {
-      openPicked(file.name, text, null);
+      openPicked(file.name, text);
     });
   });
 
@@ -24439,10 +24990,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
       })
       .then(function (picked) {
         return picked[0].getFile().then(function (file) {
-          // A project file keeps its handle, so Save writes it back; an
-          // HTML template does not -- saving it makes a new .oscar.
           return file.text().then(function (text) {
-            openPicked(file.name, text, /\.(oscar|json)$/i.test(file.name) ? picked[0] : null);
+            openPicked(file.name, text);
           });
         });
       })
@@ -24450,12 +24999,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
         if (err && err.name === "AbortError") return;
         openFileInput.click();
       });
-  }
-
-  /** Save as...: always ask where, whatever file is held; a project saved before becomes another one. */
-  function oscarSaveAs() {
-    openedFile.handle = null;
-    oscarSaveToFile({ asNew: true });
   }
 
   /** One menu under a bar word: built, placed, closed by a click away. */
@@ -24628,13 +25171,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   function showFileMenu() {
     showBarMenu(".gjs-pn-devices-c .oscar-file-btn", [
-      { label: "Open a file\u2026", run: oscarOpenFile },
+      { label: "New project", run: newProject },
       {
-        label: "Open a template\u2026",
+        label: "Open\u2026",
         run: function () {
           editor.runCommand("open-projects", { type: "Load" });
         },
       },
+      { label: "Open a file\u2026", run: oscarOpenFile },
       {
         label: "Import HTML/CSS\u2026",
         run: function () {
@@ -24642,13 +25186,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
       { rule: true },
-      {
-        label: "Save",
-        run: function () {
-          oscarSaveToFile();
-        },
-      },
-      { label: "Save as\u2026", run: oscarSaveAs },
+      // No Save: every change is saved in OSCAR as it is made. These are the
+      // ways to a second project, to a file, and back to an earlier version.
+      { label: "Make a copy", run: copyProject },
+      { label: "Export a copy\u2026", run: exportCopy },
+      { label: "Revert to how it was when opened\u2026", run: revertToOpened },
+      { label: "Revert to the published version\u2026", run: revertToPublished },
       { rule: true },
       {
         label: "Publish\u2026",
@@ -24681,14 +25224,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 
   // A file double-clicked in the file manager arrives through the server,
-  // once, and goes through the same Open flow as any picked file: the
-  // confirmation about unsaved changes stands between it and the canvas.
+  // once, and comes in as any picked file does: as a project in OSCAR.
   fetch("/boot-file")
     .then(function (res) {
       return res.json();
     })
     .then(function (file) {
-      if (file && file.name && typeof file.text === "string") openPicked(file.name, file.text, null);
+      if (file && file.name && typeof file.text === "string") openPicked(file.name, file.text);
     })
     .catch(function () {});
 
@@ -24700,7 +25242,11 @@ function initGrape(ipServer, socketPort, oscInPort) {
         fetch: function (url) {
           return fetch(url);
         },
-        load: loadTemplate,
+        load: function (html) {
+          projectSync.begin("", function () {
+            loadTemplate(html);
+          });
+        },
         // Anything already on the canvas is somebody's, however quick they were.
         untouched: function () {
           return editor.getWrapper().components().length === 0;
@@ -25083,52 +25629,72 @@ function initGrape(ipServer, socketPort, oscInPort) {
     showEditMenu();
   });
 
+  // The project's title, beside File and Edit: click it to rename. And how
+  // it stands with OSCAR: Saving, Saved, Not saved.
+  pn.addButton("devices-c", {
+    id: "oscar-title",
+    className: "oscar-title-btn",
+    label: "Untitled",
+    command: null,
+    attributes: { title: "Rename this project", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  onBarClick(".oscar-title-btn", function () {
+    renameProject();
+  });
+  pn.addButton("devices-c", {
+    id: "oscar-save-state",
+    className: "oscar-save-state",
+    label: "",
+    command: null,
+    attributes: { title: "", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  paintTitle();
+  paintSaveState(projectSync.status());
+
   // ---- export ------------------------------------------------------------
   // Distinct from "See code" beside it, which is GrapesJS's own view of the
   // markup and cannot send anything. This one produces a file that does.
   var publishDialog = oscarExport.install(editor, {
     host: ipServer,
     port: socketPort,
+    // Publishing needs a project to belong to: a canvas that is nobody yet
+    // becomes one as the window opens, and what is waiting is saved.
+    beforeOpen: function () {
+      return projectSync.materialise();
+    },
     // Who the canvas is: what it publishes is remembered as this project.
     project: function () {
       var now = openProject.get();
-      return { id: now.id, name: now.name || (projectName ? projectName.value : "") };
+      return { id: now.id, name: now.name || "Untitled" };
     },
     newId: function () {
-      return openProject.ensureId();
+      return openProject.get().id || openProject.newId();
     },
-    // Published: the canvas is that project from now on, across a reload.
-    adopt: function (as) {
-      var now = openProject.get();
-      openProject.set({ id: as.id, name: as.name, saved: now.id === as.id ? now.saved : false });
-      if (projectName && !projectName.value) projectName.value = as.name;
-    },
-    // The project itself, kept beside the page so the interface can be edited later.
+    adopt: function () {},
+    // The project itself, kept beside the page: what phones are showing.
     source: function (name, id) {
       return projectRecord(name, id);
     },
-    // Edit, from a live interface's row: the project it was published from, back on the canvas.
+    // Edit, from a live interface's row: its project, on the canvas. One
+    // that is no longer among the projects is brought back from the copy
+    // kept with the live interface.
     openProject: function (project) {
       if (!project || !isProjectData(project.data)) {
         $.alert("That project could not be opened. Your current project has not been changed.");
         return;
       }
-      $.confirm({
-        title: "Edit",
-        content: 'If you open "' + String(project.name || "this project").replace(/[<>&]/g, "") + '", you will lose all unsaved changes in the current project.',
-        buttons: {
-          confirm: function () {
-            editor.loadProjectData(project.data);
-            // No file is held: it came from OSCAR's own copy. Save asks where, and keeps who it is.
-            openedFile = { handle: null, name: project.name || "" };
-            projectName.value = openedFile.name;
-            projectName.setAttribute("id-project", "");
-            openProject.set({ id: project.id, name: openedFile.name, saved: false });
-            modal.close();
-          },
-          cancel: function () {},
-        },
-      });
+      projectSync
+        .open(project.id)
+        .then(null, function () {
+          return importProject({ id: project.id, name: project.name, data: project.data });
+        })
+        .then(function () {
+          modal.close();
+        });
     },
   });
 
@@ -25958,13 +26524,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["oscar-file", "oscar-edit", "ipButton"]
+    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "ipButton"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["oscar-file", "oscar-edit", "ipButton"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "ipButton"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {
@@ -26178,7 +26744,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/open-project":9,"../../lib/project-format":13,"../../lib/projects-table":14,"../../lib/toolbar-order":17,"../../lib/widget-styles":18,"./adapters/grapesjs":42,"./export_dialog":43,"./first_run":44,"./pages":47,"jquery":40,"jquery-confirm":39}],46:[function(require,module,exports){
+},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/open-project":9,"../../lib/project-format":13,"../../lib/project-sync":14,"../../lib/projects-table":15,"../../lib/toolbar-order":18,"../../lib/widget-styles":19,"./adapters/grapesjs":43,"./export_dialog":44,"./first_run":45,"./pages":48,"jquery":41,"jquery-confirm":40}],47:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
@@ -26348,7 +26914,7 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"../../lib/widget-styles":18,"./adapters/grapesjs":42,"./pages":47,"jquery":40}],47:[function(require,module,exports){
+},{"../../lib/widget-styles":19,"./adapters/grapesjs":43,"./pages":48,"jquery":41}],48:[function(require,module,exports){
 /**
  * Multiple pages: what the editor and the control surface have in common.
  *
@@ -26629,4 +27195,4 @@ module.exports = {
   pageTabs: pageTabs,
 };
 
-},{"../../lib/features":6,"../../lib/project-format":13}]},{},[46,45]);
+},{"../../lib/features":6,"../../lib/project-format":13}]},{},[47,46]);

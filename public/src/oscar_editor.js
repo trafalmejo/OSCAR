@@ -272,6 +272,7 @@ var welcome = require("./first_run");
 
 var oscarExport = require("./export_dialog");
 var { createOpenProject } = require("../../lib/open-project");
+var { createProjectSync } = require("../../lib/project-sync");
 var toolbarOrder = require("../../lib/toolbar-order");
 
 var isProjectData = projectFormat.isGrapesProject;
@@ -688,6 +689,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   function openProjects(mode) {
     projectsMode = mode;
+    selectedRow = null;
     // Save leaves templates out of the list, so one picked in Load must not
     // linger as the name a project is saved under.
     if (mode === "Save" && selectedTemplate) {
@@ -790,6 +792,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
           badge.textContent = isDraft ? "Draft" : "Template";
           if (isDraft) badge.setAttribute("title", "Written by an assistant through MCP. Review it before it goes anywhere near the rig.");
           name.appendChild(badge);
+        } else if (row.id && row.id === openProject.get().id) {
+          // The one on the canvas.
+          var here = document.createElement("span");
+          here.className = "o-badge";
+          here.textContent = "Open";
+          name.appendChild(here);
         }
         tr.appendChild(name);
         tr.appendChild(projectCell(projectsTable.formatSize(row.size), "o-num"));
@@ -832,6 +840,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // Marks the row in place rather than re-rendering, so a keyboard user's
   // focus stays on the row they just chose.
   function selectProject(row, tr) {
+    selectedRow = row;
     selectedTemplate = row.template ? row._id : null;
     $("#project-name").val(row.name).attr("id-project", row.template ? "" : row._id);
     templateUrl = row.template ? row.url : null;
@@ -871,10 +880,21 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var remove = function (takeDown) {
       var call = draft
         ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
-        : $.ajax({ type: "DELETE", url: "/remove/" + row._id });
+        : $.ajax({ type: "DELETE", url: row.id ? "/projects/" + encodeURIComponent(row.id) : "/remove/" + row._id });
       call
         .done(function (data) {
           if (takeDown && live && !data.error) fetch("/published/" + encodeURIComponent(live.id), { method: "DELETE" }).catch(function () {});
+          // The one on the canvas is gone: the canvas starts again as nobody,
+          // and what was on it is not saved back.
+          if (!draft && !data.error && row.id && row.id === openProject.get().id) {
+            projectSync.begin(
+              "",
+              function () {
+                loadTemplate("");
+              },
+              { discard: true }
+            );
+          }
           refreshProjects();
           $.alert(data.error || data.msg);
         })
@@ -912,127 +932,286 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
   }
 
-  // ---- save --------------------------------------------------------------
+  // ---- the project on the canvas -------------------------------------------
+  // A project lives in OSCAR, on the computer it runs on, under one title
+  // (lib/projects.js). The canvas is one of them being edited: every change
+  // is saved a moment after it is made (lib/project-sync.js), and what OSCAR
+  // has not yet confirmed stays in this browser. There is no Save to press.
   var projectName = document.getElementById("project-name");
-
-  // Which project the canvas is (lib/open-project.js): kept in this browser
-  // beside the autosaved canvas, so a reload brings back who it is as well as
-  // what is on it, and what it publishes is known as that project.
   var openProject = createOpenProject(window.localStorage);
-  if (projectName && !projectName.value) projectName.value = openProject.get().name;
+  var selectedRow = null; // the row picked in the projects list
 
-  document.getElementById("save-button").onclick = function () {
-    var name = (projectName.value || "").trim();
-    if (!name) {
-      $.alert("Give your project a name first");
-      return;
-    }
-    saveProject(name, false);
-  };
-
-  function saveProject(name, overwrite) {
-    showLoader();
-
-    // The project JSON is sent flat alongside OSCAR's own `name`/`overwrite`
-    // fields; the server strips those two before writing the file.
-    var body = Object.assign(
-      { name: name, overwrite: overwrite, grapesjs: grapesjs.version },
-      editor.getProjectData()
-    );
-
-    postJSON("/save", body)
-      .then(function (res) {
-        hideLoader();
-
-        if (!res || res.error) {
-          $.alert((res && res.error) || "Could not be saved");
-          return;
-        }
-
-        if (res.confirm) {
-          $.confirm({
-            title: "Overwriting",
-            content: res.confirm,
-            buttons: {
-              confirm: function () {
-                saveProject(name, true);
-              },
-              cancel: function () {},
-            },
-          });
-          return;
-        }
-
-        refreshProjects();
-        $.alert(res.msg);
-        modal.close();
-      })
-      .catch(function () {
-        hideLoader();
-        $.alert("Could not reach the OSCAR server");
-      });
+  /** Text a person typed, made safe to put in a dialog (its content is markup). */
+  function plain(text) {
+    return String(text == null ? "" : text).replace(/[<>&"]/g, "");
   }
 
-  // ---- load --------------------------------------------------------------
-  var templateUrl = null;
+  /** OSCAR's projects over HTTP: each answers { ok, status, body }, and fails only when OSCAR cannot be reached. */
+  function projectCall(method, url, body) {
+    return fetch(url, {
+      method: method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (res) {
+      return res.json().then(
+        function (json) {
+          return { ok: res.ok, status: res.status, body: json };
+        },
+        function () {
+          return { ok: res.ok, status: res.status, body: {} };
+        }
+      );
+    });
+  }
+  var projectApi = {
+    read: function (id) {
+      return projectCall("GET", "/projects/" + encodeURIComponent(id));
+    },
+    create: function (body) {
+      return projectCall("POST", "/projects", body);
+    },
+    write: function (id, body) {
+      return projectCall("PUT", "/projects/" + encodeURIComponent(id), body);
+    },
+    copy: function (id) {
+      return projectCall("POST", "/projects/" + encodeURIComponent(id) + "/copy");
+    },
+  };
 
-  document.getElementById("load-button").onclick = function () {
-    var id = projectName.getAttribute("id-project");
-    if (templateUrl) {
-      confirmLoadTemplate(templateUrl);
-      return;
-    }
-    if (!id) {
-      $.alert("Pick a project from the list first");
-      return;
-    }
+  // The project as it was when this window opened it: what File > Revert
+  // goes back to. Kept for this tab only; another tab has its own.
+  var OPENED_KEY = "oscarProject.opened";
 
+  function keepOpened(id, data) {
+    try {
+      sessionStorage.setItem(OPENED_KEY, JSON.stringify({ id: id, data: data }));
+    } catch (err) {
+      // No room, or no storage: Revert has nothing to offer, and says so.
+    }
+  }
+
+  function openedCopy() {
+    try {
+      var held = JSON.parse(sessionStorage.getItem(OPENED_KEY));
+      return held && held.id === openProject.get().id && isProjectData(held.data) ? held.data : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // The title and how it stands, in the top bar beside File and Edit.
+  var SAVE_STATES = {
+    new: ["", "Nothing to save yet: this becomes a project at its first change."],
+    saving: ["Saving\u2026", "Sending your changes to OSCAR."],
+    saved: ["Saved", "Every change is saved in OSCAR as you make it."],
+    unsaved: ["Not saved", "OSCAR could not be reached. Your changes are kept in this browser and sent as soon as it answers."],
+    conflict: ["Changed elsewhere", "This project was saved from another window or device. Change something here to choose which version to keep."],
+  };
+
+  function paintTitle() {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-title-btn");
+    if (el) el.textContent = openProject.get().name || "Untitled";
+  }
+
+  function paintSaveState(status, detail) {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-save-state");
+    if (!el) return;
+    var words = SAVE_STATES[status] || SAVE_STATES.new;
+    el.textContent = words[0];
+    el.setAttribute("data-state", status);
+    el.setAttribute("data-tooltip", status === "unsaved" && detail ? "Not saved: " + detail + " Your changes are kept in this browser meanwhile." : words[1]);
+    el.setAttribute("data-tooltip-pos", "bottom");
+  }
+
+  /** Saved from two places: which version stays is the person's call, never OSCAR's. */
+  function askConflict(info) {
+    return new Promise(function (resolve) {
+      $.confirm({
+        title: "Changed somewhere else",
+        content: '"' + plain(info.name) + '" was saved from another window or device since this one opened it. Which version do you keep?',
+        boxWidth: "520px",
+        useBootstrap: false,
+        buttons: {
+          mine: {
+            text: "Keep this window's",
+            action: function () {
+              resolve("mine");
+            },
+          },
+          theirs: {
+            text: "Load the other one",
+            action: function () {
+              resolve("theirs");
+            },
+          },
+        },
+      });
+    });
+  }
+
+  var projectSync = createProjectSync({
+    pointer: openProject,
+    api: projectApi,
+    // Tidied as a saved project is: no editor state, every page named.
+    getData: function () {
+      return projectFormat.namePages(projectFormat.stripEditorState(editor.getProjectData()));
+    },
+    loadData: function (data) {
+      editor.loadProjectData(data);
+      editor.UndoManager.clear();
+    },
+    isEmpty: function () {
+      return editor.getWrapper().components().length === 0;
+    },
+    onStatus: paintSaveState,
+    onName: paintTitle,
+    conflict: askConflict,
+    keepOpened: keepOpened,
+    grapesjs: grapesjs.version,
+  });
+
+  // Any change to the project is a change to save.
+  editor.on("update", function () {
+    projectSync.changed();
+  });
+  editor.onReady(function () {
+    projectSync.start();
+  });
+
+  // Ctrl+S is in everybody's fingers. It sends what is waiting, now.
+  document.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && String(event.key).toLowerCase() === "s") {
+      event.preventDefault();
+      projectSync.flush();
+    }
+  });
+
+  /** Click the title: a new one. The address of a published interface does not move with it. */
+  function renameProject() {
     $.confirm({
-      title: "Load",
-      content:
-        "If you load this project, you will lose all unsaved changes in the current one.",
+      title: "Rename project",
+      // The title is in the field as the dialog draws, not put there after:
+      // plain() has taken out what could end the attribute.
+      content: '<input type="text" class="o-input oscar-rename-input" maxlength="200" aria-label="Project title" value="' + plain(openProject.get().name || "Untitled") + '" />',
+      onContentReady: function () {
+        var dialog = this;
+        var input = dialog.$content.find("input");
+        input.trigger("focus").trigger("select");
+        input.on("keydown", function (event) {
+          if (event.key === "Enter") dialog.$$confirm.trigger("click");
+        });
+      },
       buttons: {
-        confirm: function () {
-          showLoader();
-
-          fetch("/load/" + encodeURIComponent(id) + "?envelope=1")
-            .then(function (res) {
-              return res.json();
-            })
-            .then(function (answer) {
-              hideLoader();
-              var data = answer && answer.data;
-
-              if (!answer || answer.error || !data || !Object.keys(data).length) {
-                $.alert((answer && answer.error) || "That project could not be found");
-                return;
-              }
-
-              // loadProjectData tears down the current page before reading
-              // the new one, so a file that isn't a GrapesJS 0.21+ project
-              // leaves the editor with no page at all. Check the shape first.
-              if (!isProjectData(data)) {
-                $.alert(
-                  "This file isn't an OSCAR 2 project, so it can't be opened. " +
-                    "Your current project hasn't been changed."
-                );
-                return;
-              }
-
-              editor.loadProjectData(data);
-              openedFile = { handle: null, name: answer.name || "" };
-              openProject.set({ id: answer.id, name: answer.name, saved: true });
-              $.alert("Loaded successfully");
-              modal.close();
-            })
-            .catch(function () {
-              hideLoader();
-              $.alert("Could not reach the OSCAR server");
-            });
+        confirm: {
+          text: "Rename",
+          action: function () {
+            projectSync.rename(this.$content.find("input").val());
+          },
         },
         cancel: function () {},
       },
     });
+  }
+
+  /** File > New project: an empty canvas, nobody until its first change. */
+  function newProject() {
+    projectSync.begin("", function () {
+      loadTemplate("");
+    });
+  }
+
+  /** File > Make a copy: a second project like this one, opened in its place. */
+  function copyProject() {
+    projectSync.copy().then(null, function (err) {
+      $.alert(plain(err && err.message) || "The project could not be copied.");
+    });
+  }
+
+  // ---- revert ------------------------------------------------------------
+  // With every change saved there is no "close without saving". These are
+  // the two ways back: how the project was when this window opened it, and
+  // the version that is published.
+  function revertWith(data, what) {
+    $.confirm({
+      title: "Revert",
+      content: "Put this project back as " + what + "? What you changed since is replaced.",
+      buttons: {
+        confirm: {
+          text: "Revert",
+          action: function () {
+            projectSync.replaceWith(data);
+          },
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function revertToOpened() {
+    var data = openedCopy();
+    if (!data) {
+      $.alert("There is nothing to go back to: this project was not opened in this window, or has only just been made.");
+      return;
+    }
+    revertWith(data, "it was when this window opened it");
+  }
+
+  function revertToPublished() {
+    var id = openProject.get().id;
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : [];
+      })
+      .then(function (pages) {
+        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
+          return id && page.project === id && page.editable;
+        })[0];
+        if (!live) {
+          $.alert("This project has no published version to go back to.");
+          return null;
+        }
+        return fetch("/published/" + encodeURIComponent(live.id) + "/project")
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (answer) {
+            if (!answer || !isProjectData(answer.data)) {
+              $.alert(plain(answer && answer.error) || "The published version could not be read.");
+              return;
+            }
+            revertWith(answer.data, "it is published at /show/" + live.id);
+          });
+      })
+      .catch(function () {
+        $.alert("Could not reach the OSCAR server");
+      });
+  }
+
+  // ---- open, from the list -------------------------------------------------
+  // Nothing asks about unsaved changes any more: there are none to lose.
+  var templateUrl = null;
+
+  document.getElementById("load-button").onclick = function () {
+    var row = selectedRow;
+    if (!row) {
+      $.alert("Pick a project from the list first");
+      return;
+    }
+    if (row.template) {
+      openTemplate(row.url, row.name);
+      return;
+    }
+    showLoader();
+    projectSync.open(row.id).then(
+      function () {
+        hideLoader();
+        modal.close();
+      },
+      function (err) {
+        hideLoader();
+        $.alert(plain(err && err.message) || "That project could not be opened");
+      }
+    );
   };
 
   // ---- pages -------------------------------------------------------------
@@ -1211,44 +1390,35 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   /**
    * Open a template: an HTML file with its CSS, read exactly the way Import
-   * reads pasted code. Everything in the current surface is replaced, and the
-   * name is cleared so the first save asks for a new one rather than
-   * suggesting the template's.
+   * reads pasted code. It starts a new project, named after the template,
+   * which joins the list at its first change: one that was only looked at
+   * leaves nothing behind. What was on the canvas is a project, and saved.
    */
-  function confirmLoadTemplate(url) {
-    $.confirm({
-      title: "Load",
-      content:
-        "If you load this template, you will lose all unsaved changes in the current project.",
-      buttons: {
-        confirm: function () {
-          showLoader();
-
-          fetch(url)
-            .then(function (res) {
-              if (!res.ok) throw new Error("status " + res.status);
-              return res.text();
-            })
-            .then(function (html) {
-              hideLoader();
-              loadTemplate(html);
-              selectedTemplate = null;
-              templateUrl = null;
-              $("#project-name").val("").attr("id-project", "");
-              // A template on the canvas is nobody's project until it is saved or published.
-              openedFile = { handle: null, name: "" };
-              openProject.clear();
-              $.alert("Loaded successfully");
-              modal.close();
-            })
-            .catch(function () {
-              hideLoader();
-              $.alert("That template could not be opened");
-            });
+  function openTemplate(url, name) {
+    showLoader();
+    fetch(url)
+      .then(function (res) {
+        if (!res.ok) throw new Error("status " + res.status);
+        return res.text();
+      })
+      .then(function (html) {
+        return projectSync.begin(name || "", function () {
+          loadTemplate(html);
+        });
+      })
+      .then(
+        function () {
+          hideLoader();
+          selectedTemplate = null;
+          templateUrl = null;
+          selectedRow = null;
+          modal.close();
         },
-        cancel: function () {},
-      },
-    });
+        function () {
+          hideLoader();
+          $.alert("That template could not be opened");
+        }
+      );
   }
 
   function loadTemplate(html) {
@@ -1259,116 +1429,127 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.getWrapper().setAttributes({});
     editor.setComponents(html);
     editor.UndoManager.clear();
-    // A template on the canvas is nobody's project until it is saved or published.
-    openProject.clear();
   }
 
   // ---- a project as a file --------------------------------------------
-  // Open and Save against the real file system: a project is one .oscar
-  // file (the library's own JSON, stamped the same way) the person can put
-  // anywhere -- a band's shared drive, an email, a community repo -- and a
-  // .html template opens through the same door. The Load window stays for
-  // templates and the local library; this is for everything else.
-  var openedFile = { handle: null, name: "" };
+  // A project lives in OSCAR. An .oscar file is a copy of one: to keep as a
+  // backup, to send to a colleague, to carry to another OSCAR. Export a
+  // copy writes one; Open a file brings one in as a project. A .html
+  // template opens through the same door, as a template does.
 
   function slugName(name) {
     var slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    return slug || "surface";
+    return slug || "untitled";
   }
 
   function projectRecord(name, id) {
-    // The same stamping the library's save does on the server, so a .oscar
-    // file and a library project are one format, not two. The id is who the
-    // project is: what a published interface remembers it was made from.
+    // The same stamping OSCAR does when it keeps a project, so an exported
+    // file and a project in OSCAR are one format, not two. The id is who the
+    // project is: brought back in, the file is known as this project.
     var data = projectFormat.stripEditorState(editor.getProjectData());
     return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version, id: id });
   }
 
-  /**
-   * @param {{ asNew?: boolean }} [how] asNew: Save as on a project that has
-   *        been saved before makes another project, with an id of its own.
-   *        The id is only kept once the file is written: a picker closed
-   *        without saving changes nothing.
-   */
-  function oscarSaveToFile(how) {
-    var name = (projectName.value || "").trim() || openedFile.name || "surface";
-    var asNew = !!(how && how.asNew) && openProject.get().saved;
-    var id = asNew ? openProject.newId() : openProject.get().id || openProject.newId();
-    var text = JSON.stringify(projectRecord(name, id), null, 2);
-    var saved = function (as) {
-      openProject.set({ id: id, name: as || name, saved: true });
-    };
+  /** File > Export a copy: an .oscar file wherever the person says. The project stays in OSCAR. */
+  function exportCopy() {
+    projectSync.flush().then(function () {
+      var now = openProject.get();
+      var name = now.name || "Untitled";
+      var text = JSON.stringify(projectRecord(name, now.id || undefined), null, 2);
 
-    var fallback = function () {
-      // No file pickers in this browser: the file lands in Downloads.
-      var blob = new Blob([text], { type: "application/json" });
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = slugName(name) + ".oscar";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      saved();
-      setTimeout(function () {
-        URL.revokeObjectURL(a.href);
-      }, 5000);
-    };
+      var fallback = function () {
+        // No file pickers in this browser: the file lands in Downloads.
+        var blob = new Blob([text], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = slugName(name) + ".oscar";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(a.href);
+        }, 5000);
+      };
 
-    if (openedFile.handle) {
-      // Saving again writes the file that was opened or saved before,
-      // silently, the way every desktop app's Save works.
-      openedFile.handle
-        .createWritable()
-        .then(function (writable) {
-          return writable.write(text).then(function () {
-            return writable.close();
-          });
+      if (!window.showSaveFilePicker) return fallback();
+      window
+        .showSaveFilePicker({
+          suggestedName: slugName(name) + ".oscar",
+          types: [{ description: "OSCAR project", accept: { "application/json": [".oscar"] } }],
         })
-        .then(function () {
-          saved();
-          $.alert('Saved to "' + openedFile.handle.name + '"');
-        })
-        .catch(function () {
-          // The file moved or the permission lapsed: ask where, once more.
-          openedFile.handle = null;
-          oscarSaveToFile(how);
-        });
-      return;
-    }
-
-    if (!window.showSaveFilePicker) return fallback();
-    window
-      .showSaveFilePicker({
-        suggestedName: slugName(name) + ".oscar",
-        types: [{ description: "OSCAR project", accept: { "application/json": [".oscar"] } }],
-      })
-      .then(function (handle) {
-        return handle
-          .createWritable()
-          .then(function (writable) {
-            return writable.write(text).then(function () {
-              return writable.close();
+        .then(function (handle) {
+          return handle
+            .createWritable()
+            .then(function (writable) {
+              return writable.write(text).then(function () {
+                return writable.close();
+              });
+            })
+            .then(function () {
+              $.alert('Exported a copy to "' + plain(handle.name) + '". The project itself stays in OSCAR.');
             });
-          })
-          .then(function () {
-            openedFile = { handle: handle, name: name };
-            projectName.value = name;
-            saved();
-            $.alert('Saved to "' + handle.name + '"');
+        })
+        .catch(function (err) {
+          if (err && err.name === "AbortError") return; // they closed the picker
+          fallback();
+        });
+    });
+  }
+
+  /**
+   * Bring a project in: one more in OSCAR's list, opened. A file says who it
+   * is; when that project is already here the person chooses -- replace it,
+   * or keep both -- because either answer is right for somebody.
+   */
+  function importProject(project, ifExists) {
+    return projectApi
+      .create({ id: project.id, name: project.name, data: project.data, grapesjs: grapesjs.version, ifExists: ifExists })
+      .then(function (res) {
+        if (res.status === 409 && res.body && res.body.exists) {
+          $.confirm({
+            title: "Already in OSCAR",
+            content: '"' + plain(res.body.name) + '" is already one of your projects. Replace it with this file, or keep both?',
+            boxWidth: "520px",
+            useBootstrap: false,
+            buttons: {
+              replace: {
+                text: "Replace it",
+                btnClass: "btn-red",
+                action: function () {
+                  importProject(project, "replace");
+                },
+              },
+              both: {
+                text: "Keep both",
+                action: function () {
+                  importProject(project, "copy");
+                },
+              },
+              cancel: function () {},
+            },
           });
+          return null;
+        }
+        if (!res.ok) {
+          $.alert(plain(res.body && res.body.error) || "That file could not be brought in.");
+          return null;
+        }
+        // The one on the canvas was replaced: show what it is now, without
+        // first saving what it was over the top of it.
+        if (res.body.id === openProject.get().id) return projectSync.reload();
+        return projectSync.open(res.body.id);
       })
-      .catch(function (err) {
-        if (err && err.name === "AbortError") return; // they closed the picker
-        fallback();
+      .catch(function () {
+        $.alert("Could not reach the OSCAR server");
       });
   }
 
-  function openProjectText(fileName, text, handle) {
+  function openProjectText(fileName, text) {
     var parsed;
     try {
       parsed = JSON.parse(text);
     } catch (err) {
-      $.alert('"' + fileName + '" is not an OSCAR project file.');
+      $.alert('"' + plain(fileName) + '" is not an OSCAR project file.');
       return;
     }
     // openProject answers { status, data }: the project is its data, once
@@ -1381,51 +1562,28 @@ function initGrape(ipServer, socketPort, oscInPort) {
     }
     var data = opened.status === "ok" ? opened.data : null;
     if (!isProjectData(data)) {
-      $.alert('"' + fileName + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
+      $.alert('"' + plain(fileName) + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
       return;
     }
-    $.confirm({
-      title: "Open",
-      content: "If you open this file, you will lose all unsaved changes in the current project.",
-      buttons: {
-        confirm: function () {
-          editor.loadProjectData(data);
-          openedFile = { handle: handle || null, name: parsed.name || fileName.replace(/\.(oscar|json)$/i, "") };
-          projectName.value = openedFile.name;
-          projectName.setAttribute("id-project", "");
-          // Who the file says it is; a file from before projects had ids is
-          // given one, which the next Save writes into it.
-          openProject.set({ id: projectFormat.isProjectId(parsed.id) ? parsed.id : openProject.newId(), name: openedFile.name, saved: true });
-          $.alert("Opened successfully");
-        },
-        cancel: function () {},
-      },
+    importProject({
+      // Who the file says it is; one from before projects had ids is a new project.
+      id: projectFormat.isProjectId(parsed.id) ? parsed.id : undefined,
+      name: (typeof parsed.name === "string" && parsed.name.trim()) || fileName.replace(/\.(oscar|json)$/i, ""),
+      data: data,
     });
   }
 
   function openHtmlText(fileName, text) {
+    // An HTML page is a template: a new project, named after the page.
     var title = /<title[^>]*>([^<]*)<\/title>/i.exec(text);
-    $.confirm({
-      title: "Open",
-      content: "If you open this file, you will lose all unsaved changes in the current project.",
-      buttons: {
-        confirm: function () {
-          loadTemplate(text);
-          openedFile = { handle: null, name: (title && title[1].trim()) || fileName.replace(/\.html?$/i, "") };
-          projectName.value = openedFile.name;
-          projectName.setAttribute("id-project", "");
-          // An HTML page is a template: nobody's project, though it brings a name.
-          openProject.clear(openedFile.name);
-          $.alert("Opened successfully");
-        },
-        cancel: function () {},
-      },
+    projectSync.begin((title && title[1].trim()) || fileName.replace(/\.html?$/i, ""), function () {
+      loadTemplate(text);
     });
   }
 
-  function openPicked(fileName, text, handle) {
+  function openPicked(fileName, text) {
     if (/\.html?$/i.test(fileName) || (!/^\s*\{/.test(text) && /^\s*</.test(text))) openHtmlText(fileName, text);
-    else openProjectText(fileName, text, handle);
+    else openProjectText(fileName, text);
   }
 
   // The fallback for browsers without file pickers.
@@ -1439,7 +1597,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     openFileInput.value = "";
     if (!file) return;
     file.text().then(function (text) {
-      openPicked(file.name, text, null);
+      openPicked(file.name, text);
     });
   });
 
@@ -1451,10 +1609,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
       })
       .then(function (picked) {
         return picked[0].getFile().then(function (file) {
-          // A project file keeps its handle, so Save writes it back; an
-          // HTML template does not -- saving it makes a new .oscar.
           return file.text().then(function (text) {
-            openPicked(file.name, text, /\.(oscar|json)$/i.test(file.name) ? picked[0] : null);
+            openPicked(file.name, text);
           });
         });
       })
@@ -1462,12 +1618,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
         if (err && err.name === "AbortError") return;
         openFileInput.click();
       });
-  }
-
-  /** Save as...: always ask where, whatever file is held; a project saved before becomes another one. */
-  function oscarSaveAs() {
-    openedFile.handle = null;
-    oscarSaveToFile({ asNew: true });
   }
 
   /** One menu under a bar word: built, placed, closed by a click away. */
@@ -1640,13 +1790,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   function showFileMenu() {
     showBarMenu(".gjs-pn-devices-c .oscar-file-btn", [
-      { label: "Open a file\u2026", run: oscarOpenFile },
+      { label: "New project", run: newProject },
       {
-        label: "Open a template\u2026",
+        label: "Open\u2026",
         run: function () {
           editor.runCommand("open-projects", { type: "Load" });
         },
       },
+      { label: "Open a file\u2026", run: oscarOpenFile },
       {
         label: "Import HTML/CSS\u2026",
         run: function () {
@@ -1654,13 +1805,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
       { rule: true },
-      {
-        label: "Save",
-        run: function () {
-          oscarSaveToFile();
-        },
-      },
-      { label: "Save as\u2026", run: oscarSaveAs },
+      // No Save: every change is saved in OSCAR as it is made. These are the
+      // ways to a second project, to a file, and back to an earlier version.
+      { label: "Make a copy", run: copyProject },
+      { label: "Export a copy\u2026", run: exportCopy },
+      { label: "Revert to how it was when opened\u2026", run: revertToOpened },
+      { label: "Revert to the published version\u2026", run: revertToPublished },
       { rule: true },
       {
         label: "Publish\u2026",
@@ -1693,14 +1843,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 
   // A file double-clicked in the file manager arrives through the server,
-  // once, and goes through the same Open flow as any picked file: the
-  // confirmation about unsaved changes stands between it and the canvas.
+  // once, and comes in as any picked file does: as a project in OSCAR.
   fetch("/boot-file")
     .then(function (res) {
       return res.json();
     })
     .then(function (file) {
-      if (file && file.name && typeof file.text === "string") openPicked(file.name, file.text, null);
+      if (file && file.name && typeof file.text === "string") openPicked(file.name, file.text);
     })
     .catch(function () {});
 
@@ -1712,7 +1861,11 @@ function initGrape(ipServer, socketPort, oscInPort) {
         fetch: function (url) {
           return fetch(url);
         },
-        load: loadTemplate,
+        load: function (html) {
+          projectSync.begin("", function () {
+            loadTemplate(html);
+          });
+        },
         // Anything already on the canvas is somebody's, however quick they were.
         untouched: function () {
           return editor.getWrapper().components().length === 0;
@@ -2095,52 +2248,72 @@ function initGrape(ipServer, socketPort, oscInPort) {
     showEditMenu();
   });
 
+  // The project's title, beside File and Edit: click it to rename. And how
+  // it stands with OSCAR: Saving, Saved, Not saved.
+  pn.addButton("devices-c", {
+    id: "oscar-title",
+    className: "oscar-title-btn",
+    label: "Untitled",
+    command: null,
+    attributes: { title: "Rename this project", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  onBarClick(".oscar-title-btn", function () {
+    renameProject();
+  });
+  pn.addButton("devices-c", {
+    id: "oscar-save-state",
+    className: "oscar-save-state",
+    label: "",
+    command: null,
+    attributes: { title: "", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  paintTitle();
+  paintSaveState(projectSync.status());
+
   // ---- export ------------------------------------------------------------
   // Distinct from "See code" beside it, which is GrapesJS's own view of the
   // markup and cannot send anything. This one produces a file that does.
   var publishDialog = oscarExport.install(editor, {
     host: ipServer,
     port: socketPort,
+    // Publishing needs a project to belong to: a canvas that is nobody yet
+    // becomes one as the window opens, and what is waiting is saved.
+    beforeOpen: function () {
+      return projectSync.materialise();
+    },
     // Who the canvas is: what it publishes is remembered as this project.
     project: function () {
       var now = openProject.get();
-      return { id: now.id, name: now.name || (projectName ? projectName.value : "") };
+      return { id: now.id, name: now.name || "Untitled" };
     },
     newId: function () {
-      return openProject.ensureId();
+      return openProject.get().id || openProject.newId();
     },
-    // Published: the canvas is that project from now on, across a reload.
-    adopt: function (as) {
-      var now = openProject.get();
-      openProject.set({ id: as.id, name: as.name, saved: now.id === as.id ? now.saved : false });
-      if (projectName && !projectName.value) projectName.value = as.name;
-    },
-    // The project itself, kept beside the page so the interface can be edited later.
+    adopt: function () {},
+    // The project itself, kept beside the page: what phones are showing.
     source: function (name, id) {
       return projectRecord(name, id);
     },
-    // Edit, from a live interface's row: the project it was published from, back on the canvas.
+    // Edit, from a live interface's row: its project, on the canvas. One
+    // that is no longer among the projects is brought back from the copy
+    // kept with the live interface.
     openProject: function (project) {
       if (!project || !isProjectData(project.data)) {
         $.alert("That project could not be opened. Your current project has not been changed.");
         return;
       }
-      $.confirm({
-        title: "Edit",
-        content: 'If you open "' + String(project.name || "this project").replace(/[<>&]/g, "") + '", you will lose all unsaved changes in the current project.',
-        buttons: {
-          confirm: function () {
-            editor.loadProjectData(project.data);
-            // No file is held: it came from OSCAR's own copy. Save asks where, and keeps who it is.
-            openedFile = { handle: null, name: project.name || "" };
-            projectName.value = openedFile.name;
-            projectName.setAttribute("id-project", "");
-            openProject.set({ id: project.id, name: openedFile.name, saved: false });
-            modal.close();
-          },
-          cancel: function () {},
-        },
-      });
+      projectSync
+        .open(project.id)
+        .then(null, function () {
+          return importProject({ id: project.id, name: project.name, data: project.data });
+        })
+        .then(function () {
+          modal.close();
+        });
     },
   });
 
@@ -2970,13 +3143,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["oscar-file", "oscar-edit", "ipButton"]
+    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "ipButton"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["oscar-file", "oscar-edit", "ipButton"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "ipButton"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {

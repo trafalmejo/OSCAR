@@ -629,7 +629,9 @@ function install(editor, options) {
     if (!returning) return;
     returning = false;
     // A tick later: the modal is still closing, and would close the dialog with it.
-    setTimeout(open, 0);
+    setTimeout(function () {
+      open();
+    }, 0);
   });
 
   downloadButton.onclick = function () {
@@ -801,7 +803,15 @@ function install(editor, options) {
     publish(publishingAs(), false);
   };
 
-  editor.Commands.add("oscar-export", open);
+  // The canvas is made a project first, when it is nobody yet: what is
+  // published has to belong to one. If that cannot be done -- OSCAR is not
+  // answering -- the window opens all the same and says what it can.
+  editor.Commands.add("oscar-export", function () {
+    if (!options.beforeOpen) return open();
+    Promise.resolve()
+      .then(options.beforeOpen)
+      .then(open, open);
+  });
 
   return {
     /**

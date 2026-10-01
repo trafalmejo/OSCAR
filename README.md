@@ -435,11 +435,35 @@ not a setting in OSCAR.
 
 ## Saving your work
 
-The canvas autosaves into your browser as you work.
+There is no Save to press. A project lives in OSCAR, on the computer OSCAR
+runs on, and every change is saved a moment after you make it. The top bar
+shows the project's title, and beside it how it stands: **Saving**, **Saved**,
+or **Not saved** when OSCAR cannot be reached. What has not been confirmed
+stays in your browser and is sent as soon as OSCAR answers, even after the
+tab was closed in between.
 
-**Save** and **Load** keep a library of named projects, stored as plain JSON
-files in the `projects/` folder next to OSCAR. They are ordinary files, so you
-can copy, back up and share them however you like.
+- **The title** is in the top bar: click it to rename. The same title names
+  the published interface, the phone's tab and, with OSCAR Pro, the portal.
+  A published interface's address does not change when you rename.
+- **File → New project** starts an empty canvas called "Untitled". It joins
+  your projects at its first change, so one you only looked at leaves nothing
+  behind. A template opens the same way, named after the template.
+- **File → Open…** lists your projects and the templates.
+- **File → Make a copy** makes a second project like this one.
+- **File → Export a copy…** writes an `.oscar` file wherever you choose: a
+  backup, or something to send. **File → Open a file…**, or double-clicking
+  an `.oscar` file, brings one in as a project. If that project is already in
+  OSCAR, you are asked whether to replace it or keep both.
+- **File → Revert to…** is the way back, since there is no closing without
+  saving: to how the project was when this window opened it, or to the
+  version that is published.
+- **The same project open in two windows:** the one that saves second is told
+  the project changed somewhere else, and chooses which version to keep.
+  Changes are not merged.
+
+Projects are plain JSON files in the `projects/` folder next to OSCAR, so
+they can still be copied and backed up by hand. Because they are on the
+computer OSCAR runs on, any browser that may edit sees the same projects.
 
 > **Note for OSCAR 1.x users:** the old online accounts at
 > `account.createwithoscar.com` no longer exist. OSCAR now stores everything on
