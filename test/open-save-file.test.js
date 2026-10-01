@@ -97,6 +97,9 @@ test("File holds Push to preview and About; Edit holds the lock and an extension
   assert.match(file, /label: "Push to preview",\s*run: function \(\) \{\s*editor\.runCommand\("preview"\);/, "Push to preview runs the command itself: there is no eye to press");
   assert.ok(file.indexOf("About OSCAR") !== -1, "About under File");
   assert.ok(edits.indexOf("Push to preview") === -1, "not under Edit any more");
+  // Where the pushed canvas shows was nowhere said: the item says it on hover, with the address.
+  assert.match(file, /hint:\s*"Try the canvas without publishing it\. The controls work here, and a phone or tablet on this network shows it at http:\/\/" \+\s*ipServer \+\s*\(window\.location\.port \? ":" \+ window\.location\.port : ""\) \+\s*"\/preview",/);
+  assert.match(editor, /if \(item\.hint\) \{\s*row\.setAttribute\("data-tooltip", item\.hint\);\s*row\.setAttribute\("data-tooltip-pos", "right"\);/, "a menu item's hint is a tooltip to the menu's right");
   assert.match(edits, /\.concat\(extraItems\("edit"\)\)/, "an extension's items join Lock editing");
   assert.match(file, /\{ rule: true \},\n    \]\n[^\n]*\n[^\n]*\n      \.concat\(extraItems\("file"\)\)\n      \.concat\(\[\n[^\n]*\n      \{\n        label: "About OSCAR",/, "and File's open the last group, just above About");
   // OSCAR Pro is private: its half is checked only where it sits next to this repo, never in CI.

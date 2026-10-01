@@ -25354,6 +25354,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         row.setAttribute("role", "menuitemcheckbox");
         row.setAttribute("aria-checked", String(item.checked));
       }
+      // An item whose words cannot say it all explains itself on hover, to
+      // the menu's right, where it covers no other item.
+      if (item.hint) {
+        row.setAttribute("data-tooltip", item.hint);
+        row.setAttribute("data-tooltip-pos", "right");
+      }
       row.onclick = function () {
         menu.remove();
         item.run();
@@ -25529,6 +25535,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         run: function () {
           editor.runCommand("preview");
         },
+        // Where the pushed canvas is seen was nowhere said: the address, in full.
+        hint:
+          "Try the canvas without publishing it. The controls work here, and a phone or tablet on this network shows it at http://" +
+          ipServer +
+          (window.location.port ? ":" + window.location.port : "") +
+          "/preview",
       },
       { rule: true },
     ]
