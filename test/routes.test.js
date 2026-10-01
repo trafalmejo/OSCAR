@@ -423,3 +423,92 @@ test("GET /load with ?envelope=1 says who the project is as well as what is in i
     assert.deepStrictEqual(list.filter((row) => !row.template).map((row) => [row._id, row.id]).sort(), [["lobby", "p-abc123def456"], ["old-show", "library-old-show"]]);
   });
 });
+
+// ---- projects that live in OSCAR, by who they are ------------------------------------
+
+const BY_ID = { pages: [{ name: "Main", frames: [{ component: { type: "wrapper" } }] }], styles: [] };
+const send = (base, method, url, body) => fetch(base + url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+
+test("a project is created, opened, saved as it is edited, renamed, copied and deleted, by its id", async () => {
+  await withServer(async (base) => {
+    const made = await (await send(base, "POST", "/projects", { name: "Lobby", data: BY_ID, grapesjs: "0.22" })).json();
+    assert.match(made.id, /^p-[a-z0-9]{12}$/);
+    assert.strictEqual(made.rev, 1);
+
+    const opened = await (await fetch(base + "/projects/" + made.id)).json();
+    assert.deepStrictEqual([opened.id, opened.name, opened.rev], [made.id, "Lobby", 1]);
+    assert.deepStrictEqual(opened.data, BY_ID);
+
+    const edited = Object.assign({}, BY_ID, { styles: [{ selectors: ["#a"] }] });
+    const saved = await (await send(base, "PUT", "/projects/" + made.id, { data: edited, baseRev: 1 })).json();
+    assert.deepStrictEqual(saved, { id: made.id, name: "Lobby", rev: 2 });
+
+    const renamed = await (await send(base, "PUT", "/projects/" + made.id, { name: "Main hall", baseRev: 2 })).json();
+    assert.deepStrictEqual(renamed, { id: made.id, name: "Main hall", rev: 3 });
+    assert.deepStrictEqual((await (await fetch(base + "/projects/" + made.id)).json()).data, edited, "a rename leaves the content alone");
+
+    const copy = await (await send(base, "POST", "/projects/" + made.id + "/copy")).json();
+    assert.strictEqual(copy.name, "Copy of Main hall");
+
+    const list = (await (await fetch(base + "/projects")).json()).filter((row) => !row.template);
+    assert.deepStrictEqual(list.map((row) => row.name).sort(), ["Copy of Main hall", "Main hall"]);
+
+    assert.strictEqual((await send(base, "DELETE", "/projects/" + made.id)).status, 200);
+    assert.strictEqual((await fetch(base + "/projects/" + made.id)).status, 404);
+    assert.strictEqual((await send(base, "DELETE", "/projects/" + made.id)).status, 404);
+  });
+});
+
+test("a save from a window that is behind is refused with what the project is at now", async () => {
+  await withServer(async (base) => {
+    const made = await (await send(base, "POST", "/projects", { name: "Lobby", data: BY_ID })).json();
+    await send(base, "PUT", "/projects/" + made.id, { data: BY_ID, baseRev: 1 });
+    const res = await send(base, "PUT", "/projects/" + made.id, { data: BY_ID, baseRev: 1 });
+    assert.strictEqual(res.status, 409);
+    const said = await res.json();
+    assert.deepStrictEqual([said.conflict, said.rev], [true, 2]);
+    assert.match(said.error, /was changed somewhere else/);
+  });
+});
+
+test("what is not a project is not saved, and a project that is not here says so", async () => {
+  await withServer(async (base) => {
+    assert.strictEqual((await send(base, "POST", "/projects", { name: "Nothing", data: { not: "a project" } })).status, 400);
+    assert.strictEqual((await send(base, "POST", "/projects", { name: "Nothing" })).status, 400);
+    const made = await (await send(base, "POST", "/projects", { name: "Lobby", data: BY_ID })).json();
+    assert.strictEqual((await send(base, "PUT", "/projects/" + made.id, { data: [] })).status, 400);
+    assert.strictEqual((await send(base, "PUT", "/projects/" + made.id, {})).status, 400, "nothing to save");
+    assert.strictEqual((await send(base, "PUT", "/projects/p-nosuchproj00", { data: BY_ID })).status, 404);
+    assert.strictEqual((await send(base, "POST", "/projects/p-nosuchproj00/copy")).status, 404);
+    assert.strictEqual((await fetch(base + "/projects/..%2Fescape")).status, 404);
+  });
+});
+
+test("a file brought in that is already a project here is asked about: replace it, or keep both", async () => {
+  await withServer(async (base) => {
+    const file = { id: "p-fromafile001", name: "From a file", data: BY_ID };
+    const first = await (await send(base, "POST", "/projects", file)).json();
+    assert.strictEqual(first.id, "p-fromafile001", "not here yet: it keeps who it says it is");
+
+    const again = await send(base, "POST", "/projects", file);
+    assert.strictEqual(again.status, 409);
+    const asked = await again.json();
+    assert.deepStrictEqual([asked.exists, asked.id, asked.name], [true, "p-fromafile001", "From a file"]);
+
+    const newer = Object.assign({}, BY_ID, { styles: [{ selectors: ["#newer"] }] });
+    const replaced = await (await send(base, "POST", "/projects", Object.assign({}, file, { data: newer, ifExists: "replace" }))).json();
+    assert.deepStrictEqual([replaced.id, replaced.replaced, replaced.rev], ["p-fromafile001", true, 2]);
+    assert.deepStrictEqual((await (await fetch(base + "/projects/p-fromafile001")).json()).data, newer);
+
+    const both = await (await send(base, "POST", "/projects", Object.assign({}, file, { ifExists: "copy" }))).json();
+    assert.notStrictEqual(both.id, "p-fromafile001", "keeping both: the newcomer is another project");
+    assert.strictEqual((await (await fetch(base + "/projects")).json()).filter((row) => !row.template).length, 2);
+  });
+});
+
+test("a locked OSCAR lets nobody on the network open, change, create or delete a project", () => {
+  const routes = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8");
+  for (const route of ['router.post("/projects", editorOnly,', 'router.get("/projects/:id", editorOnly,', 'router.put("/projects/:id", editorOnly,', 'router.post("/projects/:id/copy", editorOnly,', 'router.delete("/projects/:id", editorOnly,']) {
+    assert.ok(routes.includes(route), route);
+  }
+});

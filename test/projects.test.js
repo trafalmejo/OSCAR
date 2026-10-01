@@ -136,3 +136,100 @@ test("the list says which project each file is: its own id, or one made from the
   assert.deepStrictEqual(byFile, { lobby: "p-abc123def456", "old-show": "library-old-show" });
   assert.strictEqual((await store.read("lobby")).id, "p-abc123def456");
 });
+
+// ---- a project by who it is: it lives in OSCAR, and its title can change -------------
+
+const PAGE = { pages: [{ name: "Page 1", frames: [{ component: { type: "wrapper" } }] }], styles: [] };
+
+function freshStore() {
+  return new ProjectStore(fs.mkdtempSync(path.join(os.tmpdir(), "oscar-projects-byid-")), { oscarVersion: "2.1.0" });
+}
+
+test("a new project has an id of its own, is kept in the file its id names, and starts at revision 1", async () => {
+  const store = freshStore();
+  const made = await store.create("Lobby visitors", PAGE, { grapesjs: "0.22" });
+  assert.match(made.id, /^p-[a-z0-9]{12}$/);
+  assert.deepStrictEqual([made.name, made.rev], ["Lobby visitors", 1]);
+  assert.deepStrictEqual(fs.readdirSync(store.dir), [made.id + ".json"]);
+  const found = await store.readById(made.id);
+  assert.deepStrictEqual([found.id, found.name, found.rev, found.record.oscar, found.record.id], [made.id, "Lobby visitors", 1, "2.1.0", made.id]);
+  assert.strictEqual((await store.create("", PAGE)).name, "Untitled", "one with no title is Untitled");
+  assert.strictEqual(await store.readById("p-nosuchproj00"), null);
+  assert.strictEqual(await store.readById("../escape"), null);
+});
+
+test("renaming a project changes its title and nothing else: the same id, the same file", async () => {
+  const store = freshStore();
+  const made = await store.create("Lobby", PAGE);
+  const renamed = await store.write(made.id, { name: "Main hall" });
+  assert.deepStrictEqual(renamed, { id: made.id, name: "Main hall", rev: 2 });
+  assert.deepStrictEqual(fs.readdirSync(store.dir), [made.id + ".json"], "nothing moved");
+  assert.deepStrictEqual((await store.readById(made.id)).record.data, PAGE, "and its content is as it was");
+  assert.strictEqual((await store.list())[0].name, "Main hall");
+});
+
+test("a save made from an older copy is refused, and nothing is written over", async () => {
+  const store = freshStore();
+  const made = await store.create("Lobby", PAGE);
+  const mine = Object.assign({}, PAGE, { styles: [{ selectors: ["#mine"] }] });
+  const theirs = Object.assign({}, PAGE, { styles: [{ selectors: ["#theirs"] }] });
+
+  assert.strictEqual((await store.write(made.id, { data: theirs, baseRev: 1 })).rev, 2, "the first window saves");
+  const refused = await store.write(made.id, { data: mine, baseRev: 1 });
+  assert.deepStrictEqual(refused, { conflict: true, rev: 2, name: "Lobby" }, "the second saw revision 1, which is no longer what is there");
+  assert.deepStrictEqual((await store.readById(made.id)).record.data, theirs);
+
+  // Having looked again, it saves.
+  assert.strictEqual((await store.write(made.id, { data: mine, baseRev: 2 })).rev, 3);
+  // With no revision named the write goes through, as replacing a project does.
+  assert.strictEqual((await store.write(made.id, { data: theirs })).rev, 4);
+  assert.strictEqual(await store.write("p-nosuchproj00", { data: mine }), null);
+});
+
+test("two saves for one project take turns: the second is judged against what the first wrote", async () => {
+  const store = freshStore();
+  const made = await store.create("Lobby", PAGE);
+  const answers = await Promise.all([store.write(made.id, { name: "First", baseRev: 1 }), store.write(made.id, { name: "Second", baseRev: 1 })]);
+  assert.deepStrictEqual(answers.map((a) => (a.conflict ? "refused" : a.name)), ["First", "refused"]);
+  assert.strictEqual((await store.readById(made.id)).rev, 2);
+});
+
+test("a project from before is found by the id it is known by, and written back where it was", async () => {
+  const store = freshStore();
+  await store.save("Old Show", PAGE); // old-show.json, no id inside
+  const [row] = await store.list();
+  assert.strictEqual(row.id, "library-old-show");
+  const found = await store.readById("library-old-show");
+  assert.deepStrictEqual([found.name, found.rev], ["Old Show", 0]);
+
+  const written = await store.write("library-old-show", { name: "Older Show", baseRev: 0 });
+  assert.deepStrictEqual(written, { id: "library-old-show", name: "Older Show", rev: 1 });
+  assert.deepStrictEqual(fs.readdirSync(store.dir), ["old-show.json"], "the file somebody put here keeps its place");
+  assert.strictEqual((await store.read("old-show")).id, "library-old-show", "and now says who it is");
+
+  // An .oscar file dropped into the folder is a project too.
+  fs.writeFileSync(path.join(store.dir, "from-a-friend.oscar"), JSON.stringify({ format: 2, name: "From a friend", id: "p-friend000001", data: PAGE }));
+  assert.strictEqual((await store.readById("p-friend000001")).name, "From a friend");
+  await store.write("p-friend000001", { name: "Mine now" });
+  assert.ok(fs.readdirSync(store.dir).includes("from-a-friend.oscar"));
+});
+
+test("a file brought in keeps who it says it is, unless that project is already here", async () => {
+  const store = freshStore();
+  const first = await store.create("Lobby", PAGE, { id: "p-fromafile001" });
+  assert.strictEqual(first.id, "p-fromafile001");
+  const second = await store.create("Lobby", PAGE, { id: "p-fromafile001" });
+  assert.notStrictEqual(second.id, "p-fromafile001", "the id is taken: this one is another project");
+  assert.strictEqual((await store.create("Lobby", PAGE, { id: "../escape" })).id.indexOf("p-"), 0);
+});
+
+test("a copy is another project; deleting one leaves the other", async () => {
+  const store = freshStore();
+  const made = await store.create("Lobby", PAGE);
+  const copy = await store.duplicate(made.id);
+  assert.deepStrictEqual([copy.name, copy.rev, copy.id !== made.id], ["Copy of Lobby", 1, true]);
+  assert.strictEqual(await store.removeById(made.id), true);
+  assert.strictEqual(await store.removeById(made.id), false);
+  assert.deepStrictEqual((await store.list()).map((row) => row.id), [copy.id]);
+  assert.strictEqual(await store.duplicate("p-nosuchproj00"), null);
+});

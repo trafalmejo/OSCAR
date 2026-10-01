@@ -2,7 +2,7 @@
 
 const express = require("express");
 
-const { openProject, stripEditorState, isProjectId, projectIdOf } = require("../lib/project-format");
+const { openProject, stripEditorState, isProjectId, projectIdOf, isGrapesProject } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
 const { buildExport } = require("../lib/export");
 const { markServed, rebake } = require("../lib/published");
@@ -523,6 +523,105 @@ module.exports = function createRouter({
     } catch (err) {
       console.error("Could not list projects:", err.message);
       res.status(500).json({ error: "Could not read your projects folder" });
+    }
+  });
+
+  // ---- projects that live in OSCAR, by who they are ----------------------
+  // The routes below this block name a project by the file it is in (a slug
+  // of its name) and stay for the assistant tools and for scripts. These
+  // name it by its id, so a title can change, and carry a revision, so a
+  // save made from an older copy is refused rather than written over what
+  // someone else saved since (lib/projects.js).
+
+  /** What a caller sent as a project's content, tidied, or null when it is not one. */
+  function projectData(body) {
+    const data = body && body.data;
+    return isGrapesProject(data) ? stripEditorState(data) : null;
+  }
+
+  router.post("/projects", editorOnly, async (req, res) => {
+    const body = req.body || {};
+    const data = projectData(body);
+    if (!data) return res.status(400).json({ error: "That is not an OSCAR project." });
+    try {
+      // A file brought in says who it is. If that project is already here,
+      // the person is asked: replace it, or keep both.
+      if (isProjectId(body.id)) {
+        const standing = await store.readById(body.id);
+        if (standing && body.ifExists === "replace") {
+          const written = await store.write(body.id, { name: body.name, data, grapesjs: body.grapesjs });
+          return res.json(Object.assign({ replaced: true }, written));
+        }
+        if (standing && body.ifExists !== "copy") {
+          return res.status(409).json({ exists: true, id: standing.id, name: standing.name, error: '"' + standing.name + '" is already in OSCAR.' });
+        }
+        if (standing) return res.json(await store.create(body.name, data, { grapesjs: body.grapesjs }));
+      }
+      res.json(await store.create(body.name, data, { grapesjs: body.grapesjs, id: body.id }));
+    } catch (err) {
+      console.error("Could not create the project:", err.message);
+      res.status(500).json({ error: "The project could not be created." });
+    }
+  });
+
+  router.get("/projects/:id", editorOnly, async (req, res) => {
+    try {
+      const found = await store.readById(req.params.id);
+      if (!found) return res.status(404).json({ error: "That project is not in OSCAR." });
+      const opened = openProject(found.record);
+      if (opened.status === "too-new") {
+        return res.status(409).json({ error: "This project was saved with a newer version of OSCAR" + (opened.savedBy ? " (" + opened.savedBy + ")" : "") + ". Update OSCAR to open it." });
+      }
+      if (opened.status !== "ok") return res.status(422).json({ error: "This file isn't an OSCAR project, or it is damaged." });
+      res.json({ id: found.id, name: found.name, rev: found.rev, updatedAt: found.updatedAt, data: opened.data });
+    } catch (err) {
+      console.error("Could not read the project:", err.message);
+      res.status(500).json({ error: "The project could not be read." });
+    }
+  });
+
+  router.put("/projects/:id", editorOnly, async (req, res) => {
+    const body = req.body || {};
+    const changes = { grapesjs: body.grapesjs };
+    if (body.data !== undefined) {
+      changes.data = projectData(body);
+      if (!changes.data) return res.status(400).json({ error: "That is not an OSCAR project." });
+    }
+    if (typeof body.name === "string" && body.name.trim()) changes.name = body.name;
+    if (changes.data === undefined && changes.name === undefined) return res.status(400).json({ error: "There is nothing to save." });
+    if (Number.isInteger(body.baseRev)) changes.baseRev = body.baseRev;
+    try {
+      const written = await store.write(req.params.id, changes);
+      if (!written) return res.status(404).json({ error: "That project is not in OSCAR." });
+      if (written.conflict) {
+        return res.status(409).json({ conflict: true, rev: written.rev, name: written.name, error: '"' + written.name + '" was changed somewhere else since this window opened it.' });
+      }
+      res.json(written);
+    } catch (err) {
+      console.error("Could not save the project:", err.message);
+      res.status(500).json({ error: "The project could not be saved." });
+    }
+  });
+
+  router.post("/projects/:id/copy", editorOnly, async (req, res) => {
+    try {
+      const made = await store.duplicate(req.params.id);
+      if (!made) return res.status(404).json({ error: "That project is not in OSCAR." });
+      res.json(made);
+    } catch (err) {
+      console.error("Could not copy the project:", err.message);
+      res.status(500).json({ error: "The project could not be copied." });
+    }
+  });
+
+  router.delete("/projects/:id", editorOnly, async (req, res) => {
+    try {
+      const removed = await store.removeById(req.params.id);
+      if (!removed) return res.status(404).json({ error: "That project is not in OSCAR." });
+      res.json({ msg: "Deleted" });
+    } catch (err) {
+      console.error("Could not delete the project:", err.message);
+      res.status(500).json({ error: "The project could not be deleted." });
     }
   });
 
