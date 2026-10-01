@@ -841,10 +841,19 @@ is called by then. Every other row has **Edit**, which puts the project it
 was published from back on the canvas, and **Take down**, which stops serving
 it. An address already in use by another project is replaced only after a
 question. Saving never changes what phones see; only Publish and Update do.
-A published page stays reachable while OSCAR is locked. It finds OSCAR by the address it was
-opened at, so it keeps working if the computer's IP address changes. With
-OSCAR Pro the same dialog also offers to make a published surface public on
-the internet, for phones that are not on your network. Unlike
+A published page stays reachable while OSCAR is locked.
+
+Each live interface has one setting for **who can open it**. **This
+network** is any phone, tablet or computer on the same Wi-Fi, and is what a
+newly published interface is. **Off** is no device at all: its address
+answers "This interface is switched off", and a phone that had it open is
+disconnected. Off closes the door and nothing else, so its schedules and
+bridges still run, and it opens again as it was; **Take down** is what stops
+those. With OSCAR Pro the same setting has a third answer, **Anyone with the
+link**, for phones that are not on your network.
+
+A published page finds OSCAR by the address it was opened at, so it keeps
+working if the computer's IP address changes. Unlike
 `/preview`, which always shows the last push from the editor, a published
 page stays as it was until you publish it again.
 

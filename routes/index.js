@@ -16,6 +16,14 @@ const { listTemplates } = require("../lib/templates");
 const { none: noExtensions } = require("../lib/extensions");
 const { embedJson } = require("../lib/export/document");
 
+// What a phone is shown at the address of a surface that is switched off.
+// Plain and whole: nothing of the surface, no script, nothing to connect.
+const OFF_PAGE =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+  "<title>Switched off</title><style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;" +
+  "background:#111;color:#ddd;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box}</style></head>" +
+  "<body><p>This interface is switched off.<br>Ask whoever runs it to switch it on, then reload.</p></body></html>";
+
 // Keys grapesjs sends alongside the project payload that are OSCAR's own
 // bookkeeping rather than editor content.
 const META_KEYS = new Set(["name", "overwrite", "visibility", "grapesjs"]);
@@ -449,10 +457,28 @@ module.exports = function createRouter({
     res.json({ msg: "Unpublished" });
   });
 
+  // Who can open a published surface: "off", no device at all, or "network",
+  // any device on the local network. Changing it is editing.
+  router.post("/published/:id/access", editorOnly, async (req, res) => {
+    const access = req.body && req.body.access;
+    if (access !== "off" && access !== "network") return res.status(400).json({ error: "An interface is either off or open to this network." });
+    const done = published ? await published.setAccess(req.params.id, access) : false;
+    if (!done) return res.status(404).json({ error: "That interface is no longer published" });
+    if (onPublishedChanged) onPublishedChanged();
+    res.json({ id: req.params.id, access });
+  });
+
   // After /show/preview above, which is the editor's hand-off and not a page.
   router.get("/show/:id", async (req, res) => {
     const page = published ? await published.read(req.params.id) : null;
     if (page === null) return res.status(404).type("text/plain").send("There is no surface published here.");
+    // Switched off: the address answers, and says so, to every device -- this
+    // computer included. Off means nobody; the editor is where it is tested.
+    const record = await published.record(req.params.id);
+    if (record && record.access === "off") {
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(403).type("html").send(OFF_PAGE);
+    }
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     // Publishing again has to show at once on a tablet that reloads.
     res.setHeader("Cache-Control", "no-store");

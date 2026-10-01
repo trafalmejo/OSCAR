@@ -247,7 +247,9 @@
    stacks them. */
 .oscar-publish-columns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  /* One list now: each row carries who can open it, so there is no second
+     list beside it to keep level with. */
+  grid-template-columns: 1fr;
   gap: 16px;
   align-items: start;
   margin-top: 16px;
@@ -362,4 +364,46 @@
   align-self: center;
   font-size: 13px;
   line-height: 1.45;
+}
+
+/* Who can open an interface: one setting on its row, and under the row the
+   address that goes with it. */
+.oscar-published-list .oscar-published-access {
+  flex: none;
+  width: auto;
+  min-width: 132px;
+  height: 28px;
+  padding: 2px 6px;
+  font-size: var(--o-text-xs);
+}
+.oscar-publish-columns .oscar-published-list li {
+  flex-wrap: wrap;
+}
+.oscar-published-list .oscar-published-where {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding-left: 15px;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+}
+.oscar-published-list .oscar-published-where a {
+  flex: none;
+}
+.oscar-published-list .oscar-published-level {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.oscar-published-list .oscar-published-level:empty {
+  display: none;
+}
+/* Off: the page is kept and nobody is on it. No green, no breath. */
+.oscar-published-list .oscar-published-live.oscar-published-off {
+  background: var(--o-text-muted);
+  box-shadow: none;
+  animation: none;
 }

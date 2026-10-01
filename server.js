@@ -20,7 +20,7 @@ const { portsFromEnv } = require("./lib/ports");
 const { createRemoteMidi } = require("./lib/midi/remote");
 const features = require("./lib/features");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket, createUsbDmx, isUsb } = require("./lib/dmx");
-const { sharedSync } = require("./lib/shared-sync");
+const { sharedSync, roomOf } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
 const { createSurfaces, allWidgetsIn } = require("./lib/surfaces");
@@ -564,6 +564,21 @@ const shared = sharedSync(io, {
 });
 // A surface that is unpublished takes its record with it.
 published.onRemoved((id) => shared.reset(id));
+
+// The surfaces that are switched off (lib/published.js): no device may be on
+// one. Its page is refused where it is served (routes/index.js); here its
+// connections are, so a phone that had the page open when it was switched
+// off stops driving the rig as well. Known in memory, because a connection
+// is placed as it arrives: read at start, kept in step from then on.
+const switchedOff = new Set();
+published.list().then((rows) => rows.forEach((row) => row.access === "off" && switchedOff.add(row.id))).catch(() => {});
+published.onRemoved((id) => switchedOff.delete(id));
+published.onAccess((id, access) => {
+  if (access !== "off") return switchedOff.delete(id);
+  switchedOff.add(id);
+  // Every device showing it is in its room (lib/shared-sync.js).
+  io.in(roomOf(id)).disconnectSockets(true);
+});
 tellEditors = (event, payload) => io.emit(event, payload);
 
 // ---- OSC coming back ------------------------------------------------------
@@ -626,6 +641,14 @@ io.on("connection", (socket) => {
   // Who this connection sends for, for the network log: the editor's canvas
   // or a page on this network, and which surface (lib/activity.js).
   const from = socketOrigin(socket.handshake.query && socket.handshake.query.from, socket.handshake.address);
+
+  // A page of a surface that is switched off: turned away before it is given
+  // a way to send anything. It will keep asking; the answer stays the same
+  // until the surface is switched on.
+  if (from.surface && switchedOff.has(from.surface)) {
+    socket.disconnect(true);
+    return;
+  }
 
   // The editor's canvas saying what incoming data it followed, gathered a
   // few times a second: [{ protocol, what, device }]. Written on the rows of

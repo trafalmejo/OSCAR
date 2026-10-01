@@ -404,3 +404,85 @@ test("an interface is not outdated because building it embedded its pictures: th
     assert.notStrictEqual(surfaceStamp(await store.read("stage")), row.stamp, "which the built page itself no longer matches");
   });
 });
+
+// ---- who can open a surface: off, or this network ------------------------------------
+
+test("a surface is open to the network unless it is switched off; off, its address says so and serves nothing of it", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", FROM_PROJECT);
+    assert.strictEqual((await (await fetch(base + "/published")).json())[0].access, "network");
+    assert.strictEqual((await fetch(base + "/show/stage")).status, 200);
+
+    const heard = [];
+    store.onAccess((id, access) => heard.push([id, access]));
+    const off = await post(base, "/published/stage/access", { access: "off" });
+    assert.deepStrictEqual([off.status, await off.json()], [200, { id: "stage", access: "off" }]);
+    assert.deepStrictEqual(heard, [["stage", "off"]], "whoever has devices on it, or a copy elsewhere, is told");
+
+    const closed = await fetch(base + "/show/stage");
+    assert.strictEqual(closed.status, 403);
+    assert.strictEqual(closed.headers.get("cache-control"), "no-store", "switching it on has to show on a reload");
+    const said = await closed.text();
+    assert.match(said, /This interface is switched off\./);
+    assert.ok(!said.includes("data-oscar") && !said.includes("<script"), "nothing of the surface, and nothing that could connect");
+
+    // Off closes the door and nothing else: the page, its record and its project copy stay.
+    assert.strictEqual((await (await fetch(base + "/published")).json())[0].access, "off");
+    assert.ok((await store.read("stage")).includes("data-oscar"), "a schedule or a bridge still has the page to run from");
+    assert.strictEqual((await (await fetch(base + "/published/stage/project")).json()).name, "Main Stage");
+
+    // Publishing again does not open a door that was closed.
+    await post(base, "/publish", FROM_PROJECT);
+    assert.strictEqual((await store.record("stage")).access, "off");
+    assert.strictEqual((await fetch(base + "/show/stage")).status, 403);
+
+    await post(base, "/published/stage/access", { access: "network" });
+    assert.strictEqual((await fetch(base + "/show/stage")).status, 200);
+    assert.ok(!("access" in (await store.record("stage"))), "network is what a surface is with nothing said");
+    assert.deepStrictEqual(heard, [["stage", "off"], ["stage", "network"]]);
+  });
+});
+
+test("a page from before records can be switched off too, and loses the record again when it is switched on", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", REQUEST);
+    assert.strictEqual(await store.record("main-stage"), null);
+    await post(base, "/published/main-stage/access", { access: "off" });
+    assert.deepStrictEqual(await store.record("main-stage"), { access: "off" });
+    const [row] = await (await fetch(base + "/published")).json();
+    assert.deepStrictEqual([row.access, row.project, row.editable], ["off", null, false]);
+
+    // Replaced by a page with no project: still off.
+    await post(base, "/publish", Object.assign({}, REQUEST, { replace: true }));
+    assert.deepStrictEqual(await store.record("main-stage"), { access: "off" });
+
+    await post(base, "/published/main-stage/access", { access: "network" });
+    assert.strictEqual(await store.record("main-stage"), null);
+    assert.deepStrictEqual(fs.readdirSync(store.dir), ["main-stage.html"]);
+  });
+});
+
+test("access is one of two words, of a surface that is there, and changing it is editing", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", FROM_PROJECT);
+    for (const bad of [{ access: "anyone" }, { access: "" }, {}, { access: true }]) {
+      assert.strictEqual((await post(base, "/published/stage/access", bad)).status, 400, JSON.stringify(bad));
+    }
+    assert.strictEqual((await post(base, "/published/nope/access", { access: "off" })).status, 404);
+    assert.strictEqual(await store.setAccess("../escape", "off"), false);
+    assert.strictEqual(await store.setAccess("stage", "anyone"), false, "what is beyond the network is an extension's, not a word kept here");
+  });
+  const routes = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8");
+  assert.match(routes, /router\.post\("\/published\/:id\/access", editorOnly,/);
+});
+
+test("the server turns away the devices of a surface that is switched off, before they can send", () => {
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  // Those already on it, the moment it is switched off...
+  assert.match(server, /published\.onAccess\(\(id, access\) => \{[\s\S]*?switchedOff\.add\(id\);[\s\S]*?io\.in\(roomOf\(id\)\)\.disconnectSockets\(true\);/);
+  // ...and any that arrive later, before the handlers that send are given to them.
+  const turnedAway = server.indexOf("if (from.surface && switchedOff.has(from.surface)) {");
+  const sends = server.indexOf('socket.on("osc", (msg) => {');
+  assert.ok(turnedAway !== -1 && sends !== -1 && turnedAway < sends);
+  assert.match(server, /published\.list\(\)\.then\(\(rows\) => rows\.forEach\(\(row\) => row\.access === "off" && switchedOff\.add\(row\.id\)\)\)/, "what was off when OSCAR stopped is off when it starts");
+});

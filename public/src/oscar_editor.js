@@ -2563,7 +2563,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
           return res.json();
         })
         .then(function (rows) {
-          paintLive(Array.isArray(rows) ? rows : []);
+          // LOCAL counts what a device on the network can open: an interface
+          // that is switched off is kept, and served to nobody.
+          paintLive(
+            (Array.isArray(rows) ? rows : []).filter(function (row) {
+              return row.access !== "off";
+            })
+          );
         })
         .catch(function () {});
     }
@@ -3137,6 +3143,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     publishDialog: {
       addSection: function (draw) {
         if (publishDialog) publishDialog.addSection(draw);
+      },
+      /**
+       * Add an answer to "who can open it" on every row, after OSCAR's own
+       * Off and This network. See addAccessLevel in export_dialog.js.
+       */
+      addAccessLevel: function (level) {
+        if (publishDialog) publishDialog.addAccessLevel(level);
       },
     },
     /**

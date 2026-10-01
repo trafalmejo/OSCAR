@@ -19,8 +19,8 @@ test("the dialog keeps a box for extensions, after the list of what is published
   assert.ok(result !== -1 && extras !== -1 && list !== -1);
   assert.ok(result < list && list < extras);
   assert.match(markup, /Publish on the local network/);
-  assert.match(markup, /Published on the local network/);
-  // Side by side, and the one box above serves both: code, link, Copy.
+  assert.match(markup, /Live interfaces/, "one list: each row says who can open it");
+  // The one box above serves every address: code, link, Copy.
   const columns = markup.indexOf('class="oscar-publish-columns"');
   assert.ok(columns !== -1 && columns < list && extras < markup.indexOf("</div>", extras) );
   assert.ok(markup.indexOf('id="publish-copy"') !== -1 && markup.indexOf('id="publish-copy"') < columns);
@@ -112,4 +112,44 @@ test("each surface published on the local network wears a green live dot: served
   const css = read("public/css/oscar_export.css");
   assert.match(css, /\.oscar-published-list \.oscar-published-live \{/, "with the pill's green and breath");
   assert.match(css, /animation: oscar-live-breathe/, "the same breath as the LIVE pill");
+});
+
+// ---- who can open it: one setting on each row ----------------------------------------
+
+test("each row has one setting for who can open it: Off and This network are OSCAR's own", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /\[\{ id: "off", label: "Off" \}, \{ id: "network", label: "This network" \}\]/);
+  assert.match(dialog, /access\.value = isOff \? "off" : at \? at\.id : "network";/, "an extension's level outranks the network; off outranks both");
+  assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(id\) \+ "\/access", \{/);
+  // Off is said on the row, not left to be guessed: a grey dot, no QR, and what still runs.
+  assert.match(dialog, /live\.className = "oscar-published-live oscar-published-off";/);
+  assert.match(dialog, /qr\.disabled = isOff;/);
+  assert.match(dialog, /where\.textContent = "No device can open it\. Its schedules and bridges still run\.";/);
+  const css = read("public/css/oscar_export.css");
+  assert.match(css, /\.oscar-published-live\.oscar-published-off \{[^}]*animation: none;/, "no green, no breath");
+  assert.match(css, /\.oscar-publish-columns \{[^}]*grid-template-columns: 1fr;/, "one list, the whole width");
+  const markup = read("public/partials/export.ejs");
+  assert.match(markup, /Off: no device at all, though its schedules and bridges still run\./);
+});
+
+test("an extension adds a further answer to who can open it, and its own part of the row", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /addAccessLevel: function \(level\) \{/);
+  assert.match(dialog, /level\.id === "off" \|\| level\.id === "network"\) \{\s*throw new Error\("An access level has an id of its own"\);/, "OSCAR's own two cannot be taken");
+  assert.match(dialog, /typeof level\.read !== "function" \|\| typeof level\.choose !== "function" \|\| typeof level\.leave !== "function"/);
+  // Asked where each interface stands before the rows are drawn; one that fails is left out, no more.
+  assert.match(dialog, /levelMaps\[level\.id\] = map && typeof map === "object" \? map : null;/);
+  assert.match(dialog, /function \(\) \{\s*levelMaps\[level\.id\] = null;\s*\}/);
+  // The steps of a change: leave the level it is at, then OSCAR's own word, or the network and then the level.
+  assert.match(dialog, /if \(at && at\.id !== to\) \{\s*chain = chain\.then\(function \(\) \{\s*return at\.leave\(page\.id\);/);
+  assert.match(dialog, /if \(page\.access === "off"\) \{\s*chain = chain\.then\(function \(\) \{\s*return postAccess\(page\.id, "network"\);/);
+  assert.match(dialog, /return level\.choose\(page\.id\);/);
+  assert.match(dialog, /\.then\(refreshPublished\);/, "and the row is drawn again as things stand, whatever happened");
+  // Its part of the row, and a level that throws loses only that.
+  assert.match(dialog, /console\.error\("An access level of the Publish dialog failed:", err\);/);
+  assert.match(dialog, /"On this Wi-Fi, faster: " : "On this network: "/, "the local address stays on the row when an extension's link leads");
+
+  const editor = read("public/src/oscar_editor.js");
+  assert.match(editor, /addAccessLevel: function \(level\) \{\s*if \(publishDialog\) publishDialog\.addAccessLevel\(level\);/);
+  assert.match(editor, /return row\.access !== "off";/, "LOCAL counts what a device can open");
 });

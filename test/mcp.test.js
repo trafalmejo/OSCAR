@@ -97,7 +97,7 @@ test("level one reads: status, the published roster, one surface's widgets, the 
   assert.strictEqual(status.midi.driver, "supervised");
 
   const roster = await by.list_published.handler({});
-  assert.deepStrictEqual(roster.published, [{ id: "stage", path: "/show/stage", widgets: 1 }]);
+  assert.deepStrictEqual(roster.published, [{ id: "stage", name: "stage", path: "/show/stage", access: "network", widgets: 1 }]);
 
   const surface = await by.read_surface.handler({ surface: "stage" });
   assert.strictEqual(surface.widgets[0].id, "dim");

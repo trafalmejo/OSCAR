@@ -22149,6 +22149,11 @@ function install(editor, options) {
   var latest = null; // the id of the surface published from this dialog, most recently
   var known = []; // the published surfaces, as GET /published last said
   var staleMark = null; // the "outdated" mark on the row of this canvas's own interface
+  // Who can open an interface is one setting on its row. OSCAR itself knows
+  // two answers: off, and this network. An extension may add further ones
+  // (addAccessLevel below): where the interface is reachable beyond it.
+  var levels = [];
+  var levelMaps = {}; // level id -> { surface id: true } as its read() last said, or null: not on offer now
   // The address other devices reach OSCAR on, and its bridge port, as GET
   // /connection last said; what a download is told unless it is changed.
   var lanHost = "";
@@ -22320,11 +22325,36 @@ function install(editor, options) {
         return res.ok ? res.json() : [];
       })
       .then(function (pages) {
+        // Each level says which surfaces are at it. One that fails, or has
+        // nothing to offer now, is left out of this drawing and no more.
+        return Promise.all(
+          levels.map(function (level) {
+            return Promise.resolve()
+              .then(function () {
+                return level.read();
+              })
+              .then(
+                function (map) {
+                  levelMaps[level.id] = map && typeof map === "object" ? map : null;
+                },
+                function () {
+                  levelMaps[level.id] = null;
+                }
+              );
+          })
+        ).then(function () {
+          return pages;
+        });
+      })
+      .then(function (pages) {
         publishedList.textContent = "";
         staleMark = null;
         known = Array.isArray(pages) ? pages : [];
         known.forEach(function (page) {
           var row = document.createElement("li");
+          var isOff = page.access === "off";
+          // The extension level this interface is at, if any: it outranks "network".
+          var at = isOff ? null : levelAt(page.id);
 
           // A green dot first: this row is not a file, it is being served
           // right now -- the same green, and the same breath, as the LIVE
@@ -22332,6 +22362,11 @@ function install(editor, options) {
           var live = document.createElement("span");
           live.className = "oscar-published-live";
           live.title = "Live: OSCAR is serving this surface right now.";
+          if (isOff) {
+            // Grey and still: the page is kept, and nobody can open it.
+            live.className = "oscar-published-live oscar-published-off";
+            live.title = "Off: no device can open this interface. Its schedules and bridges still run.";
+          }
           row.appendChild(live);
 
           var open = document.createElement("a");
@@ -22370,10 +22405,37 @@ function install(editor, options) {
             row.appendChild(stale);
           }
 
+          // Who can open it: one setting, the row's own.
+          var access = document.createElement("select");
+          access.className = "o-input oscar-published-access";
+          access.setAttribute("aria-label", "Who can open " + (page.name || page.id));
+          [{ id: "off", label: "Off" }, { id: "network", label: "This network" }]
+            .concat(
+              levels
+                .filter(function (level) {
+                  return levelMaps[level.id];
+                })
+                .map(function (level) {
+                  return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label };
+                })
+            )
+            .forEach(function (choice) {
+              var option = document.createElement("option");
+              option.value = choice.id;
+              option.textContent = choice.label;
+              access.appendChild(option);
+            });
+          access.value = isOff ? "off" : at ? at.id : "network";
+          access.onchange = function () {
+            changeAccess(page, at, access.value, access);
+          };
+          row.appendChild(access);
+
           var qr = document.createElement("button");
           qr.type = "button";
           qr.className = "o-btn";
           qr.textContent = "QR";
+          qr.disabled = isOff;
           qr.setAttribute("aria-label", "Show the QR code for " + page.id);
           qr.onclick = function () {
             showPublished(page.path, false);
@@ -22456,6 +22518,41 @@ function install(editor, options) {
             }
           };
           row.appendChild(remove);
+
+          // Under the row: where it is opened, as it stands. An extension's
+          // level draws its own part beside it -- its link, and how that is doing.
+          var where = document.createElement("div");
+          where.className = "oscar-published-where";
+          if (isOff) {
+            where.textContent = "No device can open it. Its schedules and bridges still run.";
+          } else {
+            var local = document.createElement("a");
+            local.className = "o-link";
+            local.target = "_blank";
+            local.rel = "noopener";
+            local.href = addressOf(page.path);
+            local.textContent = addressOf(page.path);
+            where.appendChild(document.createTextNode(at ? "On this Wi-Fi, faster: " : "On this network: "));
+            where.appendChild(local);
+          }
+          levels.forEach(function (level) {
+            if (!levelMaps[level.id] || typeof level.draw !== "function") return;
+            var box = document.createElement("span");
+            box.className = "oscar-published-level";
+            try {
+              level.draw(box, { id: page.id, name: page.name || page.id, path: page.path, address: addressOf(page.path), access: page.access }, {
+                active: !!at && at.id === level.id,
+                show: showAddress,
+                refresh: refreshPublished,
+              });
+            } catch (err) {
+              console.error("An access level of the Publish dialog failed:", err);
+            }
+            // First on the line when it is where the interface is opened.
+            if (at && at.id === level.id) where.insertBefore(box, where.firstChild);
+            else where.appendChild(box);
+          });
+          row.appendChild(where);
           publishedList.appendChild(row);
         });
         publishedBox.style.display = publishedList.children.length ? "block" : "none";
@@ -22468,6 +22565,69 @@ function install(editor, options) {
         known = [];
         drawSections();
       });
+  }
+
+  /** The extension level a surface is at, out of what the levels last said, or null. */
+  function levelAt(id) {
+    for (var i = 0; i < levels.length; i++) {
+      var map = levelMaps[levels[i].id];
+      if (map && map[id]) return levels[i];
+    }
+    return null;
+  }
+
+  function postAccess(id, access) {
+    return fetch("/published/" + encodeURIComponent(id) + "/access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access: access }),
+    }).then(function (res) {
+      return res.json().then(function (answer) {
+        if (!res.ok) throw new Error((answer && answer.error) || "That could not be changed.");
+        return answer;
+      });
+    });
+  }
+
+  /**
+   * One setting, three kinds of step. Leaving an extension's level is asked
+   * of that level first; off and network are OSCAR's own; and an extension's
+   * level is chosen with the interface open to the network, which it builds
+   * on. Whatever fails is said, and the row is drawn again as things stand.
+   */
+  function changeAccess(page, at, to, select) {
+    say(errorBox, "");
+    select.disabled = true;
+    var chain = Promise.resolve();
+    if (at && at.id !== to) {
+      chain = chain.then(function () {
+        return at.leave(page.id);
+      });
+    }
+    if (to === "off" || to === "network") {
+      if (page.access !== to) {
+        chain = chain.then(function () {
+          return postAccess(page.id, to);
+        });
+      }
+    } else {
+      var level = levels.filter(function (other) {
+        return other.id === to;
+      })[0];
+      if (page.access === "off") {
+        chain = chain.then(function () {
+          return postAccess(page.id, "network");
+        });
+      }
+      chain = chain.then(function () {
+        return level.choose(page.id);
+      });
+    }
+    chain
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "That could not be changed.");
+      })
+      .then(refreshPublished);
   }
 
   /** Edit: fetch the project a live interface was published from, and hand it to the editor. */
@@ -22716,6 +22876,40 @@ function install(editor, options) {
       box.className = "oscar-publish-section";
       if (extrasBox) extrasBox.appendChild(box);
       sections.push({ draw: draw, box: box });
+    },
+
+    /**
+     * Let an extension add an answer to "who can open it", after OSCAR's own
+     * Off and This network: somewhere an interface is reachable beyond the
+     * local network. `level` is:
+     *
+     *   id       a short word, not "off" or "network"
+     *   label    what the setting calls it; a string, or a function giving one
+     *   read()   a promise of { surfaceId: true } for the interfaces at this
+     *            level now, or of null when the level is not on offer at all
+     *   choose(surfaceId)  put the interface at this level; a promise, rejected
+     *            with an Error whose message is for the person when it cannot be
+     *   leave(surfaceId)   take it off this level; a promise
+     *   draw(box, surface, view)  optional: the level's own part of the row's
+     *            second line -- its link, how that is doing. surface is { id,
+     *            name, path, address, access }; view is { active, show(address,
+     *            status), refresh() }
+     *
+     * An interface at an extension's level is open to the network as well,
+     * and switching it Off leaves the level first.
+     */
+    addAccessLevel: function (level) {
+      if (!level || typeof level.id !== "string" || !/^[a-z][a-z0-9-]*$/.test(level.id) || level.id === "off" || level.id === "network") {
+        throw new Error("An access level has an id of its own");
+      }
+      if (typeof level.read !== "function" || typeof level.choose !== "function" || typeof level.leave !== "function") {
+        throw new Error("An access level reads, is chosen and is left");
+      }
+      levels = levels
+        .filter(function (other) {
+          return other.id !== level.id;
+        })
+        .concat([level]);
     },
   };
 }
@@ -25357,7 +25551,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
           return res.json();
         })
         .then(function (rows) {
-          paintLive(Array.isArray(rows) ? rows : []);
+          // LOCAL counts what a device on the network can open: an interface
+          // that is switched off is kept, and served to nobody.
+          paintLive(
+            (Array.isArray(rows) ? rows : []).filter(function (row) {
+              return row.access !== "off";
+            })
+          );
         })
         .catch(function () {});
     }
@@ -25931,6 +26131,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     publishDialog: {
       addSection: function (draw) {
         if (publishDialog) publishDialog.addSection(draw);
+      },
+      /**
+       * Add an answer to "who can open it" on every row, after OSCAR's own
+       * Off and This network. See addAccessLevel in export_dialog.js.
+       */
+      addAccessLevel: function (level) {
+        if (publishDialog) publishDialog.addAccessLevel(level);
       },
     },
     /**
