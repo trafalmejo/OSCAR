@@ -70,7 +70,7 @@ test("the bar's geography: File first at the left, the screen sizes centred over
   // Created with its buttons in it: a panel added empty never draws buttons added later.
   assert.match(editor, /pn\.addPanel\(\{ id: "oscar-sizes", visible: true, buttons: sizeButtons \}\);/, "they have a panel of their own, made with them in it");
   assert.match(editor, /pn\.removeButton\("devices-c", id\);/, "the sizes leave the left panel whole");
-  assert.match(editor, /var wanted = \["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "oscar-export"\]/, "the left half is the project: File, Edit, its title, how it stands, Publish; the right half is OSCAR");
+  assert.match(editor, /var wanted = \["oscar-file", "oscar-edit", "oscar-title", "oscar-export", "oscar-save-state"]/, "the left half is the project: File, Edit, its title, Publish, how it stands; the right half is OSCAR");
   const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
   assert.match(theme, /\.gjs-pn-panel\.gjs-pn-oscar-sizes \{\n  top: 0;\n  left: 42\.5%;\n  transform: translateX\(-50%\);/, "centred over the canvas (85% of the window), not the window");
   assert.match(theme, /\.gjs-pn-oscar-sizes \.gjs-pn-btn \{\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;/, "the icons sit squarely centred");

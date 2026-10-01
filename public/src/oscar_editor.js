@@ -2350,8 +2350,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
     },
   });
 
-  // On the left, with the project: its title, how it stands, and Publish,
-  // which is what is done with it. The right of the bar is OSCAR's.
+  // On the left, with the project: its title, Publish, which is what is
+  // done with it, and how it stands. The right of the bar is OSCAR's.
   pn.addButton("devices-c", {
     id: "oscar-export",
     className: "oscar-publish-btn",
@@ -2547,7 +2547,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // second half: OSCAR serves published interfaces in the background all the
   // time, whichever project is on the canvas, and the rig is listening to
   // them too. The bar keeps the two apart. Its left is the project being
-  // edited: File, Edit, its title, how it stands, and Publish, which sends
+  // edited: File, Edit, its title, Publish and how it stands. Publish sends
   // it over. Its right is OSCAR, the server: its address, this pill, the lock.
   //
   // RUNNING counts the interfaces OSCAR is serving and opens the Running
@@ -3171,13 +3171,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "oscar-export"]
+    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-export", "oscar-save-state"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "oscar-export"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-export", "oscar-save-state"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {
