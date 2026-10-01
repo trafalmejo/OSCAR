@@ -216,7 +216,7 @@ function spread(levels, count) {
 
 module.exports = { toWhole, unitOf, toLevel, toLevels, spread, clamp };
 
-},{"../osc-args":10,"./spec":3}],3:[function(require,module,exports){
+},{"../osc-args":11,"./spec":3}],3:[function(require,module,exports){
 "use strict";
 
 /**
@@ -557,7 +557,7 @@ module.exports = {
   readWidget,
 };
 
-},{"../widgets":23}],5:[function(require,module,exports){
+},{"../widgets":24}],5:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1033,6 +1033,102 @@ module.exports = {
 "use strict";
 
 /**
+ * Which project the canvas in this browser is.
+ *
+ * The canvas autosaves into the browser (the editor's storageManager), and
+ * until now nothing beside it said what it was: a reload kept the layout and
+ * forgot the name. A published surface remembers the project it was made
+ * from by that project's id (lib/published.js), so the canvas has to know
+ * its own -- across a reload, and before it has ever been saved to a file.
+ *
+ * Kept in the browser, beside the canvas, and not on the server: each
+ * browser has a canvas of its own, and one "open project" for all of them
+ * would be wrong for every browser but one.
+ *
+ *   id     the project's identity, or null for a canvas that is nobody yet
+ *          (a template just loaded, a first launch)
+ *   name   what it is called
+ *   saved  whether it has been saved to, or opened from, a file or the
+ *          library: Save as on such a project makes a new project, with a
+ *          new id; the first save of one that has not keeps the id it has
+ *
+ * `storage` is localStorage's shape (getItem, setItem, removeItem), handed in
+ * so a test needs no browser. A storage that throws -- private browsing, a
+ * full disk -- costs the memory across reloads and nothing else.
+ */
+
+const { isProjectId, newProjectId } = require("./project-format");
+
+const KEY = "oscarProject.open";
+const NOBODY = Object.freeze({ id: null, name: "", saved: false });
+
+function tidy(pointer) {
+  const given = pointer && typeof pointer === "object" ? pointer : {};
+  return {
+    id: isProjectId(given.id) ? given.id : null,
+    name: typeof given.name === "string" ? given.name.trim().slice(0, 200) : "",
+    saved: given.saved === true,
+  };
+}
+
+function createOpenProject(storage, options) {
+  const makeId = (options && options.newId) || newProjectId;
+  let held = null;
+
+  function load() {
+    try {
+      return tidy(JSON.parse(storage.getItem(KEY)));
+    } catch (err) {
+      return tidy(null);
+    }
+  }
+
+  function keep(pointer) {
+    held = tidy(pointer);
+    try {
+      if (!held.id && !held.name) storage.removeItem(KEY);
+      else storage.setItem(KEY, JSON.stringify(held));
+    } catch (err) {
+      // Remembered for as long as the page lives, then.
+    }
+    return Object.assign({}, held);
+  }
+
+  return {
+    /** { id, name, saved } as it stands. */
+    get() {
+      if (!held) held = load();
+      return Object.assign({}, held);
+    },
+
+    /** The canvas is this project now: opened, loaded, or saved under it. */
+    set(pointer) {
+      return keep(pointer);
+    },
+
+    /** The canvas is nobody's: a template, an import, a fresh start. A name may come with it. */
+    clear(name) {
+      return keep(Object.assign({}, NOBODY, { name: typeof name === "string" ? name : "" }));
+    },
+
+    /** The project's id, made now if the canvas had none: publishing needs one to be remembered by. */
+    ensureId() {
+      const now = this.get();
+      if (now.id) return now.id;
+      return keep(Object.assign(now, { id: makeId() })).id;
+    },
+
+    /** A fresh id, not kept: for a Save as that may yet be called off. */
+    newId: () => makeId(),
+  };
+}
+
+module.exports = { createOpenProject, KEY };
+
+},{"./project-format":13}],10:[function(require,module,exports){
+"use strict";
+
+/**
  * OSC 1.0 address pattern matching.
  *
  * In OSC the sender names a set of destinations and each receiver decides
@@ -1229,7 +1325,7 @@ function matchesAddress(pattern, address) {
 
 module.exports = { matchesAddress, isPattern, compile };
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1347,7 +1443,7 @@ function isSendable(argType, raw) {
 
 module.exports = { ARG_TYPES, NUMERIC_ARG_TYPES, toArgs, isSendable, isFalsy, toNumber, isInt32 };
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -1506,7 +1602,7 @@ function planPorts(args, env) {
 module.exports = { portsFromEnv, planPorts, DEFAULTS, VARIABLES, isPort };
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":37}],12:[function(require,module,exports){
+},{"_process":38}],13:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1689,9 +1785,14 @@ function formatFor(data) {
  * `oscar` and `grapesjs` are recorded for diagnosis -- knowing what wrote a
  * file is most of the work when someone reports it won't open. Neither is used
  * to decide anything; only `format` is.
+ *
+ * `id` is the project's identity: what a published surface remembers it was
+ * made from, so the name can change and the file can move. It is written
+ * only when there is one, and is not a reason to bump the format: an OSCAR
+ * from before it reads the file as it always did.
  */
-function stampProject({ name, data, oscar, grapesjs, now = () => new Date() }) {
-  return {
+function stampProject({ name, data, oscar, grapesjs, id, now = () => new Date() }) {
+  const record = {
     format: formatFor(data),
     oscar: oscar || null,
     grapesjs: grapesjs || null,
@@ -1699,6 +1800,35 @@ function stampProject({ name, data, oscar, grapesjs, now = () => new Date() }) {
     updatedAt: now().toISOString(),
     data,
   };
+  if (isProjectId(id)) record.id = id;
+  return record;
+}
+
+// An id is a short plain word: it travels in addresses and file names.
+const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,79}$/;
+
+function isProjectId(id) {
+  return typeof id === "string" && PROJECT_ID.test(id);
+}
+
+/**
+ * A new project's id. Random rather than made from the name: two people's
+ * "lobby" must not be taken for the same project when a file changes hands.
+ */
+function newProjectId(random = Math.random) {
+  let id = "p-";
+  while (id.length < 14) id += Math.floor(random() * 36).toString(36);
+  return id;
+}
+
+/**
+ * The id of a project record: its own, or for a library file saved before
+ * projects carried one, a name made from the file it is in -- the same every
+ * time it is read, so what was published from it still finds it.
+ */
+function projectIdOf(record, libraryFile) {
+  if (record && isProjectId(record.id)) return record.id;
+  return libraryFile ? "library-" + String(libraryFile).slice(0, 60) : null;
 }
 
 module.exports = {
@@ -1713,9 +1843,12 @@ module.exports = {
   detectFormat,
   openProject,
   stampProject,
+  isProjectId,
+  newProjectId,
+  projectIdOf,
 };
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1804,7 +1937,7 @@ const DEFAULT_SORT = { key: "date", direction: "descending" };
 
 module.exports = { formatSize, sortProjects, orderProjects, nextSort, DEFAULT_SORT };
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1830,7 +1963,7 @@ function surfaceAddress(host, httpPort, path) {
 
 module.exports = { surfaceAddress };
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1878,7 +2011,7 @@ function viaSerial(config) {
 
 module.exports = { SERIAL_HOST, isSerialTarget, viaSerial };
 
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 "use strict";
 
 /**
@@ -1943,7 +2076,7 @@ function arrange(ids, placements) {
 
 module.exports = { PLACEMENTS, moveAfter, moveBefore, arrange };
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 "use strict";
 
 /**
@@ -2121,7 +2254,7 @@ module.exports = {
   withoutAppearance,
 };
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 "use strict";
 
 const {
@@ -2455,7 +2588,7 @@ function checkValueOff(value, config) {
 
 module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 
-},{"../osc-args":10,"./fields":21,"./incoming":22,"./midi-fields":26,"./outgoing":30,"./shared":32}],19:[function(require,module,exports){
+},{"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],20:[function(require,module,exports){
 "use strict";
 
 const {
@@ -2940,7 +3073,7 @@ function checkWholeNumbers(value, config) {
 
 module.exports = { colour, FORMATS, SCALES, parseHex, normaliseHex, fromWire };
 
-},{"../dmx/levels":2,"../osc-args":10,"./fields":21,"./incoming":22,"./midi-fields":26,"./outgoing":30,"./shared":32}],20:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],21:[function(require,module,exports){
 "use strict";
 
 const {
@@ -3287,7 +3420,7 @@ function checkValue(value, config) {
 
 module.exports = { dropdown, parseOptions };
 
-},{"../osc-args":10,"./fields":21,"./incoming":22,"./midi-fields":26,"./outgoing":30,"./shared":32,"./typed":35}],21:[function(require,module,exports){
+},{"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33,"./typed":36}],22:[function(require,module,exports){
 "use strict";
 
 /**
@@ -3883,7 +4016,7 @@ module.exports = {
   IPV4: IPV4,
 };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":10,"../ports":11,"../serial-target":15}],22:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../ports":12,"../serial-target":16}],23:[function(require,module,exports){
 "use strict";
 
 const { matchesAddress } = require("../osc-address");
@@ -3977,7 +4110,7 @@ function follow(ctx, fn, addresses) {
 
 module.exports = { incoming, follow };
 
-},{"../osc-address":9}],23:[function(require,module,exports){
+},{"../osc-address":10}],24:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4243,7 +4376,7 @@ for (const widget of WIDGETS) {
 
 module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
 
-},{"./outgoing":30,"./registry":31}],24:[function(require,module,exports){
+},{"./outgoing":31,"./registry":32}],25:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -4747,7 +4880,7 @@ module.exports = {
   COLUMNS_PROPERTY,
 };
 
-},{"../osc-args":10,"./fields":21,"./incoming":22,"./outgoing":30,"./shared":32,"./typed":35}],25:[function(require,module,exports){
+},{"../osc-args":11,"./fields":22,"./incoming":23,"./outgoing":31,"./shared":33,"./typed":36}],26:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, checkMessage, checkNumber, checkListenFrom, ORIENTATIONS } = require("./fields");
@@ -5029,7 +5162,7 @@ function checkPeakHold(value) {
 
 module.exports = { meter, PEAK_CLASS };
 
-},{"../dmx/levels":2,"../osc-args":10,"./fields":21,"./incoming":22,"./midi-fields":26,"./shared":32}],26:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./shared":33}],27:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5141,7 +5274,7 @@ function midiChecks(values, options) {
 
 module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiChecks: midiChecks };
 
-},{"../midi/spec":8,"./fields":21}],27:[function(require,module,exports){
+},{"../midi/spec":8,"./fields":22}],28:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5282,7 +5415,7 @@ function followMidi(definition, read, showing) {
 
 module.exports = { stateFromMidi: stateFromMidi, valuesOf: valuesOf, followMidi: followMidi, inputOf: inputOf };
 
-},{"../midi/spec":8,"../osc-args":10}],28:[function(require,module,exports){
+},{"../midi/spec":8,"../osc-args":11}],29:[function(require,module,exports){
 "use strict";
 
 const { followMidi } = require("./midi-in");
@@ -5332,7 +5465,7 @@ var midiKeys = 0;
 
 module.exports = { midiSource: midiSource };
 
-},{"../activity":1,"../midi/spec":8,"./midi-in":27}],29:[function(require,module,exports){
+},{"../activity":1,"../midi/spec":8,"./midi-in":28}],30:[function(require,module,exports){
 "use strict";
 
 const {
@@ -5709,7 +5842,7 @@ function checkValue(value, config) {
 
 module.exports = { numberInput };
 
-},{"../osc-args":10,"./fields":21,"./incoming":22,"./midi-fields":26,"./outgoing":30,"./shared":32,"./typed":35}],30:[function(require,module,exports){
+},{"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33,"./typed":36}],31:[function(require,module,exports){
 "use strict";
 
 const { toArgs } = require("../osc-args");
@@ -5894,7 +6027,7 @@ function routing(ctx) {
 
 module.exports = { outgoing, only, routing, asCtx };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":10,"../serial-target":15,"./fields":21}],31:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../serial-target":16,"./fields":22}],32:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5918,7 +6051,7 @@ module.exports = [
   require("./media-browser").mediaBrowser,
 ];
 
-},{"./button":18,"./colour":19,"./dropdown":20,"./media-browser":24,"./meter":25,"./number-input":29,"./slider":33,"./text-input":34,"./xypad":36}],32:[function(require,module,exports){
+},{"./button":19,"./colour":20,"./dropdown":21,"./media-browser":25,"./meter":26,"./number-input":30,"./slider":34,"./text-input":35,"./xypad":37}],33:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5985,7 +6118,7 @@ function onShared(ctx, fn) {
 
 module.exports = { share, onShared };
 
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 "use strict";
 
 const {
@@ -6286,7 +6419,7 @@ function checkValue(value, config) {
 // this is where it used to be, and a caller that learned it here keeps working.
 module.exports = { slider, ORIENTATIONS };
 
-},{"../dmx/levels":2,"../osc-args":10,"./fields":21,"./incoming":22,"./midi-fields":26,"./outgoing":30,"./shared":32}],34:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],35:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -6485,7 +6618,7 @@ function checkValue(value, config) {
 
 module.exports = { textInput };
 
-},{"../osc-args":10,"./fields":21,"./incoming":22,"./outgoing":30,"./shared":32,"./typed":35}],35:[function(require,module,exports){
+},{"../osc-args":11,"./fields":22,"./incoming":23,"./outgoing":31,"./shared":33,"./typed":36}],36:[function(require,module,exports){
 "use strict";
 
 const { isSendable, toNumber } = require("../osc-args");
@@ -6704,7 +6837,7 @@ function dmxRange(min, max) {
 
 module.exports = { commitOn, refusal, checkArgType, levelOf, dmxRange };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../osc-args":10}],36:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../osc-args":11}],37:[function(require,module,exports){
 "use strict";
 
 const {
@@ -7115,7 +7248,7 @@ function within(value, min, max) {
 
 module.exports = { xypad, SEND_MODES };
 
-},{"../dmx/levels":2,"../osc-args":10,"./fields":21,"./incoming":22,"./midi-fields":26,"./outgoing":30,"./shared":32}],37:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":22,"./incoming":23,"./midi-fields":27,"./outgoing":31,"./shared":33}],38:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -7301,7 +7434,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],38:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 /*!
  * jquery-confirm v3.3.4 (http://craftpip.github.io/jquery-confirm/)
  * Author: Boniface Pereira
@@ -7312,7 +7445,7 @@ process.umask = function() { return 0; };
  * Licensed under MIT (https://github.com/craftpip/jquery-confirm/blob/master/LICENSE)
  */
 (function(factory){if(typeof define==="function"&&define.amd){define(["jquery"],factory);}else{if(typeof module==="object"&&module.exports){module.exports=function(root,jQuery){if(jQuery===undefined){if(typeof window!=="undefined"){jQuery=require("jquery");}else{jQuery=require("jquery")(root);}}factory(jQuery);return jQuery;};}else{factory(jQuery);}}}(function($){var w=window;$.fn.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}$(this).each(function(){var $this=$(this);if($this.attr("jc-attached")){console.warn("jConfirm has already been attached to this element ",$this[0]);return;}$this.on("click",function(e){e.preventDefault();var jcOption=$.extend({},options);if($this.attr("data-title")){jcOption.title=$this.attr("data-title");}if($this.attr("data-content")){jcOption.content=$this.attr("data-content");}if(typeof jcOption.buttons==="undefined"){jcOption.buttons={};}jcOption["$target"]=$this;if($this.attr("href")&&Object.keys(jcOption.buttons).length===0){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];jcOption.buttons=buttons;jcOption.buttons[firstBtn].action=function(){location.href=$this.attr("href");};}jcOption.closeIcon=false;var instance=$.confirm(jcOption);});$this.attr("jc-attached",true);});return $(this);};$.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});options.buttons=buttons;}return w.jconfirm(options);};$.alert=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];options.buttons[firstBtn]=buttons[firstBtn];}return w.jconfirm(options);};$.dialog=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false,closeIcon:function(){}};}options.buttons={};if(typeof options.closeIcon==="undefined"){options.closeIcon=function(){};}options.confirmKeys=[13];return w.jconfirm(options);};w.jconfirm=function(options){if(typeof options==="undefined"){options={};}var pluginOptions=$.extend(true,{},w.jconfirm.pluginDefaults);if(w.jconfirm.defaults){pluginOptions=$.extend(true,pluginOptions,w.jconfirm.defaults);}pluginOptions=$.extend(true,{},pluginOptions,options);var instance=new w.Jconfirm(pluginOptions);w.jconfirm.instances.push(instance);return instance;};w.Jconfirm=function(options){$.extend(this,options);this._init();};w.Jconfirm.prototype={_init:function(){var that=this;if(!w.jconfirm.instances.length){w.jconfirm.lastFocused=$("body").find(":focus");}this._id=Math.round(Math.random()*99999);this.contentParsed=$(document.createElement("div"));if(!this.lazyOpen){setTimeout(function(){that.open();},0);}},_buildHTML:function(){var that=this;this._parseAnimation(this.animation,"o");this._parseAnimation(this.closeAnimation,"c");this._parseBgDismissAnimation(this.backgroundDismissAnimation);this._parseColumnClass(this.columnClass);this._parseTheme(this.theme);this._parseType(this.type);var template=$(this.template);template.find(".jconfirm-box").addClass(this.animationParsed).addClass(this.backgroundDismissAnimationParsed).addClass(this.typeParsed);if(this.typeAnimated){template.find(".jconfirm-box").addClass("jconfirm-type-animated");}if(this.useBootstrap){template.find(".jc-bs3-row").addClass(this.bootstrapClasses.row);template.find(".jc-bs3-row").addClass("justify-content-md-center justify-content-sm-center justify-content-xs-center justify-content-lg-center");template.find(".jconfirm-box-container").addClass(this.columnClassParsed);if(this.containerFluid){template.find(".jc-bs3-container").addClass(this.bootstrapClasses.containerFluid);}else{template.find(".jc-bs3-container").addClass(this.bootstrapClasses.container);}}else{template.find(".jconfirm-box").css("width",this.boxWidth);}if(this.titleClass){template.find(".jconfirm-title-c").addClass(this.titleClass);}template.addClass(this.themeParsed);var ariaLabel="jconfirm-box"+this._id;template.find(".jconfirm-box").attr("aria-labelledby",ariaLabel).attr("tabindex",-1);template.find(".jconfirm-content").attr("id",ariaLabel);if(this.bgOpacity!==null){template.find(".jconfirm-bg").css("opacity",this.bgOpacity);}if(this.rtl){template.addClass("jconfirm-rtl");}this.$el=template.appendTo(this.container);this.$jconfirmBoxContainer=this.$el.find(".jconfirm-box-container");this.$jconfirmBox=this.$body=this.$el.find(".jconfirm-box");this.$jconfirmBg=this.$el.find(".jconfirm-bg");this.$title=this.$el.find(".jconfirm-title");this.$titleContainer=this.$el.find(".jconfirm-title-c");this.$content=this.$el.find("div.jconfirm-content");this.$contentPane=this.$el.find(".jconfirm-content-pane");this.$icon=this.$el.find(".jconfirm-icon-c");this.$closeIcon=this.$el.find(".jconfirm-closeIcon");this.$holder=this.$el.find(".jconfirm-holder");this.$btnc=this.$el.find(".jconfirm-buttons");this.$scrollPane=this.$el.find(".jconfirm-scrollpane");that.setStartingPoint();this._contentReady=$.Deferred();this._modalReady=$.Deferred();this.$holder.css({"padding-top":this.offsetTop,"padding-bottom":this.offsetBottom,});this.setTitle();this.setIcon();this._setButtons();this._parseContent();this.initDraggable();if(this.isAjax){this.showLoading(false);}$.when(this._contentReady,this._modalReady).then(function(){if(that.isAjaxLoading){setTimeout(function(){that.isAjaxLoading=false;that.setContent();that.setTitle();that.setIcon();setTimeout(function(){that.hideLoading(false);that._updateContentMaxHeight();},100);if(typeof that.onContentReady==="function"){that.onContentReady();}},50);}else{that._updateContentMaxHeight();that.setTitle();that.setIcon();if(typeof that.onContentReady==="function"){that.onContentReady();}}if(that.autoClose){that._startCountDown();}}).then(function(){that._watchContent();});if(this.animation==="none"){this.animationSpeed=1;this.animationBounce=1;}this.$body.css(this._getCSS(this.animationSpeed,this.animationBounce));this.$contentPane.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBg.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBoxContainer.css(this._getCSS(this.animationSpeed,1));},_typePrefix:"jconfirm-type-",typeParsed:"",_parseType:function(type){this.typeParsed=this._typePrefix+type;},setType:function(type){var oldClass=this.typeParsed;this._parseType(type);this.$jconfirmBox.removeClass(oldClass).addClass(this.typeParsed);},themeParsed:"",_themePrefix:"jconfirm-",setTheme:function(theme){var previous=this.theme;this.theme=theme||this.theme;this._parseTheme(this.theme);if(previous){this.$el.removeClass(previous);}this.$el.addClass(this.themeParsed);this.theme=theme;},_parseTheme:function(theme){var that=this;theme=theme.split(",");$.each(theme,function(k,a){if(a.indexOf(that._themePrefix)===-1){theme[k]=that._themePrefix+$.trim(a);}});this.themeParsed=theme.join(" ").toLowerCase();},backgroundDismissAnimationParsed:"",_bgDismissPrefix:"jconfirm-hilight-",_parseBgDismissAnimation:function(bgDismissAnimation){var animation=bgDismissAnimation.split(",");var that=this;$.each(animation,function(k,a){if(a.indexOf(that._bgDismissPrefix)===-1){animation[k]=that._bgDismissPrefix+$.trim(a);}});this.backgroundDismissAnimationParsed=animation.join(" ").toLowerCase();},animationParsed:"",closeAnimationParsed:"",_animationPrefix:"jconfirm-animation-",setAnimation:function(animation){this.animation=animation||this.animation;this._parseAnimation(this.animation,"o");},_parseAnimation:function(animation,which){which=which||"o";var animations=animation.split(",");var that=this;$.each(animations,function(k,a){if(a.indexOf(that._animationPrefix)===-1){animations[k]=that._animationPrefix+$.trim(a);}});var a_string=animations.join(" ").toLowerCase();if(which==="o"){this.animationParsed=a_string;}else{this.closeAnimationParsed=a_string;}return a_string;},setCloseAnimation:function(closeAnimation){this.closeAnimation=closeAnimation||this.closeAnimation;this._parseAnimation(this.closeAnimation,"c");},setAnimationSpeed:function(speed){this.animationSpeed=speed||this.animationSpeed;},columnClassParsed:"",setColumnClass:function(colClass){if(!this.useBootstrap){console.warn("cannot set columnClass, useBootstrap is set to false");return;}this.columnClass=colClass||this.columnClass;this._parseColumnClass(this.columnClass);this.$jconfirmBoxContainer.addClass(this.columnClassParsed);},_updateContentMaxHeight:function(){var height=$(window).height()-(this.$jconfirmBox.outerHeight()-this.$contentPane.outerHeight())-(this.offsetTop+this.offsetBottom);this.$contentPane.css({"max-height":height+"px"});},setBoxWidth:function(width){if(this.useBootstrap){console.warn("cannot set boxWidth, useBootstrap is set to true");return;}this.boxWidth=width;this.$jconfirmBox.css("width",width);},_parseColumnClass:function(colClass){colClass=colClass.toLowerCase();var p;switch(colClass){case"xl":case"xlarge":p="col-md-12";break;case"l":case"large":p="col-md-8 col-md-offset-2";break;case"m":case"medium":p="col-md-6 col-md-offset-3";break;case"s":case"small":p="col-md-4 col-md-offset-4";break;case"xs":case"xsmall":p="col-md-2 col-md-offset-5";break;default:p=colClass;}this.columnClassParsed=p;},initDraggable:function(){var that=this;var $t=this.$titleContainer;this.resetDrag();if(this.draggable){$t.on("mousedown",function(e){$t.addClass("jconfirm-hand");that.mouseX=e.clientX;that.mouseY=e.clientY;that.isDrag=true;});$(window).on("mousemove."+this._id,function(e){if(that.isDrag){that.movingX=e.clientX-that.mouseX+that.initialX;that.movingY=e.clientY-that.mouseY+that.initialY;that.setDrag();}});$(window).on("mouseup."+this._id,function(){$t.removeClass("jconfirm-hand");if(that.isDrag){that.isDrag=false;that.initialX=that.movingX;that.initialY=that.movingY;}});}},resetDrag:function(){this.isDrag=false;this.initialX=0;this.initialY=0;this.movingX=0;this.movingY=0;this.mouseX=0;this.mouseY=0;this.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");},setDrag:function(){if(!this.draggable){return;}this.alignMiddle=false;var boxWidth=this.$jconfirmBox.outerWidth();var boxHeight=this.$jconfirmBox.outerHeight();var windowWidth=$(window).width();var windowHeight=$(window).height();var that=this;var dragUpdate=1;if(that.movingX%dragUpdate===0||that.movingY%dragUpdate===0){if(that.dragWindowBorder){var leftDistance=(windowWidth/2)-boxWidth/2;var topDistance=(windowHeight/2)-boxHeight/2;topDistance-=that.dragWindowGap;leftDistance-=that.dragWindowGap;if(leftDistance+that.movingX<0){that.movingX=-leftDistance;}else{if(leftDistance-that.movingX<0){that.movingX=leftDistance;}}if(topDistance+that.movingY<0){that.movingY=-topDistance;}else{if(topDistance-that.movingY<0){that.movingY=topDistance;}}}that.$jconfirmBoxContainer.css("transform","translate("+that.movingX+"px, "+that.movingY+"px)");}},_scrollTop:function(){if(typeof pageYOffset!=="undefined"){return pageYOffset;}else{var B=document.body;var D=document.documentElement;D=(D.clientHeight)?D:B;return D.scrollTop;}},_watchContent:function(){var that=this;if(this._timer){clearInterval(this._timer);}var prevContentHeight=0;this._timer=setInterval(function(){if(that.smoothContent){var contentHeight=that.$content.outerHeight()||0;if(contentHeight!==prevContentHeight){prevContentHeight=contentHeight;}var wh=$(window).height();var total=that.offsetTop+that.offsetBottom+that.$jconfirmBox.height()-that.$contentPane.height()+that.$content.height();if(total<wh){that.$contentPane.addClass("no-scroll");}else{that.$contentPane.removeClass("no-scroll");}}},this.watchInterval);},_overflowClass:"jconfirm-overflow",_hilightAnimating:false,highlight:function(){this.hiLightModal();},hiLightModal:function(){var that=this;if(this._hilightAnimating){return;}that.$body.addClass("hilight");var duration=parseFloat(that.$body.css("animation-duration"))||2;this._hilightAnimating=true;setTimeout(function(){that._hilightAnimating=false;that.$body.removeClass("hilight");},duration*1000);},_bindEvents:function(){var that=this;this.boxClicked=false;this.$scrollPane.click(function(e){if(!that.boxClicked){var buttonName=false;var shouldClose=false;var str;if(typeof that.backgroundDismiss==="function"){str=that.backgroundDismiss();}else{str=that.backgroundDismiss;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}else{that.hiLightModal();}}that.boxClicked=false;});this.$jconfirmBox.click(function(e){that.boxClicked=true;});var isKeyDown=false;$(window).on("jcKeyDown."+that._id,function(e){if(!isKeyDown){isKeyDown=true;}});$(window).on("keyup."+that._id,function(e){if(isKeyDown){that.reactOnKey(e);isKeyDown=false;}});$(window).on("resize."+this._id,function(){that._updateContentMaxHeight();setTimeout(function(){that.resetDrag();},100);});},_cubic_bezier:"0.36, 0.55, 0.19",_getCSS:function(speed,bounce){return{"-webkit-transition-duration":speed/1000+"s","transition-duration":speed/1000+"s","-webkit-transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")","transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")"};},_setButtons:function(){var that=this;var total_buttons=0;if(typeof this.buttons!=="object"){this.buttons={};}$.each(this.buttons,function(key,button){total_buttons+=1;if(typeof button==="function"){that.buttons[key]=button={action:button};}that.buttons[key].text=button.text||key;that.buttons[key].btnClass=button.btnClass||"btn-default";that.buttons[key].action=button.action||function(){};that.buttons[key].keys=button.keys||[];that.buttons[key].isHidden=button.isHidden||false;that.buttons[key].isDisabled=button.isDisabled||false;$.each(that.buttons[key].keys,function(i,a){that.buttons[key].keys[i]=a.toLowerCase();});var button_element=$('<button type="button" class="btn"></button>').html(that.buttons[key].text).addClass(that.buttons[key].btnClass).prop("disabled",that.buttons[key].isDisabled).css("display",that.buttons[key].isHidden?"none":"").click(function(e){e.preventDefault();var res=that.buttons[key].action.apply(that,[that.buttons[key]]);that.onAction.apply(that,[key,that.buttons[key]]);that._stopCountDown();if(typeof res==="undefined"||res){that.close();}});that.buttons[key].el=button_element;that.buttons[key].setText=function(text){button_element.html(text);};that.buttons[key].addClass=function(className){button_element.addClass(className);};that.buttons[key].removeClass=function(className){button_element.removeClass(className);};that.buttons[key].disable=function(){that.buttons[key].isDisabled=true;button_element.prop("disabled",true);};that.buttons[key].enable=function(){that.buttons[key].isDisabled=false;button_element.prop("disabled",false);};that.buttons[key].show=function(){that.buttons[key].isHidden=false;button_element.css("display","");};that.buttons[key].hide=function(){that.buttons[key].isHidden=true;button_element.css("display","none");};that["$_"+key]=that["$$"+key]=button_element;that.$btnc.append(button_element);});if(total_buttons===0){this.$btnc.hide();}if(this.closeIcon===null&&total_buttons===0){this.closeIcon=true;}if(this.closeIcon){if(this.closeIconClass){var closeHtml='<i class="'+this.closeIconClass+'"></i>';this.$closeIcon.html(closeHtml);}this.$closeIcon.click(function(e){e.preventDefault();var buttonName=false;var shouldClose=false;var str;if(typeof that.closeIcon==="function"){str=that.closeIcon();}else{str=that.closeIcon;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}});this.$closeIcon.show();}else{this.$closeIcon.hide();}},setTitle:function(string,force){force=force||false;if(typeof string!=="undefined"){if(typeof string==="string"){this.title=string;}else{if(typeof string==="function"){if(typeof string.promise==="function"){console.error("Promise was returned from title function, this is not supported.");}var response=string();if(typeof response==="string"){this.title=response;}else{this.title=false;}}else{this.title=false;}}}if(this.isAjaxLoading&&!force){return;}this.$title.html(this.title||"");this.updateTitleContainer();},setIcon:function(iconClass,force){force=force||false;if(typeof iconClass!=="undefined"){if(typeof iconClass==="string"){this.icon=iconClass;}else{if(typeof iconClass==="function"){var response=iconClass();if(typeof response==="string"){this.icon=response;}else{this.icon=false;}}else{this.icon=false;}}}if(this.isAjaxLoading&&!force){return;}this.$icon.html(this.icon?'<i class="'+this.icon+'"></i>':"");this.updateTitleContainer();},updateTitleContainer:function(){if(!this.title&&!this.icon){this.$titleContainer.hide();}else{this.$titleContainer.show();}},setContentPrepend:function(content,force){if(!content){return;}this.contentParsed.prepend(content);},setContentAppend:function(content){if(!content){return;}this.contentParsed.append(content);},setContent:function(content,force){force=!!force;var that=this;if(content){this.contentParsed.html("").append(content);}if(this.isAjaxLoading&&!force){return;}this.$content.html("");this.$content.append(this.contentParsed);setTimeout(function(){that.$body.find("input[autofocus]:visible:first").focus();},100);},loadingSpinner:false,showLoading:function(disableButtons){this.loadingSpinner=true;this.$jconfirmBox.addClass("loading");if(disableButtons){this.$btnc.find("button").prop("disabled",true);}},hideLoading:function(enableButtons){this.loadingSpinner=false;this.$jconfirmBox.removeClass("loading");if(enableButtons){this.$btnc.find("button").prop("disabled",false);}},ajaxResponse:false,contentParsed:"",isAjax:false,isAjaxLoading:false,_parseContent:function(){var that=this;var e="&nbsp;";if(typeof this.content==="function"){var res=this.content.apply(this);if(typeof res==="string"){this.content=res;}else{if(typeof res==="object"&&typeof res.always==="function"){this.isAjax=true;this.isAjaxLoading=true;res.always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});this.content=e;}else{this.content=e;}}}if(typeof this.content==="string"&&this.content.substr(0,4).toLowerCase()==="url:"){this.isAjax=true;this.isAjaxLoading=true;var u=this.content.substring(4,this.content.length);$.get(u).done(function(html){that.contentParsed.html(html);}).always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});}if(!this.content){this.content=e;}if(!this.isAjax){this.contentParsed.html(this.content);this.setContent();that._contentReady.resolve();}},_stopCountDown:function(){clearInterval(this.autoCloseInterval);if(this.$cd){this.$cd.remove();}},_startCountDown:function(){var that=this;var opt=this.autoClose.split("|");if(opt.length!==2){console.error("Invalid option for autoClose. example 'close|10000'");return false;}var button_key=opt[0];var time=parseInt(opt[1]);if(typeof this.buttons[button_key]==="undefined"){console.error("Invalid button key '"+button_key+"' for autoClose");return false;}var seconds=Math.ceil(time/1000);this.$cd=$('<span class="countdown"> ('+seconds+")</span>").appendTo(this["$_"+button_key]);this.autoCloseInterval=setInterval(function(){that.$cd.html(" ("+(seconds-=1)+") ");if(seconds<=0){that["$$"+button_key].trigger("click");that._stopCountDown();}},1000);},_getKey:function(key){switch(key){case 192:return"tilde";case 13:return"enter";case 16:return"shift";case 9:return"tab";case 20:return"capslock";case 17:return"ctrl";case 91:return"win";case 18:return"alt";case 27:return"esc";case 32:return"space";}var initial=String.fromCharCode(key);if(/^[A-z0-9]+$/.test(initial)){return initial.toLowerCase();}else{return false;}},reactOnKey:function(e){var that=this;var a=$(".jconfirm");if(a.eq(a.length-1)[0]!==this.$el[0]){return false;}var key=e.which;if(this.$content.find(":input").is(":focus")&&/13|32/.test(key)){return false;}var keyChar=this._getKey(key);if(keyChar==="esc"&&this.escapeKey){if(this.escapeKey===true){this.$scrollPane.trigger("click");}else{if(typeof this.escapeKey==="string"||typeof this.escapeKey==="function"){var buttonKey;if(typeof this.escapeKey==="function"){buttonKey=this.escapeKey();}else{buttonKey=this.escapeKey;}if(buttonKey){if(typeof this.buttons[buttonKey]==="undefined"){console.warn("Invalid escapeKey, no buttons found with key "+buttonKey);}else{this["$_"+buttonKey].trigger("click");}}}}}$.each(this.buttons,function(key,button){if(button.keys.indexOf(keyChar)!==-1){that["$_"+key].trigger("click");}});},setDialogCenter:function(){console.info("setDialogCenter is deprecated, dialogs are centered with CSS3 tables");},_unwatchContent:function(){clearInterval(this._timer);},close:function(onClosePayload){var that=this;if(typeof this.onClose==="function"){this.onClose(onClosePayload);}this._unwatchContent();$(window).unbind("resize."+this._id);$(window).unbind("keyup."+this._id);$(window).unbind("jcKeyDown."+this._id);if(this.draggable){$(window).unbind("mousemove."+this._id);$(window).unbind("mouseup."+this._id);this.$titleContainer.unbind("mousedown");}that.$el.removeClass(that.loadedClass);$("body").removeClass("jconfirm-no-scroll-"+that._id);that.$jconfirmBoxContainer.removeClass("jconfirm-no-transition");setTimeout(function(){that.$body.addClass(that.closeAnimationParsed);that.$jconfirmBg.addClass("jconfirm-bg-h");var closeTimer=(that.closeAnimation==="none")?1:that.animationSpeed;setTimeout(function(){that.$el.remove();var l=w.jconfirm.instances;var i=w.jconfirm.instances.length-1;for(i;i>=0;i--){if(w.jconfirm.instances[i]._id===that._id){w.jconfirm.instances.splice(i,1);}}if(!w.jconfirm.instances.length){if(that.scrollToPreviousElement&&w.jconfirm.lastFocused&&w.jconfirm.lastFocused.length&&$.contains(document,w.jconfirm.lastFocused[0])){var $lf=w.jconfirm.lastFocused;if(that.scrollToPreviousElementAnimate){var st=$(window).scrollTop();var ot=w.jconfirm.lastFocused.offset().top;var wh=$(window).height();if(!(ot>st&&ot<(st+wh))){var scrollTo=(ot-Math.round((wh/3)));$("html, body").animate({scrollTop:scrollTo},that.animationSpeed,"swing",function(){$lf.focus();});}else{$lf.focus();}}else{$lf.focus();}w.jconfirm.lastFocused=false;}}if(typeof that.onDestroy==="function"){that.onDestroy();}},closeTimer*0.4);},50);return true;},open:function(){if(this.isOpen()){return false;}this._buildHTML();this._bindEvents();this._open();return true;},setStartingPoint:function(){var el=false;if(this.animateFromElement!==true&&this.animateFromElement){el=this.animateFromElement;w.jconfirm.lastClicked=false;}else{if(w.jconfirm.lastClicked&&this.animateFromElement===true){el=w.jconfirm.lastClicked;w.jconfirm.lastClicked=false;}else{return false;}}if(!el){return false;}var offset=el.offset();var iTop=el.outerHeight()/2;var iLeft=el.outerWidth()/2;iTop-=this.$jconfirmBox.outerHeight()/2;iLeft-=this.$jconfirmBox.outerWidth()/2;var sourceTop=offset.top+iTop;sourceTop=sourceTop-this._scrollTop();var sourceLeft=offset.left+iLeft;var wh=$(window).height()/2;var ww=$(window).width()/2;var targetH=wh-this.$jconfirmBox.outerHeight()/2;var targetW=ww-this.$jconfirmBox.outerWidth()/2;sourceTop-=targetH;sourceLeft-=targetW;if(Math.abs(sourceTop)>wh||Math.abs(sourceLeft)>ww){return false;}this.$jconfirmBoxContainer.css("transform","translate("+sourceLeft+"px, "+sourceTop+"px)");},_open:function(){var that=this;if(typeof that.onOpenBefore==="function"){that.onOpenBefore();}this.$body.removeClass(this.animationParsed);this.$jconfirmBg.removeClass("jconfirm-bg-h");this.$body.focus();that.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");setTimeout(function(){that.$body.css(that._getCSS(that.animationSpeed,1));that.$body.css({"transition-property":that.$body.css("transition-property")+", margin"});that.$jconfirmBoxContainer.addClass("jconfirm-no-transition");that._modalReady.resolve();if(typeof that.onOpen==="function"){that.onOpen();}that.$el.addClass(that.loadedClass);},this.animationSpeed);},loadedClass:"jconfirm-open",isClosed:function(){return !this.$el||this.$el.parent().length===0;},isOpen:function(){return !this.isClosed();},toggle:function(){if(!this.isOpen()){this.open();}else{this.close();}}};w.jconfirm.instances=[];w.jconfirm.lastFocused=false;w.jconfirm.pluginDefaults={template:'<div class="jconfirm"><div class="jconfirm-bg jconfirm-bg-h"></div><div class="jconfirm-scrollpane"><div class="jconfirm-row"><div class="jconfirm-cell"><div class="jconfirm-holder"><div class="jc-bs3-container"><div class="jc-bs3-row"><div class="jconfirm-box-container jconfirm-animated"><div class="jconfirm-box" role="dialog" aria-labelledby="labelled" tabindex="-1"><div class="jconfirm-closeIcon">&times;</div><div class="jconfirm-title-c"><span class="jconfirm-icon-c"></span><span class="jconfirm-title"></span></div><div class="jconfirm-content-pane"><div class="jconfirm-content"></div></div><div class="jconfirm-buttons"></div><div class="jconfirm-clear"></div></div></div></div></div></div></div></div></div></div>',title:"Hello",titleClass:"",type:"default",typeAnimated:true,draggable:true,dragWindowGap:15,dragWindowBorder:true,animateFromElement:true,alignMiddle:true,smoothContent:true,content:"Are you sure to continue?",buttons:{},defaultButtons:{ok:{action:function(){}},close:{action:function(){}}},contentLoaded:function(){},icon:"",lazyOpen:false,bgOpacity:null,theme:"light",animation:"scale",closeAnimation:"scale",animationSpeed:400,animationBounce:1,escapeKey:true,rtl:false,container:"body",containerFluid:false,backgroundDismiss:false,backgroundDismissAnimation:"shake",autoClose:false,closeIcon:null,closeIconClass:false,watchInterval:100,columnClass:"col-md-4 col-md-offset-4 col-sm-6 col-sm-offset-3 col-xs-10 col-xs-offset-1",boxWidth:"50%",scrollToPreviousElement:true,scrollToPreviousElementAnimate:true,useBootstrap:true,offsetTop:40,offsetBottom:40,bootstrapClasses:{container:"container",containerFluid:"container-fluid",row:"row"},onContentReady:function(){},onOpenBefore:function(){},onOpen:function(){},onClose:function(){},onDestroy:function(){},onAction:function(){}};var keyDown=false;$(window).on("keydown",function(e){if(!keyDown){var $target=$(e.target);var pass=false;if($target.closest(".jconfirm-box").length){pass=true;}if(pass){$(window).trigger("jcKeyDown");}keyDown=true;}});$(window).on("keyup",function(){keyDown=false;});w.jconfirm.lastClicked=false;$(document).on("mousedown","button, a, [jc-source]",function(){w.jconfirm.lastClicked=$(this);});}));
-},{"jquery":39}],39:[function(require,module,exports){
+},{"jquery":40}],40:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -18030,7 +18163,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],40:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -20329,7 +20462,7 @@ var qrcode = function() {
     return qrcode;
 }));
 
-},{}],41:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 /**
  * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
  *
@@ -21917,7 +22050,7 @@ module.exports = {
   revealKeys: revealKeys,
 };
 
-},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":23,"../../../lib/widgets/fields":21,"../../../lib/widgets/midi-source":28}],42:[function(require,module,exports){
+},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":24,"../../../lib/widgets/fields":22,"../../../lib/widgets/midi-source":29}],43:[function(require,module,exports){
 /**
  * "Export" in the editor: turning the canvas into one file that works.
  *
@@ -21978,9 +22111,14 @@ function download(blob, filename) {
 
 /**
  * @param {object} editor the GrapesJS editor
- * @param {{ host: string, port: number, projectName?: () => string }} options
- *        host and port are what the editor was started with, offered for a
- *        download only if the server cannot be asked again
+ * @param {object} options
+ *        host, port: what the editor was started with, offered for a download
+ *        only if the server cannot be asked again
+ *        project(): { id, name } -- which project the canvas is (lib/open-project.js)
+ *        adopt({ id, name }): the canvas was published as this project; remember it
+ *        newId(): an id for a canvas that had none
+ *        source(name, id): the project on the canvas, as a file would hold it
+ *        openProject({ id, name, data }): Edit -- put that project on the canvas
  */
 function install(editor, options) {
   var container = document.getElementById("export-panel");
@@ -21992,6 +22130,10 @@ function install(editor, options) {
   var statusLine = document.getElementById("publish-status");
   var link = document.getElementById("publish-link");
   var copyButton = document.getElementById("publish-copy");
+  var mineBox = document.getElementById("publish-mine");
+  var mineText = document.getElementById("publish-mine-text");
+  var fieldBox = document.getElementById("publish-field");
+  var fieldHint = document.getElementById("publish-field-hint");
   var publishedBox = document.getElementById("published-box");
   var publishedList = document.getElementById("published-list");
   var extrasBox = document.getElementById("publish-extras");
@@ -22006,6 +22148,7 @@ function install(editor, options) {
   var sections = [];
   var latest = null; // the id of the surface published from this dialog, most recently
   var known = []; // the published surfaces, as GET /published last said
+  var staleMark = null; // the "outdated" mark on the row of this canvas's own interface
   // The address other devices reach OSCAR on, and its bridge port, as GET
   // /connection last said; what a download is told unless it is changed.
   var lanHost = "";
@@ -22025,7 +22168,7 @@ function install(editor, options) {
       try {
         section.draw(section.box, {
           surfaces: known.map(function (page) {
-            return { id: page.id, path: page.path, address: addressOf(page.path) };
+            return { id: page.id, name: page.name || page.id, path: page.path, address: addressOf(page.path) };
           }),
           latest: latest,
           refresh: refreshPublished,
@@ -22063,30 +22206,65 @@ function install(editor, options) {
     showAddress(addressOf(path), replaced ? "Published again, at the same address:" : "Published. Open it at:");
   }
 
-  /** The name this canvas would publish under right now. */
-  function currentStem() {
-    var typed = nameField && nameField.value ? nameField.value : (options.projectName && options.projectName()) || "";
-    return fileStem(typed);
+  /** Which project the canvas is: { id, name }, id null for a canvas that is nobody yet. */
+  function project() {
+    var now = options.project ? options.project() : null;
+    return { id: (now && now.id) || null, name: (now && now.name) || "" };
   }
 
-  /** The published copy this canvas would replace, out of what is known. */
-  function publishedTwin() {
-    var stem = currentStem();
+  /**
+   * The live interface that is this canvas's own: the one published from the
+   * project it is, whatever either is called now. Not matched by name -- a
+   * name is reused for different designs, and a wrong match would let Update
+   * replace a running show with another one.
+   */
+  function publishedMine() {
+    var id = project().id;
+    if (!id) return null;
     for (var i = 0; i < known.length; i++) {
-      if (known[i].id === stem) return known[i];
+      if (known[i].project === id) return known[i];
     }
     return null;
   }
 
-  function staleNow() {
-    var twin = publishedTwin();
-    if (!twin || !twin.stamp || canvasStamp === null) return false;
-    return twin.stamp !== canvasStamp;
+  /** The address this canvas would publish at right now. */
+  function currentStem() {
+    var mine = publishedMine();
+    if (mine) return mine.id;
+    return fileStem(nameField && nameField.value ? nameField.value : project().name);
   }
 
-  /** The Publish button in the toolbar, found by the tooltip the editor gives it. */
+  function staleNow() {
+    var mine = publishedMine();
+    if (!mine || !mine.stamp || canvasStamp === null) return false;
+    return mine.stamp !== canvasStamp;
+  }
+
+  /**
+   * The top of the window, for the project on the canvas: one that is live
+   * already is updated at the address it has, in one click; one that is not
+   * is asked where it should go.
+   */
+  function paintMine() {
+    var mine = publishedMine();
+    if (fieldBox) fieldBox.style.display = mine ? "none" : "";
+    if (fieldHint) fieldHint.style.display = mine ? "none" : "";
+    if (mineBox) mineBox.style.display = mine ? "" : "none";
+    if (mine && mineText) {
+      mineText.textContent =
+        '"' + (mine.name || mine.id) + '" is live at /show/' + mine.id + (staleNow() ? ". The canvas has changes that are not live yet." : ". It is up to date.");
+    }
+    publishButton.textContent = mine ? "Update" : "Publish on the local network";
+    if (staleMark) staleMark.style.display = staleNow() ? "" : "none";
+  }
+
+  /**
+   * The Publish button in the toolbar, found by its class. (It was once found
+   * by its tooltip, which paintStale changes: after the first dot it was
+   * never found again, and the dot could not be taken off.)
+   */
   function toolbarButton() {
-    return document.querySelector('.gjs-pn-options [data-tooltip="Publish your interface"]');
+    return document.querySelector(".gjs-pn-options .oscar-publish-btn");
   }
 
   function paintStale() {
@@ -22098,6 +22276,7 @@ function install(editor, options) {
       "data-tooltip",
       stale ? "Publish your interface \u00b7 the published copy is older than your canvas" : "Publish your interface"
     );
+    paintMine();
   }
 
   /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
@@ -22142,6 +22321,7 @@ function install(editor, options) {
       })
       .then(function (pages) {
         publishedList.textContent = "";
+        staleMark = null;
         known = Array.isArray(pages) ? pages : [];
         known.forEach(function (page) {
           var row = document.createElement("li");
@@ -22159,18 +22339,34 @@ function install(editor, options) {
           open.target = "_blank";
           open.rel = "noopener";
           open.href = addressOf(page.path);
-          // The name, as the row beside it shows; the whole address is in the box above, from QR.
-          open.textContent = page.id;
+          // The project's name, when OSCAR was told it; the whole address is in the box above, from QR.
+          open.textContent = page.name || page.id;
           open.title = addressOf(page.path);
           open.className = "o-link oscar-published-name";
           row.appendChild(open);
 
-          if (page.stamp && page.id === currentStem() && canvasStamp !== null && page.stamp !== canvasStamp) {
+          var mine = publishedMine();
+          var isMine = !!mine && mine.id === page.id;
+          if (isMine) {
+            var here = document.createElement("span");
+            here.className = "oscar-published-state";
+            here.setAttribute("data-state", "valid");
+            here.textContent = "on the canvas";
+            here.title = "This is the project open in the editor. Update sends your changes to it.";
+            row.appendChild(here);
+          }
+
+          // Only the interface published from this project is judged against
+          // the canvas. The mark is always there on its row, and shown or
+          // hidden as the canvas changes (paintMine), with the dialog open.
+          if (isMine) {
             var stale = document.createElement("span");
             stale.className = "oscar-published-state";
             stale.setAttribute("data-state", "grace");
             stale.textContent = "outdated";
-            stale.title = "The canvas has changed since this was published. Publish again to update it.";
+            stale.title = "The canvas has changed since this was published. Update sends the changes.";
+            stale.style.display = staleNow() ? "" : "none";
+            staleMark = stale;
             row.appendChild(stale);
           }
 
@@ -22195,11 +22391,26 @@ function install(editor, options) {
           };
           row.appendChild(file);
 
+          // Edit: the project this was published from, back on the canvas.
+          // Not for the one already there, nor for a page with no copy kept.
+          if (page.editable && !isMine && options.openProject) {
+            var editIt = document.createElement("button");
+            editIt.type = "button";
+            editIt.className = "o-btn";
+            editIt.textContent = "Edit";
+            editIt.setAttribute("aria-label", "Edit " + (page.name || page.id));
+            editIt.onclick = function () {
+              openForEdit(page);
+            };
+            row.appendChild(editIt);
+          }
+
           var remove = document.createElement("button");
           remove.type = "button";
           remove.className = "o-btn";
-          remove.textContent = "Unpublish";
-          remove.setAttribute("aria-label", "Unpublish " + page.id);
+          remove.textContent = "Take down";
+          remove.title = "Stop serving this interface, and its schedules and bridges with it.";
+          remove.setAttribute("aria-label", "Take down " + (page.name || page.id));
           remove.onclick = function () {
             // A section may have a reason to think twice (the surface is
             // public on the internet, say), and something to do first.
@@ -22236,11 +22447,11 @@ function install(editor, options) {
                 boxWidth: "560px",
                 useBootstrap: false,
                 buttons: {
-                  confirm: { text: "Take it off the internet and unpublish", btnClass: "btn-red", action: proceed },
-                  cancel: { text: "Keep it published" },
+                  confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
+                  cancel: { text: "Keep it live" },
                 },
               });
-            } else if (window.confirm(reasons.join(" ") + " Take it off the internet and unpublish?")) {
+            } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
               proceed();
             }
           };
@@ -22249,12 +22460,31 @@ function install(editor, options) {
         });
         publishedBox.style.display = publishedList.children.length ? "block" : "none";
         paintStale();
+        paintMine();
         drawSections();
       })
       .catch(function () {
         publishedBox.style.display = "none";
         known = [];
         drawSections();
+      });
+  }
+
+  /** Edit: fetch the project a live interface was published from, and hand it to the editor. */
+  function openForEdit(page) {
+    say(errorBox, "");
+    fetch("/published/" + encodeURIComponent(page.id) + "/project")
+      .then(function (res) {
+        return res.json().then(function (answer) {
+          if (!res.ok) throw new Error((answer && answer.error) || "That project could not be opened.");
+          return answer;
+        });
+      })
+      .then(function (answer) {
+        options.openProject(answer);
+      })
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
       });
   }
 
@@ -22337,8 +22567,8 @@ function install(editor, options) {
     say(errorBox, "");
     say(noteBox, "");
     latest = null;
+    nameField.value = fileStem(project().name);
     restamp();
-    nameField.value = fileStem((options.projectName && options.projectName()) || "");
 
     // A project saved while Pages was on may still hold several; with the
     // feature off only the first is ever shown, so there is nothing to say.
@@ -22374,11 +22604,15 @@ function install(editor, options) {
   }
 
   /**
-   * What publishing sends: the surface, its settings written in. A published
+   * What publishing sends: the surface, its settings written in, and the
+   * project it was made from -- which project it is, and the project itself,
+   * kept beside the page so the interface can be edited later. A published
    * page is served by OSCAR and finds it by the address it was opened at, so
    * nothing about where OSCAR is goes with it; the server bakes in its own.
+   *
+   * `as` is who the canvas is published as: { id, name, address }.
    */
-  function request() {
+  function request(as, replace) {
     say(errorBox, "");
     say(noteBox, "");
     var snapshot = exportSnapshot(editor);
@@ -22386,20 +22620,35 @@ function install(editor, options) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: (nameField.value || "").trim() || DEFAULT_NAME,
-        fileName: fileStem(nameField.value),
+        title: as.name,
+        fileName: as.address,
         html: snapshot.html,
         css: snapshot.css,
+        project: { id: as.id, name: as.name },
+        source: options.source ? options.source(as.name, as.id) : undefined,
+        replace: replace === true,
       }),
     };
   }
 
-  publishButton.onclick = function () {
-    var body = request();
-    if (!body) return;
+  /** Who the canvas is published as, worked out once per click. */
+  function publishingAs() {
+    var now = project();
+    var mine = publishedMine();
+    var typed = (nameField.value || "").trim();
+    return {
+      // A canvas that is nobody yet becomes somebody by being published.
+      id: now.id || (options.newId ? options.newId() : null),
+      name: now.name || (mine && mine.name) || typed || DEFAULT_NAME,
+      // Its own address if it has one; otherwise what was typed.
+      address: mine ? mine.id : fileStem(typed),
+    };
+  }
+
+  function publish(as, replace) {
     publishButton.disabled = true;
 
-    fetch("/publish", body)
+    fetch("/publish", request(as, replace))
       .then(function (res) {
         return res.json().then(function (answer) {
           if (!res.ok) throw new Error((answer && answer.error) || "The surface could not be published.");
@@ -22407,6 +22656,25 @@ function install(editor, options) {
         });
       })
       .then(function (answer) {
+        // The address is somebody's already: another project's, or a page
+        // from before OSCAR kept track. Asked once, and sent again with the answer.
+        if (answer.confirm) {
+          var yes = function () {
+            publish(as, true);
+          };
+          if (window.$ && typeof window.$.confirm === "function") {
+            window.$.confirm({
+              title: "Replace the interface?",
+              content: answer.confirm + " Phones that have it open will get this one when they reload.",
+              boxWidth: "520px",
+              useBootstrap: false,
+              buttons: { confirm: { text: "Replace it", btnClass: "btn-red", action: yes }, cancel: { text: "Cancel" } },
+            });
+          } else if (window.confirm(answer.confirm)) yes();
+          return null;
+        }
+        // The canvas is this project from now on, across a reload too.
+        if (options.adopt) options.adopt({ id: as.id, name: as.name });
         latest = answer.id;
         showPublished(answer.path, answer.replaced);
         if (answer.linked && answer.linked.length) {
@@ -22420,6 +22688,10 @@ function install(editor, options) {
       .then(function () {
         publishButton.disabled = false;
       });
+  }
+
+  publishButton.onclick = function () {
+    publish(publishingAs(), false);
   };
 
   editor.Commands.add("oscar-export", open);
@@ -22429,7 +22701,7 @@ function install(editor, options) {
      * Let an extension add to the dialog. `draw(box, view)` is called with a
      * box of the extension's own, under the publish result and above the list
      * of what is published, every time the dialog opens and every time what is
-     * published changes. `view` is { surfaces: [{ id, path, address }], latest:
+     * published changes. `view` is { surfaces: [{ id, name, path, address }], latest:
      * the id just published from here or null, refresh(), show(address,
      * status), onUnpublish(guard) }: show puts an address in the dialog's own
      * box, with its code and Copy, as a published surface's is shown; guard(id)
@@ -22450,7 +22722,7 @@ function install(editor, options) {
 
 module.exports = { install: install, fileStem: fileStem };
 
-},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":14,"./adapters/grapesjs":41,"qrcode-generator":40}],43:[function(require,module,exports){
+},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":15,"./adapters/grapesjs":42,"qrcode-generator":41}],44:[function(require,module,exports){
 "use strict";
 
 /**
@@ -22519,7 +22791,7 @@ function openWelcome(deps) {
 
 module.exports = { isFirstRun: isFirstRun, openWelcome: openWelcome, WELCOME: WELCOME, AUTOSAVE_KEY: AUTOSAVE_KEY };
 
-},{}],44:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 window.$ = $ = window.jQuery = require("jquery");
 
 // jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
@@ -22793,6 +23065,7 @@ var features = require("../../lib/features");
 var welcome = require("./first_run");
 
 var oscarExport = require("./export_dialog");
+var { createOpenProject } = require("../../lib/open-project");
 var toolbarOrder = require("../../lib/toolbar-order");
 
 var isProjectData = projectFormat.isGrapesProject;
@@ -23370,32 +23643,77 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   function confirmRemove(row) {
     var draft = row.template && String(row._id).indexOf("assistant:") === 0;
+    if (draft || !row.id) return askRemove(row, draft, null);
+    // A project that is live says so before it goes: its interface keeps
+    // running without it unless it is taken down too.
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : [];
+      })
+      .catch(function () {
+        return [];
+      })
+      .then(function (pages) {
+        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
+          return page.project === row.id;
+        })[0];
+        askRemove(row, false, live || null);
+      });
+  }
+
+  function askRemove(row, draft, live) {
+    var remove = function (takeDown) {
+      var call = draft
+        ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
+        : $.ajax({ type: "DELETE", url: "/remove/" + row._id });
+      call
+        .done(function (data) {
+          if (takeDown && live && !data.error) fetch("/published/" + encodeURIComponent(live.id), { method: "DELETE" }).catch(function () {});
+          refreshProjects();
+          $.alert(data.error || data.msg);
+        })
+        .fail(function () {
+          $.alert(draft ? "Could not delete that draft" : "Could not delete that project");
+        });
+    };
+    var buttons = {
+      confirm: {
+        text: live ? "Delete, keep it live" : "Confirm",
+        action: function () {
+          remove(false);
+        },
+      },
+    };
+    if (live) {
+      buttons.takeDown = {
+        text: "Delete and take it down",
+        btnClass: "btn-red",
+        action: function () {
+          remove(true);
+        },
+      };
+    }
+    buttons.cancel = function () {};
     $.confirm({
       title: draft ? "Delete Draft" : "Delete Project",
       content: draft
         ? "Delete this assistant-written draft? Anything you loaded from it and saved as a project stays."
-        : "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
-      buttons: {
-        confirm: function () {
-          var call = draft
-            ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
-            : $.ajax({ type: "DELETE", url: "/remove/" + row._id });
-          call
-            .done(function (data) {
-              refreshProjects();
-              $.alert(data.error || data.msg);
-            })
-            .fail(function () {
-              $.alert(draft ? "Could not delete that draft" : "Could not delete that project");
-            });
-        },
-        cancel: function () {},
-      },
+        : "Are you sure you want to delete this project? You won't be able to recover it afterwards." +
+          (live ? " It is live at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
+      boxWidth: live ? "560px" : undefined,
+      useBootstrap: live ? false : undefined,
+      buttons: buttons,
     });
   }
 
   // ---- save --------------------------------------------------------------
   var projectName = document.getElementById("project-name");
+
+  // Which project the canvas is (lib/open-project.js): kept in this browser
+  // beside the autosaved canvas, so a reload brings back who it is as well as
+  // what is on it, and what it publishes is known as that project.
+  var openProject = createOpenProject(window.localStorage);
+  if (projectName && !projectName.value) projectName.value = openProject.get().name;
 
   document.getElementById("save-button").onclick = function () {
     var name = (projectName.value || "").trim();
@@ -23471,15 +23789,16 @@ function initGrape(ipServer, socketPort, oscInPort) {
         confirm: function () {
           showLoader();
 
-          fetch("/load/" + encodeURIComponent(id))
+          fetch("/load/" + encodeURIComponent(id) + "?envelope=1")
             .then(function (res) {
               return res.json();
             })
-            .then(function (data) {
+            .then(function (answer) {
               hideLoader();
+              var data = answer && answer.data;
 
-              if (!data || data.error || !Object.keys(data).length) {
-                $.alert((data && data.error) || "That project could not be found");
+              if (!answer || answer.error || !data || !Object.keys(data).length) {
+                $.alert((answer && answer.error) || "That project could not be found");
                 return;
               }
 
@@ -23495,6 +23814,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
               }
 
               editor.loadProjectData(data);
+              openedFile = { handle: null, name: answer.name || "" };
+              openProject.set({ id: answer.id, name: answer.name, saved: true });
               $.alert("Loaded successfully");
               modal.close();
             })
@@ -23708,6 +24029,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
               selectedTemplate = null;
               templateUrl = null;
               $("#project-name").val("").attr("id-project", "");
+              // A template on the canvas is nobody's project until it is saved or published.
+              openedFile = { handle: null, name: "" };
+              openProject.clear();
               $.alert("Loaded successfully");
               modal.close();
             })
@@ -23729,6 +24053,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.getWrapper().setAttributes({});
     editor.setComponents(html);
     editor.UndoManager.clear();
+    // A template on the canvas is nobody's project until it is saved or published.
+    openProject.clear();
   }
 
   // ---- a project as a file --------------------------------------------
@@ -23744,16 +24070,28 @@ function initGrape(ipServer, socketPort, oscInPort) {
     return slug || "surface";
   }
 
-  function projectRecord(name) {
+  function projectRecord(name, id) {
     // The same stamping the library's save does on the server, so a .oscar
-    // file and a library project are one format, not two.
+    // file and a library project are one format, not two. The id is who the
+    // project is: what a published interface remembers it was made from.
     var data = projectFormat.stripEditorState(editor.getProjectData());
-    return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version });
+    return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version, id: id });
   }
 
-  function oscarSaveToFile() {
+  /**
+   * @param {{ asNew?: boolean }} [how] asNew: Save as on a project that has
+   *        been saved before makes another project, with an id of its own.
+   *        The id is only kept once the file is written: a picker closed
+   *        without saving changes nothing.
+   */
+  function oscarSaveToFile(how) {
     var name = (projectName.value || "").trim() || openedFile.name || "surface";
-    var text = JSON.stringify(projectRecord(name), null, 2);
+    var asNew = !!(how && how.asNew) && openProject.get().saved;
+    var id = asNew ? openProject.newId() : openProject.get().id || openProject.newId();
+    var text = JSON.stringify(projectRecord(name, id), null, 2);
+    var saved = function (as) {
+      openProject.set({ id: id, name: as || name, saved: true });
+    };
 
     var fallback = function () {
       // No file pickers in this browser: the file lands in Downloads.
@@ -23764,6 +24102,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       document.body.appendChild(a);
       a.click();
       a.remove();
+      saved();
       setTimeout(function () {
         URL.revokeObjectURL(a.href);
       }, 5000);
@@ -23780,12 +24119,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
           });
         })
         .then(function () {
+          saved();
           $.alert('Saved to "' + openedFile.handle.name + '"');
         })
         .catch(function () {
           // The file moved or the permission lapsed: ask where, once more.
           openedFile.handle = null;
-          oscarSaveToFile();
+          oscarSaveToFile(how);
         });
       return;
     }
@@ -23807,6 +24147,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
           .then(function () {
             openedFile = { handle: handle, name: name };
             projectName.value = name;
+            saved();
             $.alert('Saved to "' + handle.name + '"');
           });
       })
@@ -23846,6 +24187,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
           openedFile = { handle: handle || null, name: parsed.name || fileName.replace(/\.(oscar|json)$/i, "") };
           projectName.value = openedFile.name;
           projectName.setAttribute("id-project", "");
+          // Who the file says it is; a file from before projects had ids is
+          // given one, which the next Save writes into it.
+          openProject.set({ id: projectFormat.isProjectId(parsed.id) ? parsed.id : openProject.newId(), name: openedFile.name, saved: true });
           $.alert("Opened successfully");
         },
         cancel: function () {},
@@ -23864,6 +24208,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
           openedFile = { handle: null, name: (title && title[1].trim()) || fileName.replace(/\.html?$/i, "") };
           projectName.value = openedFile.name;
           projectName.setAttribute("id-project", "");
+          // An HTML page is a template: nobody's project, though it brings a name.
+          openProject.clear(openedFile.name);
           $.alert("Opened successfully");
         },
         cancel: function () {},
@@ -23912,10 +24258,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
       });
   }
 
-  /** Save as...: always ask where, whatever file is held. */
+  /** Save as...: always ask where, whatever file is held; a project saved before becomes another one. */
   function oscarSaveAs() {
     openedFile.handle = null;
-    oscarSaveToFile();
+    oscarSaveToFile({ asNew: true });
   }
 
   /** One menu under a bar word: built, placed, closed by a click away. */
@@ -24102,7 +24448,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
       { rule: true },
-      { label: "Save", run: oscarSaveToFile },
+      {
+        label: "Save",
+        run: function () {
+          oscarSaveToFile();
+        },
+      },
       { label: "Save as\u2026", run: oscarSaveAs },
       { rule: true },
       {
@@ -24544,8 +24895,46 @@ function initGrape(ipServer, socketPort, oscInPort) {
   var publishDialog = oscarExport.install(editor, {
     host: ipServer,
     port: socketPort,
-    projectName: function () {
-      return projectName ? projectName.value : "";
+    // Who the canvas is: what it publishes is remembered as this project.
+    project: function () {
+      var now = openProject.get();
+      return { id: now.id, name: now.name || (projectName ? projectName.value : "") };
+    },
+    newId: function () {
+      return openProject.ensureId();
+    },
+    // Published: the canvas is that project from now on, across a reload.
+    adopt: function (as) {
+      var now = openProject.get();
+      openProject.set({ id: as.id, name: as.name, saved: now.id === as.id ? now.saved : false });
+      if (projectName && !projectName.value) projectName.value = as.name;
+    },
+    // The project itself, kept beside the page so the interface can be edited later.
+    source: function (name, id) {
+      return projectRecord(name, id);
+    },
+    // Edit, from a live interface's row: the project it was published from, back on the canvas.
+    openProject: function (project) {
+      if (!project || !isProjectData(project.data)) {
+        $.alert("That project could not be opened. Your current project has not been changed.");
+        return;
+      }
+      $.confirm({
+        title: "Edit",
+        content: 'If you open "' + String(project.name || "this project").replace(/[<>&]/g, "") + '", you will lose all unsaved changes in the current project.',
+        buttons: {
+          confirm: function () {
+            editor.loadProjectData(project.data);
+            // No file is held: it came from OSCAR's own copy. Save asks where, and keeps who it is.
+            openedFile = { handle: null, name: project.name || "" };
+            projectName.value = openedFile.name;
+            projectName.setAttribute("id-project", "");
+            openProject.set({ id: project.id, name: openedFile.name, saved: false });
+            modal.close();
+          },
+          cancel: function () {},
+        },
+      });
     },
   });
 
@@ -25582,7 +25971,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/project-format":12,"../../lib/projects-table":13,"../../lib/toolbar-order":16,"../../lib/widget-styles":17,"./adapters/grapesjs":41,"./export_dialog":42,"./first_run":43,"./pages":46,"jquery":39,"jquery-confirm":38}],45:[function(require,module,exports){
+},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/open-project":9,"../../lib/project-format":13,"../../lib/projects-table":14,"../../lib/toolbar-order":17,"../../lib/widget-styles":18,"./adapters/grapesjs":42,"./export_dialog":43,"./first_run":44,"./pages":47,"jquery":40,"jquery-confirm":39}],46:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
@@ -25752,7 +26141,7 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"../../lib/widget-styles":17,"./adapters/grapesjs":41,"./pages":46,"jquery":39}],46:[function(require,module,exports){
+},{"../../lib/widget-styles":18,"./adapters/grapesjs":42,"./pages":47,"jquery":40}],47:[function(require,module,exports){
 /**
  * Multiple pages: what the editor and the control surface have in common.
  *
@@ -26033,4 +26422,4 @@ module.exports = {
   pageTabs: pageTabs,
 };
 
-},{"../../lib/features":6,"../../lib/project-format":12}]},{},[45,44]);
+},{"../../lib/features":6,"../../lib/project-format":13}]},{},[46,45]);

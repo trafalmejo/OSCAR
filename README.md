@@ -830,11 +830,18 @@ canvas into **one self-contained page**, separate from the editor.
 
 **Publish on the local network** keeps the page inside OSCAR and serves it at an
 address such as `http://192.168.1.20:8080/show/main-stage`, shown with a QR
-code to scan. It asks for a name and nothing else. This is the way onto a
+code to scan. It asks for an address and nothing else. This is the way onto a
 **phone or tablet**, and the way to use unless you have a reason not to.
-Publishing under the same name again replaces the page and keeps its address,
-the dialog lists what is published and unpublishes it, and a published page
-stays reachable while OSCAR is locked. It finds OSCAR by the address it was
+
+A published interface remembers the project it was published from, and
+OSCAR keeps a copy of that project beside the page. So the dialog knows
+which live interface is the one on the canvas: publishing that project again
+is **Update**, one click, at the address it already has, whatever the project
+is called by then. Every other row has **Edit**, which puts the project it
+was published from back on the canvas, and **Take down**, which stops serving
+it. An address already in use by another project is replaced only after a
+question. Saving never changes what phones see; only Publish and Update do.
+A published page stays reachable while OSCAR is locked. It finds OSCAR by the address it was
 opened at, so it keeps working if the computer's IP address changes. With
 OSCAR Pro the same dialog also offers to make a published surface public on
 the internet, for phones that are not on your network. Unlike

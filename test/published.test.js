@@ -158,7 +158,11 @@ test("publish, open, list, publish again, unpublish", async () => {
     const list = await (await fetch(base + "/published")).json();
     assert.deepStrictEqual(list.map((p) => [p.id, p.path]), [["main-stage", "/show/main-stage"]]);
 
-    assert.strictEqual((await (await post(base, "/publish", REQUEST)).json()).replaced, true);
+    // The address is somebody's running show: it is not replaced without the question being answered.
+    const asked = await (await post(base, "/publish", REQUEST)).json();
+    assert.match(asked.confirm, /already an interface at \/show\/main-stage\. Replace it\?/);
+    assert.strictEqual(asked.address, "main-stage");
+    assert.strictEqual((await (await post(base, "/publish", Object.assign({}, REQUEST, { replace: true }))).json()).replaced, true);
 
     assert.strictEqual((await fetch(base + "/published/main-stage", { method: "DELETE" })).status, 200);
     assert.strictEqual((await fetch(base + "/published/main-stage", { method: "DELETE" })).status, 404);
@@ -292,4 +296,111 @@ test("whoever keeps a copy elsewhere is told of an unpublish, and only of one th
   await store.save("Foyer", "<p>three</p>");
   await store.remove("foyer");
   assert.deepStrictEqual(heard, ["foyer"]);
+});
+
+// ---- a surface remembers the project it was published from --------------------------
+
+const PROJECT = { format: 2, name: "Main Stage", id: "p-mainstage001", data: { pages: [{ name: "Page 1", frames: [{ component: { type: "wrapper" } }] }], styles: [] } };
+const FROM_PROJECT = Object.assign({}, REQUEST, { fileName: "stage", project: { id: PROJECT.id, name: PROJECT.name }, source: PROJECT });
+
+test("beside a published page: which project it is, and the project itself, to edit from later", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", FROM_PROJECT);
+    const [row] = await (await fetch(base + "/published")).json();
+    assert.deepStrictEqual([row.id, row.name, row.project, row.editable], ["stage", "Main Stage", "p-mainstage001", true]);
+
+    const record = await store.record("stage");
+    assert.deepStrictEqual(record.project, { id: "p-mainstage001", name: "Main Stage" });
+    assert.ok(!Number.isNaN(Date.parse(record.publishedAt)));
+
+    // Edit: the project comes back as a project the editor can load, with who it is.
+    const edit = await (await fetch(base + "/published/stage/project")).json();
+    assert.deepStrictEqual([edit.id, edit.name, Array.isArray(edit.data.pages)], ["p-mainstage001", "Main Stage", true]);
+
+    // The page list is still only the pages.
+    assert.deepStrictEqual((await store.list()).map((p) => p.id), ["stage"]);
+  });
+});
+
+test("the same project publishes again without a word; another project is asked about first", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", FROM_PROJECT);
+    const again = await (await post(base, "/publish", FROM_PROJECT)).json();
+    assert.deepStrictEqual([again.id, again.replaced, again.confirm], ["stage", true, undefined], "its own address: Update is one click");
+
+    const other = Object.assign({}, FROM_PROJECT, { project: { id: "p-somethingelse", name: "Bar" }, source: Object.assign({}, PROJECT, { id: "p-somethingelse", name: "Bar" }) });
+    const asked = await (await post(base, "/publish", other)).json();
+    assert.match(asked.confirm, /published from "Main Stage"\. Replace it\?/);
+    assert.strictEqual((await store.record("stage")).project.id, "p-mainstage001", "nothing changed while the question stands");
+
+    // Yes: the address is that project's from now on.
+    await post(base, "/publish", Object.assign({}, other, { replace: true }));
+    assert.deepStrictEqual((await store.record("stage")).project, { id: "p-somethingelse", name: "Bar" });
+    assert.strictEqual((await (await fetch(base + "/published/stage/project")).json()).name, "Bar");
+  });
+});
+
+test("a page published with no project has nothing to edit from, and says so", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", REQUEST);
+    const [row] = await (await fetch(base + "/published")).json();
+    assert.deepStrictEqual([row.name, row.project, row.editable], [null, null, false]);
+    const res = await fetch(base + "/published/main-stage/project");
+    assert.strictEqual(res.status, 404);
+    assert.match((await res.json()).error, /cannot be edited here/);
+
+    // A project takes the address over, once the question is answered: the page gains its record.
+    await post(base, "/publish", Object.assign({}, FROM_PROJECT, { fileName: "Main Stage", replace: true }));
+    assert.strictEqual((await store.record("main-stage")).project.id, "p-mainstage001");
+
+    // And a page with no project published over it loses what was beside it:
+    // another project's copy must not be taken for this page's.
+    await post(base, "/publish", Object.assign({}, REQUEST, { replace: true }));
+    assert.strictEqual(await store.record("main-stage"), null);
+    assert.strictEqual(await store.project("main-stage"), null);
+  });
+});
+
+test("a project that cannot be opened again is not kept as the copy to edit from", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", Object.assign({}, FROM_PROJECT, { source: { nothing: "like a project" } }));
+    const [row] = await (await fetch(base + "/published")).json();
+    assert.deepStrictEqual([row.project, row.editable], ["p-mainstage001", false], "known as that project, with nothing to edit from");
+    assert.strictEqual((await fetch(base + "/published/stage/project")).status, 404);
+  });
+});
+
+test("taking a surface down takes its record and its project copy with it", async () => {
+  await withServer(async (base, store) => {
+    await post(base, "/publish", FROM_PROJECT);
+    assert.deepStrictEqual(fs.readdirSync(store.dir).sort(), ["stage.html", "stage.json", "stage.project.json"]);
+    assert.strictEqual((await fetch(base + "/published/stage", { method: "DELETE" })).status, 200);
+    assert.deepStrictEqual(fs.readdirSync(store.dir), []);
+  });
+});
+
+test("a locked OSCAR does not hand a surface's project to the network", async () => {
+  await withServer(
+    async (base) => {
+      // The request comes from this machine, which a lock lets through; the guard is what is checked.
+      assert.strictEqual((await fetch(base + "/published/none/project")).status, 404);
+    },
+    { lock: { isLocked: () => true } }
+  );
+  const routes = fs.readFileSync(path.join(__dirname, "..", "routes", "index.js"), "utf8");
+  assert.match(routes, /router\.get\("\/published\/:id\/project", editorOnly,/);
+});
+
+test("an interface is not outdated because building it embedded its pictures: the stamp is of what the editor sent", async () => {
+  const { surfaceStamp } = require("../lib/export/stamp");
+  await withServer(async (base, store) => {
+    const sent = '<body><div id="m1" data-oscar="oscar-media-browser" data-oscar-config="{&quot;items&quot;:&quot;Beams|1|images/beams.jpg&quot;}"></div></body>';
+    await post(base, "/publish", Object.assign({}, FROM_PROJECT, { html: sent }));
+    // As building does to a page: the picture goes into the widget's settings.
+    const built = await store.read("stage");
+    fs.writeFileSync(path.join(store.dir, "stage.html"), built.replace("images/beams.jpg", "data:image/jpeg;base64,AAAA"));
+    const [row] = await (await fetch(base + "/published")).json();
+    assert.strictEqual(row.stamp, surfaceStamp(sent), "what the canvas will be compared with is what the canvas sent");
+    assert.notStrictEqual(surfaceStamp(await store.read("stage")), row.stamp, "which the built page itself no longer matches");
+  });
 });

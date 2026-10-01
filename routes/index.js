@@ -2,7 +2,7 @@
 
 const express = require("express");
 
-const { openProject, stripEditorState } = require("../lib/project-format");
+const { openProject, stripEditorState, isProjectId, projectIdOf } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
 const { buildExport } = require("../lib/export");
 const { markServed, rebake } = require("../lib/published");
@@ -294,11 +294,40 @@ module.exports = function createRouter({
     if (result.error) return res.status(result.status).json({ error: result.error });
 
     const name = (req.body && (req.body.fileName || req.body.title)) || "";
-    if (!published.idFor(name)) {
+    const address = published.idFor(name);
+    if (!address) {
       return res.status(400).json({ error: '"' + name + '" is a name OSCAR uses itself. Pick another.' });
     }
+
+    // Which project this is, and the project itself: kept beside the page,
+    // so the surface can be found, edited and published again as that
+    // project (lib/published.js). A project that cannot be opened again is
+    // not worth keeping as the copy to edit from.
+    const said = req.body && req.body.project;
+    const project = said && typeof said === "object" && isProjectId(said.id) ? { id: said.id, name: typeof said.name === "string" && said.name.trim() ? said.name.trim().slice(0, 200) : address } : null;
+    const source = project && req.body.source && openProject(req.body.source).status === "ok" ? req.body.source : null;
+
     try {
-      const saved = await published.save(name, result.page);
+      // An address that is in use is replaced without a word only by the
+      // project that is there. Anything else -- another project, or a page
+      // published before OSCAR kept track -- is somebody's running show:
+      // the editor asks first, and says `replace` when the answer was yes.
+      if (req.body.replace !== true && (await published.exists(address))) {
+        const standing = await published.record(address);
+        const theirs = standing && standing.project ? standing.project : null;
+        if (!project || !theirs || theirs.id !== project.id) {
+          return res.json({
+            confirm: "There is already an interface at /show/" + address + (theirs && theirs.name ? ', published from "' + theirs.name + '"' : "") + ". Replace it?",
+            address,
+          });
+        }
+      }
+      // The stamp of what the editor sent, not of the page built from it:
+      // building embeds what the page needs (a media browser's pictures go
+      // into its settings), so the built page never matches the canvas again
+      // and the interface would read as outdated for ever.
+      const stamp = surfaceStamp(req.body.html);
+      const saved = await published.save(address, result.page, project ? { project, source, stamp } : null);
       res.json({ id: saved.id, path: "/show/" + saved.id, replaced: saved.replaced, linked: result.linked.slice(0, 20) });
     } catch (err) {
       console.error("Could not publish:", err.message);
@@ -331,7 +360,9 @@ module.exports = function createRouter({
       const rows = [];
       for (const page of pages) {
         const reading = await readingOf(page);
-        rows.push(Object.assign({ path: "/show/" + page.id, stamp: reading.stamp, widgets: reading.widgets }, page));
+        // The stamp written down at publish, when there is one; a page from
+        // before that is read for it, as it always was.
+        rows.push(Object.assign({ path: "/show/" + page.id, widgets: reading.widgets }, page, { stamp: page.stamp || reading.stamp }));
       }
       res.json(rows);
     } catch (err) {
@@ -351,6 +382,20 @@ module.exports = function createRouter({
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="' + req.params.id + '.html"');
     res.send(rebake(page, connection));
+  });
+
+  // The project a surface was published from, as it was then: what Edit in
+  // the Publish window opens. A page with no copy beside it has none.
+  router.get("/published/:id/project", editorOnly, async (req, res) => {
+    const record = published ? await published.record(req.params.id) : null;
+    const source = record ? await published.project(req.params.id) : null;
+    if (!record || !record.project || !source) return res.status(404).json({ error: "No project was kept with that interface, so it cannot be edited here." });
+    const opened = openProject(source);
+    if (opened.status === "too-new") {
+      return res.status(409).json({ error: "That interface was published by a newer version of OSCAR" + (opened.savedBy ? " (" + opened.savedBy + ")" : "") + ". Update OSCAR to edit it." });
+    }
+    if (opened.status !== "ok") return res.status(404).json({ error: "The project kept with that interface cannot be read." });
+    res.json({ id: record.project.id, name: record.project.name, data: opened.data });
   });
 
   // The project the person double-clicked to start OSCAR, once: the first
@@ -519,6 +564,11 @@ module.exports = function createRouter({
         });
       }
 
+      // With ?envelope=1, who the project is as well as what is in it: the
+      // editor remembers that, so what it publishes is known as this project.
+      if (req.query.envelope === "1") {
+        return res.json({ id: projectIdOf(record, req.params.id), name: record.name || req.params.id, data: opened.data });
+      }
       res.json(opened.data);
     } catch (err) {
       console.error("Could not load project:", err.message);

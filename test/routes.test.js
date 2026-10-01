@@ -401,3 +401,25 @@ test("editor pages render", async () => {
     }
   });
 });
+
+test("GET /load with ?envelope=1 says who the project is as well as what is in it", async () => {
+  await withServer(async (base, store) => {
+    const project = { pages: [{ name: "Main", frames: [{ component: { type: "wrapper" } }] }], styles: [] };
+    // One saved before projects carried an id, one that carries its own.
+    await postJSON(base, "/save", Object.assign({ name: "Old Show" }, project));
+    await store.save("Lobby", project, { id: "p-abc123def456" });
+
+    const old = await (await fetch(base + "/load/old-show?envelope=1")).json();
+    assert.deepStrictEqual([old.id, old.name], ["library-old-show", "Old Show"], "the same id every time it is read");
+    assert.deepStrictEqual(old.data, project);
+
+    const lobby = await (await fetch(base + "/load/lobby?envelope=1")).json();
+    assert.deepStrictEqual([lobby.id, lobby.name], ["p-abc123def456", "Lobby"]);
+
+    // Without it, the answer is the bare project, as it always was.
+    assert.deepStrictEqual(await (await fetch(base + "/load/lobby")).json(), project);
+
+    const list = await (await fetch(base + "/projects")).json();
+    assert.deepStrictEqual(list.filter((row) => !row.template).map((row) => [row._id, row.id]).sort(), [["lobby", "p-abc123def456"], ["old-show", "library-old-show"]]);
+  });
+});

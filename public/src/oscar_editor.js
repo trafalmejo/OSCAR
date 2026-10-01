@@ -271,6 +271,7 @@ var features = require("../../lib/features");
 var welcome = require("./first_run");
 
 var oscarExport = require("./export_dialog");
+var { createOpenProject } = require("../../lib/open-project");
 var toolbarOrder = require("../../lib/toolbar-order");
 
 var isProjectData = projectFormat.isGrapesProject;
@@ -848,32 +849,77 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
   function confirmRemove(row) {
     var draft = row.template && String(row._id).indexOf("assistant:") === 0;
+    if (draft || !row.id) return askRemove(row, draft, null);
+    // A project that is live says so before it goes: its interface keeps
+    // running without it unless it is taken down too.
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : [];
+      })
+      .catch(function () {
+        return [];
+      })
+      .then(function (pages) {
+        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
+          return page.project === row.id;
+        })[0];
+        askRemove(row, false, live || null);
+      });
+  }
+
+  function askRemove(row, draft, live) {
+    var remove = function (takeDown) {
+      var call = draft
+        ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
+        : $.ajax({ type: "DELETE", url: "/remove/" + row._id });
+      call
+        .done(function (data) {
+          if (takeDown && live && !data.error) fetch("/published/" + encodeURIComponent(live.id), { method: "DELETE" }).catch(function () {});
+          refreshProjects();
+          $.alert(data.error || data.msg);
+        })
+        .fail(function () {
+          $.alert(draft ? "Could not delete that draft" : "Could not delete that project");
+        });
+    };
+    var buttons = {
+      confirm: {
+        text: live ? "Delete, keep it live" : "Confirm",
+        action: function () {
+          remove(false);
+        },
+      },
+    };
+    if (live) {
+      buttons.takeDown = {
+        text: "Delete and take it down",
+        btnClass: "btn-red",
+        action: function () {
+          remove(true);
+        },
+      };
+    }
+    buttons.cancel = function () {};
     $.confirm({
       title: draft ? "Delete Draft" : "Delete Project",
       content: draft
         ? "Delete this assistant-written draft? Anything you loaded from it and saved as a project stays."
-        : "Are you sure you want to delete this project? You won't be able to recover it afterwards.",
-      buttons: {
-        confirm: function () {
-          var call = draft
-            ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
-            : $.ajax({ type: "DELETE", url: "/remove/" + row._id });
-          call
-            .done(function (data) {
-              refreshProjects();
-              $.alert(data.error || data.msg);
-            })
-            .fail(function () {
-              $.alert(draft ? "Could not delete that draft" : "Could not delete that project");
-            });
-        },
-        cancel: function () {},
-      },
+        : "Are you sure you want to delete this project? You won't be able to recover it afterwards." +
+          (live ? " It is live at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
+      boxWidth: live ? "560px" : undefined,
+      useBootstrap: live ? false : undefined,
+      buttons: buttons,
     });
   }
 
   // ---- save --------------------------------------------------------------
   var projectName = document.getElementById("project-name");
+
+  // Which project the canvas is (lib/open-project.js): kept in this browser
+  // beside the autosaved canvas, so a reload brings back who it is as well as
+  // what is on it, and what it publishes is known as that project.
+  var openProject = createOpenProject(window.localStorage);
+  if (projectName && !projectName.value) projectName.value = openProject.get().name;
 
   document.getElementById("save-button").onclick = function () {
     var name = (projectName.value || "").trim();
@@ -949,15 +995,16 @@ function initGrape(ipServer, socketPort, oscInPort) {
         confirm: function () {
           showLoader();
 
-          fetch("/load/" + encodeURIComponent(id))
+          fetch("/load/" + encodeURIComponent(id) + "?envelope=1")
             .then(function (res) {
               return res.json();
             })
-            .then(function (data) {
+            .then(function (answer) {
               hideLoader();
+              var data = answer && answer.data;
 
-              if (!data || data.error || !Object.keys(data).length) {
-                $.alert((data && data.error) || "That project could not be found");
+              if (!answer || answer.error || !data || !Object.keys(data).length) {
+                $.alert((answer && answer.error) || "That project could not be found");
                 return;
               }
 
@@ -973,6 +1020,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
               }
 
               editor.loadProjectData(data);
+              openedFile = { handle: null, name: answer.name || "" };
+              openProject.set({ id: answer.id, name: answer.name, saved: true });
               $.alert("Loaded successfully");
               modal.close();
             })
@@ -1186,6 +1235,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
               selectedTemplate = null;
               templateUrl = null;
               $("#project-name").val("").attr("id-project", "");
+              // A template on the canvas is nobody's project until it is saved or published.
+              openedFile = { handle: null, name: "" };
+              openProject.clear();
               $.alert("Loaded successfully");
               modal.close();
             })
@@ -1207,6 +1259,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.getWrapper().setAttributes({});
     editor.setComponents(html);
     editor.UndoManager.clear();
+    // A template on the canvas is nobody's project until it is saved or published.
+    openProject.clear();
   }
 
   // ---- a project as a file --------------------------------------------
@@ -1222,16 +1276,28 @@ function initGrape(ipServer, socketPort, oscInPort) {
     return slug || "surface";
   }
 
-  function projectRecord(name) {
+  function projectRecord(name, id) {
     // The same stamping the library's save does on the server, so a .oscar
-    // file and a library project are one format, not two.
+    // file and a library project are one format, not two. The id is who the
+    // project is: what a published interface remembers it was made from.
     var data = projectFormat.stripEditorState(editor.getProjectData());
-    return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version });
+    return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version, id: id });
   }
 
-  function oscarSaveToFile() {
+  /**
+   * @param {{ asNew?: boolean }} [how] asNew: Save as on a project that has
+   *        been saved before makes another project, with an id of its own.
+   *        The id is only kept once the file is written: a picker closed
+   *        without saving changes nothing.
+   */
+  function oscarSaveToFile(how) {
     var name = (projectName.value || "").trim() || openedFile.name || "surface";
-    var text = JSON.stringify(projectRecord(name), null, 2);
+    var asNew = !!(how && how.asNew) && openProject.get().saved;
+    var id = asNew ? openProject.newId() : openProject.get().id || openProject.newId();
+    var text = JSON.stringify(projectRecord(name, id), null, 2);
+    var saved = function (as) {
+      openProject.set({ id: id, name: as || name, saved: true });
+    };
 
     var fallback = function () {
       // No file pickers in this browser: the file lands in Downloads.
@@ -1242,6 +1308,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       document.body.appendChild(a);
       a.click();
       a.remove();
+      saved();
       setTimeout(function () {
         URL.revokeObjectURL(a.href);
       }, 5000);
@@ -1258,12 +1325,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
           });
         })
         .then(function () {
+          saved();
           $.alert('Saved to "' + openedFile.handle.name + '"');
         })
         .catch(function () {
           // The file moved or the permission lapsed: ask where, once more.
           openedFile.handle = null;
-          oscarSaveToFile();
+          oscarSaveToFile(how);
         });
       return;
     }
@@ -1285,6 +1353,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
           .then(function () {
             openedFile = { handle: handle, name: name };
             projectName.value = name;
+            saved();
             $.alert('Saved to "' + handle.name + '"');
           });
       })
@@ -1324,6 +1393,9 @@ function initGrape(ipServer, socketPort, oscInPort) {
           openedFile = { handle: handle || null, name: parsed.name || fileName.replace(/\.(oscar|json)$/i, "") };
           projectName.value = openedFile.name;
           projectName.setAttribute("id-project", "");
+          // Who the file says it is; a file from before projects had ids is
+          // given one, which the next Save writes into it.
+          openProject.set({ id: projectFormat.isProjectId(parsed.id) ? parsed.id : openProject.newId(), name: openedFile.name, saved: true });
           $.alert("Opened successfully");
         },
         cancel: function () {},
@@ -1342,6 +1414,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
           openedFile = { handle: null, name: (title && title[1].trim()) || fileName.replace(/\.html?$/i, "") };
           projectName.value = openedFile.name;
           projectName.setAttribute("id-project", "");
+          // An HTML page is a template: nobody's project, though it brings a name.
+          openProject.clear(openedFile.name);
           $.alert("Opened successfully");
         },
         cancel: function () {},
@@ -1390,10 +1464,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
       });
   }
 
-  /** Save as...: always ask where, whatever file is held. */
+  /** Save as...: always ask where, whatever file is held; a project saved before becomes another one. */
   function oscarSaveAs() {
     openedFile.handle = null;
-    oscarSaveToFile();
+    oscarSaveToFile({ asNew: true });
   }
 
   /** One menu under a bar word: built, placed, closed by a click away. */
@@ -1580,7 +1654,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
         },
       },
       { rule: true },
-      { label: "Save", run: oscarSaveToFile },
+      {
+        label: "Save",
+        run: function () {
+          oscarSaveToFile();
+        },
+      },
       { label: "Save as\u2026", run: oscarSaveAs },
       { rule: true },
       {
@@ -2022,8 +2101,46 @@ function initGrape(ipServer, socketPort, oscInPort) {
   var publishDialog = oscarExport.install(editor, {
     host: ipServer,
     port: socketPort,
-    projectName: function () {
-      return projectName ? projectName.value : "";
+    // Who the canvas is: what it publishes is remembered as this project.
+    project: function () {
+      var now = openProject.get();
+      return { id: now.id, name: now.name || (projectName ? projectName.value : "") };
+    },
+    newId: function () {
+      return openProject.ensureId();
+    },
+    // Published: the canvas is that project from now on, across a reload.
+    adopt: function (as) {
+      var now = openProject.get();
+      openProject.set({ id: as.id, name: as.name, saved: now.id === as.id ? now.saved : false });
+      if (projectName && !projectName.value) projectName.value = as.name;
+    },
+    // The project itself, kept beside the page so the interface can be edited later.
+    source: function (name, id) {
+      return projectRecord(name, id);
+    },
+    // Edit, from a live interface's row: the project it was published from, back on the canvas.
+    openProject: function (project) {
+      if (!project || !isProjectData(project.data)) {
+        $.alert("That project could not be opened. Your current project has not been changed.");
+        return;
+      }
+      $.confirm({
+        title: "Edit",
+        content: 'If you open "' + String(project.name || "this project").replace(/[<>&]/g, "") + '", you will lose all unsaved changes in the current project.',
+        buttons: {
+          confirm: function () {
+            editor.loadProjectData(project.data);
+            // No file is held: it came from OSCAR's own copy. Save asks where, and keeps who it is.
+            openedFile = { handle: null, name: project.name || "" };
+            projectName.value = openedFile.name;
+            projectName.setAttribute("id-project", "");
+            openProject.set({ id: project.id, name: openedFile.name, saved: false });
+            modal.close();
+          },
+          cancel: function () {},
+        },
+      });
     },
   });
 

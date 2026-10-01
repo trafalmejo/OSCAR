@@ -37,8 +37,8 @@ test("before a surface is unpublished, a section may give a reason to think twic
   assert.match(dialog, /onUnpublish: function \(guard\) \{\s*section\.guard = guard;/);
   assert.match(dialog, /section\.guard\(page\.id\)/);
   assert.match(dialog, /if \(!warnings\.length\) return unpublish\(\);/, "with no reason, no question");
-  assert.match(dialog, /text: "Take it off the internet and unpublish"/);
-  assert.match(dialog, /text: "Keep it published"/);
+  assert.match(dialog, /text: "Take it off the internet and take it down"/);
+  assert.match(dialog, /text: "Keep it live"/);
   assert.match(dialog, /typeof w\.first === "function" \? w\.first\(\) : null/);
 });
 
@@ -47,11 +47,12 @@ test("a file is downloaded from a published surface's own row, through a window 
   assert.ok(!/export-advanced|export-host|id="export-page"/.test(markup), "nothing about a file at the bottom of the dialog");
   assert.ok(markup.indexOf('id="download-panel"') !== -1 && markup.indexOf('id="download-host"') !== -1);
   const dialog = read("public/src/export_dialog.js");
-  // Between QR and Unpublish, on every row.
+  // Between QR and Take down, on every row; Edit sits before Take down, where there is a project to edit.
   const qr = dialog.indexOf('qr.textContent = "QR"');
   const file = dialog.indexOf('file.textContent = "Download"');
-  const remove = dialog.indexOf('remove.textContent = "Unpublish"');
-  assert.ok(qr < file && file < remove);
+  const editIt = dialog.indexOf('editIt.textContent = "Edit"');
+  const remove = dialog.indexOf('remove.textContent = "Take down"');
+  assert.ok(qr !== -1 && qr < file && file < editIt && editIt < remove);
   assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(id\) \+ "\/file\?host=/);
   assert.match(dialog, /editor\.on\("modal:close", function \(\) \{\s*if \(!returning\) return;/);
   assert.ok(!/exportSnapshot\(editor, /.test(dialog), "publishing is the first page, and nothing else is asked");

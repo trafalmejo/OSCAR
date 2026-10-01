@@ -22,16 +22,26 @@
       published page is a single surface.
     </div>
 
-    <!-- The name and the button on one line where there is room. -->
+    <!-- The address and the button on one line where there is room. A
+         project that is live already has its address, and is told so here
+         in place of the field: publishing it again is Update, one click. -->
     <div class="oscar-export-publish-row">
-      <div class="oscar-export-field">
-        <label for="export-name">Name</label>
+      <div id="publish-field" class="oscar-export-field">
+        <label for="export-name">Address</label>
         <input id="export-name" class="o-input" type="text" placeholder="my-interface" />
+      </div>
+      <div id="publish-mine" class="oscar-export-field oscar-publish-mine" style="display: none;">
+        <span id="publish-mine-text"></span>
       </div>
       <button id="publish-button" class="o-btn o-btn-primary oscar-export-go" type="button">
         Publish on the local network
       </button>
     </div>
+
+    <p id="publish-field-hint" class="oscar-export-hint">
+      The address is where people open it: /show/ and this name. It stays the
+      same when you publish this project again, whatever the project is called.
+    </p>
 
     <div id="export-error" class="oscar-export-error" style="display: none;"></div>
     <div id="export-note" class="oscar-export-note" style="display: none;"></div>
@@ -53,7 +63,7 @@
       <div id="published-box" class="oscar-published" style="display: none;">
         <div class="oscar-published-title">Published on the local network</div>
         <p class="oscar-published-lead">
-          Any phone, tablet or computer on the same Wi-Fi opens a surface at its address, and hands what it does to OSCAR, so OSCAR has to keep running. Scan the code, or type the address.
+          Any phone, tablet or computer on the same Wi-Fi opens an interface at its address, and hands what it does to OSCAR, so OSCAR has to keep running. Edit puts the project it was published from back on the canvas.
         </p>
         <ul id="published-list" class="oscar-published-list"></ul>
       </div>

@@ -303,3 +303,26 @@ test("a single-page project keeps the format an older OSCAR can open; a second p
   assert.strictEqual(formatFor(null), 2);
   assert.strictEqual(formatFor({ pages: "no" }), 2);
 });
+
+// ---- a project's identity ---------------------------------------------------------
+
+test("a project carries its id when it has one, and the format is not bumped for it", () => {
+  const { stampProject, formatFor, newProjectId, isProjectId, projectIdOf, openProject } = require("../lib/project-format");
+  const data = { pages: [{ name: "Page 1" }] };
+  const plain = stampProject({ name: "Lobby", data });
+  assert.ok(!("id" in plain), "no id, no field: a file from before reads the same");
+  const withId = stampProject({ name: "Lobby", data, id: "p-abc123def456" });
+  assert.strictEqual(withId.id, "p-abc123def456");
+  assert.strictEqual(withId.format, formatFor(data), "an OSCAR from before ids still opens it");
+  assert.strictEqual(openProject(withId).status, "ok");
+  assert.ok(!("id" in stampProject({ name: "Lobby", data, id: "../escape" })), "an id is a short plain word, or it is not written");
+
+  const made = new Set(Array.from({ length: 200 }, () => newProjectId()));
+  assert.strictEqual(made.size, 200);
+  for (const id of made) assert.ok(isProjectId(id) && /^p-[a-z0-9]{12}$/.test(id), id);
+
+  // A library file from before ids: the same id every time it is read.
+  assert.strictEqual(projectIdOf({ name: "Lobby" }, "lobby"), "library-lobby");
+  assert.strictEqual(projectIdOf({ name: "Lobby", id: "p-abc123def456" }, "lobby"), "p-abc123def456");
+  assert.strictEqual(projectIdOf({ name: "Lobby" }, null), null, "a file from elsewhere has none until it is given one");
+});

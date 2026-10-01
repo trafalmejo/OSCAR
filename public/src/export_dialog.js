@@ -58,9 +58,14 @@ function download(blob, filename) {
 
 /**
  * @param {object} editor the GrapesJS editor
- * @param {{ host: string, port: number, projectName?: () => string }} options
- *        host and port are what the editor was started with, offered for a
- *        download only if the server cannot be asked again
+ * @param {object} options
+ *        host, port: what the editor was started with, offered for a download
+ *        only if the server cannot be asked again
+ *        project(): { id, name } -- which project the canvas is (lib/open-project.js)
+ *        adopt({ id, name }): the canvas was published as this project; remember it
+ *        newId(): an id for a canvas that had none
+ *        source(name, id): the project on the canvas, as a file would hold it
+ *        openProject({ id, name, data }): Edit -- put that project on the canvas
  */
 function install(editor, options) {
   var container = document.getElementById("export-panel");
@@ -72,6 +77,10 @@ function install(editor, options) {
   var statusLine = document.getElementById("publish-status");
   var link = document.getElementById("publish-link");
   var copyButton = document.getElementById("publish-copy");
+  var mineBox = document.getElementById("publish-mine");
+  var mineText = document.getElementById("publish-mine-text");
+  var fieldBox = document.getElementById("publish-field");
+  var fieldHint = document.getElementById("publish-field-hint");
   var publishedBox = document.getElementById("published-box");
   var publishedList = document.getElementById("published-list");
   var extrasBox = document.getElementById("publish-extras");
@@ -86,6 +95,7 @@ function install(editor, options) {
   var sections = [];
   var latest = null; // the id of the surface published from this dialog, most recently
   var known = []; // the published surfaces, as GET /published last said
+  var staleMark = null; // the "outdated" mark on the row of this canvas's own interface
   // The address other devices reach OSCAR on, and its bridge port, as GET
   // /connection last said; what a download is told unless it is changed.
   var lanHost = "";
@@ -105,7 +115,7 @@ function install(editor, options) {
       try {
         section.draw(section.box, {
           surfaces: known.map(function (page) {
-            return { id: page.id, path: page.path, address: addressOf(page.path) };
+            return { id: page.id, name: page.name || page.id, path: page.path, address: addressOf(page.path) };
           }),
           latest: latest,
           refresh: refreshPublished,
@@ -143,30 +153,65 @@ function install(editor, options) {
     showAddress(addressOf(path), replaced ? "Published again, at the same address:" : "Published. Open it at:");
   }
 
-  /** The name this canvas would publish under right now. */
-  function currentStem() {
-    var typed = nameField && nameField.value ? nameField.value : (options.projectName && options.projectName()) || "";
-    return fileStem(typed);
+  /** Which project the canvas is: { id, name }, id null for a canvas that is nobody yet. */
+  function project() {
+    var now = options.project ? options.project() : null;
+    return { id: (now && now.id) || null, name: (now && now.name) || "" };
   }
 
-  /** The published copy this canvas would replace, out of what is known. */
-  function publishedTwin() {
-    var stem = currentStem();
+  /**
+   * The live interface that is this canvas's own: the one published from the
+   * project it is, whatever either is called now. Not matched by name -- a
+   * name is reused for different designs, and a wrong match would let Update
+   * replace a running show with another one.
+   */
+  function publishedMine() {
+    var id = project().id;
+    if (!id) return null;
     for (var i = 0; i < known.length; i++) {
-      if (known[i].id === stem) return known[i];
+      if (known[i].project === id) return known[i];
     }
     return null;
   }
 
-  function staleNow() {
-    var twin = publishedTwin();
-    if (!twin || !twin.stamp || canvasStamp === null) return false;
-    return twin.stamp !== canvasStamp;
+  /** The address this canvas would publish at right now. */
+  function currentStem() {
+    var mine = publishedMine();
+    if (mine) return mine.id;
+    return fileStem(nameField && nameField.value ? nameField.value : project().name);
   }
 
-  /** The Publish button in the toolbar, found by the tooltip the editor gives it. */
+  function staleNow() {
+    var mine = publishedMine();
+    if (!mine || !mine.stamp || canvasStamp === null) return false;
+    return mine.stamp !== canvasStamp;
+  }
+
+  /**
+   * The top of the window, for the project on the canvas: one that is live
+   * already is updated at the address it has, in one click; one that is not
+   * is asked where it should go.
+   */
+  function paintMine() {
+    var mine = publishedMine();
+    if (fieldBox) fieldBox.style.display = mine ? "none" : "";
+    if (fieldHint) fieldHint.style.display = mine ? "none" : "";
+    if (mineBox) mineBox.style.display = mine ? "" : "none";
+    if (mine && mineText) {
+      mineText.textContent =
+        '"' + (mine.name || mine.id) + '" is live at /show/' + mine.id + (staleNow() ? ". The canvas has changes that are not live yet." : ". It is up to date.");
+    }
+    publishButton.textContent = mine ? "Update" : "Publish on the local network";
+    if (staleMark) staleMark.style.display = staleNow() ? "" : "none";
+  }
+
+  /**
+   * The Publish button in the toolbar, found by its class. (It was once found
+   * by its tooltip, which paintStale changes: after the first dot it was
+   * never found again, and the dot could not be taken off.)
+   */
   function toolbarButton() {
-    return document.querySelector('.gjs-pn-options [data-tooltip="Publish your interface"]');
+    return document.querySelector(".gjs-pn-options .oscar-publish-btn");
   }
 
   function paintStale() {
@@ -178,6 +223,7 @@ function install(editor, options) {
       "data-tooltip",
       stale ? "Publish your interface \u00b7 the published copy is older than your canvas" : "Publish your interface"
     );
+    paintMine();
   }
 
   /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
@@ -222,6 +268,7 @@ function install(editor, options) {
       })
       .then(function (pages) {
         publishedList.textContent = "";
+        staleMark = null;
         known = Array.isArray(pages) ? pages : [];
         known.forEach(function (page) {
           var row = document.createElement("li");
@@ -239,18 +286,34 @@ function install(editor, options) {
           open.target = "_blank";
           open.rel = "noopener";
           open.href = addressOf(page.path);
-          // The name, as the row beside it shows; the whole address is in the box above, from QR.
-          open.textContent = page.id;
+          // The project's name, when OSCAR was told it; the whole address is in the box above, from QR.
+          open.textContent = page.name || page.id;
           open.title = addressOf(page.path);
           open.className = "o-link oscar-published-name";
           row.appendChild(open);
 
-          if (page.stamp && page.id === currentStem() && canvasStamp !== null && page.stamp !== canvasStamp) {
+          var mine = publishedMine();
+          var isMine = !!mine && mine.id === page.id;
+          if (isMine) {
+            var here = document.createElement("span");
+            here.className = "oscar-published-state";
+            here.setAttribute("data-state", "valid");
+            here.textContent = "on the canvas";
+            here.title = "This is the project open in the editor. Update sends your changes to it.";
+            row.appendChild(here);
+          }
+
+          // Only the interface published from this project is judged against
+          // the canvas. The mark is always there on its row, and shown or
+          // hidden as the canvas changes (paintMine), with the dialog open.
+          if (isMine) {
             var stale = document.createElement("span");
             stale.className = "oscar-published-state";
             stale.setAttribute("data-state", "grace");
             stale.textContent = "outdated";
-            stale.title = "The canvas has changed since this was published. Publish again to update it.";
+            stale.title = "The canvas has changed since this was published. Update sends the changes.";
+            stale.style.display = staleNow() ? "" : "none";
+            staleMark = stale;
             row.appendChild(stale);
           }
 
@@ -275,11 +338,26 @@ function install(editor, options) {
           };
           row.appendChild(file);
 
+          // Edit: the project this was published from, back on the canvas.
+          // Not for the one already there, nor for a page with no copy kept.
+          if (page.editable && !isMine && options.openProject) {
+            var editIt = document.createElement("button");
+            editIt.type = "button";
+            editIt.className = "o-btn";
+            editIt.textContent = "Edit";
+            editIt.setAttribute("aria-label", "Edit " + (page.name || page.id));
+            editIt.onclick = function () {
+              openForEdit(page);
+            };
+            row.appendChild(editIt);
+          }
+
           var remove = document.createElement("button");
           remove.type = "button";
           remove.className = "o-btn";
-          remove.textContent = "Unpublish";
-          remove.setAttribute("aria-label", "Unpublish " + page.id);
+          remove.textContent = "Take down";
+          remove.title = "Stop serving this interface, and its schedules and bridges with it.";
+          remove.setAttribute("aria-label", "Take down " + (page.name || page.id));
           remove.onclick = function () {
             // A section may have a reason to think twice (the surface is
             // public on the internet, say), and something to do first.
@@ -316,11 +394,11 @@ function install(editor, options) {
                 boxWidth: "560px",
                 useBootstrap: false,
                 buttons: {
-                  confirm: { text: "Take it off the internet and unpublish", btnClass: "btn-red", action: proceed },
-                  cancel: { text: "Keep it published" },
+                  confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
+                  cancel: { text: "Keep it live" },
                 },
               });
-            } else if (window.confirm(reasons.join(" ") + " Take it off the internet and unpublish?")) {
+            } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
               proceed();
             }
           };
@@ -329,12 +407,31 @@ function install(editor, options) {
         });
         publishedBox.style.display = publishedList.children.length ? "block" : "none";
         paintStale();
+        paintMine();
         drawSections();
       })
       .catch(function () {
         publishedBox.style.display = "none";
         known = [];
         drawSections();
+      });
+  }
+
+  /** Edit: fetch the project a live interface was published from, and hand it to the editor. */
+  function openForEdit(page) {
+    say(errorBox, "");
+    fetch("/published/" + encodeURIComponent(page.id) + "/project")
+      .then(function (res) {
+        return res.json().then(function (answer) {
+          if (!res.ok) throw new Error((answer && answer.error) || "That project could not be opened.");
+          return answer;
+        });
+      })
+      .then(function (answer) {
+        options.openProject(answer);
+      })
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
       });
   }
 
@@ -417,8 +514,8 @@ function install(editor, options) {
     say(errorBox, "");
     say(noteBox, "");
     latest = null;
+    nameField.value = fileStem(project().name);
     restamp();
-    nameField.value = fileStem((options.projectName && options.projectName()) || "");
 
     // A project saved while Pages was on may still hold several; with the
     // feature off only the first is ever shown, so there is nothing to say.
@@ -454,11 +551,15 @@ function install(editor, options) {
   }
 
   /**
-   * What publishing sends: the surface, its settings written in. A published
+   * What publishing sends: the surface, its settings written in, and the
+   * project it was made from -- which project it is, and the project itself,
+   * kept beside the page so the interface can be edited later. A published
    * page is served by OSCAR and finds it by the address it was opened at, so
    * nothing about where OSCAR is goes with it; the server bakes in its own.
+   *
+   * `as` is who the canvas is published as: { id, name, address }.
    */
-  function request() {
+  function request(as, replace) {
     say(errorBox, "");
     say(noteBox, "");
     var snapshot = exportSnapshot(editor);
@@ -466,20 +567,35 @@ function install(editor, options) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: (nameField.value || "").trim() || DEFAULT_NAME,
-        fileName: fileStem(nameField.value),
+        title: as.name,
+        fileName: as.address,
         html: snapshot.html,
         css: snapshot.css,
+        project: { id: as.id, name: as.name },
+        source: options.source ? options.source(as.name, as.id) : undefined,
+        replace: replace === true,
       }),
     };
   }
 
-  publishButton.onclick = function () {
-    var body = request();
-    if (!body) return;
+  /** Who the canvas is published as, worked out once per click. */
+  function publishingAs() {
+    var now = project();
+    var mine = publishedMine();
+    var typed = (nameField.value || "").trim();
+    return {
+      // A canvas that is nobody yet becomes somebody by being published.
+      id: now.id || (options.newId ? options.newId() : null),
+      name: now.name || (mine && mine.name) || typed || DEFAULT_NAME,
+      // Its own address if it has one; otherwise what was typed.
+      address: mine ? mine.id : fileStem(typed),
+    };
+  }
+
+  function publish(as, replace) {
     publishButton.disabled = true;
 
-    fetch("/publish", body)
+    fetch("/publish", request(as, replace))
       .then(function (res) {
         return res.json().then(function (answer) {
           if (!res.ok) throw new Error((answer && answer.error) || "The surface could not be published.");
@@ -487,6 +603,25 @@ function install(editor, options) {
         });
       })
       .then(function (answer) {
+        // The address is somebody's already: another project's, or a page
+        // from before OSCAR kept track. Asked once, and sent again with the answer.
+        if (answer.confirm) {
+          var yes = function () {
+            publish(as, true);
+          };
+          if (window.$ && typeof window.$.confirm === "function") {
+            window.$.confirm({
+              title: "Replace the interface?",
+              content: answer.confirm + " Phones that have it open will get this one when they reload.",
+              boxWidth: "520px",
+              useBootstrap: false,
+              buttons: { confirm: { text: "Replace it", btnClass: "btn-red", action: yes }, cancel: { text: "Cancel" } },
+            });
+          } else if (window.confirm(answer.confirm)) yes();
+          return null;
+        }
+        // The canvas is this project from now on, across a reload too.
+        if (options.adopt) options.adopt({ id: as.id, name: as.name });
         latest = answer.id;
         showPublished(answer.path, answer.replaced);
         if (answer.linked && answer.linked.length) {
@@ -500,6 +635,10 @@ function install(editor, options) {
       .then(function () {
         publishButton.disabled = false;
       });
+  }
+
+  publishButton.onclick = function () {
+    publish(publishingAs(), false);
   };
 
   editor.Commands.add("oscar-export", open);
@@ -509,7 +648,7 @@ function install(editor, options) {
      * Let an extension add to the dialog. `draw(box, view)` is called with a
      * box of the extension's own, under the publish result and above the list
      * of what is published, every time the dialog opens and every time what is
-     * published changes. `view` is { surfaces: [{ id, path, address }], latest:
+     * published changes. `view` is { surfaces: [{ id, name, path, address }], latest:
      * the id just published from here or null, refresh(), show(address,
      * status), onUnpublish(guard) }: show puts an address in the dialog's own
      * box, with its code and Copy, as a published surface's is shown; guard(id)

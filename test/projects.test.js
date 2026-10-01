@@ -125,3 +125,14 @@ test("a .oscar file in the projects folder is a project: listed, read, and remov
   assert.strictEqual(await store.remove("shared-desk"), true);
   assert.strictEqual(await store.read("shared-desk"), null);
 });
+
+test("the list says which project each file is: its own id, or one made from the file it is in", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-projects-ids-"));
+  const store = new ProjectStore(dir);
+  await store.save("Lobby", { pages: [{}] }, { id: "p-abc123def456" });
+  await store.save("Old Show", { pages: [{}] });
+  const rows = await store.list();
+  const byFile = Object.fromEntries(rows.map((row) => [row._id, row.id]));
+  assert.deepStrictEqual(byFile, { lobby: "p-abc123def456", "old-show": "library-old-show" });
+  assert.strictEqual((await store.read("lobby")).id, "p-abc123def456");
+});

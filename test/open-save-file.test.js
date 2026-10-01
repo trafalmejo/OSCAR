@@ -26,7 +26,7 @@ test("File holds every way in and out: three opens, two saves, and Publish", () 
     assert.ok(editor.indexOf(item) !== -1, "the menu offers: " + item);
   }
   assert.ok(editor.indexOf('editor.runCommand("oscar-export");') !== -1, "Publish opens the publish window");
-  assert.ok(editor.indexOf('{ label: "Save", run: oscarSaveToFile }') !== -1, "and a plain Save");
+  assert.match(editor, /label: "Save",\s*run: function \(\) \{\s*oscarSaveToFile\(\);/, "and a plain Save, handed nothing: only Save as makes another project");
   assert.match(editor, /label: "File",/, "a word, not an icon");
   assert.match(editor, /\.gjs-pn-devices-c \.oscar-file-btn/, "anchored where the button actually lives -- the old menu died of a stale anchor");
   assert.match(editor, /editor\.runCommand\("open-projects", \{ type: "Load" \}\)/, "the template way opens the window that always existed");

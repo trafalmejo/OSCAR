@@ -355,3 +355,11 @@
   opacity: 0.65;
   cursor: default;
 }
+
+/* In place of the address field, for a project that is live already: where
+   it is, and whether the canvas is ahead of it. Level with the button. */
+.oscar-publish-mine {
+  align-self: center;
+  font-size: 13px;
+  line-height: 1.45;
+}
