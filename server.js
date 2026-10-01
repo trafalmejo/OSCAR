@@ -50,8 +50,8 @@ const DMX_HOLD_ON_EXIT = process.env.OSCAR_DMX_HOLD_ON_EXIT === "1";
 
 const PROJECTS_DIR =
   process.env.OSCAR_PROJECTS_DIR || path.join(__dirname, "projects");
-// Where an assistant's drafts land (lib/mcp/tools.js create_surface): beside
-// the projects, listed in the editor's Load window for a person to review.
+// Where an assistant's drafts land (lib/mcp/tools.js create_draft): beside
+// the projects, listed under File > Open for a person to review.
 const DRAFTS_DIR = path.join(PROJECTS_DIR, "assistant");
 
 let serverIP = lanAddress();
@@ -863,11 +863,12 @@ extensions.start({
 // person to review. Loopback only, a fresh bearer token each boot, and no
 // tool that touches the wire. features.MCP off = the route does not exist.
 if (features.MCP) {
-  const { buildTools } = require("./lib/mcp/tools");
+  const { buildTools, INSTRUCTIONS } = require("./lib/mcp/tools");
   const { attachMcp } = require("./lib/mcp/http");
   mcpToken = attachMcp(app, {
     version: pkg.version,
     enabled: mcpOn,
+    instructions: INSTRUCTIONS,
     onToolCall: (tool) => telemetry.tell("mcp_tool_called", { tool }),
     tools: buildTools({
       version: pkg.version,

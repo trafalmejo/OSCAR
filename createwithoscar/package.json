@@ -1,0 +1,36 @@
+{
+  "name": "createwithoscar",
+  "version": "1.0.0",
+  "description": "Connect an AI assistant (Claude and other MCP clients) to OSCAR, the editor and server for OSC, MIDI and DMX control interfaces.",
+  "bin": {
+    "createwithoscar": "index.js"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "tools.json"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "oscar",
+    "osc",
+    "midi",
+    "dmx",
+    "claude"
+  ],
+  "homepage": "https://www.createwithoscar.site",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trafalmejo/OSCAR.git",
+    "directory": "createwithoscar"
+  },
+  "bugs": {
+    "url": "https://github.com/trafalmejo/OSCAR/issues"
+  },
+  "license": "BSD-3-Clause",
+  "mcpName": "io.github.trafalmejo/oscar"
+}

@@ -9,6 +9,8 @@
     "build": "npm run build:editor && npm run build:runtime",
     "build:editor": "browserify ./public/src/oscar_preview.js ./public/src/oscar_editor.js -o ./public/src/bundle.js",
     "build:runtime": "browserify ./public/src/oscar_runtime.js -o ./public/src/runtime.bundle.js",
+    "build:mcp": "node scripts/build-mcp-package.js",
+    "pack:mcpb": "node scripts/pack-mcpb.js",
     "watch": "watchify --debug ./public/src/oscar_preview.js ./public/src/oscar_editor.js -o ./public/src/bundle.js -v",
     "watch:runtime": "watchify ./public/src/oscar_runtime.js -o ./public/src/runtime.bundle.js -v",
     "start": "npm run build && node server.js",

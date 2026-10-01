@@ -1,0 +1,4 @@
+# The helper published to npm (createwithoscar/) starts with "#!/usr/bin/env node".
+# Checked out with Windows line endings and published from there, that line
+# breaks the command on macOS and Linux. These files stay as they are written.
+createwithoscar/** text eol=lf

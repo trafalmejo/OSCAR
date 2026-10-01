@@ -1,0 +1,96 @@
+{
+  "manifest_version": "0.2",
+  "name": "oscar",
+  "display_name": "OSCAR",
+  "version": "1.0.0",
+  "description": "Connect Claude to OSCAR: see why a control is not responding, and have an interface drafted for you to review.",
+  "long_description": "OSCAR is a free, open-source editor and server for control interfaces: pages of buttons, sliders and other controls that phones and tablets open, and that send OSC, MIDI and DMX to show software, instruments and lights.\n\nWith this extension Claude can read the OSCAR running on this computer (its projects, what is published, each widget's settings, the MIDI ports, the recent network activity) and write an interface as a draft, which appears in OSCAR under File > Open for you to check.\n\nIt never sends anything to your rig, publishes, or changes a project. OSCAR must be running, with the MCP pill in its top bar green.",
+  "author": {
+    "name": "OSCAR",
+    "email": "hello@createwithoscar.site",
+    "url": "https://www.createwithoscar.site"
+  },
+  "homepage": "https://www.createwithoscar.site",
+  "documentation": "https://www.createwithoscar.site/how-it-works",
+  "support": "https://github.com/trafalmejo/OSCAR/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trafalmejo/OSCAR"
+  },
+  "license": "BSD-3-Clause",
+  "privacy_policies": [
+    "https://www.createwithoscar.site/privacy"
+  ],
+  "icon": "icon.png",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "oscar",
+    "osc",
+    "midi",
+    "dmx",
+    "claude"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/index.js"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "status",
+      "description": "What this OSCAR is"
+    },
+    {
+      "name": "list_projects",
+      "description": "The projects in OSCAR"
+    },
+    {
+      "name": "read_project",
+      "description": "A project's widgets"
+    },
+    {
+      "name": "list_published",
+      "description": "The published interfaces"
+    },
+    {
+      "name": "read_published",
+      "description": "A published interface's widgets"
+    },
+    {
+      "name": "midi_ports",
+      "description": "The MIDI ports"
+    },
+    {
+      "name": "recent_activity",
+      "description": "What the server has lately done"
+    },
+    {
+      "name": "describe_widgets",
+      "description": "The widgets and how to write them"
+    },
+    {
+      "name": "validate_draft",
+      "description": "Judge a draft"
+    },
+    {
+      "name": "create_draft",
+      "description": "Save a draft for the person to review"
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=18"
+    }
+  }
+}

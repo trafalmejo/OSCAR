@@ -13,7 +13,8 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { validateSurface } = require("../lib/mcp/validate");
-const { buildTools, HOWTO } = require("../lib/mcp/tools");
+const { buildTools, HOWTO, INSTRUCTIONS } = require("../lib/mcp/tools");
+const { widgetsInProject } = require("../lib/mcp/project");
 const { tokenMatches, newToken, attachMcp } = require("../lib/mcp/http");
 const { byName } = require("../lib/widgets");
 const { exportAttributes } = require("../lib/export/config");
@@ -66,6 +67,36 @@ test("warnings guide without blocking: no title, no widgets", () => {
 
 // ---- the tools -------------------------------------------------------------
 
+// Projects as OSCAR keeps them: the editor's component tree, a widget being
+// a component of the widget's type with its settings beside it.
+const PROJECTS = [
+  {
+    id: "p-stage0000001",
+    name: "Stage",
+    data: {
+      pages: [
+        {
+          name: "Page 1",
+          frames: [
+            {
+              component: {
+                type: "wrapper",
+                components: [
+                  { type: "text", components: [{ type: "textnode", content: "Dimmer" }] },
+                  { tagName: "div", components: [{ type: "oscar-slider", attributes: { id: "dim", type: "range" }, message: "/dim", max: "255" }] },
+                  { type: "oscar-button", attributes: { id: "go" }, message: "/go", mode: "toggle" },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  { id: "p-twin00000001", name: "Twin", data: { pages: [] } },
+  { id: "p-twin00000002", name: "twin", data: { pages: [] } },
+];
+
 async function bench() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-mcp-"));
   const published = new PublishedStore(path.join(dir, "published"));
@@ -76,7 +107,13 @@ async function bench() {
     httpPort: () => 8000,
     oscInPort: () => 8880,
     socketPort: () => 8081,
-    store: { list: async () => [{ name: "one" }] },
+    store: {
+      list: async () => PROJECTS.map((p) => ({ _id: p.id, id: p.id, name: p.name, date: "2026-10-01" })),
+      readById: async (id) => {
+        const p = PROJECTS.find((q) => q.id === id);
+        return p ? { id: p.id, name: p.name, rev: 3, updatedAt: "2026-10-01T10:00:00.000Z", record: { data: p.data } } : null;
+      },
+    },
     published,
     midi: { status: () => ({ supported: true, driver: "supervised", restarts: 0 }), ports: () => ({ supported: true, outputs: ["Fake Out"], inputs: [] }) },
     liveLog: () => [{ at: 1, dir: "in", protocol: "osc", what: "/dim", n: 3 }],
@@ -97,12 +134,12 @@ test("level one reads: status, the published roster, one surface's widgets, the 
   assert.strictEqual(status.midi.driver, "supervised");
 
   const roster = await by.list_published.handler({});
-  assert.deepStrictEqual(roster.published, [{ id: "stage", name: "stage", path: "/show/stage", access: "network", widgets: 1 }]);
+  assert.deepStrictEqual(roster.published, [{ id: "stage", name: "stage", project: null, path: "/show/stage", access: "network", widgets: 1 }]);
 
-  const surface = await by.read_surface.handler({ surface: "stage" });
+  const surface = await by.read_published.handler({ id: "stage" });
   assert.strictEqual(surface.widgets[0].id, "dim");
   assert.strictEqual(surface.widgets[0].config.message, "/dim");
-  assert.match((await by.read_surface.handler({ surface: "nope" })).error, /no published surface/);
+  assert.match((await by.read_published.handler({ id: "nope" })).error, /no published interface/);
 
   const activity = await by.recent_activity.handler({});
   assert.strictEqual(activity.activity[0].what, "/dim");
@@ -119,23 +156,64 @@ test("describe_widgets says how to write a surface, and what every setting means
   assert.ok(told.widgets.length >= 9);
 });
 
-test("create_surface refuses what the validators refuse, saves what is clean, and will not overwrite unasked", async () => {
+test("a project is read whether it is published or not: its widgets from the editor's own tree, defaults filled in", async () => {
+  const { by } = await bench();
+  const listed = await by.list_projects.handler({});
+  assert.deepStrictEqual(listed.projects.map((p) => p.id), ["p-stage0000001", "p-twin00000001", "p-twin00000002"]);
+
+  const stage = await by.read_project.handler({ project: "p-stage0000001" });
+  assert.strictEqual(stage.name, "Stage");
+  assert.deepStrictEqual(stage.widgets.map((w) => [w.id, w.widget, w.page]), [["dim", "oscar-slider", "Page 1"], ["go", "oscar-button", "Page 1"]], "in document order, however deep");
+  assert.strictEqual(stage.widgets[0].config.message, "/dim", "a setting that was set");
+  assert.strictEqual(stage.widgets[0].config.max, "255");
+  assert.strictEqual(stage.widgets[0].config.min, byName["oscar-slider"].defaults.min, "one that never was reads as its default");
+  assert.deepStrictEqual(stage.published, [], "and it says where it is published: nowhere");
+
+  assert.strictEqual((await by.read_project.handler({ project: "stage" })).project, "p-stage0000001", "by its title too, whatever the case");
+  const twins = await by.read_project.handler({ project: "Twin" });
+  assert.match(twins.error, /More than one project/, "two of a title: asked for the id");
+  assert.strictEqual(twins.projects.length, 2);
+  assert.match((await by.read_project.handler({ project: "nope" })).error, /no project called/);
+
+  assert.deepStrictEqual(widgetsInProject(null), [], "a project with nothing in it has no widgets");
+  assert.deepStrictEqual(widgetsInProject({ pages: [{ component: { type: "oscar-button", attributes: { id: "b" } } }] })[0].id, "b", "a page that carries its component itself");
+});
+
+test("every tool says whether it only looks, and an assistant is told how they go together", async () => {
+  const { tools } = await bench();
+  for (const tool of tools) {
+    assert.ok(tool.annotations && typeof tool.annotations.readOnlyHint === "boolean", tool.name + " says whether it only reads");
+    assert.strictEqual(tool.annotations.openWorldHint, false, tool.name + " talks to OSCAR and nothing else");
+    assert.ok(!/Load (list|window)/.test(tool.description) && !/\bsurfaces?\b/.test(tool.title), tool.name + " speaks the app's words");
+  }
+  assert.deepStrictEqual(tools.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name), ["create_draft"], "one tool writes, and only a draft");
+  assert.strictEqual(tools.find((t) => t.name === "create_draft").annotations.destructiveHint, false);
+  for (const name of ["status", "read_published", "read_project", "validate_draft", "create_draft", "File > Open"]) {
+    assert.ok(INSTRUCTIONS.includes(name), "the instructions name " + name);
+  }
+  assert.match(INSTRUCTIONS, /No tool here sends anything to the rig/);
+  const http = fs.readFileSync(path.join(__dirname, "..", "lib", "mcp", "http.js"), "utf8");
+  assert.match(http, /annotations: tool\.annotations \}/, "the annotations reach the protocol");
+  assert.match(http, /instructions \? \{ instructions \} : undefined/, "and so do the instructions");
+});
+
+test("create_draft refuses what the validators refuse, saves what is clean, and will not overwrite unasked", async () => {
   const { by, dir } = await bench();
-  const refused = await by.create_surface.handler({ name: "Bad Desk", html: page(tag("oscar-slider", null, { message: "/x" })) });
+  const refused = await by.create_draft.handler({ name: "Bad Desk", html: page(tag("oscar-slider", null, { message: "/x" })) });
   assert.strictEqual(refused.saved, false);
   assert.match(refused.problems[0], /has no id/);
 
   const html = "<!doctype html><body>" + tag("oscar-button", "go", { message: "/go" }) + "</body>";
-  const saved = await by.create_surface.handler({ name: "Show Desk", html });
+  const saved = await by.create_draft.handler({ name: "Show Desk", html });
   assert.strictEqual(saved.saved, true);
   assert.strictEqual(saved.draft, "show-desk");
   const file = path.join(dir, "assistant", "show-desk.html");
   assert.match(fs.readFileSync(file, "utf8"), /<title>Show Desk<\/title>/, "an untitled draft is given its name");
 
-  const again = await by.create_surface.handler({ name: "Show Desk", html });
+  const again = await by.create_draft.handler({ name: "Show Desk", html });
   assert.strictEqual(again.saved, false);
   assert.match(again.problems[0], /already exists/);
-  const replaced = await by.create_surface.handler({ name: "Show Desk", html, overwrite: true });
+  const replaced = await by.create_draft.handler({ name: "Show Desk", html, overwrite: true });
   assert.strictEqual(replaced.saved, true);
 });
 
@@ -271,7 +349,7 @@ test("every part of a saved draft drags in flow: absolute mode is what made the 
 
   const { by, dir } = await bench();
   const html = '<!doctype html><body><div><button id="go" class="oscar-button" data-oscar="oscar-button" data-gjs-message="/go">GO</button></div></body>';
-  const saved = await by.create_surface.handler({ name: "Flow Desk", html });
+  const saved = await by.create_draft.handler({ name: "Flow Desk", html });
   assert.strictEqual(saved.saved, true);
   const file = fs.readFileSync(path.join(dir, "assistant", "flow-desk.html"), "utf8");
   assert.strictEqual((file.match(/data-gjs-dmode="flow"/g) || []).length, 2, "the div and the button both stamped");

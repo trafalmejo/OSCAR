@@ -2522,7 +2522,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         el.setAttribute(
           "data-tooltip",
           known
-            ? "Assistants (MCP) are on: an assistant on this computer can read this OSCAR and draft surfaces -- never send. Click to turn off."
+            ? "Assistants (MCP) are on: an assistant on this computer can read this OSCAR and draft interfaces -- never send. Click to turn off."
             : "Assistants (MCP) are off: the door is closed. Click to turn on."
         );
         el.setAttribute("data-tooltip-pos", "bottom");

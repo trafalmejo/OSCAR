@@ -523,7 +523,7 @@ module.exports = function createRouter({
       for (const source of extensions ? extensions.templateSources() : []) {
         templates = templates.concat(await listTemplates(source.dir, source));
       }
-      // An assistant's drafts (lib/mcp/tools.js create_surface): reviewed by
+      // An assistant's drafts (lib/mcp/tools.js create_draft): reviewed by
       // loading them here, exactly as a template is.
       if (draftsDir) templates = templates.concat(await listTemplates(draftsDir, { name: "assistant", urlPrefix: "drafts/" }));
       res.json(templates.concat(await store.list()));

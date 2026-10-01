@@ -1,0 +1,231 @@
+{
+ "instructions": "OSCAR is an editor and a server for control interfaces: pages of buttons, sliders and other widgets that phones and tablets open in a browser, and that send OSC, MIDI and DMX to show software, instruments and lights. Use the app's words with the person: a project is what they edit in OSCAR (File > Open lists them); a published interface is the live copy of a project that phones open; a draft is an interface you wrote for them to review. Start with status. To find why something does not respond: list_published and read_published (or read_project for one that is not published), then recent_activity and midi_ports. To build: describe_widgets, then validate_draft until it is clean, then create_draft, and tell the person to open the draft from File > Open, where it carries a Draft badge, check it, and publish it themselves. No tool here sends anything to the rig, publishes, or changes a project: if asked to operate the show, say that OSCAR does not let an assistant do that.",
+ "tools": [
+  {
+   "name": "status",
+   "title": "What this OSCAR is",
+   "description": "OSCAR's version, its ports (HTTP, the fixed OSC listening port, the socket bridge), whether editing is locked, the MIDI driver's condition, and how many projects and published interfaces there are. Start here.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "list_projects",
+   "title": "The projects in OSCAR",
+   "description": "Every project OSCAR holds, with its id and its title, as File > Open lists them. A project is what a person edits; it reaches phones only once it is published (list_published).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "read_project",
+   "title": "A project's widgets",
+   "description": "Every widget in one project, published or not, with its full settings as the editor holds them: addresses, ports, channels, MIDI mappings, DMX targets. Also says where the project is published, if it is. A setting nobody touched reads as its default. What phones see is the published copy, which may be older: read_published reads that one.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The project's id, or its title, as list_projects gives them"
+     }
+    },
+    "required": [
+     "project"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "list_published",
+   "title": "The published interfaces",
+   "description": "Every published interface: its name, the project it was published from, the path it is served at, who can open it (access: \"network\", or \"off\" for one no device can open, whose schedules and bridges still run), and how many widgets it holds. Published interfaces are live -- phones and tablets may be on them, and the rig hears them.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "read_published",
+   "title": "A published interface's widgets",
+   "description": "Every widget on one published interface, with its full settings as phones have them: addresses, ports, channels, MIDI mappings, DMX targets. For answering why something does or does not respond.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The published interface's id, as list_published names it"
+     }
+    },
+    "required": [
+     "id"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "midi_ports",
+   "title": "The MIDI ports",
+   "description": "The MIDI inputs and outputs this machine has right now, and the driver's condition.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "recent_activity",
+   "title": "What the server has lately done",
+   "description": "The network log's recent rows: what OSCAR's server actually received and sent, oldest first, repeats within a moment gathered into one row with a count n. Each row has what (OSC address, MIDI control, DMX universe and channels) and value (what the latest carried). Incoming rows: device (the sender's address, or the MIDI port), surfaces (published interfaces that follow it), canvas (the editor's canvas followed it); with neither, nothing follows it. Outgoing rows: to (where it went), origin (whose move: canvas, local, internet, schedule, bridge), surface (the published interface) and widget. dropped, on either, says why it was refused. The first place to look when something moves that should not, or does not move when it should.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "limit": {
+      "description": "How many of the newest rows (default 50)",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+     }
+    },
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "describe_widgets",
+   "title": "The widgets and how to write them",
+   "description": "Every widget OSCAR has -- tag, attributes, defaults, and each setting with its type, options and meaning -- plus how an interface is written as HTML. Read this before building one.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "validate_draft",
+   "title": "Judge a draft",
+   "description": "Run an interface written as HTML through the widgets' own validators: unknown settings, values their panels would refuse, missing or repeated ids. Returns the complaints to correct. Nothing is saved.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "html": {
+      "type": "string",
+      "maxLength": 2097152,
+      "description": "The whole HTML document"
+     }
+    },
+    "required": [
+     "html"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "create_draft",
+   "title": "Save a draft for the person to review",
+   "description": "Validate an interface and, if it is clean, save it as a draft: it appears in OSCAR under File > Open, with a Draft badge. It is a file for a person to review: nothing is published, nothing is sent, and no project is changed. An existing draft of the same name is only replaced when overwrite is true.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "The draft's name, shown in File > Open"
+     },
+     "html": {
+      "type": "string",
+      "maxLength": 2097152,
+      "description": "The whole HTML document"
+     },
+     "overwrite": {
+      "description": "Replace an existing draft of the same name",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "name",
+     "html"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  }
+ ]
+}

@@ -510,24 +510,44 @@ server, which emits the actual OSC packet over UDP.
 ## OSCAR for AI assistants (MCP)
 
 A running OSCAR is an MCP server, so an assistant such as Claude can read it
-and build for it: what is published and what each widget is set to, the MIDI
-ports, the recent network activity ("why isn't my light responding?"), every
-widget's settings and how a surface is written -- and it can draft a whole
-surface as HTML, judged by the widgets' own validators, saved into your Load
-list for you to review. **No tool touches the wire**: nothing is sent,
-published or driven; a draft does nothing until you open it and decide.
+and build for it: your projects, what is published and what each widget is
+set to, the MIDI ports, the recent network activity ("why isn't my light
+responding?"), every widget's settings and how an interface is written -- and
+it can draft a whole interface as HTML, judged by the widgets' own validators
+and listed under **File > Open** with a Draft badge for you to review. **No
+tool touches the wire**: nothing is sent, published or driven, and no project
+is changed; a draft does nothing until you open it and decide.
 
-Connect with the shim (reads `~/.oscar/mcp.json`, which OSCAR writes on every
-start):
+Connect an assistant once, with OSCAR running and the **MCP** pill in its top
+bar green:
 
 ```
-claude mcp add oscar -- node <path-to-oscar>/scripts/oscar-mcp.js
+claude mcp add oscar -- npx -y createwithoscar
 ```
 
-or point an HTTP-capable client at `http://127.0.0.1:<port>/mcp` with the
-token from that same file as a bearer token. The endpoint answers this
-machine only, the token is new on every start, and `MCP: false` in
+That is Claude Code. Claude Desktop takes the one-click bundle `OSCAR.mcpb`
+from the website; any other MCP app takes a server with the command `npx` and
+the arguments `-y createwithoscar`. [`createwithoscar`](createwithoscar/) is
+the helper the assistant starts: a small program with no dependencies that
+finds this OSCAR through `~/.oscar/mcp.json` (written on every start) and
+passes each request on. When OSCAR is not running the assistant still sees
+the tools, and is told to ask you to start it.
+
+The tools: `status`, `list_projects`, `read_project`, `list_published`,
+`read_published`, `midi_ports`, `recent_activity`, `describe_widgets`,
+`validate_draft` and `create_draft`, the only one that writes anything.
+
+OSCAR's own endpoint is `http://127.0.0.1:<port>/mcp`, with the token from
+that same file as a bearer token. It answers this machine only, the token is
+new on every start, the MCP pill closes it, and `MCP: false` in
 `lib/features.js` removes the whole thing.
+
+Working on the helper: it lives in `createwithoscar/` and is published to npm
+from there (`npm publish`, by its owner). `npm run build:mcp` rewrites the
+copy of the tools it carries and the bundle's manifest after
+`lib/mcp/tools.js` changes (a test fails until it is run), and
+`npm run pack:mcpb` packs `release-builds/OSCAR.mcpb`. From a source checkout,
+`node scripts/oscar-mcp.js` is the same program.
 
 ## Tutorials
 
