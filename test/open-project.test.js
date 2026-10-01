@@ -160,12 +160,8 @@ test("the Publish window is told who the canvas is, and a canvas that is nobody 
 
   const dialog = read("public/src/export_dialog.js");
   assert.match(dialog, /Promise\.resolve\(\)\s*\.then\(options\.beforeOpen\)\s*\.then\(open, open\);/, "the window opens whether or not that could be done");
-  assert.match(dialog, /address: mine \? mine\.id : fileStem\(typed\),/);
-  assert.match(dialog, /publishButton\.textContent = mine \? "Update" : "Publish on the local network";/);
-  assert.match(dialog, /if \(answer\.confirm\) \{/);
   assert.match(dialog, /project: \{ id: as\.id, name: as\.name \},\s*source: options\.source \? options\.source\(as\.name, as\.id\) : undefined,/);
   assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(page\.id\) \+ "\/project"\)/);
-  assert.match(dialog, /if \(page\.editable && !isMine && options\.openProject\) \{/, "no Edit for the one on the canvas, nor for a page with no copy");
 });
 
 test("the Publish button's dot can be taken off again: the button is found by its class, not by a tooltip the dot changes", () => {

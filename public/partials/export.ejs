@@ -1,70 +1,44 @@
 <div id="export-panel" style="display: none;">
   <div class="oscar-export">
-    <p class="oscar-export-lead">
-      Publishing turns your interface into a page of its own, separate from
-      the editor, that OSCAR serves at an address any phone, tablet or
-      computer on the network can open. It stays as it is while you carry on
-      editing, until you publish it again.
-    </p>
-
-    <!-- The misunderstanding behind every "my page does nothing" report,
-         stated before the button rather than after it. -->
-    <div class="oscar-export-warning">
-      <strong>OSCAR has to keep running.</strong>
-      A browser cannot send OSC, DMX or MIDI on its own, so the page hands
-      everything to OSCAR, which puts it on the network. The device showing
-      the page has to be on the same network as this computer.
-    </div>
-
     <div id="export-pages" class="oscar-export-warning" style="display: none;">
       <strong>Only the first page is published.</strong>
       This project has <span id="export-page-count"></span> pages, and a
       published page is a single surface.
     </div>
 
-    <!-- The address and the button on one line where there is room. A
-         project that is live already has its address, and is told so here
-         in place of the field: publishing it again is Update, one click. -->
-    <div class="oscar-export-publish-row">
-      <div id="publish-field" class="oscar-export-field">
-        <label for="export-name">Address</label>
-        <input id="export-name" class="o-input" type="text" placeholder="my-interface" />
+    <!-- The project on the canvas: who can open it, the one code for the
+         address that goes with that, and one button that says what it does.
+         What used to be explained in paragraphs above the button is behind
+         the question mark; the misunderstanding behind every "my page does
+         nothing" report (OSCAR has to keep running) is its first sentence. -->
+    <div id="publish-card" class="oscar-publish-card">
+      <div class="oscar-publish-card-head">
+        <span id="publish-title" class="oscar-publish-title"></span>
+        <span id="publish-card-access" class="oscar-publish-card-access"></span>
+        <button
+          id="publish-help"
+          class="oscar-publish-help"
+          type="button"
+          aria-label="How publishing works"
+          data-tooltip-pos="bottom"
+          data-tooltip="OSCAR has to keep running: a browser cannot send OSC, DMX or MIDI on its own, so the page hands everything to OSCAR. Publishing makes a page of its own, separate from the editor, at an address phones and tablets open. It stays as it is while you carry on editing, until you publish the changes."
+        >?</button>
       </div>
-      <div id="publish-mine" class="oscar-export-field oscar-publish-mine" style="display: none;">
-        <span id="publish-mine-text"></span>
+      <div id="publish-card-where"></div>
+      <div class="oscar-publish-card-foot">
+        <span id="publish-state" class="oscar-publish-state"></span>
+        <button id="publish-button" class="o-btn o-btn-primary oscar-export-go" type="button">Publish</button>
       </div>
-      <button id="publish-button" class="o-btn o-btn-primary oscar-export-go" type="button">
-        Publish on the local network
-      </button>
     </div>
-
-    <p id="publish-field-hint" class="oscar-export-hint">
-      The address is where people open it: /show/ and this name. It stays the
-      same when you publish this project again, whatever the project is called.
-    </p>
 
     <div id="export-error" class="oscar-export-error" style="display: none;"></div>
     <div id="export-note" class="oscar-export-note" style="display: none;"></div>
 
-    <div id="publish-result" class="oscar-publish-result" style="display: none;">
-      <div id="publish-qr" class="oscar-publish-qr" role="img" aria-label="QR code for the address"></div>
-      <div class="oscar-publish-where">
-        <span id="publish-status" class="oscar-publish-status"></span>
-        <a id="publish-link" class="o-link oscar-publish-link" target="_blank" rel="noopener"></a>
-        <span class="oscar-export-hint">Scan it with the phone's camera, or type the address.</span>
-        <button id="publish-copy" class="o-btn oscar-publish-copy" type="button">Copy the link</button>
-      </div>
-    </div>
-
-    <!-- Side by side: what is published here, and, from an extension, what
-         else it can be (reachable from the internet). Both lists show their
-         addresses in the one box above, with its code and its Copy. -->
+    <!-- Whatever else this OSCAR has live, in a short list: who can open
+         each, Edit, and a menu for the rest. Click a row for its code. -->
     <div class="oscar-publish-columns">
       <div id="published-box" class="oscar-published" style="display: none;">
-        <div class="oscar-published-title">Live interfaces</div>
-        <p class="oscar-published-lead">
-          Each has one setting for who can open it. This network: any phone, tablet or computer on the same Wi-Fi. Off: no device at all, though its schedules and bridges still run. Edit puts the project it was published from back on the canvas.
-        </p>
+        <div class="oscar-published-title">Also live on this OSCAR</div>
         <ul id="published-list" class="oscar-published-list"></ul>
       </div>
 

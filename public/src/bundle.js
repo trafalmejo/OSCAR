@@ -2344,7 +2344,34 @@ function surfaceAddress(host, httpPort, path) {
   return "http://" + shown + suffix + path;
 }
 
-module.exports = { surfaceAddress };
+/**
+ * The address a project is published at the first time, made from its title
+ * so that nobody has to think of one: "Lobby visitors" is /show/lobby-visitors.
+ * One that is taken -- by another project, by a page from before -- gets a
+ * number, and so does a name OSCAR uses itself. The address is fixed from
+ * then on: renaming the project does not move it, and printed codes keep
+ * working.
+ *
+ * @param {string} title
+ * @param {string[]} taken the addresses in use, and the reserved ones
+ */
+function addressFor(title, taken) {
+  const used = new Set(Array.isArray(taken) ? taken : []);
+  const stem =
+    String(title == null ? "" : title)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 56)
+      .replace(/-+$/g, "") || "interface";
+  if (!used.has(stem)) return stem;
+  for (let n = 2; ; n++) {
+    if (!used.has(stem + "-" + n)) return stem + "-" + n;
+  }
+}
+
+module.exports = { surfaceAddress, addressFor };
 
 },{}],17:[function(require,module,exports){
 "use strict";
@@ -22435,7 +22462,8 @@ module.exports = {
 
 },{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":25,"../../../lib/widgets/fields":23,"../../../lib/widgets/midi-source":30}],44:[function(require,module,exports){
 /**
- * "Export" in the editor: turning the canvas into one file that works.
+ * "Publish" in the editor: turning the project on the canvas into a page
+ * phones open, and looking after every such page this OSCAR serves.
  *
  * What the toolbar had before is GrapesJS's own export-template command, a
  * modal of markup to copy out -- labelled "See code", because that is all it
@@ -22444,7 +22472,12 @@ module.exports = {
  * them if they were.
  *
  * This asks the adapter for markup with those settings written in, and the
- * OSCAR server to wrap it around the standalone runtime (POST /export).
+ * OSCAR server to wrap it around the standalone runtime (POST /publish).
+ *
+ * The window is the project on the canvas, on a card at the top -- who can
+ * open it, the one code for the address that goes with that, and one button
+ * that says what it does -- and under it, in a short list, whatever else
+ * this OSCAR has live.
  *
  * Not named oscar_*.js: requiring "./oscar_<name>" is how an entry point used
  * to pull in one widget's file, and test/widgets.test.js refuses that pattern
@@ -22452,7 +22485,7 @@ module.exports = {
  */
 
 var { exportSnapshot } = require("./adapters/grapesjs");
-var { surfaceAddress } = require("../../lib/published-address");
+var { surfaceAddress, addressFor } = require("../../lib/published-address");
 var { surfaceStamp } = require("../../lib/export/stamp");
 var features = require("../../lib/features");
 // Draws the code for a published surface's address. Bundled, like everything
@@ -22460,6 +22493,9 @@ var features = require("../../lib/features");
 var qrcode = require("qrcode-generator");
 
 var DEFAULT_NAME = "my-interface";
+
+// Addresses OSCAR uses itself (lib/published.js): never offered for a project.
+var RESERVED = ["preview"];
 
 /** A filename someone can find again, from whatever they typed. */
 function fileStem(name) {
@@ -22492,13 +22528,26 @@ function download(blob, filename) {
   }, 1000);
 }
 
+function el(tag, className, text) {
+  var node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function button(label, className) {
+  var node = el("button", className || "o-btn", label);
+  node.type = "button";
+  return node;
+}
+
 /**
  * @param {object} editor the GrapesJS editor
  * @param {object} options
  *        host, port: what the editor was started with, offered for a download
  *        only if the server cannot be asked again
  *        project(): { id, name } -- which project the canvas is (lib/open-project.js)
- *        adopt({ id, name }): the canvas was published as this project; remember it
+ *        beforeOpen(): a promise; the canvas is made a project before the window opens
  *        newId(): an id for a canvas that had none
  *        source(name, id): the project on the canvas, as a file would hold it
  *        openProject({ id, name, data }): Edit -- put that project on the canvas
@@ -22508,21 +22557,20 @@ function install(editor, options) {
   if (!container) return;
 
   var publishButton = document.getElementById("publish-button");
-  var resultBox = document.getElementById("publish-result");
-  var qrBox = document.getElementById("publish-qr");
-  var statusLine = document.getElementById("publish-status");
-  var link = document.getElementById("publish-link");
-  var copyButton = document.getElementById("publish-copy");
-  var mineBox = document.getElementById("publish-mine");
-  var mineText = document.getElementById("publish-mine-text");
-  var fieldBox = document.getElementById("publish-field");
-  var fieldHint = document.getElementById("publish-field-hint");
+  var titleBox = document.getElementById("publish-title");
+  var cardAccess = document.getElementById("publish-card-access");
+  var cardWhere = document.getElementById("publish-card-where");
+  var stateLine = document.getElementById("publish-state");
   var publishedBox = document.getElementById("published-box");
   var publishedList = document.getElementById("published-list");
   var extrasBox = document.getElementById("publish-extras");
-  // The canvas's stamp against each published copy's (lib/export/stamp.js):
-  // the dialog says "older than your canvas" on the surface this canvas would
-  // publish over, and the toolbar's Publish button wears a dot meanwhile.
+  var errorBox = document.getElementById("export-error");
+  var noteBox = document.getElementById("export-note");
+  var pagesBox = document.getElementById("export-pages");
+  var pageCount = document.getElementById("export-page-count");
+  // The canvas's stamp against its published copy's (lib/export/stamp.js):
+  // the card says "Changes not published", and the toolbar's Publish button
+  // wears a dot meanwhile.
   var canvasStamp = null; // worked out at most once per wave of edits
 
   // What an extension adds to the dialog (addSection below): each gets a box
@@ -22531,9 +22579,10 @@ function install(editor, options) {
   var sections = [];
   var latest = null; // the id of the surface published from this dialog, most recently
   var known = []; // the published surfaces, as GET /published last said
-  var staleMark = null; // the "outdated" mark on the row of this canvas's own interface
-  // Who can open an interface is one setting on its row. OSCAR itself knows
-  // two answers: off, and this network. An extension may add further ones
+  var titles = {}; // project id -> what that project is called now, as GET /projects last said
+  var shown = null; // the row whose code is open, by surface id
+  // Who can open an interface is one setting. OSCAR itself knows two
+  // answers: off, and this network. An extension may add further ones
   // (addAccessLevel below): where the interface is reachable beyond it.
   var levels = [];
   var levelMaps = {}; // level id -> { surface id: true } as its read() last said, or null: not on offer now
@@ -22547,6 +22596,11 @@ function install(editor, options) {
     return surfaceAddress(lanHost || window.location.hostname, window.location.port || 80, path);
   }
 
+  function say(box, message) {
+    box.textContent = message;
+    box.style.display = message ? "block" : "none";
+  }
+
   /**
    * Ask every section to draw itself. A section that throws loses only its
    * own box; the dialog and the other sections go on.
@@ -22556,7 +22610,7 @@ function install(editor, options) {
       try {
         section.draw(section.box, {
           surfaces: known.map(function (page) {
-            return { id: page.id, name: page.name || page.id, path: page.path, address: addressOf(page.path) };
+            return { id: page.id, name: titleOf(page), path: page.path, address: addressOf(page.path) };
           }),
           latest: latest,
           refresh: refreshPublished,
@@ -22572,27 +22626,12 @@ function install(editor, options) {
   }
 
   /**
-   * The one box for an address: its code, the link, and Copy. Both lists
-   * below show their addresses here, a published surface's on the network
-   * and, from an extension, wherever else it is reachable.
+   * An address used to be shown on request, in a box of its own with a QR
+   * button beside every link. Each interface now shows the one code for
+   * where it is opened, without being asked, so there is nothing to do here;
+   * the function stays so that a section written for the old dialog still runs.
    */
-  function showAddress(address, status) {
-    statusLine.textContent = status;
-    link.textContent = address;
-    link.href = address;
-    // Drawn by the library from an address OSCAR or an extension built;
-    // nothing a person typed reaches it except a name, reduced to a-z, 0-9 and "-".
-    var code = qrcode(0, "M");
-    code.addData(address);
-    code.make();
-    qrBox.innerHTML = code.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
-    copyButton.textContent = "Copy the link";
-    resultBox.style.display = "flex";
-  }
-
-  function showPublished(path, replaced) {
-    showAddress(addressOf(path), replaced ? "Published again, at the same address:" : "Published. Open it at:");
-  }
+  function showAddress() {}
 
   /** Which project the canvas is: { id, name }, id null for a canvas that is nobody yet. */
   function project() {
@@ -22603,8 +22642,8 @@ function install(editor, options) {
   /**
    * The live interface that is this canvas's own: the one published from the
    * project it is, whatever either is called now. Not matched by name -- a
-   * name is reused for different designs, and a wrong match would let Update
-   * replace a running show with another one.
+   * name is reused for different designs, and a wrong match would let
+   * Publish changes replace a running show with another one.
    */
   function publishedMine() {
     var id = project().id;
@@ -22615,35 +22654,15 @@ function install(editor, options) {
     return null;
   }
 
-  /** The address this canvas would publish at right now. */
-  function currentStem() {
-    var mine = publishedMine();
-    if (mine) return mine.id;
-    return fileStem(nameField && nameField.value ? nameField.value : project().name);
+  /** What an interface is called: its project's title as it is now, else as it was published. */
+  function titleOf(page) {
+    return (page.project && titles[page.project]) || page.name || page.id;
   }
 
   function staleNow() {
     var mine = publishedMine();
     if (!mine || !mine.stamp || canvasStamp === null) return false;
     return mine.stamp !== canvasStamp;
-  }
-
-  /**
-   * The top of the window, for the project on the canvas: one that is live
-   * already is updated at the address it has, in one click; one that is not
-   * is asked where it should go.
-   */
-  function paintMine() {
-    var mine = publishedMine();
-    if (fieldBox) fieldBox.style.display = mine ? "none" : "";
-    if (fieldHint) fieldHint.style.display = mine ? "none" : "";
-    if (mineBox) mineBox.style.display = mine ? "" : "none";
-    if (mine && mineText) {
-      mineText.textContent =
-        '"' + (mine.name || mine.id) + '" is live at /show/' + mine.id + (staleNow() ? ". The canvas has changes that are not live yet." : ". It is up to date.");
-    }
-    publishButton.textContent = mine ? "Update" : "Publish on the local network";
-    if (staleMark) staleMark.style.display = staleNow() ? "" : "none";
   }
 
   /**
@@ -22655,16 +22674,29 @@ function install(editor, options) {
     return document.querySelector(".gjs-pn-options .oscar-publish-btn");
   }
 
-  function paintStale() {
-    var button = toolbarButton();
-    if (!button) return;
+  /**
+   * The foot of the card: one button, which says what it does. Publish for
+   * a project that is not live; Publish changes when the canvas is ahead of
+   * what phones see; and no button at all when there is nothing to send.
+   */
+  function paintFoot() {
+    var mine = publishedMine();
     var stale = staleNow();
-    button.classList.toggle("oscar-publish-stale", stale);
-    button.setAttribute(
-      "data-tooltip",
-      stale ? "Publish your interface \u00b7 the published copy is older than your canvas" : "Publish your interface"
-    );
-    paintMine();
+    if (stateLine) {
+      stateLine.textContent = !mine ? "" : stale ? "Changes not published" : "Up to date";
+      stateLine.setAttribute("data-state", !mine ? "none" : stale ? "grace" : "valid");
+    }
+    publishButton.textContent = mine ? "Publish changes" : "Publish";
+    publishButton.style.display = mine && !stale ? "none" : "";
+  }
+
+  function paintStale() {
+    paintFoot();
+    var bar = toolbarButton();
+    if (!bar) return;
+    var stale = staleNow();
+    bar.classList.toggle("oscar-publish-stale", stale);
+    bar.setAttribute("data-tooltip", stale ? "Publish your interface · the published copy is older than your canvas" : "Publish your interface");
   }
 
   /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
@@ -22692,263 +22724,7 @@ function install(editor, options) {
     refreshPublished().then(restamp);
   }, 3000);
 
-  copyButton.onclick = function () {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(link.href).then(function () {
-      copyButton.textContent = "Copied";
-      setTimeout(function () {
-        copyButton.textContent = "Copy the link";
-      }, 1500);
-    });
-  };
-
-  function refreshPublished() {
-    return fetch("/published")
-      .then(function (res) {
-        return res.ok ? res.json() : [];
-      })
-      .then(function (pages) {
-        // Each level says which surfaces are at it. One that fails, or has
-        // nothing to offer now, is left out of this drawing and no more.
-        return Promise.all(
-          levels.map(function (level) {
-            return Promise.resolve()
-              .then(function () {
-                return level.read();
-              })
-              .then(
-                function (map) {
-                  levelMaps[level.id] = map && typeof map === "object" ? map : null;
-                },
-                function () {
-                  levelMaps[level.id] = null;
-                }
-              );
-          })
-        ).then(function () {
-          return pages;
-        });
-      })
-      .then(function (pages) {
-        publishedList.textContent = "";
-        staleMark = null;
-        known = Array.isArray(pages) ? pages : [];
-        known.forEach(function (page) {
-          var row = document.createElement("li");
-          var isOff = page.access === "off";
-          // The extension level this interface is at, if any: it outranks "network".
-          var at = isOff ? null : levelAt(page.id);
-
-          // A green dot first: this row is not a file, it is being served
-          // right now -- the same green, and the same breath, as the LIVE
-          // pill in the top bar.
-          var live = document.createElement("span");
-          live.className = "oscar-published-live";
-          live.title = "Live: OSCAR is serving this surface right now.";
-          if (isOff) {
-            // Grey and still: the page is kept, and nobody can open it.
-            live.className = "oscar-published-live oscar-published-off";
-            live.title = "Off: no device can open this interface. Its schedules and bridges still run.";
-          }
-          row.appendChild(live);
-
-          var open = document.createElement("a");
-          open.className = "o-link";
-          open.target = "_blank";
-          open.rel = "noopener";
-          open.href = addressOf(page.path);
-          // The project's name, when OSCAR was told it; the whole address is in the box above, from QR.
-          open.textContent = page.name || page.id;
-          open.title = addressOf(page.path);
-          open.className = "o-link oscar-published-name";
-          row.appendChild(open);
-
-          var mine = publishedMine();
-          var isMine = !!mine && mine.id === page.id;
-          if (isMine) {
-            var here = document.createElement("span");
-            here.className = "oscar-published-state";
-            here.setAttribute("data-state", "valid");
-            here.textContent = "on the canvas";
-            here.title = "This is the project open in the editor. Update sends your changes to it.";
-            row.appendChild(here);
-          }
-
-          // Only the interface published from this project is judged against
-          // the canvas. The mark is always there on its row, and shown or
-          // hidden as the canvas changes (paintMine), with the dialog open.
-          if (isMine) {
-            var stale = document.createElement("span");
-            stale.className = "oscar-published-state";
-            stale.setAttribute("data-state", "grace");
-            stale.textContent = "outdated";
-            stale.title = "The canvas has changed since this was published. Update sends the changes.";
-            stale.style.display = staleNow() ? "" : "none";
-            staleMark = stale;
-            row.appendChild(stale);
-          }
-
-          // Who can open it: one setting, the row's own.
-          var access = document.createElement("select");
-          access.className = "o-input oscar-published-access";
-          access.setAttribute("aria-label", "Who can open " + (page.name || page.id));
-          [{ id: "off", label: "Off" }, { id: "network", label: "This network" }]
-            .concat(
-              levels
-                .filter(function (level) {
-                  return levelMaps[level.id];
-                })
-                .map(function (level) {
-                  return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label };
-                })
-            )
-            .forEach(function (choice) {
-              var option = document.createElement("option");
-              option.value = choice.id;
-              option.textContent = choice.label;
-              access.appendChild(option);
-            });
-          access.value = isOff ? "off" : at ? at.id : "network";
-          access.onchange = function () {
-            changeAccess(page, at, access.value, access);
-          };
-          row.appendChild(access);
-
-          var qr = document.createElement("button");
-          qr.type = "button";
-          qr.className = "o-btn";
-          qr.textContent = "QR";
-          qr.disabled = isOff;
-          qr.setAttribute("aria-label", "Show the QR code for " + page.id);
-          qr.onclick = function () {
-            showPublished(page.path, false);
-            statusLine.textContent = "Open it at:";
-          };
-          row.appendChild(qr);
-
-          var file = document.createElement("button");
-          file.type = "button";
-          file.className = "o-btn";
-          file.textContent = "Download";
-          file.setAttribute("aria-label", "Download " + page.id + " as a file");
-          file.onclick = function () {
-            openDownload(page.id);
-          };
-          row.appendChild(file);
-
-          // Edit: the project this was published from, back on the canvas.
-          // Not for the one already there, nor for a page with no copy kept.
-          if (page.editable && !isMine && options.openProject) {
-            var editIt = document.createElement("button");
-            editIt.type = "button";
-            editIt.className = "o-btn";
-            editIt.textContent = "Edit";
-            editIt.setAttribute("aria-label", "Edit " + (page.name || page.id));
-            editIt.onclick = function () {
-              openForEdit(page);
-            };
-            row.appendChild(editIt);
-          }
-
-          var remove = document.createElement("button");
-          remove.type = "button";
-          remove.className = "o-btn";
-          remove.textContent = "Take down";
-          remove.title = "Stop serving this interface, and its schedules and bridges with it.";
-          remove.setAttribute("aria-label", "Take down " + (page.name || page.id));
-          remove.onclick = function () {
-            // A section may have a reason to think twice (the surface is
-            // public on the internet, say), and something to do first.
-            var warnings = sections
-              .map(function (section) {
-                return typeof section.guard === "function" ? section.guard(page.id) : null;
-              })
-              .filter(Boolean);
-            var unpublish = function () {
-              remove.disabled = true;
-              fetch("/published/" + encodeURIComponent(page.id), { method: "DELETE" }).then(function () {
-                if (link.href === addressOf(page.path)) resultBox.style.display = "none";
-                refreshPublished();
-              });
-            };
-            if (!warnings.length) return unpublish();
-            var reasons = warnings.map(function (w) {
-              return w.reason;
-            });
-            var proceed = function () {
-              Promise.all(
-                warnings.map(function (w) {
-                  return typeof w.first === "function" ? w.first() : null;
-                })
-              ).then(unpublish, function (err) {
-                say(errorBox, (err && err.message) || "That could not be done.");
-              });
-            };
-            if (window.$ && typeof window.$.confirm === "function") {
-              window.$.confirm({
-                title: "Still on the internet",
-                content: reasons.join(" "),
-                // Room for the long button; the theme keeps it on a narrow window.
-                boxWidth: "560px",
-                useBootstrap: false,
-                buttons: {
-                  confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
-                  cancel: { text: "Keep it live" },
-                },
-              });
-            } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
-              proceed();
-            }
-          };
-          row.appendChild(remove);
-
-          // Under the row: where it is opened, as it stands. An extension's
-          // level draws its own part beside it -- its link, and how that is doing.
-          var where = document.createElement("div");
-          where.className = "oscar-published-where";
-          if (isOff) {
-            where.textContent = "No device can open it. Its schedules and bridges still run.";
-          } else {
-            var local = document.createElement("a");
-            local.className = "o-link";
-            local.target = "_blank";
-            local.rel = "noopener";
-            local.href = addressOf(page.path);
-            local.textContent = addressOf(page.path);
-            where.appendChild(document.createTextNode(at ? "On this Wi-Fi, faster: " : "On this network: "));
-            where.appendChild(local);
-          }
-          levels.forEach(function (level) {
-            if (!levelMaps[level.id] || typeof level.draw !== "function") return;
-            var box = document.createElement("span");
-            box.className = "oscar-published-level";
-            try {
-              level.draw(box, { id: page.id, name: page.name || page.id, path: page.path, address: addressOf(page.path), access: page.access }, {
-                active: !!at && at.id === level.id,
-                show: showAddress,
-                refresh: refreshPublished,
-              });
-            } catch (err) {
-              console.error("An access level of the Publish dialog failed:", err);
-            }
-            // First on the line when it is where the interface is opened.
-            if (at && at.id === level.id) where.insertBefore(box, where.firstChild);
-            else where.appendChild(box);
-          });
-          row.appendChild(where);
-          publishedList.appendChild(row);
-        });
-        publishedBox.style.display = publishedList.children.length ? "block" : "none";
-        paintStale();
-        paintMine();
-        drawSections();
-      })
-      .catch(function () {
-        publishedBox.style.display = "none";
-        known = [];
-        drawSections();
-      });
-  }
+  // ---- who can open it ----------------------------------------------------
 
   /** The extension level a surface is at, out of what the levels last said, or null. */
   function levelAt(id) {
@@ -22976,7 +22752,7 @@ function install(editor, options) {
    * One setting, three kinds of step. Leaving an extension's level is asked
    * of that level first; off and network are OSCAR's own; and an extension's
    * level is chosen with the interface open to the network, which it builds
-   * on. Whatever fails is said, and the row is drawn again as things stand.
+   * on. Whatever fails is said, and the window is drawn again as things stand.
    */
   function changeAccess(page, at, to, select) {
     say(errorBox, "");
@@ -23013,6 +22789,236 @@ function install(editor, options) {
       .then(refreshPublished);
   }
 
+  /** Who can open it: one setting, the interface's own. */
+  function accessSelect(page, at) {
+    var isOff = page.access === "off";
+    var access = el("select", "o-input oscar-published-access");
+    access.setAttribute("aria-label", "Who can open " + titleOf(page));
+    [{ id: "off", label: "Off" }, { id: "network", label: "This network" }]
+      .concat(
+        levels
+          .filter(function (level) {
+            return levelMaps[level.id];
+          })
+          .map(function (level) {
+            return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label };
+          })
+      )
+      .forEach(function (choice) {
+        var option = el("option", "", choice.label);
+        option.value = choice.id;
+        access.appendChild(option);
+      });
+    access.value = isOff ? "off" : at ? at.id : "network";
+    access.onclick = function (event) {
+      // On a row, a click anywhere else opens its code; not this one.
+      event.stopPropagation();
+    };
+    access.onchange = function () {
+      changeAccess(page, at, access.value, access);
+    };
+    return access;
+  }
+
+  // ---- where it is opened: the one code, the link, Copy ---------------------
+
+  function qrOf(address) {
+    // Drawn by the library from an address OSCAR or an extension built;
+    // nothing a person typed reaches it except a title, reduced to a-z, 0-9 and "-".
+    var code = qrcode(0, "M");
+    code.addData(address);
+    code.make();
+    var box = el("div", "oscar-publish-qr");
+    box.setAttribute("role", "img");
+    box.setAttribute("aria-label", "QR code for " + address);
+    box.innerHTML = code.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    return box;
+  }
+
+  function linkTo(address) {
+    var link = el("a", "o-link oscar-publish-link", address);
+    link.href = address;
+    link.target = "_blank";
+    link.rel = "noopener";
+    return link;
+  }
+
+  /**
+   * Where an interface is opened, as it stands: one code, for the address
+   * that goes with who can open it. An extension's level leads with its own
+   * address (anyone with the link); the local one then stays as text beside
+   * it, for a tablet on the same Wi-Fi. Off has neither.
+   */
+  function whereBlock(page, at) {
+    var where = el("div", "oscar-publish-spot");
+    if (page.access === "off") {
+      where.appendChild(el("p", "oscar-publish-off", "No device can open it. Its schedules and bridges still run."));
+      return where;
+    }
+    var local = addressOf(page.path);
+    var lead = null;
+    try {
+      lead = at && typeof at.link === "function" ? at.link(page.id) : null;
+    } catch (err) {
+      console.error("An access level of the Publish dialog failed:", err);
+    }
+    var address = (lead && lead.address) || local;
+
+    where.appendChild(qrOf(address));
+    var lines = el("div", "oscar-publish-lines");
+
+    var first = el("div", "oscar-publish-line");
+    first.appendChild(linkTo(address));
+    var copy = button("Copy", "o-btn oscar-publish-copy");
+    copy.onclick = function (event) {
+      event.stopPropagation();
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(address).then(function () {
+        copy.textContent = "Copied";
+        setTimeout(function () {
+          copy.textContent = "Copy";
+        }, 1500);
+      });
+    };
+    first.appendChild(copy);
+    lines.appendChild(first);
+
+    if (lead && lead.state && lead.state.text) {
+      var state = el("span", "oscar-published-state", lead.state.text);
+      state.setAttribute("data-state", lead.state.tone || "none");
+      if (lead.state.title) state.title = lead.state.title;
+      var second = el("div", "oscar-publish-line");
+      second.appendChild(state);
+      lines.appendChild(second);
+    }
+
+    if (lead && lead.address) {
+      var third = el("div", "oscar-publish-line oscar-publish-local");
+      third.appendChild(document.createTextNode("On this Wi-Fi: "));
+      third.appendChild(linkTo(local));
+      lines.appendChild(third);
+    } else {
+      lines.appendChild(el("div", "oscar-publish-line oscar-publish-local", "Scan it with a phone on this network, or type the address."));
+    }
+
+    // An extension's own part: what it has to say beyond its address.
+    levels.forEach(function (level) {
+      if (!levelMaps[level.id] || typeof level.draw !== "function") return;
+      var box = el("span", "oscar-published-level");
+      try {
+        level.draw(box, { id: page.id, name: titleOf(page), path: page.path, address: local, access: page.access }, {
+          active: !!at && at.id === level.id,
+          show: showAddress,
+          refresh: refreshPublished,
+        });
+      } catch (err) {
+        console.error("An access level of the Publish dialog failed:", err);
+      }
+      lines.appendChild(box);
+    });
+
+    where.appendChild(lines);
+    return where;
+  }
+
+  // ---- what else can be done with one: Download, Take down ------------------
+
+  /** A small menu under a "..." button: built, placed, closed by a click away. */
+  function moreMenu(anchor, items) {
+    var open = document.querySelector(".oscar-open-menu");
+    if (open) open.remove();
+    var at = anchor.getBoundingClientRect();
+    var menu = el("div", "oscar-open-menu");
+    menu.style.top = Math.round(at.bottom + 4) + "px";
+    menu.style.left = Math.round(Math.max(8, at.right - 200)) + "px";
+    items.forEach(function (item) {
+      var row = button(item.label, "oscar-open-menu-item");
+      row.onclick = function () {
+        menu.remove();
+        item.run();
+      };
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+    var away = function (event) {
+      if (menu.contains(event.target)) return;
+      menu.remove();
+      document.removeEventListener("pointerdown", away, true);
+    };
+    setTimeout(function () {
+      document.addEventListener("pointerdown", away, true);
+    }, 0);
+  }
+
+  function moreButton(page) {
+    var more = button("⋯", "o-btn oscar-published-more");
+    more.setAttribute("aria-label", "More for " + titleOf(page));
+    more.onclick = function (event) {
+      event.stopPropagation();
+      moreMenu(more, [
+        {
+          label: "Download as a file…",
+          run: function () {
+            openDownload(page.id);
+          },
+        },
+        {
+          label: "Take down",
+          run: function () {
+            takeDown(page);
+          },
+        },
+      ]);
+    };
+    return more;
+  }
+
+  /**
+   * Take an interface down: stop serving it, and its schedules and bridges
+   * with it. A section may have a reason to think twice (it is open to
+   * anyone with the link, say), and something to do first.
+   */
+  function takeDown(page) {
+    var warnings = sections
+      .map(function (section) {
+        return typeof section.guard === "function" ? section.guard(page.id) : null;
+      })
+      .filter(Boolean);
+    var unpublish = function () {
+      fetch("/published/" + encodeURIComponent(page.id), { method: "DELETE" }).then(function () {
+        refreshPublished();
+      });
+    };
+    if (!warnings.length) return unpublish();
+    var reasons = warnings.map(function (w) {
+      return w.reason;
+    });
+    var proceed = function () {
+      Promise.all(
+        warnings.map(function (w) {
+          return typeof w.first === "function" ? w.first() : null;
+        })
+      ).then(unpublish, function (err) {
+        say(errorBox, (err && err.message) || "That could not be done.");
+      });
+    };
+    if (window.$ && typeof window.$.confirm === "function") {
+      window.$.confirm({
+        title: "Still on the internet",
+        content: reasons.join(" "),
+        // Room for the long button; the theme keeps it on a narrow window.
+        boxWidth: "560px",
+        useBootstrap: false,
+        buttons: {
+          confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
+          cancel: { text: "Keep it live" },
+        },
+      });
+    } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
+      proceed();
+    }
+  }
+
   /** Edit: fetch the project a live interface was published from, and hand it to the editor. */
   function openForEdit(page) {
     say(errorBox, "");
@@ -23031,11 +23037,164 @@ function install(editor, options) {
       });
   }
 
-  var nameField = document.getElementById("export-name");
-  var errorBox = document.getElementById("export-error");
-  var noteBox = document.getElementById("export-note");
-  var pagesBox = document.getElementById("export-pages");
-  var pageCount = document.getElementById("export-page-count");
+  // ---- the card: the project on the canvas -----------------------------------
+
+  function drawCard() {
+    var mine = publishedMine();
+    var now = project();
+    if (titleBox) titleBox.textContent = now.name || "Untitled";
+    cardAccess.textContent = "";
+    cardWhere.textContent = "";
+    if (mine) {
+      var at = mine.access === "off" ? null : levelAt(mine.id);
+      cardAccess.appendChild(accessSelect(mine, at));
+      cardAccess.appendChild(moreButton(mine));
+      cardWhere.appendChild(whereBlock(mine, at));
+    } else {
+      // Not live yet. No address to choose: it is made from the title.
+      var taken = known
+        .map(function (page) {
+          return page.id;
+        })
+        .concat(RESERVED);
+      cardWhere.appendChild(
+        el("p", "oscar-publish-off", "Not published yet. It will open at /show/" + addressFor(now.name, taken) + ", for phones and tablets on this network.")
+      );
+    }
+    paintFoot();
+  }
+
+  // ---- the list: whatever else is live on this OSCAR -------------------------
+
+  function drawRows() {
+    publishedList.textContent = "";
+    var mine = publishedMine();
+    known.forEach(function (page) {
+      if (mine && page.id === mine.id) return; // on the card above
+      var isOff = page.access === "off";
+      // The extension level this interface is at, if any: it outranks "network".
+      var at = isOff ? null : levelAt(page.id);
+      var row = el("li");
+
+      // A green dot first: this row is not a file, it is being served
+      // right now -- the same green, and the same breath, as the LIVE
+      // pill in the top bar.
+      var live = document.createElement("span");
+      live.className = "oscar-published-live";
+      live.title = "Live: OSCAR is serving this surface right now.";
+      if (isOff) {
+        // Grey and still: the page is kept, and nobody can open it.
+        live.className = "oscar-published-live oscar-published-off";
+        live.title = "Off: no device can open this interface. Its schedules and bridges still run.";
+      }
+      row.appendChild(live);
+
+      var name = el("span", "oscar-published-name", titleOf(page));
+      name.title = "/show/" + page.id;
+      row.appendChild(name);
+      if (!page.editable) {
+        var bare = el("span", "oscar-published-note", "no project copy to edit");
+        bare.title = "Published before OSCAR kept a copy of the project beside each interface. It runs as it is, and can be taken down.";
+        row.appendChild(bare);
+      }
+
+      row.appendChild(accessSelect(page, at));
+
+      // Edit: the project this was published from, back on the canvas.
+      if (page.editable && options.openProject) {
+        var editIt = button("Edit");
+        editIt.setAttribute("aria-label", "Edit " + titleOf(page));
+        editIt.onclick = function (event) {
+          event.stopPropagation();
+          openForEdit(page);
+        };
+        row.appendChild(editIt);
+      }
+      row.appendChild(moreButton(page));
+
+      // Click a row to see its code: the same block the card shows, under it.
+      row.classList.add("oscar-published-row");
+      row.tabIndex = 0;
+      row.setAttribute("aria-expanded", String(shown === page.id));
+      var toggle = function () {
+        shown = shown === page.id ? null : page.id;
+        drawRows();
+      };
+      row.onclick = toggle;
+      row.onkeydown = function (event) {
+        if (event.target !== row) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggle();
+        }
+      };
+      if (shown === page.id) {
+        var open = whereBlock(page, at);
+        open.onclick = function (event) {
+          event.stopPropagation();
+        };
+        row.appendChild(open);
+      }
+      publishedList.appendChild(row);
+    });
+    publishedBox.style.display = publishedList.children.length ? "block" : "none";
+  }
+
+  function refreshPublished() {
+    return Promise.all([
+      fetch("/published").then(function (res) {
+        return res.ok ? res.json() : [];
+      }),
+      // What each project is called now: an interface is shown under its
+      // project's title, not the one it had the day it was published.
+      fetch("/projects")
+        .then(function (res) {
+          return res.ok ? res.json() : [];
+        })
+        .catch(function () {
+          return [];
+        }),
+    ])
+      .then(function (answers) {
+        // Each level says which surfaces are at it. One that fails, or has
+        // nothing to offer now, is left out of this drawing and no more.
+        return Promise.all(
+          levels.map(function (level) {
+            return Promise.resolve()
+              .then(function () {
+                return level.read();
+              })
+              .then(
+                function (map) {
+                  levelMaps[level.id] = map && typeof map === "object" ? map : null;
+                },
+                function () {
+                  levelMaps[level.id] = null;
+                }
+              );
+          })
+        ).then(function () {
+          return answers;
+        });
+      })
+      .then(function (answers) {
+        known = Array.isArray(answers[0]) ? answers[0] : [];
+        titles = {};
+        (Array.isArray(answers[1]) ? answers[1] : []).forEach(function (row) {
+          if (row && !row.template && row.id) titles[row.id] = row.name;
+        });
+        drawCard();
+        drawRows();
+        paintStale();
+        drawSections();
+      })
+      .catch(function () {
+        known = [];
+        drawCard();
+        drawRows();
+        drawSections();
+      });
+  }
 
   // ---- a published surface as a file -------------------------------------
   // Its own window, in place of the dialog, which comes back when it closes.
@@ -23103,16 +23262,10 @@ function install(editor, options) {
       });
   };
 
-  function say(box, message) {
-    box.textContent = message;
-    box.style.display = message ? "block" : "none";
-  }
-
   function open() {
     say(errorBox, "");
     say(noteBox, "");
     latest = null;
-    nameField.value = fileStem(project().name);
     restamp();
 
     // A project saved while Pages was on may still hold several; with the
@@ -23137,13 +23290,12 @@ function install(editor, options) {
         /* the values from startup stand */
       })
       .then(refreshPublished);
-    resultBox.style.display = "none";
 
+    drawCard();
     container.style.display = "block";
     editor.Modal.open({
-      title: "Publish your interface",
+      title: "Publish",
       content: container,
-      // Wider than the other dialogs: two lists side by side, a row each.
       attributes: { class: "modal-login modal-publish" },
     });
   }
@@ -23157,7 +23309,7 @@ function install(editor, options) {
    *
    * `as` is who the canvas is published as: { id, name, address }.
    */
-  function request(as, replace) {
+  function request(as) {
     say(errorBox, "");
     say(noteBox, "");
     var snapshot = exportSnapshot(editor);
@@ -23171,29 +23323,32 @@ function install(editor, options) {
         css: snapshot.css,
         project: { id: as.id, name: as.name },
         source: options.source ? options.source(as.name, as.id) : undefined,
-        replace: replace === true,
       }),
     };
   }
 
-  /** Who the canvas is published as, worked out once per click. */
-  function publishingAs() {
+  /**
+   * Publish the canvas. A project that is live keeps the address it has;
+   * one that is not is given one made from its title, with a number when
+   * that is taken. Nobody is asked for an address, and nothing that is
+   * already live is ever replaced by a project that is not its own.
+   */
+  function publish(tried) {
     var now = project();
     var mine = publishedMine();
-    var typed = (nameField.value || "").trim();
-    return {
-      // A canvas that is nobody yet becomes somebody by being published.
+    var taken = known
+      .map(function (page) {
+        return page.id;
+      })
+      .concat(RESERVED, tried || []);
+    var as = {
       id: now.id || (options.newId ? options.newId() : null),
-      name: now.name || (mine && mine.name) || typed || DEFAULT_NAME,
-      // Its own address if it has one; otherwise what was typed.
-      address: mine ? mine.id : fileStem(typed),
+      name: now.name || "Untitled",
+      address: mine ? mine.id : addressFor(now.name || "Untitled", taken),
     };
-  }
-
-  function publish(as, replace) {
     publishButton.disabled = true;
 
-    fetch("/publish", request(as, replace))
+    fetch("/publish", request(as))
       .then(function (res) {
         return res.json().then(function (answer) {
           if (!res.ok) throw new Error((answer && answer.error) || "The surface could not be published.");
@@ -23201,27 +23356,12 @@ function install(editor, options) {
         });
       })
       .then(function (answer) {
-        // The address is somebody's already: another project's, or a page
-        // from before OSCAR kept track. Asked once, and sent again with the answer.
+        // Somebody published at that address a moment ago: the next number, not their page.
         if (answer.confirm) {
-          var yes = function () {
-            publish(as, true);
-          };
-          if (window.$ && typeof window.$.confirm === "function") {
-            window.$.confirm({
-              title: "Replace the interface?",
-              content: answer.confirm + " Phones that have it open will get this one when they reload.",
-              boxWidth: "520px",
-              useBootstrap: false,
-              buttons: { confirm: { text: "Replace it", btnClass: "btn-red", action: yes }, cancel: { text: "Cancel" } },
-            });
-          } else if (window.confirm(answer.confirm)) yes();
-          return null;
+          if ((tried || []).length >= 5) throw new Error("No free address could be found for this project.");
+          return publish((tried || []).concat(as.address));
         }
-        // The canvas is this project from now on, across a reload too.
-        if (options.adopt) options.adopt({ id: as.id, name: as.name });
         latest = answer.id;
-        showPublished(answer.path, answer.replaced);
         if (answer.linked && answer.linked.length) {
           say(noteBox, "Too large to embed, so these are loaded from OSCAR as the page opens: " + answer.linked.join(", "));
         }
@@ -23236,7 +23376,7 @@ function install(editor, options) {
   }
 
   publishButton.onclick = function () {
-    publish(publishingAs(), false);
+    publish();
   };
 
   // The canvas is made a project first, when it is nobody yet: what is
@@ -23252,16 +23392,16 @@ function install(editor, options) {
   return {
     /**
      * Let an extension add to the dialog. `draw(box, view)` is called with a
-     * box of the extension's own, under the publish result and above the list
-     * of what is published, every time the dialog opens and every time what is
-     * published changes. `view` is { surfaces: [{ id, name, path, address }], latest:
-     * the id just published from here or null, refresh(), show(address,
-     * status), onUnpublish(guard) }: show puts an address in the dialog's own
-     * box, with its code and Copy, as a published surface's is shown; guard(id)
-     * is asked before a surface is unpublished and answers null, or { reason,
-     * first() } -- a reason to think twice, put to the person, and what to do
-     * first if they go on (first returns a promise). Drawing again replaces
-     * what the box held; the extension keeps any state it needs.
+     * box of the extension's own, under the list of what is live, every time
+     * the dialog opens and every time what is published changes. `view` is
+     * { surfaces: [{ id, name, path, address }], latest: the id just
+     * published from here or null, refresh(), show(address, status),
+     * onUnpublish(guard) }: guard(id) is asked before an interface is taken
+     * down and answers null, or { reason, first() } -- a reason to think
+     * twice, put to the person, and what to do first if they go on (first
+     * returns a promise). show() does nothing now: each interface shows its
+     * own code. Drawing again replaces what the box held; the extension
+     * keeps any state it needs.
      */
     addSection: function (draw) {
       if (typeof draw !== "function") throw new Error("A section of the Publish dialog is a draw function");
@@ -23283,10 +23423,14 @@ function install(editor, options) {
      *   choose(surfaceId)  put the interface at this level; a promise, rejected
      *            with an Error whose message is for the person when it cannot be
      *   leave(surfaceId)   take it off this level; a promise
-     *   draw(box, surface, view)  optional: the level's own part of the row's
-     *            second line -- its link, how that is doing. surface is { id,
-     *            name, path, address, access }; view is { active, show(address,
-     *            status), refresh() }
+     *   link(surfaceId)    optional: where an interface at this level is
+     *            opened, { address, state: { text, tone, title } }, or null.
+     *            Its address is the one the interface's code is drawn for;
+     *            tone is "valid", "grace" or "invalid"
+     *   draw(box, surface, view)  optional: anything more the level has to
+     *            say about an interface, beside where it is opened. surface
+     *            is { id, name, path, address, access }; view is { active,
+     *            show(address, status), refresh() }
      *
      * An interface at an extension's level is open to the network as well,
      * and switching it Off leaves the level first.

@@ -1,38 +1,123 @@
 "use strict";
 
-// The Publish dialog has a place for an extension to add to it, so that what
-// else a published surface can become (reachable from the internet, say) is
-// offered where publishing is, not in a dialog of the extension's own.
+// The Publish window: the project on the canvas on a card at the top -- who
+// can open it, the one code for the address that goes with that, and one
+// button that says what it does -- and under it, in a short list, whatever
+// else this OSCAR has live. And the places an extension adds to: a section
+// under the list, and a further answer to who can open an interface.
 
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const read = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+const read = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8").replace(/\r\n/g, "\n");
 
-test("the dialog keeps a box for extensions, after the list of what is published on the local network", () => {
+// ---- the card: the project on the canvas -----------------------------------------------
+
+test("the window opens on the project on the canvas: its title, and nothing to fill in", () => {
   const markup = read("public/partials/export.ejs");
-  const result = markup.indexOf('id="publish-result"');
-  const extras = markup.indexOf('id="publish-extras"');
+  const card = markup.indexOf('id="publish-card"');
   const list = markup.indexOf('id="published-box"');
-  assert.ok(result !== -1 && extras !== -1 && list !== -1);
-  assert.ok(result < list && list < extras);
-  assert.match(markup, /Publish on the local network/);
-  assert.match(markup, /Live interfaces/, "one list: each row says who can open it");
-  // The one box above serves every address: code, link, Copy.
-  const columns = markup.indexOf('class="oscar-publish-columns"');
-  assert.ok(columns !== -1 && columns < list && extras < markup.indexOf("</div>", extras) );
-  assert.ok(markup.indexOf('id="publish-copy"') !== -1 && markup.indexOf('id="publish-copy"') < columns);
+  const extras = markup.indexOf('id="publish-extras"');
+  assert.ok(card !== -1 && list !== -1 && extras !== -1 && card < list && list < extras, "the card, then what else is live, then an extension's box");
+  assert.ok(!/<input[^>]*id="export-name"/.test(markup), "no name or address field: the project has its title, and the address is made from it");
+  assert.ok(!/class="oscar-export-lead"/.test(markup.slice(0, list)), "no paragraphs above the button");
+  assert.match(markup, /id="publish-help"[\s\S]{0,200}data-tooltip="OSCAR has to keep running:/, "the explanations are behind the question mark, the one that matters first");
+  assert.match(markup, /Also live on this OSCAR/);
+
   const dialog = read("public/src/export_dialog.js");
-  assert.match(dialog, /show: showAddress,/, "a section can put an address in the box");
-  assert.match(dialog, /navigator\.clipboard\.writeText\(link\.href\)/);
-  // Each list opens with a line of about the same length, so their rows sit level.
-  assert.match(markup, /class="oscar-published-lead"/);
+  assert.match(dialog, /if \(titleBox\) titleBox\.textContent = now\.name \|\| "Untitled";/);
+  assert.match(dialog, /title: "Publish",/);
   assert.match(dialog, /class: "modal-login modal-publish"/);
 });
 
-test("before a surface is unpublished, a section may give a reason to think twice, and something to do first", () => {
+test("one button, which says what it does: Publish, Publish changes, or none when there is nothing to send", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /publishButton\.textContent = mine \? "Publish changes" : "Publish";/);
+  assert.match(dialog, /publishButton\.style\.display = mine && !stale \? "none" : "";/, "up to date: no button at all");
+  assert.match(dialog, /stateLine\.textContent = !mine \? "" : stale \? "Changes not published" : "Up to date";/);
+  assert.ok(!/"Update"/.test(dialog), "the word Update is gone");
+  assert.ok(!/"on the canvas"|"outdated"/.test(dialog), "and so are the marks a row wore: the open project is not a row");
+  assert.match(dialog, /if \(mine && page\.id === mine\.id\) return; \/\/ on the card above/);
+});
+
+test("nobody is asked for an address: it is made from the title, with a number when that is taken", () => {
+  const { addressFor } = require("../lib/published-address");
+  assert.strictEqual(addressFor("Lobby visitors", []), "lobby-visitors");
+  assert.strictEqual(addressFor("Lobby visitors", ["lobby-visitors"]), "lobby-visitors-2");
+  assert.strictEqual(addressFor("Lobby visitors", ["lobby-visitors", "lobby-visitors-2"]), "lobby-visitors-3");
+  assert.strictEqual(addressFor("Untitled", []), "untitled");
+  assert.strictEqual(addressFor("  ¡¡¡  ", []), "interface", "a title with nothing an address can hold");
+  assert.strictEqual(addressFor("Preview", ["preview"]), "preview-2", "a name OSCAR uses itself is taken like any other");
+  assert.ok(addressFor("x".repeat(200), []).length <= 56);
+  assert.match(addressFor("Été à la Plage, 2026!", []), /^[a-z0-9][a-z0-9-]*$/);
+
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /address: mine \? mine\.id : addressFor\(now\.name \|\| "Untitled", taken\),/, "a project that is live keeps the address it has");
+  assert.match(dialog, /\.concat\(RESERVED, tried \|\| \[\]\);/);
+  // An address somebody took a moment ago is not replaced: the next number is tried.
+  assert.match(dialog, /if \(answer\.confirm\) \{\s*if \(\(tried \|\| \[\]\)\.length >= 5\) throw new Error\("No free address could be found for this project\."\);\s*return publish\(\(tried \|\| \[\]\)\.concat\(as\.address\)\);/);
+  assert.ok(!/replace: /.test(dialog), "and nothing that is live is ever replaced by a project that is not its own");
+  assert.match(dialog, /"Not published yet\. It will open at \/show\/" \+ addressFor\(now\.name, taken\)/, "said before the button is pressed");
+});
+
+test("an interface shows the one code for where it is opened, without being asked; Off has none", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /var address = \(lead && lead\.address\) \|\| local;\s*where\.appendChild\(qrOf\(address\)\);/, "one code: an extension's address when it leads, else the local one");
+  assert.ok(!/textContent = "QR"/.test(dialog) && !/button\("QR"/.test(dialog), "no QR button anywhere");
+  assert.match(dialog, /navigator\.clipboard\.writeText\(address\)/, "Copy copies that same address");
+  assert.match(dialog, /third\.appendChild\(document\.createTextNode\("On this Wi-Fi: "\)\);\s*third\.appendChild\(linkTo\(local\)\);/, "the local address stays as text when another leads");
+  assert.match(dialog, /if \(page\.access === "off"\) \{\s*where\.appendChild\(el\("p", "oscar-publish-off", "No device can open it\. Its schedules and bridges still run\."\)\);\s*return where;/);
+  // The old box for an address, shown on request, is gone; a section written for it still runs.
+  assert.match(dialog, /function showAddress\(\) \{\}/);
+  const markup = read("public/partials/export.ejs");
+  assert.ok(!/id="publish-result"|id="publish-copy"|id="publish-qr"/.test(markup));
+});
+
+// ---- the list: whatever else is live -----------------------------------------------------
+
+test("each other interface is a row: its project's title as it is now, who can open it, Edit, and a menu for the rest", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /return \(page\.project && titles\[page\.project\]\) \|\| page\.name \|\| page\.id;/, "the title it has now, not the one it had the day it was published");
+  assert.match(dialog, /if \(row && !row\.template && row\.id\) titles\[row\.id\] = row\.name;/);
+  const name = dialog.indexOf('var name = el("span", "oscar-published-name", titleOf(page));');
+  const access = dialog.indexOf("row.appendChild(accessSelect(page, at));");
+  const edit = dialog.indexOf('var editIt = button("Edit");');
+  const more = dialog.indexOf("row.appendChild(moreButton(page));");
+  assert.ok(name !== -1 && name < access && access < edit && edit < more, "name, who can open it, Edit, the menu");
+  assert.match(dialog, /if \(page\.editable && options\.openProject\) \{/, "no Edit for a page with no project copy");
+  assert.match(dialog, /"no project copy to edit"/, "which says so");
+  // Download and Take down are under the menu, for the card's interface and for a row's alike.
+  assert.match(dialog, /label: "Download as a file(…|\\u2026)",\s*run: function \(\) \{\s*openDownload\(page\.id\);/);
+  assert.match(dialog, /label: "Take down",\s*run: function \(\) \{\s*takeDown\(page\);/);
+  assert.match(dialog, /cardAccess\.appendChild\(moreButton\(mine\)\);/);
+});
+
+test("clicking a row shows its code under it; its controls are not that click", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /shown = shown === page\.id \? null : page\.id;\s*drawRows\(\);/);
+  assert.match(dialog, /if \(shown === page\.id\) \{\s*var open = whereBlock\(page, at\);/, "the same block the card shows");
+  assert.match(dialog, /row\.setAttribute\("aria-expanded", String\(shown === page\.id\)\);/);
+  assert.match(dialog, /if \(event\.key === "Enter" \|\| event\.key === " "\) \{\s*event\.preventDefault\(\);\s*toggle\(\);/, "by keyboard too");
+  // The setting, Edit and the menu each stop the click from reaching the row.
+  assert.ok((dialog.match(/event\.stopPropagation\(\);/g) || []).length >= 5);
+});
+
+test("each row wears a green live dot: served, not stored; grey and still when it is off", () => {
+  const dialog = read("public/src/export_dialog.js");
+  const at = dialog.indexOf('live.className = "oscar-published-live"');
+  const name = dialog.indexOf('var name = el("span", "oscar-published-name"');
+  assert.ok(at !== -1 && name !== -1 && at < name, "the dot comes before the name");
+  assert.match(dialog, /live\.title = "Live: OSCAR is serving this surface right now\."/, "and says what it means");
+  assert.match(dialog, /live\.className = "oscar-published-live oscar-published-off";/);
+  const css = read("public/css/oscar_export.css");
+  assert.match(css, /\.oscar-published-list \.oscar-published-live \{/, "with the pill's green and breath");
+  assert.match(css, /animation: oscar-live-breathe/, "the same breath as the LIVE pill");
+  assert.match(css, /\.oscar-published-live\.oscar-published-off \{[^}]*animation: none;/, "no green, no breath");
+});
+
+test("before an interface is taken down, a section may give a reason to think twice, and something to do first", () => {
   const dialog = read("public/src/export_dialog.js");
   assert.match(dialog, /onUnpublish: function \(guard\) \{\s*section\.guard = guard;/);
   assert.match(dialog, /section\.guard\(page\.id\)/);
@@ -42,21 +127,49 @@ test("before a surface is unpublished, a section may give a reason to think twic
   assert.match(dialog, /typeof w\.first === "function" \? w\.first\(\) : null/);
 });
 
-test("a file is downloaded from a published surface's own row, through a window of its own that gives the dialog back", () => {
+test("a file is downloaded through a window of its own that gives the dialog back", () => {
   const markup = read("public/partials/export.ejs");
-  assert.ok(!/export-advanced|export-host|id="export-page"/.test(markup), "nothing about a file at the bottom of the dialog");
   assert.ok(markup.indexOf('id="download-panel"') !== -1 && markup.indexOf('id="download-host"') !== -1);
   const dialog = read("public/src/export_dialog.js");
-  // Between QR and Take down, on every row; Edit sits before Take down, where there is a project to edit.
-  const qr = dialog.indexOf('qr.textContent = "QR"');
-  const file = dialog.indexOf('file.textContent = "Download"');
-  const editIt = dialog.indexOf('editIt.textContent = "Edit"');
-  const remove = dialog.indexOf('remove.textContent = "Take down"');
-  assert.ok(qr !== -1 && qr < file && file < editIt && editIt < remove);
   assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(id\) \+ "\/file\?host=/);
   assert.match(dialog, /editor\.on\("modal:close", function \(\) \{\s*if \(!returning\) return;/);
   assert.ok(!/exportSnapshot\(editor, /.test(dialog), "publishing is the first page, and nothing else is asked");
 });
+
+// ---- who can open it -----------------------------------------------------------------------
+
+test("who can open it is one setting: Off and This network are OSCAR's own", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /\[\{ id: "off", label: "Off" \}, \{ id: "network", label: "This network" \}\]/);
+  assert.match(dialog, /access\.value = isOff \? "off" : at \? at\.id : "network";/, "an extension's level outranks the network; off outranks both");
+  assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(id\) \+ "\/access", \{/);
+  const css = read("public/css/oscar_export.css");
+  assert.match(css, /\.oscar-publish-columns \{[^}]*grid-template-columns: 1fr;/, "one list, the whole width");
+});
+
+test("an extension adds a further answer to who can open it, says where such an interface is opened, and may say more", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /addAccessLevel: function \(level\) \{/);
+  assert.match(dialog, /level\.id === "off" \|\| level\.id === "network"\) \{\s*throw new Error\("An access level has an id of its own"\);/, "OSCAR's own two cannot be taken");
+  assert.match(dialog, /typeof level\.read !== "function" \|\| typeof level\.choose !== "function" \|\| typeof level\.leave !== "function"/);
+  // Asked where each interface stands before anything is drawn; one that fails is left out, no more.
+  assert.match(dialog, /levelMaps\[level\.id\] = map && typeof map === "object" \? map : null;/);
+  assert.match(dialog, /function \(\) \{\s*levelMaps\[level\.id\] = null;\s*\}/);
+  // The steps of a change: leave the level it is at, then OSCAR's own word, or the network and then the level.
+  assert.match(dialog, /if \(at && at\.id !== to\) \{\s*chain = chain\.then\(function \(\) \{\s*return at\.leave\(page\.id\);/);
+  assert.match(dialog, /if \(page\.access === "off"\) \{\s*chain = chain\.then\(function \(\) \{\s*return postAccess\(page\.id, "network"\);/);
+  assert.match(dialog, /return level\.choose\(page\.id\);/);
+  assert.match(dialog, /\.then\(refreshPublished\);/, "and the window is drawn again as things stand, whatever happened");
+  // Its address leads; what else it has to say sits beside; a level that throws loses only that.
+  assert.match(dialog, /lead = at && typeof at\.link === "function" \? at\.link\(page\.id\) : null;/);
+  assert.strictEqual((dialog.match(/console\.error\("An access level of the Publish dialog failed:", err\);/g) || []).length, 2);
+
+  const editor = read("public/src/oscar_editor.js");
+  assert.match(editor, /addAccessLevel: function \(level\) \{\s*if \(publishDialog\) publishDialog\.addAccessLevel\(level\);/);
+  assert.match(editor, /return row\.access !== "off";/, "LOCAL counts what a device can open");
+});
+
+// ---- an extension's section, and About -------------------------------------------------------
 
 test("an extension is handed publishDialog.addSection, and a section is drawn whenever what is published is read again", () => {
   const editor = read("public/src/oscar_editor.js");
@@ -74,6 +187,7 @@ test("an extension is handed publishDialog.addSection, and a section is drawn wh
   assert.match(dialog, /surfaces: known\.map/);
   assert.match(dialog, /latest: latest,/);
   assert.match(dialog, /latest = answer\.id;/);
+  assert.match(dialog, /show: showAddress,/, "show is still handed over, and does nothing: each interface shows its own code");
 });
 
 test("OSCAR itself draws nothing in that box", () => {
@@ -101,55 +215,4 @@ test("the note about several pages is only for a project with Pages on", () => {
   assert.match(dialog, /var pages = features\.PAGES \? editor\.Pages\.getAll\(\)\.length : 1;/);
   const showcase = read("public/templates/oscar-showcase.html");
   assert.ok(!/osh-feature-pages|A page per room/.test(showcase), "the Showcase does not advertise a feature that is off");
-});
-
-test("each surface published on the local network wears a green live dot: served, not stored", () => {
-  const dialog = read("public/src/export_dialog.js");
-  const at = dialog.indexOf('live.className = "oscar-published-live"');
-  const name = dialog.indexOf('open.className = "o-link oscar-published-name"');
-  assert.ok(at !== -1 && name !== -1 && at < name, "the dot comes before the name");
-  assert.match(dialog, /live\.title = "Live: OSCAR is serving this surface right now\."/, "and says what it means");
-  const css = read("public/css/oscar_export.css");
-  assert.match(css, /\.oscar-published-list \.oscar-published-live \{/, "with the pill's green and breath");
-  assert.match(css, /animation: oscar-live-breathe/, "the same breath as the LIVE pill");
-});
-
-// ---- who can open it: one setting on each row ----------------------------------------
-
-test("each row has one setting for who can open it: Off and This network are OSCAR's own", () => {
-  const dialog = read("public/src/export_dialog.js");
-  assert.match(dialog, /\[\{ id: "off", label: "Off" \}, \{ id: "network", label: "This network" \}\]/);
-  assert.match(dialog, /access\.value = isOff \? "off" : at \? at\.id : "network";/, "an extension's level outranks the network; off outranks both");
-  assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(id\) \+ "\/access", \{/);
-  // Off is said on the row, not left to be guessed: a grey dot, no QR, and what still runs.
-  assert.match(dialog, /live\.className = "oscar-published-live oscar-published-off";/);
-  assert.match(dialog, /qr\.disabled = isOff;/);
-  assert.match(dialog, /where\.textContent = "No device can open it\. Its schedules and bridges still run\.";/);
-  const css = read("public/css/oscar_export.css");
-  assert.match(css, /\.oscar-published-live\.oscar-published-off \{[^}]*animation: none;/, "no green, no breath");
-  assert.match(css, /\.oscar-publish-columns \{[^}]*grid-template-columns: 1fr;/, "one list, the whole width");
-  const markup = read("public/partials/export.ejs");
-  assert.match(markup, /Off: no device at all, though its schedules and bridges still run\./);
-});
-
-test("an extension adds a further answer to who can open it, and its own part of the row", () => {
-  const dialog = read("public/src/export_dialog.js");
-  assert.match(dialog, /addAccessLevel: function \(level\) \{/);
-  assert.match(dialog, /level\.id === "off" \|\| level\.id === "network"\) \{\s*throw new Error\("An access level has an id of its own"\);/, "OSCAR's own two cannot be taken");
-  assert.match(dialog, /typeof level\.read !== "function" \|\| typeof level\.choose !== "function" \|\| typeof level\.leave !== "function"/);
-  // Asked where each interface stands before the rows are drawn; one that fails is left out, no more.
-  assert.match(dialog, /levelMaps\[level\.id\] = map && typeof map === "object" \? map : null;/);
-  assert.match(dialog, /function \(\) \{\s*levelMaps\[level\.id\] = null;\s*\}/);
-  // The steps of a change: leave the level it is at, then OSCAR's own word, or the network and then the level.
-  assert.match(dialog, /if \(at && at\.id !== to\) \{\s*chain = chain\.then\(function \(\) \{\s*return at\.leave\(page\.id\);/);
-  assert.match(dialog, /if \(page\.access === "off"\) \{\s*chain = chain\.then\(function \(\) \{\s*return postAccess\(page\.id, "network"\);/);
-  assert.match(dialog, /return level\.choose\(page\.id\);/);
-  assert.match(dialog, /\.then\(refreshPublished\);/, "and the row is drawn again as things stand, whatever happened");
-  // Its part of the row, and a level that throws loses only that.
-  assert.match(dialog, /console\.error\("An access level of the Publish dialog failed:", err\);/);
-  assert.match(dialog, /"On this Wi-Fi, faster: " : "On this network: "/, "the local address stays on the row when an extension's link leads");
-
-  const editor = read("public/src/oscar_editor.js");
-  assert.match(editor, /addAccessLevel: function \(level\) \{\s*if \(publishDialog\) publishDialog\.addAccessLevel\(level\);/);
-  assert.match(editor, /return row\.access !== "off";/, "LOCAL counts what a device can open");
 });

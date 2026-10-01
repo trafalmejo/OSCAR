@@ -46,12 +46,12 @@ test("the same controls stamp the same, whatever wraps them; a setting moves the
   assert.strictEqual(surfaceStamp(null), "");
 });
 
-test("the dialog says it on the copy this canvas would publish over, and the toolbar wears the dot", () => {
+test("the window says it of the interface published from this project, and the toolbar wears the dot", () => {
   const dialog = fs.readFileSync(path.join(__dirname, "..", "..", "public", "src", "export_dialog.js"), "utf8");
-  assert.match(dialog, /if \(isMine\) \{\s*var stale = document\.createElement\("span"\);/, "only the interface published from this project is judged");
-  assert.match(dialog, /if \(staleMark\) staleMark\.style\.display = staleNow\(\) \? "" : "none";/, "and its mark follows the canvas while the dialog is open");
+  assert.match(dialog, /var mine = publishedMine\(\);\s*if \(!mine \|\| !mine\.stamp \|\| canvasStamp === null\) return false;\s*return mine\.stamp !== canvasStamp;/, "only the interface published from this project is judged");
+  assert.match(dialog, /function paintStale\(\) \{\s*paintFoot\(\);/, "and the card's foot follows the canvas while the window is open");
   assert.match(dialog, /if \(known\[i\]\.project === id\) return known\[i\];/, "matched by which project it is, never by name");
-  assert.match(dialog, /"outdated"/);
+  assert.match(dialog, /"Changes not published"/);
   assert.match(dialog, /refreshPublished\(\)\.then\(restamp\)/, "the dot does not wait for the dialog");
   assert.match(dialog, /oscar-publish-stale/);
   assert.match(dialog, /editor\.on\("update"/, "the dot follows edits");

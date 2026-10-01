@@ -849,23 +849,33 @@ versions open as before.
 
 ## Publishing a working interface
 
-The download button in the top bar (**Publish your interface**) turns the
-canvas into **one self-contained page**, separate from the editor.
+**Publish**, in the top bar, turns the project on the canvas into **one
+self-contained page**, separate from the editor, that OSCAR serves at an
+address such as `http://192.168.1.20:8080/show/main-stage`. This is the way
+onto a **phone or tablet**.
 
-**Publish on the local network** keeps the page inside OSCAR and serves it at an
-address such as `http://192.168.1.20:8080/show/main-stage`, shown with a QR
-code to scan. It asks for an address and nothing else. This is the way onto a
-**phone or tablet**, and the way to use unless you have a reason not to.
+The window opens on the project on the canvas, on a card: its title, who can
+open it, the QR code for its address, and one button.
 
-A published interface remembers the project it was published from, and
-OSCAR keeps a copy of that project beside the page. So the dialog knows
-which live interface is the one on the canvas: publishing that project again
-is **Update**, one click, at the address it already has, whatever the project
-is called by then. Every other row has **Edit**, which puts the project it
-was published from back on the canvas, and **Take down**, which stops serving
-it. An address already in use by another project is replaced only after a
-question. Saving never changes what phones see; only Publish and Update do.
-A published page stays reachable while OSCAR is locked.
+- **Nothing to fill in.** The address is made from the project's title the
+  first time it is published ("Main stage" is `/show/main-stage`, with a
+  number added if that is taken) and stays the same from then on. Renaming
+  the project does not move it, so printed codes keep working.
+- **One button, which says what it does.** **Publish** for a project that is
+  not live; **Publish changes** when the canvas is ahead of what phones see;
+  and no button at all, beside "Up to date", when there is nothing to send.
+  Saving never changes what phones see; only publishing does.
+- **One code.** The QR code is always there, for the address that goes with
+  who can open the interface. Copy copies the same address.
+- **Also live on this OSCAR** lists whatever else is published, each under
+  its project's title: who can open it, **Edit**, which puts the project it
+  was published from on the canvas, and a menu with **Download as a file**
+  and **Take down**. Click a row to see its code.
+
+A published interface remembers the project it was published from, and OSCAR
+keeps a copy of that project beside the page: what phones are showing, and
+what **File → Revert to the published version** goes back to. A published
+page stays reachable while OSCAR is locked.
 
 Each live interface has one setting for **who can open it**. **This
 network** is any phone, tablet or computer on the same Wi-Fi, and is what a
