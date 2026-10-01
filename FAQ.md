@@ -39,9 +39,10 @@ page to Chrome through a sandbox (the address starts with `content://`), and
 iOS will not run one at all, so the page never reaches OSCAR. The same file
 works on a computer, where it opens as an ordinary `file://` page.
 
-On a phone or tablet, use **Publish on this OSCAR**, the main button of the
-Publish dialog, rather than the file download under Advanced. OSCAR then serves the very same page at an address, shown
-with a QR code, and any browser on the network can open it.
+On a phone or tablet, use **Publish**, in the top bar, rather than a
+downloaded file (**Download as a file**, in the menu of a live interface).
+OSCAR then serves the very same page at an address, shown with a QR code, and
+any browser on the network can open it.
 
 The phone has to be on the same network as the computer running OSCAR, and
 that computer's firewall has to let it in. If `/preview` opens on the phone,
