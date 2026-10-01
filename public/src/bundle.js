@@ -2302,23 +2302,40 @@ function nextSort(current, key) {
 }
 
 /**
- * The rows as the list shows them: templates first, in the order the server
- * sent them, then the projects sorted by the chosen column.
+ * The rows as the list shows them, in three parts: the person's own
+ * projects, sorted by the chosen column; an assistant's drafts, which are
+ * theirs to review; and the templates OSCAR ships with, in the order the
+ * server sent them.
  *
- * Templates stay on top whatever the sort, so they are always where people
- * last saw them. With `withTemplates` false -- the Save dialog, where picking
- * a template would only mean saving over its name -- they are left out.
+ * Projects come first because they live in OSCAR now and are what somebody
+ * opening the list is usually after. The templates are a long list that
+ * never changes: they fold away under one row (templatesOpen).
  */
-function orderProjects(rows, key, direction, withTemplates) {
+function sectionProjects(rows, key, direction) {
   const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
-  const templates = withTemplates === false ? [] : list.filter((row) => row.template === true);
-  return templates.concat(sortProjects(list.filter((row) => row.template !== true), key, direction));
+  const isDraft = (row) => row.template === true && String(row._id).indexOf("assistant:") === 0;
+  return {
+    projects: sortProjects(list.filter((row) => row.template !== true), key, direction),
+    drafts: list.filter(isDraft),
+    templates: list.filter((row) => row.template === true && !isDraft(row)),
+  };
+}
+
+/**
+ * Whether the templates are unfolded. As the person last left them, when
+ * they have said; otherwise folded when there is anything of their own to
+ * show, and open when the list would be empty without them -- a first
+ * launch, where the templates are the whole point of the window.
+ */
+function templatesOpen(chosen, sections) {
+  if (typeof chosen === "boolean") return chosen;
+  return sections.projects.length + sections.drafts.length === 0;
 }
 
 /** Newest first: someone opening Load usually wants what they saved last. */
 const DEFAULT_SORT = { key: "date", direction: "descending" };
 
-module.exports = { formatSize, sortProjects, orderProjects, nextSort, DEFAULT_SORT };
+module.exports = { formatSize, sortProjects, sectionProjects, templatesOpen, nextSort, DEFAULT_SORT };
 
 },{}],16:[function(require,module,exports){
 "use strict";
@@ -22801,12 +22818,19 @@ function install(editor, options) {
             return levelMaps[level.id];
           })
           .map(function (level) {
-            return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label };
+            // Why it cannot be chosen, when it cannot: it is on the list, greyed, and says so.
+            var why = typeof level.disabled === "function" ? level.disabled() : "";
+            return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label, why: why || "" };
           })
       )
       .forEach(function (choice) {
         var option = el("option", "", choice.label);
         option.value = choice.id;
+        if (choice.why) {
+          option.disabled = true;
+          // A browser shows no tooltip for an option: the reason is on the setting itself.
+          access.title = choice.why;
+        }
         access.appendChild(option);
       });
     access.value = isOff ? "off" : at ? at.id : "network";
@@ -23423,6 +23447,9 @@ function install(editor, options) {
      *   choose(surfaceId)  put the interface at this level; a promise, rejected
      *            with an Error whose message is for the person when it cannot be
      *   leave(surfaceId)   take it off this level; a promise
+     *   disabled()         optional: why the level cannot be chosen now, as a
+     *            sentence for the person, or "" when it can. It stays on the
+     *            list, greyed, with that sentence on the setting
      *   link(surfaceId)    optional: where an interface at this level is
      *            opened, { address, state: { text, tone, title } }, or null.
      *            Its address is the one the interface's code is drawn for;
@@ -24283,24 +24310,56 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
     projectsBody.textContent = "";
 
-    var rows = projectsTable.orderProjects(
-      projectRows,
-      projectSort.key,
-      projectSort.direction,
-      projectsMode === "Load"
-    );
+    // Your projects first, then an assistant's drafts, then the templates,
+    // folded under one row: they are many, and never change.
+    var sections = projectsTable.sectionProjects(projectRows, projectSort.key, projectSort.direction);
+    var showTemplates = projectsTable.templatesOpen(templatesChosen, sections);
 
-    if (projectsProblem || !rows.length) {
-      var empty = document.createElement("tr");
-      empty.className = "o-empty";
-      var message = projectCell(projectsProblem || "No saved projects yet");
+    if (projectsProblem) {
+      var failed = document.createElement("tr");
+      failed.className = "o-empty";
+      var message = projectCell(projectsProblem);
       message.colSpan = 4;
-      empty.appendChild(message);
-      projectsBody.appendChild(empty);
+      failed.appendChild(message);
+      projectsBody.appendChild(failed);
       return;
     }
+    if (!sections.projects.length && !sections.drafts.length) {
+      var empty = document.createElement("tr");
+      empty.className = "o-empty";
+      var none = projectCell("No projects yet. Start from a template below, or from File \u2192 New project.");
+      none.colSpan = 4;
+      empty.appendChild(none);
+      projectsBody.appendChild(empty);
+    }
 
-    rows.forEach(function (row) {
+    sections.projects.concat(sections.drafts).forEach(drawRow);
+
+    if (sections.templates.length) {
+      // One row for all of them: click it, or press Enter on it, to unfold.
+      var fold = document.createElement("tr");
+      fold.className = "o-table-fold";
+      fold.tabIndex = 0;
+      fold.setAttribute("aria-expanded", String(showTemplates));
+      var label = projectCell((showTemplates ? "\u25be " : "\u25b8 ") + "Templates (" + sections.templates.length + ")");
+      label.colSpan = 4;
+      fold.appendChild(label);
+      var toggle = function () {
+        templatesChosen = !showTemplates;
+        renderProjects();
+      };
+      fold.onclick = toggle;
+      fold.onkeydown = function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggle();
+        }
+      };
+      projectsBody.appendChild(fold);
+      if (showTemplates) sections.templates.forEach(drawRow);
+    }
+
+    function drawRow(row) {
         var tr = document.createElement("tr");
         tr.tabIndex = 0;
         tr.setAttribute(
@@ -24359,7 +24418,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
           confirmRemove(row);
         };
         actions.appendChild(remove);
-      });
+    }
   }
 
   // Marks the row in place rather than re-rendering, so a keyboard user's
@@ -24465,6 +24524,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   var projectName = document.getElementById("project-name");
   var openProject = createOpenProject(window.localStorage);
   var selectedRow = null; // the row picked in the projects list
+  var templatesChosen = null; // whether the person unfolded the templates; null until they say
 
   /** Text a person typed, made safe to put in a dialog (its content is markup). */
   function plain(text) {

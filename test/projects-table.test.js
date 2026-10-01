@@ -63,15 +63,33 @@ test("a header flips its own column, and a new column starts where people look f
   assert.deepStrictEqual(DEFAULT_SORT, { key: "date", direction: "descending" });
 });
 
-test("templates stay on top whatever the sort, and only Load shows them", () => {
-  const { orderProjects } = require("../lib/projects-table");
+test("the list is your projects first, sorted; then an assistant's drafts; then the templates, as the server sent them", () => {
+  const { sectionProjects } = require("../lib/projects-table");
   const rows = [
+    { _id: "t2", name: "Turntable", template: true },
     { _id: "b", name: "B", date: "2026-01-01" },
-    { _id: "t", name: "Template", template: true },
+    { _id: "assistant:draft-1", name: "A draft", template: true },
+    { _id: "t1", name: "Boombox", template: true },
     { _id: "a", name: "A", date: "2026-02-01" },
   ];
-  assert.deepStrictEqual(names(orderProjects(rows, "name", "descending", true)), ["Template", "B", "A"]);
-  assert.deepStrictEqual(names(orderProjects(rows, "date", "descending", true)), ["Template", "A", "B"]);
-  assert.deepStrictEqual(names(orderProjects(rows, "name", "ascending", false)), ["A", "B"]);
-  assert.deepStrictEqual(orderProjects(null, "name", "ascending", true), []);
+  const byName = sectionProjects(rows, "name", "descending");
+  assert.deepStrictEqual(names(byName.projects), ["B", "A"]);
+  assert.deepStrictEqual(names(byName.drafts), ["A draft"], "a draft is the person's to review, not a template");
+  assert.deepStrictEqual(names(byName.templates), ["Turntable", "Boombox"], "templates keep the server's order whatever the sort");
+  assert.deepStrictEqual(names(sectionProjects(rows, "date", "descending").projects), ["A", "B"]);
+  assert.deepStrictEqual(sectionProjects(null, "name", "ascending"), { projects: [], drafts: [], templates: [] });
+});
+
+test("the templates are folded away when there is anything of your own to show, and open when there is not", () => {
+  const { sectionProjects, templatesOpen } = require("../lib/projects-table");
+  const template = { _id: "t", name: "Boombox", template: true };
+  const withProjects = sectionProjects([template, { _id: "a", name: "A" }], "name", "ascending");
+  const firstLaunch = sectionProjects([template], "name", "ascending");
+  const onlyDraft = sectionProjects([template, { _id: "assistant:d", name: "Draft", template: true }], "name", "ascending");
+  assert.strictEqual(templatesOpen(null, withProjects), false, "projects are what the window opens on");
+  assert.strictEqual(templatesOpen(null, firstLaunch), true, "with nothing else, the templates are the point");
+  assert.strictEqual(templatesOpen(null, onlyDraft), false);
+  // Once the person has said, that stands.
+  assert.strictEqual(templatesOpen(true, withProjects), true);
+  assert.strictEqual(templatesOpen(false, firstLaunch), false);
 });

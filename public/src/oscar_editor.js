@@ -758,24 +758,56 @@ function initGrape(ipServer, socketPort, oscInPort) {
 
     projectsBody.textContent = "";
 
-    var rows = projectsTable.orderProjects(
-      projectRows,
-      projectSort.key,
-      projectSort.direction,
-      projectsMode === "Load"
-    );
+    // Your projects first, then an assistant's drafts, then the templates,
+    // folded under one row: they are many, and never change.
+    var sections = projectsTable.sectionProjects(projectRows, projectSort.key, projectSort.direction);
+    var showTemplates = projectsTable.templatesOpen(templatesChosen, sections);
 
-    if (projectsProblem || !rows.length) {
-      var empty = document.createElement("tr");
-      empty.className = "o-empty";
-      var message = projectCell(projectsProblem || "No saved projects yet");
+    if (projectsProblem) {
+      var failed = document.createElement("tr");
+      failed.className = "o-empty";
+      var message = projectCell(projectsProblem);
       message.colSpan = 4;
-      empty.appendChild(message);
-      projectsBody.appendChild(empty);
+      failed.appendChild(message);
+      projectsBody.appendChild(failed);
       return;
     }
+    if (!sections.projects.length && !sections.drafts.length) {
+      var empty = document.createElement("tr");
+      empty.className = "o-empty";
+      var none = projectCell("No projects yet. Start from a template below, or from File \u2192 New project.");
+      none.colSpan = 4;
+      empty.appendChild(none);
+      projectsBody.appendChild(empty);
+    }
 
-    rows.forEach(function (row) {
+    sections.projects.concat(sections.drafts).forEach(drawRow);
+
+    if (sections.templates.length) {
+      // One row for all of them: click it, or press Enter on it, to unfold.
+      var fold = document.createElement("tr");
+      fold.className = "o-table-fold";
+      fold.tabIndex = 0;
+      fold.setAttribute("aria-expanded", String(showTemplates));
+      var label = projectCell((showTemplates ? "\u25be " : "\u25b8 ") + "Templates (" + sections.templates.length + ")");
+      label.colSpan = 4;
+      fold.appendChild(label);
+      var toggle = function () {
+        templatesChosen = !showTemplates;
+        renderProjects();
+      };
+      fold.onclick = toggle;
+      fold.onkeydown = function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggle();
+        }
+      };
+      projectsBody.appendChild(fold);
+      if (showTemplates) sections.templates.forEach(drawRow);
+    }
+
+    function drawRow(row) {
         var tr = document.createElement("tr");
         tr.tabIndex = 0;
         tr.setAttribute(
@@ -834,7 +866,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
           confirmRemove(row);
         };
         actions.appendChild(remove);
-      });
+    }
   }
 
   // Marks the row in place rather than re-rendering, so a keyboard user's
@@ -940,6 +972,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   var projectName = document.getElementById("project-name");
   var openProject = createOpenProject(window.localStorage);
   var selectedRow = null; // the row picked in the projects list
+  var templatesChosen = null; // whether the person unfolded the templates; null until they say
 
   /** Text a person typed, made safe to put in a dialog (its content is markup). */
   function plain(text) {

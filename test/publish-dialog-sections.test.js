@@ -216,3 +216,19 @@ test("the note about several pages is only for a project with Pages on", () => {
   const showcase = read("public/templates/oscar-showcase.html");
   assert.ok(!/osh-feature-pages|A page per room/.test(showcase), "the Showcase does not advertise a feature that is off");
 });
+
+test("a level that cannot be chosen is on the list, greyed, and the setting says why", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /var why = typeof level\.disabled === "function" \? level\.disabled\(\) : "";/);
+  assert.match(dialog, /if \(choice\.why\) \{\s*option\.disabled = true;[\s\S]{0,160}access\.title = choice\.why;/);
+});
+
+test("the projects window opens on your projects; the templates fold under one row", () => {
+  const editor = read("public/src/oscar_editor.js");
+  assert.match(editor, /var sections = projectsTable\.sectionProjects\(projectRows, projectSort\.key, projectSort\.direction\);/);
+  assert.match(editor, /sections\.projects\.concat\(sections\.drafts\)\.forEach\(drawRow\);/);
+  assert.match(editor, /fold\.setAttribute\("aria-expanded", String\(showTemplates\)\);/);
+  assert.match(editor, /"Templates \(" \+ sections\.templates\.length \+ "\)"/, "the row says how many are behind it");
+  assert.match(editor, /templatesChosen = !showTemplates;\s*renderProjects\(\);/, "a click or Enter unfolds them, and it stays as left");
+  assert.match(editor, /if \(showTemplates\) sections\.templates\.forEach\(drawRow\);/);
+});

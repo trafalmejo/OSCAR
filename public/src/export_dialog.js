@@ -338,12 +338,19 @@ function install(editor, options) {
             return levelMaps[level.id];
           })
           .map(function (level) {
-            return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label };
+            // Why it cannot be chosen, when it cannot: it is on the list, greyed, and says so.
+            var why = typeof level.disabled === "function" ? level.disabled() : "";
+            return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label, why: why || "" };
           })
       )
       .forEach(function (choice) {
         var option = el("option", "", choice.label);
         option.value = choice.id;
+        if (choice.why) {
+          option.disabled = true;
+          // A browser shows no tooltip for an option: the reason is on the setting itself.
+          access.title = choice.why;
+        }
         access.appendChild(option);
       });
     access.value = isOff ? "off" : at ? at.id : "network";
@@ -960,6 +967,9 @@ function install(editor, options) {
      *   choose(surfaceId)  put the interface at this level; a promise, rejected
      *            with an Error whose message is for the person when it cannot be
      *   leave(surfaceId)   take it off this level; a promise
+     *   disabled()         optional: why the level cannot be chosen now, as a
+     *            sentence for the person, or "" when it can. It stays on the
+     *            list, greyed, with that sentence on the setting
      *   link(surfaceId)    optional: where an interface at this level is
      *            opened, { address, state: { text, tone, title } }, or null.
      *            Its address is the one the interface's code is drawn for;

@@ -563,19 +563,10 @@ a {
 .oscar-live-zone:hover {
   color: #c2f4d4;
 }
-/* PUBLIC is the internet's blue, as its rows are in the network log. */
-.oscar-live-public.oscar-live-on {
-  border-color: rgba(86, 156, 255, 0.55);
-  background: rgba(86, 156, 255, 0.12);
-  color: #9cc8ff;
-}
-.oscar-live-public.oscar-live-on:hover {
-  color: #cfe3ff;
-}
-.oscar-live-public.oscar-live-on .oscar-live-dot {
-  background: #569cff;
-  box-shadow: 0 0 5px rgba(86, 156, 255, 0.8);
-}
+/* PUBLIC is the same green as LOCAL: both say "live", and a second colour
+   on the bar read as a different kind of thing. (It was once the internet's
+   blue, as its rows are in the network log, where the colours tell origins
+   apart.) */
 .oscar-live-dot {
   width: 7px;
   height: 7px;

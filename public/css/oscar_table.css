@@ -198,3 +198,18 @@ th[aria-sort="descending"] .o-sort::after {
   border-color: rgba(47, 191, 95, 0.55);
   color: #8fe3ae;
 }
+
+/* The row the templates fold under: one line for a list that never changes,
+   so the person's own projects are what the window opens on. */
+.o-table tbody tr.o-table-fold td {
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+.o-table tbody tr.o-table-fold:hover td {
+  color: var(--o-text);
+}
