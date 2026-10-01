@@ -606,3 +606,113 @@
   box-shadow: 0 0 9px rgba(125, 255, 166, 0.95);
   animation: none;
 }
+
+/* ---- AI assistants: the window behind the MCP pill (assistants_dialog.js) ---- */
+/* How to connect on the left, what comes of it on the right; one column where the window is narrow. */
+.oscar-assist-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 0 32px;
+}
+@media (max-width: 900px) {
+  .oscar-assist-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.oscar-assist-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-md);
+  color: var(--o-text);
+  font-size: var(--o-text-sm);
+  cursor: pointer;
+}
+.oscar-assist-switch input {
+  margin: 0;
+}
+.oscar-assist-head {
+  margin: 18px 0 8px;
+  color: var(--o-text);
+  font-size: var(--o-text-sm);
+  font-weight: 600;
+}
+.oscar-assist-ways {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.oscar-assist-way strong {
+  display: block;
+  color: var(--o-text);
+  font-size: var(--o-text-sm);
+  font-weight: 600;
+}
+.oscar-assist-note {
+  margin: 2px 0 0;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  line-height: 1.45;
+}
+.oscar-assist a {
+  color: var(--o-accent);
+}
+/* Something to copy and its button: the text takes the room, the button keeps its size. */
+.oscar-assist-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+}
+.oscar-assist-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius-sm);
+  background: var(--o-surface);
+  color: var(--o-text);
+  font-family: var(--o-font-mono);
+  font-size: var(--o-text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.oscar-assist-copy .oscar-publish-copy {
+  flex: none;
+}
+.oscar-assist-asks li {
+  margin-bottom: 6px;
+}
+.oscar-assist-asks,
+.oscar-assist-calls {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  line-height: 1.6;
+}
+.oscar-assist-calls li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--o-border);
+}
+.oscar-assist-call {
+  color: var(--o-text);
+}
+.oscar-assist-foot {
+  margin: 16px 0 0;
+  font-size: var(--o-text-xs);
+}
+/* Off: how to connect is still worth reading, but it leads nowhere until the switch is on. */
+.oscar-assist-off .oscar-assist-ways,
+.oscar-assist-off .oscar-assist-asks {
+  opacity: 0.55;
+}

@@ -539,7 +539,7 @@ The tools: `status`, `list_projects`, `read_project`, `list_published`,
 
 OSCAR's own endpoint is `http://127.0.0.1:<port>/mcp`, with the token from
 that same file as a bearer token. It answers this machine only, the token is
-new on every start, the MCP pill closes it, and `MCP: false` in
+new on every start, the switch behind the MCP pill closes it, and `MCP: false` in
 `lib/features.js` removes the whole thing.
 
 Working on the helper: it lives in `createwithoscar/` and is published to npm

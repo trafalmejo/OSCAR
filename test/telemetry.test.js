@@ -126,7 +126,7 @@ test("the events OSCAR speaks are few, named, and where they claim to be", () =>
   assert.match(server, /telemetry\.tell\("app_start", \{ version: pkg\.version, os: process\.platform, arch: process\.arch \}\)/);
   assert.match(server, /osc: widgets\.some/, "the publish event carries booleans, never an address");
   assert.match(server, /telemetry\.tell\(opened\[1\] === "drafts" \? "draft_loaded" : "template_loaded"/);
-  assert.match(server, /onToolCall: \(tool\) => telemetry\.tell\("mcp_tool_called", \{ tool \}\)/);
+  assert.match(server, /onToolCall: \(tool\) => \{\s*telemetry\.tell\("mcp_tool_called", \{ tool \}\);/);
   const routes = readSource("routes", "index.js");
   assert.match(routes, /router\.get\("\/telemetry-state", editorOnly/);
   assert.match(routes, /router\.post\("\/telemetry-state", editorOnly/);

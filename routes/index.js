@@ -440,14 +440,16 @@ module.exports = function createRouter({
   // The MCP pill's switch: whether assistants may talk to this OSCAR.
   // Editing-grade, so editorOnly like everything else that changes state.
   router.get("/mcp-state", editorOnly, (req, res) => {
-    res.json({ available: !!mcp, on: !!(mcp && mcp.isOn()) });
+    // calls: what assistants lately asked for (the tool and when), for the
+    // window behind the pill.
+    res.json({ available: !!mcp, on: !!(mcp && mcp.isOn()), calls: mcp && mcp.calls ? mcp.calls() : [] });
   });
 
   router.post("/mcp-state", editorOnly, (req, res) => {
     if (!mcp) return res.status(404).json({ error: "MCP is not in this OSCAR." });
     const on = !!(req.body && req.body.on);
     mcp.setOn(on);
-    res.json({ on });
+    res.json({ on, calls: mcp.calls ? mcp.calls() : [] });
   });
 
   // What the server has lately done for the published surfaces: the backlog

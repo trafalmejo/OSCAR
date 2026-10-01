@@ -316,9 +316,42 @@ test("the MCP pill sits to the left of the LIVE pill and speaks plainly", () => 
   const livePill = editor.indexOf('id: "oscar-live-pill"');
   assert.ok(mcpPill !== -1 && livePill !== -1 && mcpPill < livePill, "added before the LIVE pill, which renders it to its left");
   assert.match(editor, /if \(features\.MCP\) \{/, "gone when the feature is off");
-  assert.match(editor, /never send\. Click to turn off\./, "the tooltip says what it is and is not");
+  assert.match(editor, /never send\. Click for how to connect one\./, "the tooltip says what it is and is not");
   const theme = readSource("public", "css", "oscar_theme.css");
   assert.match(theme, /\.oscar-mcp-word \{\n  text-decoration: line-through;/, "off is struck through, the LIVE pill's own off-language");
+});
+
+test("the pill opens a window: the switch, how to connect an assistant, and what they lately asked", () => {
+  const editor = readSource("public", "src", "oscar_editor.js");
+  assert.match(editor, /oscarAssistants\.install\(editor, \{ onState: paintMcp \}\);/, "the window paints the pill as it learns the switch");
+  assert.match(editor, /onBarClick\("\.oscar-mcp-btn", function \(\) \{\s*editor\.runCommand\("oscar-assistants"\);/, "a click opens it");
+  const pill = editor.slice(editor.indexOf("(function wireMcpPill()"), editor.indexOf("// ---- the RUNNING pill"));
+  assert.ok(!/method: "POST"/.test(pill), "the pill itself no longer throws the switch: one stray click closed the door");
+
+  const dialog = require("../public/src/assistants_dialog");
+  const packed = require("../createwithoscar/package.json");
+  assert.strictEqual(dialog.CLAUDE_CODE, "claude mcp add oscar -- npx -y " + packed.name, "what is copied is the package that is published");
+  assert.deepStrictEqual(JSON.parse(dialog.OTHER_APPS), { mcpServers: { oscar: { command: "npx", args: ["-y", packed.name] } } }, "and the settings other apps take are valid JSON");
+  assert.match(dialog.BUNDLE_URL, /^https:\/\/www\.createwithoscar\.site\/assets\/OSCAR\.mcpb$/, "the Claude Desktop file comes from the website");
+
+  const minute = 60 * 1000;
+  assert.strictEqual(dialog.ago(1000, 1000), "just now");
+  assert.strictEqual(dialog.ago(0, 3 * minute), "3 min ago");
+  assert.strictEqual(dialog.ago(0, 120 * minute), "2 h ago");
+  assert.strictEqual(dialog.ago(0, 49 * 60 * minute), "2 d ago");
+  assert.strictEqual(dialog.ago(5000, 1000), "just now", "a clock that disagrees is not an error");
+
+  const source = readSource("public", "src", "assistants_dialog.js");
+  assert.match(source, /It never sends anything to your rig, publishes, or changes a project\./, "the window says what an assistant cannot do");
+  assert.match(source, /parts\.box\.onchange = function \(\) \{\s*set\(parts\.box\.checked\);/, "the switch lives here now");
+  assert.match(source, /editor\.socket\.on\("mcp:called", function \(\) \{\s*if \(isOpen\(\)\) refresh\(\);/, "an open window redraws when an assistant asks");
+
+  const server = readSource("server.js");
+  assert.match(server, /mcpCalls\.push\(\{ tool, title: mcpTitles\[tool\] \|\| tool, at: Date\.now\(\) \}\);/, "the server remembers the tool and when, never what was asked");
+  assert.match(server, /if \(mcpCalls\.length > MCP_CALLS_KEPT\) mcpCalls\.shift\(\);/, "and only the last few");
+  assert.match(server, /io\.emit\("mcp:called"\);/);
+  const routes = readSource("routes", "index.js");
+  assert.match(routes, /on: !!\(mcp && mcp\.isOn\(\)\), calls: mcp && mcp\.calls \? mcp\.calls\(\) : \[\]/, "the state the window reads carries them");
 });
 
 test("a draft in the Load list is badged Draft, in the assistant green, and can be deleted", () => {

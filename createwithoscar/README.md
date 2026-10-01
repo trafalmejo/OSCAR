@@ -31,7 +31,7 @@ claude mcp add oscar -- npx -y createwithoscar
 [createwithoscar.site](https://www.createwithoscar.site/how-it-works) and
 double-click it. Nothing else to install.
 
-**Cursor, VS Code and other MCP apps**: add a server with the command `npx`
+**Cursor, VS Code, Windsurf, Codex, Gemini CLI and other MCP apps**: add a server with the command `npx`
 and the arguments `-y createwithoscar`. In most apps that is:
 
 ```json

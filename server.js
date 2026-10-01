@@ -79,6 +79,10 @@ if (process.env.OSCAR_LOCKED === "1") settings.set("locked", true);
 const MCP_HANDSHAKE = process.env.OSCAR_MCP_FILE || path.join(os.homedir(), ".oscar", "mcp.json");
 const mcpOn = () => settings.get("mcp") !== false;
 let mcpToken = null; // minted below, when /mcp is mounted
+// What assistants lately asked for, for the window behind the MCP pill: the
+// tool and when, never what the request held. Since this start, the last few.
+const mcpCalls = [];
+const MCP_CALLS_KEPT = 20;
 function writeMcpHandshake() {
   if (!mcpToken) return;
   try {
@@ -382,6 +386,7 @@ app.use(
             if (value) writeMcpHandshake();
             else removeMcpHandshake();
           },
+          calls: () => mcpCalls.slice(),
         }
       : null,
     templatesDir: path.join(__dirname, "public", "templates"),
@@ -865,24 +870,32 @@ extensions.start({
 if (features.MCP) {
   const { buildTools, INSTRUCTIONS } = require("./lib/mcp/tools");
   const { attachMcp } = require("./lib/mcp/http");
+  const mcpTools = buildTools({
+    version: pkg.version,
+    features: extensions.features(),
+    httpPort: () => HTTP_PORT,
+    oscInPort: () => OSC_IN_PORT,
+    socketPort: () => SOCKET_PORT,
+    store,
+    published,
+    midi,
+    liveLog: () => wireLog.rows(),
+    lock,
+    draftsDir: DRAFTS_DIR,
+  });
+  const mcpTitles = Object.fromEntries(mcpTools.map((tool) => [tool.name, tool.title]));
   mcpToken = attachMcp(app, {
     version: pkg.version,
     enabled: mcpOn,
     instructions: INSTRUCTIONS,
-    onToolCall: (tool) => telemetry.tell("mcp_tool_called", { tool }),
-    tools: buildTools({
-      version: pkg.version,
-      features: extensions.features(),
-      httpPort: () => HTTP_PORT,
-      oscInPort: () => OSC_IN_PORT,
-      socketPort: () => SOCKET_PORT,
-      store,
-      published,
-      midi,
-      liveLog: () => wireLog.rows(),
-      lock,
-      draftsDir: DRAFTS_DIR,
-    }),
+    tools: mcpTools,
+    onToolCall: (tool) => {
+      telemetry.tell("mcp_tool_called", { tool });
+      mcpCalls.push({ tool, title: mcpTitles[tool] || tool, at: Date.now() });
+      if (mcpCalls.length > MCP_CALLS_KEPT) mcpCalls.shift();
+      // An open window behind the MCP pill draws its list again.
+      io.emit("mcp:called");
+    },
   });
 }
 

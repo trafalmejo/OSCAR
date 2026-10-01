@@ -271,6 +271,7 @@ var features = require("../../lib/features");
 var welcome = require("./first_run");
 
 var oscarExport = require("./export_dialog");
+var oscarAssistants = require("./assistants_dialog");
 var { createOpenProject } = require("../../lib/open-project");
 var { createProjectSync } = require("../../lib/project-sync");
 var toolbarOrder = require("../../lib/toolbar-order");
@@ -2498,7 +2499,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // MCP) may talk to this OSCAR. On, the pill wears the accent and the
   // server answers /mcp on this machine; off, the word is struck through,
   // the route refuses, and the handshake file assistants find OSCAR by is
-  // removed. Added before the LIVE pill on purpose: buttons render in the
+  // removed. The pill says which; its window (assistants_dialog.js) holds
+  // the switch, how an assistant is connected, and what they lately asked. Added before the LIVE pill on purpose: buttons render in the
   // order they are added. Same construction as the LIVE pill, for the same
   // reason: disabled to GrapesJS, its own click, no re-render to wipe it.
   if (features.MCP) {
@@ -2512,44 +2514,27 @@ function initGrape(ipServer, socketPort, oscInPort) {
     });
 
     (function wireMcpPill() {
-      var known = null;
-
       function paintMcp(on) {
-        known = !!on;
         var el = document.querySelector(".oscar-mcp-btn");
         if (!el) return;
-        el.classList.toggle("oscar-mcp-on", known);
+        el.classList.toggle("oscar-mcp-on", !!on);
         el.setAttribute(
           "data-tooltip",
-          known
-            ? "Assistants (MCP) are on: an assistant on this computer can read this OSCAR and draft interfaces -- never send. Click to turn off."
-            : "Assistants (MCP) are off: the door is closed. Click to turn on."
+          on
+            ? "Assistants (MCP) are on: an assistant on this computer can read this OSCAR and draft interfaces -- never send. Click for how to connect one."
+            : "Assistants (MCP) are off: the door is closed. Click to turn them on."
         );
         el.setAttribute("data-tooltip-pos", "bottom");
       }
 
-      fetch("/mcp-state")
-        .then(function (res) {
-          return res.json();
-        })
-        .then(function (state) {
-          paintMcp(state && state.on);
-        })
-        .catch(function () {});
+      // The window asks the server where the switch stands as it is
+      // installed, and paints the pill each time it learns or throws it.
+      oscarAssistants.install(editor, { onState: paintMcp });
 
+      // The pill opens the window; it used to be the switch itself, and one
+      // stray click closed the door on an assistant mid-conversation.
       onBarClick(".oscar-mcp-btn", function () {
-        fetch("/mcp-state", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ on: !known }),
-        })
-          .then(function (res) {
-            return res.json();
-          })
-          .then(function (state) {
-            if (state && typeof state.on === "boolean") paintMcp(state.on);
-          })
-          .catch(function () {});
+        editor.runCommand("oscar-assistants");
       });
     })();
   }
