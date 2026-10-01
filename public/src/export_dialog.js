@@ -214,7 +214,7 @@ function install(editor, options) {
    * never found again, and the dot could not be taken off.)
    */
   function toolbarButton() {
-    return document.querySelector(".gjs-pn-options .oscar-publish-btn");
+    return document.querySelector(".gjs-pn-btn.oscar-publish-btn");
   }
 
   /**

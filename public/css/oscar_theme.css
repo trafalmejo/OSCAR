@@ -886,6 +886,27 @@ body.oscar-log-dragging iframe {
   cursor: default;
   align-items: center;
   display: flex;
+  /* Its words and numbers are flex items now, and a flex item's edge
+     spaces collapse: kept, so "Server IP: " keeps its space. */
+  white-space: pre;
+}
+
+/* The address leads the right half of the bar, which ends where the side
+   column begins (85% of the window). Under about 1720px that half would
+   reach the screen sizes centred over the canvas, so the label keeps its
+   numbers and drops its words; under about 1400px the port goes as well,
+   and the address alone stays. The tooltip says all of it at any width.
+   (Measured: the half is about 660px with the words, 525px without, 480px
+   with the address alone; the sizes end 60px right of 42.5%.) */
+@media (max-width: 1720px) {
+  .oscar-ip-label .oscar-ip-word {
+    display: none;
+  }
+}
+@media (max-width: 1400px) {
+  .oscar-ip-label .oscar-ip-port {
+    display: none;
+  }
 }
 
 /* The padlock and Publish are pills, to match the live pills beside them:

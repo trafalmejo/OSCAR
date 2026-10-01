@@ -2457,15 +2457,18 @@ const PLACEMENTS = [
   // The LIVE and MCP pills lead the right half: the show's state first, then
   // the tools.
   // (Push to preview and About are under File now, and their buttons gone.)
+  // This half of the bar is OSCAR, the server: the project being edited has
+  // the left half (File, Edit, its title, Publish), which the editor orders
+  // itself.
   { id: "oscar-live-pill", before: "toggle-lock" },
   { id: "oscar-mcp-pill", after: "oscar-live-pill" },
   // The padlock follows the pills: locking is what you do once a surface is
-  // out and the doors are about to open.
+  // out and the doors are about to open. It is the server's lock, and ends
+  // the bar.
   { id: "toggle-lock", after: "oscar-mcp-pill" },
-  // A project's way in and out lives under File at the bar's left edge;
-  // Publish keeps its own seat, last on the right: after the lock, and
-  // after Pages, which the next line puts between them when it is on.
-  { id: "oscar-export", after: "toggle-lock" },
+  // Where OSCAR is reached leads its half: the address first, then what it
+  // is running there.
+  { id: "ipButton", before: "oscar-live-pill" },
   // Pages is about the surface as a whole, beside the lock. (The widget
   // style, which it once sat beside, lives under Edit now.)
   { id: "open-pages", after: "toggle-lock" },
@@ -22694,7 +22697,7 @@ function install(editor, options) {
    * never found again, and the dot could not be taken off.)
    */
   function toolbarButton() {
-    return document.querySelector(".gjs-pn-options .oscar-publish-btn");
+    return document.querySelector(".gjs-pn-btn.oscar-publish-btn");
   }
 
   /**
@@ -26018,15 +26021,18 @@ function initGrape(ipServer, socketPort, oscInPort) {
     },
   });
 
-  pn.addButton("options", {
+  // On the left, with the project: its title, how it stands, and Publish,
+  // which is what is done with it. The right of the bar is OSCAR's.
+  pn.addButton("devices-c", {
     id: "oscar-export",
     className: "oscar-publish-btn",
-    // A pill like its neighbours: the icon and the word.
+    // A pill: the icon and the word.
     label: icon("publish") + '<span class="oscar-bar-pill-word">Publish</span>',
     command: function () {
       editor.runCommand("oscar-export");
     },
-    attributes: { title: "Publish your interface", "data-tooltip-pos": "bottom" },
+    // Tooltips are drawn from data-tooltip; a title as well would show twice.
+    attributes: { "data-tooltip": "Publish your interface", "data-tooltip-pos": "bottom", "aria-label": "Publish your interface" },
   });
 
   // ---- locked mode -------------------------------------------------------
@@ -26212,8 +26218,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
   // second half: OSCAR serves published interfaces in the background all the
   // time, whichever project is on the canvas, and the rig is listening to
   // them too. The bar keeps the two apart. Its left is the project being
-  // edited: File, Edit, its title, how it stands. Its right is OSCAR, the
-  // server: this pill, the lock, and Publish, which sends the one to the other.
+  // edited: File, Edit, its title, how it stands, and Publish, which sends
+  // it over. Its right is OSCAR, the server: its address, this pill, the lock.
   //
   // RUNNING counts the interfaces OSCAR is serving and opens the Running
   // window, where each is listed with the devices on it. ACTIVITY is the
@@ -26785,15 +26791,25 @@ function initGrape(ipServer, socketPort, oscInPort) {
     refreshLive();
   })();
 
-  pn.addButton("devices-c", {
+  // On the right, with OSCAR: where it is reached, what it is running, its
+  // traffic, and its lock. The right half is fuller than the left was, and
+  // on a laptop it would run under the screen sizes in the middle: there
+  // the words step aside (oscar_theme.css) and the numbers stay, and on a
+  // small one the port goes too, with the tooltip to say all of it.
+  pn.addButton("options", {
     id: "ipButton",
     className: "oscar-ip-label",
-    label: "Server IP: " + ipServer + (oscInPort ? " · Listening Port: " + oscInPort : ""),
+    label:
+      '<span class="oscar-ip-word">Server IP: </span>' +
+      ipServer +
+      (oscInPort ? '<span class="oscar-ip-port"> · <span class="oscar-ip-word">Listening Port: </span>' + oscInPort + "</span>" : ""),
     command: null,
     attributes: {
       title: oscInPort
-        ? "Point other devices at this address. OSCAR hears OSC on port " + oscInPort
-        : "Point other devices at this address",
+        ? "OSCAR's address on this network is " + ipServer + ", and it hears OSC on port " + oscInPort + ". Point other devices at it."
+        : "OSCAR's address on this network is " + ipServer + ". Point other devices at it.",
+      // Below the bar: above it there is no room.
+      "data-tooltip-pos": "bottom",
     },
     active: false,
     disable: true,
@@ -26826,13 +26842,13 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var ids = models.map(function (model) {
       return model.get("id");
     });
-    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "ipButton"]
+    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "oscar-export"]
       .filter(function (id) {
         return ids.indexOf(id) !== -1;
       })
       .concat(
         ids.filter(function (id) {
-          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "ipButton"].indexOf(id) === -1;
+          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-save-state", "oscar-export"].indexOf(id) === -1;
         })
       );
     wanted.forEach(function (id) {
@@ -26910,7 +26926,6 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // opened from Load.
     "toggle-lock": null,
     "open-pages": "Pages",
-    "oscar-export": "Publish your interface",
     "open-info": "About Oscar",
   });
 

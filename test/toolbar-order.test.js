@@ -11,22 +11,24 @@ const { PLACEMENTS, moveAfter, moveBefore, arrange } = require("../lib/toolbar-o
 // See code, Clear canvas and the widget style live under Edit, Push to
 // preview and About under File: none of those holds a seat here.
 // The screen sizes have a panel of their own, centred over the canvas.
+// Publish is the project's, on the left with its title; the server's address
+// is the server's, and joins this half last, after the pills are painted.
 const ADDED = [
-  "open-pages", "oscar-live-pill", "oscar-mcp-pill", "oscar-export", "toggle-lock",
+  "open-pages", "oscar-live-pill", "oscar-mcp-pill", "toggle-lock", "ipButton",
 ];
 
-test("the pills lead the right half, the lock follows them, Pages beside the lock", () => {
+test("the right half is OSCAR's: its address, the pills, the lock, Pages beside the lock", () => {
   const order = arrange(ADDED);
   assert.deepStrictEqual(
-    order.slice(0, 3),
-    ["oscar-live-pill", "oscar-mcp-pill", "toggle-lock"],
-    "the pills first, ahead of the tools"
+    order.slice(0, 4),
+    ["ipButton", "oscar-live-pill", "oscar-mcp-pill", "toggle-lock"],
+    "where OSCAR is, what it runs, its lock"
   );
   assert.strictEqual(order[order.indexOf("toggle-lock") + 1], "open-pages");
-  assert.strictEqual(order[order.length - 1], "oscar-export", "Publish last, at the right end");
-  // With Pages off there is no Pages button, and Publish still ends the bar.
+  // With Pages off there is no Pages button, and the lock ends the bar.
   const noPages = arrange(ADDED.filter((id) => id !== "open-pages"));
-  assert.deepStrictEqual(noPages, ["oscar-live-pill", "oscar-mcp-pill", "toggle-lock", "oscar-export"]);
+  assert.deepStrictEqual(noPages, ["ipButton", "oscar-live-pill", "oscar-mcp-pill", "toggle-lock"]);
+  assert.ok(!PLACEMENTS.some((p) => p.id === "oscar-export"), "Publish has no seat on the server's half");
   for (const retired of ["gjs-open-import-webpage", "open-load", "open-save", "sw-visibility", "fullscreen", "export-template", "canvas-clear", "open-styles", "preview", "open-info"]) {
     assert.ok(!PLACEMENTS.some((p) => p.id === retired || p.after === retired || p.before === retired), "no placement names " + retired);
   }
@@ -62,12 +64,26 @@ test("every placement names a button the editor really adds", () => {
   const fs = require("node:fs");
   const path = require("node:path");
   const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
-  for (const { id, after } of PLACEMENTS) {
-    for (const name of [id, after]) {
+  for (const { id, after, before } of PLACEMENTS) {
+    for (const name of [id, after || before]) {
       // "preview" comes from the GrapesJS preset; the rest are OSCAR's own.
       assert.ok(name === "preview" || src.includes('"' + name + '"'), name + " is a button id in the editor");
     }
   }
+});
+
+test("Publish sits with the project on the left; the server's address with the server on the right", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "src", "oscar_editor.js"), "utf8");
+  assert.match(src, /pn\.addButton\("devices-c", \{\s*id: "oscar-export",/, "Publish is added to the left panel");
+  assert.match(src, /pn\.addButton\("options", \{\s*id: "ipButton",/, "the address to the right one");
+  assert.match(src, /"data-tooltip": "Publish your interface", "data-tooltip-pos": "bottom"/, "and Publish carries its own tooltip, now that the right half's labels pass it by");
+  // The right half is the fuller one now: on a laptop the address keeps its numbers and drops its words.
+  assert.match(src, /'<span class="oscar-ip-word">Server IP: <\/span>' \+\s*ipServer \+\s*\(oscInPort \? '<span class="oscar-ip-port"> · <span class="oscar-ip-word">Listening Port: <\/span>' \+ oscInPort \+ "<\/span>" : ""\)/);
+  const theme = fs.readFileSync(path.join(__dirname, "..", "public", "css", "oscar_theme.css"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(theme, /@media \(max-width: 1720px\) \{\n  \.oscar-ip-label \.oscar-ip-word \{\n    display: none;/, "so it does not run under the screen sizes");
+  assert.match(theme, /@media \(max-width: 1400px\) \{\n  \.oscar-ip-label \.oscar-ip-port \{\n    display: none;/, "and on a small laptop the address alone stays");
 });
 
 test("Publish is an arrow leaving its box, not Import's arrow", () => {

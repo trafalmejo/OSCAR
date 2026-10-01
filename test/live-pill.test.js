@@ -165,7 +165,8 @@ test("two pills for OSCAR the server: RUNNING opens what it is serving, ACTIVITY
 test("the pills sit on the bar's right, with OSCAR's things: split into their two doors", () => {
   const pill = editorSource.indexOf('id: "oscar-live-pill"');
   const ip = editorSource.indexOf('id: "ipButton"');
-  assert.ok(pill !== -1 && ip !== -1 && pill < ip, "added before ipButton, which is what renders it in the gap");
+  assert.ok(pill !== -1 && ip !== -1 && pill < ip, "added before ipButton: the address joins a pill already painted, and the order puts it first");
+  assert.match(editorSource.slice(ip - 40, ip), /pn\.addButton\("options", \{\s*$/, "the address is on the same half as the pills");
   // Disabled to GrapesJS on purpose: a command toggles the button active,
   // and re-rendering it wiped the count and hid the pill (the bug where it
   // vanished after the publish window closed).

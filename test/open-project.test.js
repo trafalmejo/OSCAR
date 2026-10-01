@@ -166,6 +166,6 @@ test("the Publish window is told who the canvas is, and a canvas that is nobody 
 
 test("the Publish button's dot can be taken off again: the button is found by its class, not by a tooltip the dot changes", () => {
   const dialog = read("public/src/export_dialog.js");
-  assert.match(dialog, /return document\.querySelector\("\.gjs-pn-options \.oscar-publish-btn"\);/);
+  assert.match(dialog, /return document\.querySelector\("\.gjs-pn-btn\.oscar-publish-btn"\);/, "whichever half of the bar it sits on");
   assert.match(read("public/src/oscar_editor.js"), /className: "oscar-publish-btn",/);
 });
