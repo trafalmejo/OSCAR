@@ -53,6 +53,7 @@ module.exports = function createRouter({
   exportFiles,
   published,
   onPublishedChanged,
+  devicesOn,
   liveLog,
   takeBootFile,
   telemetryState,
@@ -370,7 +371,13 @@ module.exports = function createRouter({
         const reading = await readingOf(page);
         // The stamp written down at publish, when there is one; a page from
         // before that is read for it, as it always was.
-        rows.push(Object.assign({ path: "/show/" + page.id, widgets: reading.widgets }, page, { stamp: page.stamp || reading.stamp }));
+        rows.push(
+          Object.assign({ path: "/show/" + page.id, widgets: reading.widgets }, page, {
+            stamp: page.stamp || reading.stamp,
+            // How many devices on this network have it open right now.
+            devices: devicesOn ? devicesOn(page.id) : 0,
+          })
+        );
       }
       res.json(rows);
     } catch (err) {

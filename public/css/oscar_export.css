@@ -587,3 +587,22 @@
   padding-left: 15px;
   cursor: default;
 }
+
+/* ---- Running: what OSCAR is serving ----------------------------------------
+   The same rows the Publish window once listed, in a window of their own:
+   they are the server's, not the open project's. */
+.oscar-running-lead {
+  margin: 0 0 10px;
+}
+.oscar-publish-devices,
+.oscar-published-list .oscar-running-devices {
+  color: var(--o-text-muted);
+  font-size: var(--o-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* A message passed through it: the dot answers, brighter for a moment. */
+.oscar-published-list .oscar-published-live.oscar-running-active {
+  background: #7dffa6;
+  box-shadow: 0 0 9px rgba(125, 255, 166, 0.95);
+  animation: none;
+}

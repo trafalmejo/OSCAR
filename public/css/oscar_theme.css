@@ -584,8 +584,13 @@ a {
 .oscar-live-pill:not(.oscar-live-on):hover {
   color: var(--o-text-muted);
 }
-.oscar-live-pill:not(.oscar-live-on) .oscar-live-word {
-  text-decoration: line-through;
+/* (A quiet pill once struck its word through, which read as an error.
+   Nothing running is not one: the pill is grey, and its count says 0.) */
+
+/* ACTIVITY with no OSCAR behind it is the one that is a problem: amber. */
+.oscar-live-server:not(.oscar-live-on) {
+  border-color: #c98a1b;
+  color: #f1a10d;
 }
 .oscar-live-pill:not(.oscar-live-on) .oscar-live-dot {
   background: var(--o-text-faint);

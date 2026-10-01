@@ -2539,43 +2539,36 @@ function initGrape(ipServer, socketPort, oscInPort) {
     })();
   }
 
-  // ---- the LIVE pill ------------------------------------------------------
-  // OSCAR serves published surfaces in the background all the time, and while
-  // editing it is easy to forget the rig is listening to them too. The pill
-  // sits between the screen sizes and the network info and counts them; IN
-  // flickers when the server consumes OSC or MIDI for a published surface,
-  // OUT when it sends on one's behalf -- a bridge, a schedule, a phone. Never
-  // for a hand on this canvas: that send does not pass through the server's
-  // surfaces at all (lib/surfaces.js onActivity). Hidden while nothing is
-  // published. Added before ipButton on purpose: buttons render in the order
-  // they are added, which is what puts it in that gap.
+  // ---- the RUNNING pill ---------------------------------------------------
+  // The editor and the server are one app, and it is easy to forget the
+  // second half: OSCAR serves published interfaces in the background all the
+  // time, whichever project is on the canvas, and the rig is listening to
+  // them too. The bar keeps the two apart. Its left is the project being
+  // edited: File, Edit, its title, how it stands. Its right is OSCAR, the
+  // server: this pill, the lock, and Publish, which sends the one to the other.
   //
-  // Two halves, each its own door: LIVE and the count open the publish
-  // window, the IN/OUT lights open the network log. Like ipButton it is
-  // `disable: true` with its own click handlers: a command would toggle the
-  // button active, and GrapesJS re-renders a button whose model changed,
-  // which would wipe the count and the lights back to their pristine,
-  // hidden state.
+  // RUNNING counts the interfaces OSCAR is serving and opens the Running
+  // window, where each is listed with the devices on it. ACTIVITY is the
+  // traffic: IN flickers when the server takes in OSC or MIDI for an
+  // interface, OUT when it sends on one's behalf -- a bridge, a schedule, a
+  // phone -- and it opens the network log.
+  //
+  // Like ipButton it is `disable: true` with its own click handlers: a
+  // command would toggle the button active, and GrapesJS re-renders a button
+  // whose model changed, which would wipe the count and the lights back to
+  // their pristine state.
   pn.addButton("options", {
     id: "oscar-live-pill",
     className: "oscar-live-btn",
-    // Three pills in one button: what is served on this network, what is
-    // public on the internet (both open the publish window), and the server
-    // itself with its traffic meters (the network log).
     label:
       '<span class="oscar-live-pills">' +
-      '<span class="oscar-live-pill oscar-live-zone oscar-live-local" data-zone="publish" data-pill="local">' +
+      '<span class="oscar-live-pill oscar-live-zone oscar-live-running" data-zone="running" data-pill="running">' +
       '<span class="oscar-live-dot"></span>' +
-      '<span class="oscar-live-word">LOCAL</span>' +
-      '<span class="oscar-live-count">0</span>' +
-      "</span>" +
-      '<span class="oscar-live-pill oscar-live-zone oscar-live-public" data-zone="publish" data-pill="public">' +
-      '<span class="oscar-live-dot"></span>' +
-      '<span class="oscar-live-word">PUBLIC</span>' +
+      '<span class="oscar-live-word">RUNNING</span>' +
       '<span class="oscar-live-count">0</span>' +
       "</span>" +
       '<span class="oscar-live-pill oscar-live-zone oscar-live-server" data-zone="log" data-pill="server">' +
-      '<span class="oscar-live-word">OSCAR SERVER</span>' +
+      '<span class="oscar-live-word">ACTIVITY</span>' +
       '<span class="oscar-live-led" data-led="in">IN<span class="oscar-live-meter"></span></span>' +
       '<span class="oscar-live-led" data-led="out">OUT<span class="oscar-live-meter"></span></span>' +
       "</span>" +
@@ -2586,7 +2579,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   });
 
   // What an extension says is public on the internet (Pro's public links),
-  // for the PUBLIC pill: set by oscarApi.setPublicCount below.
+  // said in the RUNNING pill's words: set by oscarApi.setPublicCount below.
   var livePublic = { set: function () {} };
 
   (function wireLivePill() {
@@ -2673,58 +2666,44 @@ function initGrape(ipServer, socketPort, oscInPort) {
         .join(", ");
     }
 
-    // LOCAL: the surfaces OSCAR serves on this network.
-    function paintLive(rows) {
-      var local = pill("local");
-      if (!local) return;
-      local.querySelector(".oscar-live-count").textContent = String(rows.length);
-      local.classList.toggle("oscar-live-on", rows.length > 0);
+    // RUNNING: every interface OSCAR is serving, whichever project is open
+    // here. One that is switched off counts too: nobody can open it, and
+    // its schedules and bridges still run. How many devices are on each is
+    // said in the Running window, per interface, not here: one total for
+    // the lobby's phones and the technician's tablet would say nothing.
+    var running = [];
+    var publicState = null; // { surfaces: [{ id, online }] }, as an extension says (Pro's public links)
+
+    function paintRunning() {
+      var el = pill("running");
+      if (!el) return;
+      el.querySelector(".oscar-live-count").textContent = String(running.length);
+      el.classList.toggle("oscar-live-on", running.length > 0);
       var names = quoted(
-        rows.map(function (row) {
-          return row.id;
+        running.map(function (row) {
+          return row.name || row.id;
         })
       );
+      var off = running.filter(function (row) {
+        return row.access === "off";
+      }).length;
+      var anyone = ((publicState && publicState.surfaces) || []).length;
       say(
-        local,
-        rows.length === 0
-          ? "Nothing is published: OSCAR serves no surfaces in the background. Click for the publish window."
-          : (rows.length === 1 ? "OSCAR is serving " + names : "OSCAR is serving " + rows.length + " published surfaces: " + names) +
-              " on this network. Click for the publish window."
+        el,
+        running.length === 0
+          ? "OSCAR is running nothing in the background. Publish a project and it is served from here, whichever project is open. Click to see."
+          : "OSCAR is running " +
+              (running.length === 1 ? names : running.length + " interfaces: " + names) +
+              " in the background, whichever project is open here." +
+              (anyone ? " " + anyone + " open to anyone with the link." : "") +
+              (off ? " " + off + " switched off." : "") +
+              " Click to see them."
       );
       paintServer();
     }
-
-    // PUBLIC: the surfaces reachable from the internet, as an extension says
-    // (Pro's public links). Without one, nothing can be, and the pill says why.
-    var publicState = null; // { surfaces: [{ id, online }] }
-    function paintPublic() {
-      var el = pill("public");
-      if (!el) return;
-      var surfaces = (publicState && publicState.surfaces) || [];
-      el.querySelector(".oscar-live-count").textContent = String(surfaces.length);
-      el.classList.toggle("oscar-live-on", surfaces.length > 0);
-      var waiting = surfaces.filter(function (s) {
-        return !s.online;
-      });
-      say(
-        el,
-        !publicState
-          ? "Nothing is public. A public surface is one visitors reach from their own phones, anywhere: part of OSCAR Pro. Click for the publish window."
-          : surfaces.length === 0
-            ? "Nothing is public on the internet. Click for the publish window."
-            : "Public on the internet: " +
-                quoted(
-                  surfaces.map(function (s) {
-                    return s.id;
-                  })
-                ) +
-                (waiting.length ? " (still connecting: " + quoted(waiting.map(function (s) { return s.id; })) + ")" : "") +
-                ". Click for the publish window."
-      );
-    }
     livePublic.set = function (state) {
       publicState = state && Array.isArray(state.surfaces) ? state : { surfaces: [] };
-      paintPublic();
+      paintRunning();
     };
 
     // OSCAR SERVER: whether this editor reaches it, and its traffic. The
@@ -2757,8 +2736,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
       say(
         el,
         connected
-          ? "OSCAR's server: IN " + rates.in + "/s, OUT " + rates.out + "/s. Click for the network log."
-          : "This editor cannot reach OSCAR's server. Click for the network log."
+          ? "What OSCAR is receiving and sending: IN " + rates.in + "/s, OUT " + rates.out + "/s. Click for the network log."
+          : "This editor cannot reach OSCAR. Nothing it shows is current. Click for the network log."
       );
     }
     setInterval(paintServer, 250);
@@ -2769,13 +2748,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
           return res.json();
         })
         .then(function (rows) {
-          // LOCAL counts what a device on the network can open: an interface
-          // that is switched off is kept, and served to nobody.
-          paintLive(
-            (Array.isArray(rows) ? rows : []).filter(function (row) {
-              return row.access !== "off";
-            })
-          );
+          running = Array.isArray(rows) ? rows : [];
+          paintRunning();
         })
         .catch(function () {});
     }
@@ -3109,7 +3083,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     // The zones' clicks, through the bar's one listener: re-renders replace
     // elements, the document does not.
     onBarClick(".oscar-live-zone", function (zone) {
-      if (zone.getAttribute("data-zone") === "publish") editor.runCommand("oscar-export");
+      if (zone.getAttribute("data-zone") === "running") editor.runCommand("oscar-running");
       else openLiveLog();
     });
 
@@ -3124,15 +3098,23 @@ function initGrape(ipServer, socketPort, oscInPort) {
         // An update is the same traffic said again: the meters count it once.
         if (takeRow(row) && !row.dropped) countTraffic(row);
         if (logOpen()) renderLog();
+        // The Running window's light for each interface the message passed through.
+        if (publishDialog && !row.dropped) publishDialog.activity((row.surfaces || []).concat(row.surface ? [row.surface] : []));
       });
-      editor.socket.on("published:changed", refreshLive);
+      editor.socket.on("published:changed", function () {
+        refreshLive();
+        if (publishDialog) publishDialog.refresh();
+      });
+      // A device came or went on an interface: the Running window's counts.
+      editor.socket.on("running:changed", function () {
+        if (publishDialog) publishDialog.refresh();
+      });
       // A server that restarted may have a different roster than the one
       // this pill last drew.
       editor.socket.on("connect", refreshLive);
       editor.socket.on("disconnect", paintServer);
     }
     refreshLive();
-    paintPublic();
   })();
 
   pn.addButton("devices-c", {

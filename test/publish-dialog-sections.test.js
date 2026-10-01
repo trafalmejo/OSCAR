@@ -1,10 +1,11 @@
 "use strict";
 
-// The Publish window: the project on the canvas on a card at the top -- who
-// can open it, the one code for the address that goes with that, and one
-// button that says what it does -- and under it, in a short list, whatever
-// else this OSCAR has live. And the places an extension adds to: a section
-// under the list, and a further answer to who can open an interface.
+// Two windows, for two questions. Publish is the project on the canvas, on a
+// card: who can open it, the one code for the address that goes with that,
+// and one button that says what it does. Running is OSCAR, the server: every
+// interface it serves in the background, whichever project is open, with the
+// devices on each. And the places an extension adds to: a section under the
+// card, and a further answer to who can open an interface.
 
 const test = require("node:test");
 const assert = require("node:assert");
@@ -17,14 +18,14 @@ const read = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8").r
 
 test("the window opens on the project on the canvas: its title, and nothing to fill in", () => {
   const markup = read("public/partials/export.ejs");
-  const card = markup.indexOf('id="publish-card"');
-  const list = markup.indexOf('id="published-box"');
-  const extras = markup.indexOf('id="publish-extras"');
-  assert.ok(card !== -1 && list !== -1 && extras !== -1 && card < list && list < extras, "the card, then what else is live, then an extension's box");
+  const publish = markup.slice(markup.indexOf('id="export-panel"'), markup.indexOf('id="running-panel"'));
+  const card = publish.indexOf('id="publish-card"');
+  const extras = publish.indexOf('id="publish-extras"');
+  assert.ok(card !== -1 && extras !== -1 && card < extras, "the card, then an extension's box");
+  assert.ok(!/id="published-list"/.test(publish), "and nothing else: what OSCAR is running is not this window's business");
   assert.ok(!/<input[^>]*id="export-name"/.test(markup), "no name or address field: the project has its title, and the address is made from it");
-  assert.ok(!/class="oscar-export-lead"/.test(markup.slice(0, list)), "no paragraphs above the button");
+  assert.ok(!/class="oscar-export-lead"/.test(publish.slice(0, publish.indexOf('id="download-panel"'))), "no paragraphs above the button");
   assert.match(markup, /id="publish-help"[\s\S]{0,200}data-tooltip="OSCAR has to keep running:/, "the explanations are behind the question mark, the one that matters first");
-  assert.match(markup, /Also live on this OSCAR/);
 
   const dialog = read("public/src/export_dialog.js");
   assert.match(dialog, /if \(titleBox\) titleBox\.textContent = now\.name \|\| "Untitled";/);
@@ -38,8 +39,7 @@ test("one button, which says what it does: Publish, Publish changes, or none whe
   assert.match(dialog, /publishButton\.style\.display = mine && !stale \? "none" : "";/, "up to date: no button at all");
   assert.match(dialog, /stateLine\.textContent = !mine \? "" : stale \? "Changes not published" : "Up to date";/);
   assert.ok(!/"Update"/.test(dialog), "the word Update is gone");
-  assert.ok(!/"on the canvas"|"outdated"/.test(dialog), "and so are the marks a row wore: the open project is not a row");
-  assert.match(dialog, /if \(mine && page\.id === mine\.id\) return; \/\/ on the card above/);
+  assert.ok(!/"outdated"/.test(dialog), "and so is the mark a row wore");
 });
 
 test("nobody is asked for an address: it is made from the title, with a number when that is taken", () => {
@@ -75,9 +75,51 @@ test("an interface shows the one code for where it is opened, without being aske
   assert.ok(!/id="publish-result"|id="publish-copy"|id="publish-qr"/.test(markup));
 });
 
-// ---- the list: whatever else is live -----------------------------------------------------
+// ---- Running: what OSCAR is serving ---------------------------------------------------------
 
-test("each other interface is a row: its project's title as it is now, who can open it, Edit, and a menu for the rest", () => {
+test("Running is a window of its own, opened from the bar: every interface OSCAR serves, the open project's among them", () => {
+  const markup = read("public/partials/export.ejs");
+  const running = markup.slice(markup.indexOf('id="running-panel"'));
+  assert.ok(markup.indexOf('id="running-panel"') !== -1 && /id="published-list"/.test(running), "the list lives here now");
+  assert.match(running, /OSCAR serves these in the background, whether or not their projects are\s+open here\./);
+  assert.match(running, /id="running-empty"[^>]*>Nothing is running\. Publish a project and it appears here\./);
+
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /editor\.Commands\.add\("oscar-running", openRunning\);/);
+  assert.match(dialog, /title: "Running on this OSCAR",/);
+  assert.match(dialog, /var isMine = !!mine && page\.id === mine\.id;/, "the open project's interface is a row like any other");
+  assert.match(dialog, /var here = el\("span", "oscar-published-note", "open in the editor"\);/, "and says which it is");
+  assert.match(dialog, /if \(page\.editable && !isMine && options\.openProject\) \{/, "with no Edit: it is on the canvas already");
+  assert.match(dialog, /if \(which === "running"\) openRunning\(\);\s*else open\(\);/, "a download gives back the window it was asked from");
+});
+
+test("each interface says how many devices are on it: per interface, never one total", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /var here = Number\(page\.devices\) \|\| 0;\s*var there = lead && Number\(lead\.devices\) > 0 \? Number\(lead\.devices\) : 0;/, "those on this network, and those an extension's level brings");
+  assert.match(dialog, /n === 0 \? "No devices connected" : n === 1 \? "1 device connected" : n \+ " devices connected"/);
+  assert.match(dialog, /el\("span", "oscar-published-note oscar-running-devices", on\.n === 1 \? "1 device" : on\.n \+ " devices"\)/, "on its row");
+  assert.match(dialog, /var count = el\("span", "oscar-publish-devices", on\.words\);/, "and beside its code, on the card too");
+  // Kept current while either window is open: the server says when a device comes or goes.
+  assert.match(dialog, /refresh: function \(\) \{\s*if \(isOpen\(\)\) refreshPublished\(\);/);
+  const editor = read("public/src/oscar_editor.js");
+  assert.match(editor, /editor\.socket\.on\("running:changed", function \(\) \{\s*if \(publishDialog\) publishDialog\.refresh\(\);/);
+  const server = read("server.js");
+  assert.match(server, /if \(from\.surface && from\.surface !== "preview"\) \{\s*devicesOn\.set\(from\.surface, \(devicesOn\.get\(from\.surface\) \|\| 0\) \+ 1\);/, "counted as each page connects, by what it says it shows");
+  assert.match(server, /else devicesOn\.delete\(from\.surface\);\s*tellRunning\(\);/, "and as it goes");
+  assert.match(server, /runningTold = setTimeout\(\(\) => \{\s*runningTold = null;\s*io\.emit\("running:changed"\);\s*\}, 300\);/, "a hall of phones arriving is one redraw, not fifty");
+  assert.match(read("routes/index.js"), /devices: devicesOn \? devicesOn\(page\.id\) : 0,/);
+});
+
+test("a message passing through an interface lights its row", () => {
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /row\.setAttribute\("data-surface", page\.id\);/);
+  assert.match(dialog, /light\.classList\.add\("oscar-running-active"\);/);
+  const editor = read("public/src/oscar_editor.js");
+  assert.match(editor, /publishDialog\.activity\(\(row\.surfaces \|\| \[\]\)\.concat\(row\.surface \? \[row\.surface\] : \[\]\)\);/, "what came in and was followed, and what went out for it");
+  assert.match(read("public/css/oscar_export.css"), /\.oscar-published-live\.oscar-running-active \{/);
+});
+
+test("each interface is a row: its project's title as it is now, who can open it, Edit, and a menu for the rest", () => {
   const dialog = read("public/src/export_dialog.js");
   assert.match(dialog, /return \(page\.project && titles\[page\.project\]\) \|\| page\.name \|\| page\.id;/, "the title it has now, not the one it had the day it was published");
   assert.match(dialog, /if \(row && !row\.template && row\.id\) titles\[row\.id\] = row\.name;/);
@@ -86,7 +128,6 @@ test("each other interface is a row: its project's title as it is now, who can o
   const edit = dialog.indexOf('var editIt = button("Edit");');
   const more = dialog.indexOf("row.appendChild(moreButton(page));");
   assert.ok(name !== -1 && name < access && access < edit && edit < more, "name, who can open it, Edit, the menu");
-  assert.match(dialog, /if \(page\.editable && options\.openProject\) \{/, "no Edit for a page with no project copy");
   assert.match(dialog, /"no project copy to edit"/, "which says so");
   // Download and Take down are under the menu, for the card's interface and for a row's alike.
   assert.match(dialog, /label: "Download as a file(…|\\u2026)",\s*run: function \(\) \{\s*openDownload\(page\.id\);/);
@@ -161,12 +202,11 @@ test("an extension adds a further answer to who can open it, says where such an 
   assert.match(dialog, /return level\.choose\(page\.id\);/);
   assert.match(dialog, /\.then\(refreshPublished\);/, "and the window is drawn again as things stand, whatever happened");
   // Its address leads; what else it has to say sits beside; a level that throws loses only that.
-  assert.match(dialog, /lead = at && typeof at\.link === "function" \? at\.link\(page\.id\) : null;/);
+  assert.match(dialog, /return at && typeof at\.link === "function" \? at\.link\(page\.id\) : null;/);
   assert.strictEqual((dialog.match(/console\.error\("An access level of the Publish dialog failed:", err\);/g) || []).length, 2);
 
   const editor = read("public/src/oscar_editor.js");
   assert.match(editor, /addAccessLevel: function \(level\) \{\s*if \(publishDialog\) publishDialog\.addAccessLevel\(level\);/);
-  assert.match(editor, /return row\.access !== "off";/, "LOCAL counts what a device can open");
 });
 
 // ---- an extension's section, and About -------------------------------------------------------

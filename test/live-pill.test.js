@@ -139,26 +139,30 @@ test("every send over a socket carries whose it is to the send function", () => 
   assert.match(serverSource, /sendMIDI\(request, from\);/, "MIDI");
 });
 
-test("three pills: LOCAL and PUBLIC open the publish window, OSCAR SERVER the network log", () => {
+test("two pills for OSCAR the server: RUNNING opens what it is serving, ACTIVITY the network log", () => {
   const pill = editorSource.slice(editorSource.indexOf('id: "oscar-live-pill"'));
-  assert.match(pill, /data-zone="publish" data-pill="local">[\s\S]{0,120}oscar-live-word">LOCAL</, "LOCAL, a count, the publish window");
-  assert.match(pill, /data-zone="publish" data-pill="public">[\s\S]{0,120}oscar-live-word">PUBLIC</, "PUBLIC, a count, the publish window");
-  assert.match(pill, /data-zone="log" data-pill="server">'[\s\S]{0,80}OSCAR SERVER/, "OSCAR SERVER, the network log");
+  assert.match(pill, /data-zone="running" data-pill="running">[\s\S]{0,120}oscar-live-word">RUNNING</, "RUNNING, a count, the Running window");
+  assert.match(pill, /data-zone="log" data-pill="server">'[\s\S]{0,80}ACTIVITY/, "ACTIVITY, the network log");
+  assert.ok(!/LOCAL<|PUBLIC<|OSCAR SERVER/.test(pill.slice(0, 1200)), "LOCAL, PUBLIC and OSCAR SERVER are gone: words the rest of the app no longer uses");
+  assert.match(editorSource, /if \(zone\.getAttribute\("data-zone"\) === "running"\) editor\.runCommand\("oscar-running"\);/);
+  // Every interface OSCAR serves, the switched-off ones too: their schedules and bridges still run.
+  assert.match(editorSource, /running = Array\.isArray\(rows\) \? rows : \[\];\s*paintRunning\(\);/);
+  assert.match(editorSource, /in the background, whichever project is open here\./, "and says so: the editor and the server are one app, two things");
   assert.match(pill, /data-led="in">IN<span class="oscar-live-meter"><\/span>/, "with an IN meter");
   assert.match(pill, /data-led="out">OUT<span class="oscar-live-meter"><\/span>/, "and an OUT meter");
   assert.match(editorSource, /setPublicCount: function \(state\) \{\n      livePublic\.set\(state\);/, "an extension says what is public");
-  assert.match(editorSource, /A public surface is one visitors reach from their own phones, anywhere: part of OSCAR Pro\./, "without one, PUBLIC says why it is 0");
+  assert.match(editorSource, /\(anyone \? " " \+ anyone \+ " open to anyone with the link\." : ""\)/, "which RUNNING says in its own words, not as a pill of its own");
   assert.match(editorSource, /if \(takeRow\(row\) && !row\.dropped\) countTraffic\(row\);/, "the meters count each row's messages once");
   assert.match(editorSource, /Math\.log\(1 \+ rates\[dir\]\) \/ Math\.log\(101\)/, "on a log scale: 100 a second fills it");
-  assert.match(editorSource, /el\.classList\.toggle\("oscar-live-on", connected\);/, "OSCAR SERVER goes quiet when the editor cannot reach it");
-  assert.match(themeSource, /\.oscar-live-pill:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "each quiet pill strikes its word");
-  assert.ok(!/\.oscar-live-public\.oscar-live-on/.test(themeSource), "PUBLIC wears the same green as LOCAL: no colour of its own");
+  assert.match(editorSource, /el\.classList\.toggle\("oscar-live-on", connected\);/, "ACTIVITY changes when the editor cannot reach OSCAR");
+  assert.match(themeSource, /\.oscar-live-server:not\(\.oscar-live-on\) \{\n  border-color: #c98a1b;/, "to amber: that one is a problem");
+  assert.ok(!/text-decoration: line-through/.test(themeSource.slice(themeSource.indexOf(".oscar-live-pill {"), themeSource.indexOf("@keyframes oscar-live-breathe"))), "nothing running is not an error: no word is struck through");
   // OSCAR Pro is private: its half is checked only where it sits next to this repo, never in CI.
   const proFile = path.join(__dirname, "..", "..", "oscar-pro", "public", "public.js");
   if (fs.existsSync(proFile)) assert.match(fs.readFileSync(proFile, "utf8"),/oscar\.setPublicCount\(\{/, "Pro tells it");
 });
 
-test("the pill sits between the screen sizes and the network info, split into its two doors", () => {
+test("the pills sit on the bar's right, with OSCAR's things: split into their two doors", () => {
   const pill = editorSource.indexOf('id: "oscar-live-pill"');
   const ip = editorSource.indexOf('id: "ipButton"');
   assert.ok(pill !== -1 && ip !== -1 && pill < ip, "added before ipButton, which is what renders it in the gap");
@@ -168,20 +172,19 @@ test("the pill sits between the screen sizes and the network info, split into it
   const button = editorSource.slice(pill, editorSource.indexOf("});", pill));
   assert.match(button, /command: null/, "no command to toggle");
   assert.match(button, /disable: true/, "no active state to re-render on");
-  assert.match(button, /data-zone="publish"/, "the LIVE half");
+  assert.match(button, /data-zone="running"/, "the RUNNING half");
   assert.match(button, /data-zone="log"/, "the lights half");
-  assert.match(editorSource, /editor\.runCommand\("oscar-export"\)/, "LIVE opens the publish window");
+  assert.match(editorSource, /editor\.runCommand\("oscar-running"\)/, "RUNNING opens the Running window");
   assert.match(editorSource, /else openLiveLog\(\);/, "the lights open the network log");
   assert.match(editorSource, /editor\.socket\.on\("live:activity"/, "the flickers arrive by socket");
   assert.match(editorSource, /editor\.socket\.on\("live:log"/, "the log listens all along");
-  assert.match(editorSource, /editor\.socket\.on\("published:changed", refreshLive\)/, "the count follows the roster");
+  assert.match(editorSource, /editor\.socket\.on\("published:changed", function \(\) \{\s*refreshLive\(\);/, "the count follows the roster");
   // Always present: with nothing published it goes quiet instead of away,
   // so the place to look never moves.
   assert.match(themeSource, /\.gjs-pn-btn\.oscar-live-btn \{\n  display: inline-flex;/, "shown whether or not anything is published");
-  assert.match(themeSource, /:not\(\.oscar-live-on\) \.oscar-live-word \{\n  text-decoration: line-through;/, "LIVE struck through at zero");
-  assert.match(editorSource, /Nothing is published: OSCAR serves no surfaces in the background\./, "the quiet pill says why");
+  assert.match(editorSource, /OSCAR is running nothing in the background\./, "the quiet pill says so");
   assert.match(themeSource, /border: 1px solid rgba\(47, 191, 95, 0\.55\)/, "the pill is green");
-  assert.match(editorSource, /"OSCAR's server: IN " \+ rates\.in \+ "\/s, OUT " \+ rates\.out \+ "\/s\. Click for the network log\."/, "and the server pill says its traffic");
+  assert.match(editorSource, /"What OSCAR is receiving and sending: IN " \+ rates\.in \+ "\/s, OUT " \+ rates\.out \+ "\/s\. Click for the network log\."/, "and ACTIVITY says its traffic");
 });
 
 test("the log window shows each row as it crossed the wire, and takes updates in place", () => {

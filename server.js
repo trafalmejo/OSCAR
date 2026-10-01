@@ -354,6 +354,8 @@ app.use(
     // Unpublishing has no store event of its own, so the route says it, and
     // every editor's LIVE pill recounts.
     onPublishedChanged: () => io.emit("published:changed"),
+    // `devicesOn` is made below; this only runs once a request arrives.
+    devicesOn: (id) => devicesOn.get(id) || 0,
     // The pill's network log, backlog for a window that has just opened.
     // The network log is created above; this only runs once a request arrives.
     liveLog: () => wireLog.rows(),
@@ -565,6 +567,20 @@ const shared = sharedSync(io, {
 // A surface that is unpublished takes its record with it.
 published.onRemoved((id) => shared.reset(id));
 
+// How many devices are showing each surface right now, by what each page
+// said it shows as it connected. Editors are told when that changes, a few
+// times a second at most: a hall of phones arriving is one redraw, not fifty.
+const devicesOn = new Map(); // surface id -> devices connected
+let runningTold = null;
+function tellRunning() {
+  if (runningTold) return;
+  runningTold = setTimeout(() => {
+    runningTold = null;
+    io.emit("running:changed");
+  }, 300);
+  if (runningTold.unref) runningTold.unref();
+}
+
 // The surfaces that are switched off (lib/published.js): no device may be on
 // one. Its page is refused where it is served (routes/index.js); here its
 // connections are, so a phone that had the page open when it was switched
@@ -648,6 +664,19 @@ io.on("connection", (socket) => {
   if (from.surface && switchedOff.has(from.surface)) {
     socket.disconnect(true);
     return;
+  }
+
+  // One more device on that surface, until it goes: what the Running panel
+  // says beside each interface. The preview is not a surface OSCAR runs.
+  if (from.surface && from.surface !== "preview") {
+    devicesOn.set(from.surface, (devicesOn.get(from.surface) || 0) + 1);
+    tellRunning();
+    socket.on("disconnect", () => {
+      const left = (devicesOn.get(from.surface) || 1) - 1;
+      if (left > 0) devicesOn.set(from.surface, left);
+      else devicesOn.delete(from.surface);
+      tellRunning();
+    });
   }
 
   // The editor's canvas saying what incoming data it followed, gathered a

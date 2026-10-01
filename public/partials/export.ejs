@@ -34,14 +34,9 @@
     <div id="export-error" class="oscar-export-error" style="display: none;"></div>
     <div id="export-note" class="oscar-export-note" style="display: none;"></div>
 
-    <!-- Whatever else this OSCAR has live, in a short list: who can open
-         each, Edit, and a menu for the rest. Click a row for its code. -->
+    <!-- What an extension adds under the card. What else OSCAR is running is
+         not here: that is the server's business, and has a window of its own. -->
     <div class="oscar-publish-columns">
-      <div id="published-box" class="oscar-published" style="display: none;">
-        <div class="oscar-published-title">Also live on this OSCAR</div>
-        <ul id="published-list" class="oscar-published-list"></ul>
-      </div>
-
       <!-- Where an extension adds to the dialog. Empty in OSCAR itself. -->
       <div id="publish-extras" class="oscar-publish-extras"></div>
     </div>
@@ -79,4 +74,21 @@
         <button id="download-button" class="o-btn o-btn-primary oscar-export-go" type="button">Download the file</button>
       </div>
     </div>  </div>
+</div>
+
+<!-- Running: every interface this OSCAR is serving in the background,
+     whichever project is on the canvas. Opened from the RUNNING pill. -->
+<div id="running-panel" style="display: none;">
+  <div class="oscar-export">
+    <p class="oscar-export-hint oscar-running-lead">
+      OSCAR serves these in the background, whether or not their projects are
+      open here. Click one to see its code.
+    </p>
+    <div class="oscar-publish-columns">
+      <div id="published-box" class="oscar-published" style="display: none;">
+        <ul id="published-list" class="oscar-published-list"></ul>
+      </div>
+    </div>
+    <p id="running-empty" class="oscar-publish-off">Nothing is running. Publish a project and it appears here.</p>
+  </div>
 </div>
