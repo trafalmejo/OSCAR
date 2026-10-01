@@ -113,6 +113,7 @@ test("the title sits in the top bar beside File and Edit, with how the project s
   const theme = read("public/css/oscar_theme.css");
   assert.match(theme, /\.gjs-pn-btn\.oscar-title-btn,\n\.gjs-pn-btn\.oscar-title-btn:hover \{[^}]*text-overflow: ellipsis;/, "a long title ends in an ellipsis rather than push the bar about");
   assert.match(theme, /\.gjs-pn-btn\.oscar-save-state\[data-state="unsaved"\],/);
+  assert.match(theme, /\.gjs-pn-btn\.oscar-save-state,\n\.gjs-pn-btn\.oscar-save-state:hover \{\n  display: inline-flex;\n  align-items: center;\n  box-sizing: border-box;\n  height: 28px;\n  min-height: 0;\n  margin: 0 5px 0 0\.5rem;/, "the words sit on the Publish pill's line, clear of its edge");
 });
 
 test("a project changed somewhere else is the person's call: keep this window's, or load the other", () => {

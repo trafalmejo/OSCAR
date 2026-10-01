@@ -1521,10 +1521,20 @@ body.oscar-log-dragging iframe {
 }
 
 /* How the project stands with OSCAR: Saving, Saved, Not saved. Words, not a
-   button: nothing to press, since every change saves itself. */
+   button: nothing to press, since every change saves itself. It follows the
+   Publish pill, so it is laid out as the pill is (28px, its line centred in
+   it): as a plain block its word sat half a pixel above the pill's, and it
+   began hard against the pill's edge. */
 .gjs-pn-btn.oscar-save-state,
 .gjs-pn-btn.oscar-save-state:hover {
-  padding: 4px 6px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 0;
+  margin: 0 5px 0 0.5rem;
+  padding: 0 6px;
+  line-height: 21px;
   background: none;
   color: var(--o-text-muted);
   font-size: var(--o-text-xs);
