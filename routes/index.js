@@ -57,6 +57,8 @@ module.exports = function createRouter({
   liveLog,
   takeBootFile,
   telemetryState,
+  // count(event, props): an anonymous count (lib/telemetry.js), or absent.
+  count,
   templatesDir,
   draftsDir,
   mcp,
@@ -420,6 +422,15 @@ module.exports = function createRouter({
     res.json(file || {});
   });
 
+  // What only the browser knows happened: Export a copy writes the file
+  // itself, so it says so here. One event is allowed through; any other
+  // name is refused, so this is not a door for counting anything at all.
+  router.post("/counted/:event", editorOnly, (req, res) => {
+    if (req.params.event !== "file_exported") return res.status(404).json({ error: "Not a thing OSCAR counts." });
+    if (count) count("file_exported", {});
+    res.json({ counted: true });
+  });
+
   // The About window's telemetry switch: anonymous counts on or off.
   // "wired" is whether this build can speak at all (a key baked in and no
   // OSCAR_NO_TELEMETRY): unwired, the About window hides the row.
@@ -474,6 +485,7 @@ module.exports = function createRouter({
     const done = published ? await published.setAccess(req.params.id, access) : false;
     if (!done) return res.status(404).json({ error: "That interface is no longer published" });
     if (onPublishedChanged) onPublishedChanged();
+    if (count) count("access_changed", { access });
     res.json({ id: req.params.id, access });
   });
 
@@ -552,6 +564,9 @@ module.exports = function createRouter({
     const body = req.body || {};
     const data = projectData(body);
     if (!data) return res.status(400).json({ error: "That is not an OSCAR project." });
+    // A file brought in (Open a file, a double-click) is counted; a project
+    // made in the editor is not.
+    if (count && body.source === "file") count("file_opened", {});
     try {
       // A file brought in says who it is. If that project is already here,
       // the person is asked: replace it, or keep both.

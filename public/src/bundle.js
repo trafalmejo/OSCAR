@@ -25449,6 +25449,8 @@ function initGrape(ipServer, socketPort, oscInPort) {
   /** File > Export a copy: an .oscar file wherever the person says. The project stays in OSCAR. */
   function exportCopy() {
     projectSync.flush().then(function () {
+      // Counted, anonymously: the browser is the only one who knows a copy went out.
+      fetch("/counted/file_exported", { method: "POST" }).catch(function () {});
       var now = openProject.get();
       var name = now.name || "Untitled";
       var text = JSON.stringify(projectRecord(name, now.id || undefined), null, 2);
@@ -25499,7 +25501,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
    */
   function importProject(project, ifExists) {
     return projectApi
-      .create({ id: project.id, name: project.name, data: project.data, grapesjs: grapesjs.version, ifExists: ifExists })
+      .create({ id: project.id, name: project.name, data: project.data, grapesjs: grapesjs.version, ifExists: ifExists, source: "file" })
       .then(function (res) {
         if (res.status === 409 && res.body && res.body.exists) {
           $.confirm({

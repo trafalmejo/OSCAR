@@ -370,6 +370,8 @@ app.use(
       return taken;
     },
     draftsDir: DRAFTS_DIR,
+    // What the routes count: a file in or out, an access level changed.
+    count: (event, props) => telemetry.tell(event, props),
     // The About window's telemetry switch.
     telemetryState: {
       isOn: () => settings.get("telemetry") !== false,
@@ -812,6 +814,10 @@ surfaces.onPublished((id) => {
         osc: widgets.some((w) => w.config && !!(w.config.oscEnabled || w.config.listen)),
         midi: widgets.some((w) => w.config && !!(w.config.midiEnabled || w.config.midiListen)),
         dmx: widgets.some((w) => w.config && !!w.config.dmxEnabled),
+        oscIn: widgets.some((w) => w.config && !!w.config.listen),
+        midiIn: widgets.some((w) => w.config && !!w.config.midiListen),
+        dmxUsb: widgets.some((w) => w.config && !!w.config.dmxEnabled && /^(usbpro|opendmx)$/.test(w.config.dmxProtocol)),
+        bridge: widgets.some((w) => w.config && [w.config.oscSendWhen, w.config.midiSendWhen, w.config.dmxSendWhen].indexOf("data") !== -1),
       });
     })
     .catch(() => {});
@@ -920,7 +926,10 @@ const httpServer = app.listen(HTTP_PORT, () => {
   console.log("");
   console.log("  Projects folder:      " + PROJECTS_DIR);
   bannerShown = true;
-  telemetry.tell("app_start", { version: pkg.version, os: process.platform, arch: process.arch });
+  // With the two counts an installation can be described by, when they can be had.
+  Promise.all([store.list(), published.list()])
+    .then(([projects, pages]) => ({ projects: projects.length, published: pages.length }), () => ({}))
+    .then((counts) => telemetry.tell("app_start", Object.assign({ version: pkg.version, os: process.platform, arch: process.arch }, counts)));
   // The MCP handshake: where an assistant's shim finds this OSCAR. Written
   // once the port is certain, readable by this user alone, and gone stale
   // the moment OSCAR restarts (the token dies with the process). Switched

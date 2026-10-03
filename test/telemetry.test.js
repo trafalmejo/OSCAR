@@ -121,17 +121,28 @@ test("close flushes what is queued, for quitting", async () => {
 const readSource = (...parts) => fs.readFileSync(path.join(__dirname, "..", ...parts), "utf8").replace(/\r\n/g, "\n");
 
 test("the events OSCAR speaks are few, named, and where they claim to be", () => {
-  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["app_error", "app_start", "draft_loaded", "mcp_tool_called", "surface_published", "template_loaded"]);
+  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["access_changed", "app_error", "app_start", "draft_loaded", "file_exported", "file_opened", "mcp_tool_called", "surface_published", "template_loaded"]);
   const server = readSource("server.js");
-  assert.match(server, /telemetry\.tell\("app_start", \{ version: pkg\.version, os: process\.platform, arch: process\.arch \}\)/);
+  assert.match(server, /telemetry\.tell\("app_start", Object\.assign\(\{ version: pkg\.version, os: process\.platform, arch: process\.arch \}, counts\)\)/);
+  assert.match(server, /\(\[projects, pages\]\) => \(\{ projects: projects\.length, published: pages\.length \}\), \(\) => \(\{\}\)/, "two counts, or none if they cannot be had");
   assert.match(server, /osc: widgets\.some/, "the publish event carries booleans, never an address");
+  for (const word of ["oscIn: widgets\\.some", "midiIn: widgets\\.some", "dmxUsb: widgets\\.some", "bridge: widgets\\.some"]) {
+    assert.match(server, new RegExp(word), "the protocols' directions are booleans too");
+  }
+  assert.match(server, /count: \(event, props\) => telemetry\.tell\(event, props\),/, "the routes count through the same door");
   assert.match(server, /telemetry\.tell\(opened\[1\] === "drafts" \? "draft_loaded" : "template_loaded"/);
   assert.match(server, /onToolCall: \(tool\) => \{\s*telemetry\.tell\("mcp_tool_called", \{ tool \}\);/);
   const routes = readSource("routes", "index.js");
+  assert.match(routes, /if \(count\) count\("access_changed", \{ access \}\);/, "an access level changed is counted, as the level");
+  assert.match(routes, /if \(count && body\.source === "file"\) count\("file_opened", \{\}\);/, "a file brought in is counted; a project made in the editor is not");
+  assert.match(routes, /if \(req\.params\.event !== "file_exported"\) return res\.status\(404\)/, "the browser may count one thing, and nothing else");
+  const editor = readSource("public", "src", "oscar_editor.js");
+  assert.match(editor, /ifExists: ifExists, source: "file" \}/, "the editor says when a project came from a file");
+  assert.match(editor, /fetch\("\/counted\/file_exported", \{ method: "POST" \}\)/, "and when a copy went out");
   assert.match(routes, /router\.get\("\/telemetry-state", editorOnly/);
   assert.match(routes, /router\.post\("\/telemetry-state", editorOnly/);
-  const editor = readSource("public", "src", "oscar_editor.js");
-  assert.match(editor, /if \(!state \|\| !state\.wired\) return;/, "the About row hides when the build cannot speak");
+  const editorSource = readSource("public", "src", "oscar_editor.js");
+  assert.match(editorSource, /if \(!state \|\| !state\.wired\) return;/, "the About row hides when the build cannot speak");
   const about = readSource("public", "partials", "about.ejs");
   assert.match(about, /lib\/telemetry\.js/, "the label links to the whole truth");
 });
