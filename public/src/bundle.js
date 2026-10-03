@@ -25652,16 +25652,18 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.runCommand("fullscreen", { target: document.documentElement });
   }
 
-  // Show borders is remembered in this browser: on until turned off once, and
-  // off after that, refresh after refresh. A browser that keeps nothing
-  // (private window, locked-down storage) gets the default each time.
+  // Show borders is remembered in this browser: off until turned on once, and
+  // on after that, refresh after refresh. Off to begin with because the first
+  // thing a new user sees is the Showcase, and dotted boxes round every part
+  // of it read as a fault, not a tool. A browser that keeps nothing (private
+  // window, locked-down storage) gets the default each time.
   var BORDERS_KEY = "oscarShowBorders";
 
   function bordersWanted() {
     try {
-      return localStorage.getItem(BORDERS_KEY) !== "off";
+      return localStorage.getItem(BORDERS_KEY) === "on";
     } catch (err) {
-      return true;
+      return false;
     }
   }
 

@@ -113,9 +113,10 @@ test("File holds Push to preview and About; Edit holds the lock and an extension
   assert.match(editor, /if \(!menuExtras\[menu\]\) throw new Error\('A menu item goes in "file" or "edit"'\);/);
 });
 
-test("Show borders is remembered: turned off, it stays off after a refresh", () => {
+test("Show borders is remembered: off to begin with, and turned on it stays on after a refresh", () => {
   assert.match(editor, /localStorage\.setItem\(BORDERS_KEY, on \? "on" : "off"\);/, "the choice is kept when made");
-  assert.match(editor, /return localStorage\.getItem\(BORDERS_KEY\) !== "off";/, "on until turned off once");
+  assert.match(editor, /return localStorage\.getItem\(BORDERS_KEY\) === "on";/, "off until turned on once: a new user's first sight is the Showcase, not dotted boxes");
+  assert.match(editor, /\} catch \(err\) \{\n      return false;\n    \}/, "and off where nothing is remembered");
   assert.match(editor, /else if \(!bordersWanted\(\) && active\) editor\.stopCommand\("sw-visibility"\);/, "and put back as it was left at startup");
   assert.doesNotMatch(editor, /editor\.onReady\(function \(\) \{\n    if \(!editor\.Commands\.isActive\("sw-visibility"\)\) editor\.runCommand\("sw-visibility"\);\n  \}\);/, "not forced on at every start");
 });
