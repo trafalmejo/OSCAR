@@ -20,6 +20,18 @@
     rule that paints is written for "own" alone, and a short set of rules
     further down, made of tokens only, dresses it for the others.
 
+  The stage above the strips is the same desk in three dimensions, drawn
+  by the <script> at the end in three.js: a tilted slab of brushed metal
+  with each strip milled into it, LED ladders that follow the meters, chrome
+  fader caps that slide when a slider moves and move the slider when they
+  are dragged, and black keys that press the buttons and light up with them.
+  A lamp over each strip burns brighter the higher its fader; a move or a
+  press flares a light over the piece that moved. The controls are still
+  the sliders, buttons and meters in the strips, which fold away under the
+  stage while it is up (Classic desk in the header brings them back) and
+  are the desk on their own when three.js, which comes from the web, does
+  not: with no internet, this is the metal desk below.
+
   The dress: one slab of brushed aluminium on a graphite desk, the strips
   milled into it, names etched into the metal, meters as LED ladders set
   into black slots, faders with a chamfered chrome cap on a dark rail, and
@@ -163,6 +175,68 @@
 @keyframes acn-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
+}
+
+/* ---- the stage: the desk in three dimensions (the script at the end) --------------------- */
+.acn-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 8;
+  min-height: 320px;
+  overflow: hidden;
+  border-radius: 18px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+[data-osc-style="own"] .acn-stage {
+  background:
+    radial-gradient(60% 50% at 50% 70%, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(180deg, #16171b, #0b0c0f);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px rgba(0, 0, 0, 0.55);
+}
+.acn-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.acn-stage-hint {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  bottom: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* With the stage up, the strips fold away under it; Classic desk brings them back. */
+.acn-classic {
+  display: none;
+  margin-left: 14px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+}
+[data-osc-style="own"] .acn-classic {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(242, 243, 245, 0.7);
+}
+.acn-3d .acn-classic {
+  display: inline-block;
+}
+.acn-3d:not(.acn-classic-on) .acn-strips {
+  display: none;
 }
 
 /* ---- the slab: one piece of brushed aluminium, the strips milled into it ------------------- */
@@ -350,6 +424,14 @@ body:not([data-osc-style="own"]) .acn-header {
 body:not([data-osc-style="own"]) .acn-led {
   background: var(--osc-primary);
 }
+body:not([data-osc-style="own"]) .acn-stage {
+  border: 1px solid var(--osc-border);
+  background: var(--osc-muted);
+}
+body:not([data-osc-style="own"]) .acn-classic {
+  border: 1px solid var(--osc-border);
+  color: var(--osc-foreground);
+}
 body:not([data-osc-style="own"]) .acn:has(#acn-master-mute.toggle) .acn-led {
   background: var(--osc-muted);
 }
@@ -398,6 +480,14 @@ body:not([data-osc-style="own"]) .acn-solo.toggle {
     padding: 10px;
     border-radius: 14px;
   }
+  .acn-stage {
+    aspect-ratio: 1;
+    min-height: 240px;
+    border-radius: 14px;
+  }
+  .acn-stage-hint {
+    display: none;
+  }
   .acn-master {
     grid-column: span 3;
   }
@@ -426,7 +516,12 @@ body:not([data-osc-style="own"]) .acn-solo.toggle {
       <span id="acn-led" class="acn-led" data-gjs-dmode="flow"></span>
       <span id="acn-status-word" data-gjs-dmode="flow">Live</span>
     </div>
+    <span id="acn-classic" class="acn-classic" data-gjs-dmode="flow">Classic desk</span>
   </header>
+
+  <div id="acn-stage" class="acn-stage" data-gjs-dmode="flow">
+    <span id="acn-stage-hint" class="acn-stage-hint" data-gjs-dmode="flow">Drag a fader &middot; tap a key &middot; drag the desk to look around</span>
+  </div>
 
   <div id="acn-strips" class="acn-strips" data-gjs-dmode="flow">
     <section id="acn-ch1" class="acn-strip" data-gjs-dmode="flow">
@@ -533,5 +628,482 @@ body:not([data-osc-style="own"]) .acn-solo.toggle {
   </div>
 
 </div>
+<script id="acn-script" type="module" data-gjs-dmode="flow">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js";
+
+// The desk in three dimensions. The controls stay what they were -- OSCAR's
+// sliders, buttons and meters in the strips below -- and the stage is a
+// second face for them: a fader cap dragged on the stage moves its slider,
+// a key tapped there presses its button, and whatever moves the controls
+// (a finger here, a phone elsewhere, the rig) moves the stage. three.js
+// comes from the web; without it the strips are the desk, as they were.
+(function () {
+  var doc = document;
+  var byId = function (id) { return doc.getElementById(id); };
+  var root = byId("acn");
+  var stage = byId("acn-stage");
+  var classic = byId("acn-classic");
+  if (!root || !stage) return;
+  if (window.acnStop) window.acnStop();
+
+  // The strips, read from the page: the stage draws what is there, under the
+  // names that are there, so a renamed or removed strip is followed.
+  var strips = Array.prototype.map.call(root.querySelectorAll(".acn-strip"), function (el) {
+    var name = el.querySelector(".acn-name");
+    return {
+      el: el,
+      name: name ? name.textContent.trim() : "",
+      meters: Array.prototype.slice.call(el.querySelectorAll(".oscar-meter")),
+      fader: el.querySelector('input[type="range"]'),
+      keys: Array.prototype.slice.call(el.querySelectorAll("button")),
+      master: el.classList.contains("acn-master"),
+    };
+  });
+  if (!strips.length) return;
+
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var big = window.innerWidth > 700;
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  } catch (err) {
+    return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = big;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.domElement.className = "acn-canvas";
+  stage.appendChild(renderer.domElement);
+  root.classList.add("acn-3d");
+
+  // Classic desk: the strips, shown again under the stage.
+  function toggleClassic() {
+    root.classList.toggle("acn-classic-on");
+  }
+  if (classic) classic.addEventListener("click", toggleClassic);
+
+  // A colour as the style wrote it, through the browser's own parser.
+  var probe = doc.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  function token(name, fallback) {
+    var value = getComputedStyle(doc.body).getPropertyValue(name).trim();
+    probe.clearRect(0, 0, 1, 1);
+    probe.fillStyle = fallback;
+    if (value) probe.fillStyle = value;
+    probe.fillRect(0, 0, 1, 1);
+    var px = probe.getImageData(0, 0, 1, 1).data;
+    return new THREE.Color().setRGB(px[0] / 255, px[1] / 255, px[2] / 255, THREE.SRGBColorSpace);
+  }
+  var accent = token("--osc-ring", "#4f8cff");
+  var MUTE = new THREE.Color(0xff453a);
+  var SOLO = new THREE.Color(0xffb340);
+
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x0e0f12, 6, 13);
+  var camera = new THREE.PerspectiveCamera(34, 16 / 9, 0.1, 60);
+
+  // ---- a small studio, rendered once, for the metal to reflect ----
+  var pmrem = new THREE.PMREMGenerator(renderer);
+  var room = new THREE.Scene();
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(14, 8, 14), new THREE.MeshBasicMaterial({ color: 0x1a1b20, side: THREE.BackSide })));
+  function panel(w, h, x, y, z, color, strength) {
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(strength) }));
+    m.position.set(x, y, z);
+    m.lookAt(0, 0, 0);
+    room.add(m);
+  }
+  panel(8, 1.6, 0, 3.9, 1.5, 0xffffff, 5);
+  panel(1.2, 6, -6.5, 1.5, 0, 0xffffff, 2.5);
+  panel(1.2, 6, 6.5, 1.5, 0, 0xffffff, 2.5);
+  panel(8, 2, 0, 2.5, -6.5, accent.getHex(), 2);
+  scene.environment = pmrem.fromScene(room, 0.04).texture;
+  pmrem.dispose();
+
+  // ---- lights: a key over the desk, two lamps in the style's colour, and one that flares ----
+  scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+  var key = new THREE.SpotLight(0xfff4e6, 90, 0, 0.6, 0.6, 1.3);
+  key.position.set(0.5, 4.5, 2.8);
+  key.target.position.set(0, 0, 0);
+  key.castShadow = big;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.bias = -0.0004;
+  scene.add(key, key.target);
+  var lampL = new THREE.PointLight(accent, 6, 7, 2);
+  lampL.position.set(-2.6, 1.3, 0.8);
+  var lampR = new THREE.PointLight(accent, 6, 7, 2);
+  lampR.position.set(2.6, 1.3, 0.8);
+  scene.add(lampL, lampR);
+  var flare = new THREE.PointLight(0xffffff, 0, 2.6, 2);
+  scene.add(flare);
+
+  // ---- the floor ----
+  var floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x0d0e11, roughness: 0.85, metalness: 0.1 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.4;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // ---- materials: brushed aluminium, chrome, black keys ----
+  var aluminium = new THREE.MeshStandardMaterial({ color: 0xc9ccd2, metalness: 0.92, roughness: 0.38 });
+  var recess = new THREE.MeshStandardMaterial({ color: 0xaeb2b9, metalness: 0.9, roughness: 0.45 });
+  var chrome = new THREE.MeshStandardMaterial({ color: 0xf0f2f5, metalness: 1, roughness: 0.18 });
+  var slot = new THREE.MeshStandardMaterial({ color: 0x0a0b0d, metalness: 0.3, roughness: 0.6 });
+  var keyMat = new THREE.MeshStandardMaterial({ color: 0x24262b, metalness: 0.4, roughness: 0.45, emissive: 0x000000 });
+  var glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+
+  function shadowed(mesh) {
+    mesh.castShadow = big;
+    mesh.receiveShadow = big;
+    return mesh;
+  }
+
+  // A soft round glow, for the lamps over the strips and the flares.
+  var dot = doc.createElement("canvas");
+  dot.width = dot.height = 128;
+  var pen = dot.getContext("2d");
+  var grad = pen.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.3, "rgba(255,255,255,0.5)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  pen.fillStyle = grad;
+  pen.fillRect(0, 0, 128, 128);
+  var glowTexture = new THREE.CanvasTexture(dot);
+
+  // A name, etched: drawn once into a texture.
+  function label(text, width) {
+    var c = doc.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    var x = c.getContext("2d");
+    x.clearRect(0, 0, 256, 64);
+    x.font = "800 44px -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Inter, sans-serif";
+    x.textAlign = "center";
+    x.textBaseline = "middle";
+    x.fillStyle = "rgba(255,255,255,0.55)";
+    x.fillText(text.toUpperCase(), 128, 34);
+    x.fillStyle = "#2f3136";
+    x.fillText(text.toUpperCase(), 128, 32);
+    var tex = new THREE.CanvasTexture(c);
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(width, width / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    return m;
+  }
+
+  // ---- the desk: one slab, a strip milled into it for each one on the page ----
+  var desk = new THREE.Group();
+  desk.rotation.x = -0.34; // tilted up at the back, as a desk is
+  scene.add(desk);
+
+  var W = 0.34;
+  var GAP = 0.05;
+  var widths = strips.map(function (s) { return s.master ? W * 1.3 : W; });
+  var total = widths.reduce(function (a, b) { return a + b; }, 0) + GAP * (strips.length - 1);
+  var DEPTH = 1.5;
+
+  var slab = shadowed(new THREE.Mesh(new THREE.BoxGeometry(total + 0.3, 0.12, DEPTH + 0.3), aluminium));
+  slab.position.y = -0.06;
+  desk.add(slab);
+  // The slab's edge, chamfered in look: a thin bright line along the front.
+  var lip = new THREE.Mesh(new THREE.BoxGeometry(total + 0.3, 0.012, 0.012), chrome);
+  lip.position.set(0, 0.002, DEPTH / 2 + 0.15);
+  desk.add(lip);
+
+  var LEDS = 18;
+  var ledGeo = new THREE.BoxGeometry(0.026, 0.004, 0.02);
+  var capGeo = new THREE.BoxGeometry(0.12, 0.05, 0.075);
+  var RAIL = 0.82; // the fader's travel, front to back
+  var x = -total / 2;
+  var caps = [];
+  var keys = [];
+  var views = [];
+
+  strips.forEach(function (s, index) {
+    var w = widths[index];
+    var g = new THREE.Group();
+    g.position.x = x + w / 2;
+    x += w + GAP;
+    desk.add(g);
+
+    var tray = shadowed(new THREE.Mesh(new THREE.BoxGeometry(w - 0.02, 0.014, DEPTH - 0.06), recess));
+    tray.position.y = -0.004;
+    g.add(tray);
+    if (s.name) {
+      var name = label(s.name, w + 0.02);
+      name.position.set(0, 0.008, -DEPTH / 2 + 0.09);
+      g.add(name);
+    }
+
+    // Meters: an LED ladder in a black slot, one per meter on the strip.
+    var meterCount = s.meters.length;
+    var meterX = -w / 2 + 0.07;
+    var ledsOf = [];
+    s.meters.forEach(function (meterEl, m) {
+      var mx = meterX + m * 0.05;
+      var bar = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.008, RAIL + 0.06), slot);
+      bar.position.set(mx, 0.004, -0.12);
+      g.add(bar);
+      var leds = [];
+      for (var i = 0; i < LEDS; i++) {
+        var led = new THREE.Mesh(ledGeo, new THREE.MeshBasicMaterial({ color: 0x0f1013 }));
+        var t = i / (LEDS - 1);
+        led.position.set(mx, 0.01, -0.12 + RAIL / 2 - t * RAIL);
+        led.userData.lit = t < 0.6 ? new THREE.Color(0x30d158) : t < 0.82 ? new THREE.Color(0xffb340) : new THREE.Color(0xff453a);
+        led.userData.off = new THREE.Color(0x0f1013);
+        g.add(led);
+        leds.push(led);
+      }
+      ledsOf.push({ el: meterEl, leds: leds });
+    });
+
+    // The fader: a groove, and a chrome cap that slides along it.
+    var faderX = meterX + meterCount * 0.05 + (w / 2 - (meterX + meterCount * 0.05)) / 2;
+    var groove = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.008, RAIL + 0.1), slot);
+    groove.position.set(faderX, 0.004, -0.12);
+    g.add(groove);
+    var cap = new THREE.Group();
+    var block = shadowed(new THREE.Mesh(capGeo, chrome));
+    block.position.y = 0.025;
+    var line = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.052, 0.077), slot);
+    line.position.y = 0.025;
+    var halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color: accent, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    halo.scale.set(0.5, 0.5, 1);
+    halo.position.y = 0.06;
+    cap.add(block, line, halo);
+    cap.position.set(faderX, 0, -0.12);
+    cap.userData = { input: s.fader, halo: halo, strip: g, glow: 0, last: null, x: faderX };
+    g.add(cap);
+    if (s.fader) caps.push(cap);
+
+    // The keys: black, lit when down.
+    var keyViews = [];
+    s.keys.forEach(function (btn, k) {
+      var kg = new THREE.Group();
+      var body = shadowed(new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, 0.03, 0.085), keyMat.clone()));
+      body.position.y = 0.015;
+      var light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      light.scale.set(0.42, 0.42, 1);
+      light.position.y = 0.05;
+      kg.add(body, light);
+      kg.position.set(0, 0, DEPTH / 2 - 0.26 + k * 0.11);
+      kg.userData = { button: btn, body: body, light: light, on: false, glow: 0, colour: /solo|dim/i.test(btn.textContent) ? SOLO : MUTE };
+      g.add(kg);
+      keys.push(kg);
+      keyViews.push(kg);
+    });
+
+    // The lamp at the back of the strip: a glow on the metal, brighter the higher the fader.
+    var lamp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color: accent, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false }));
+    lamp.scale.set(w * 2.4, w * 1.4, 1);
+    lamp.position.set(0, 0.05, -DEPTH / 2 - 0.04);
+    g.add(lamp);
+
+    views.push({ strip: s, group: g, leds: ledsOf, cap: cap, keys: keyViews, lamp: lamp });
+  });
+
+  // ---- what a finger does on the stage ----
+  var raycaster = new THREE.Raycaster();
+  var ndc = new THREE.Vector2();
+  var hittable = caps.concat(keys);
+  var deskPlane = new THREE.Plane();
+  var deskUp = new THREE.Vector3();
+  var point = new THREE.Vector3();
+  var local = new THREE.Vector3();
+  var drag = null; // { kind: "cap"|"orbit", ... }
+  var orbit = { yaw: 0, pitch: 0, yawTo: 0, pitchTo: 0 };
+  var canvas = renderer.domElement;
+
+  function ownerOf(object) {
+    while (object) {
+      if (object.userData && (object.userData.input !== undefined || object.userData.button)) return object;
+      object = object.parent;
+    }
+    return null;
+  }
+  function aim(event) {
+    var box = canvas.getBoundingClientRect();
+    ndc.set(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+  }
+  function press(el, type, id) {
+    el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: id, isPrimary: true, button: 0 }));
+  }
+  function range(input) {
+    var min = parseFloat(input.min);
+    var max = parseFloat(input.max);
+    if (!isFinite(min)) min = 0;
+    if (!isFinite(max) || max === min) max = min + 1;
+    return { min: min, max: max };
+  }
+  function fraction(input) {
+    var r = range(input);
+    var v = parseFloat(input.value);
+    if (!isFinite(v)) v = r.min;
+    return Math.max(0, Math.min(1, (v - r.min) / (r.max - r.min)));
+  }
+  // The fader's value from where the finger is: the ray meets the desk's
+  // own plane, and the point's place along the groove is the fraction.
+  function fractionAt(cap) {
+    deskUp.set(0, 1, 0).applyQuaternion(desk.quaternion);
+    cap.getWorldPosition(point);
+    deskPlane.setFromNormalAndCoplanarPoint(deskUp, point);
+    if (!raycaster.ray.intersectPlane(deskPlane, point)) return null;
+    cap.userData.strip.worldToLocal(local.copy(point));
+    return Math.max(0, Math.min(1, (-0.12 + RAIL / 2 - local.z) / RAIL));
+  }
+  function setFader(cap, f) {
+    var input = cap.userData.input;
+    var r = range(input);
+    var step = parseFloat(input.step) || 0.01;
+    var v = Math.round((r.min + f * (r.max - r.min)) / step) * step;
+    v = Math.max(r.min, Math.min(r.max, v));
+    if (String(input.value) === String(v)) return;
+    input.value = v;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  canvas.addEventListener("pointerdown", function (event) {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    aim(event);
+    var hits = raycaster.intersectObjects(hittable, true);
+    var owner = hits.length ? ownerOf(hits[0].object) : null;
+    if (owner && owner.userData.button) {
+      var btn = owner.userData.button;
+      press(btn, "pointerdown", 200 + event.pointerId);
+      press(btn, "pointerup", 200 + event.pointerId);
+      btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      event.preventDefault();
+      return;
+    }
+    if (owner && owner.userData.input) {
+      drag = { kind: "cap", id: event.pointerId, cap: owner };
+      // The slider is held: it ignores the rig while a finger is on it.
+      press(owner.userData.input, "pointerdown", 300 + event.pointerId);
+      canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+    drag = { kind: "orbit", id: event.pointerId, x: event.clientX, y: event.clientY, yaw: orbit.yawTo, pitch: orbit.pitchTo };
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", function (event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (drag.kind === "cap") {
+      aim(event);
+      var f = fractionAt(drag.cap);
+      if (f !== null) setFader(drag.cap, f);
+      return;
+    }
+    orbit.yawTo = Math.max(-0.55, Math.min(0.55, drag.yaw - (event.clientX - drag.x) * 0.004));
+    orbit.pitchTo = Math.max(-0.15, Math.min(0.25, drag.pitch + (event.clientY - drag.y) * 0.003));
+  });
+  function dragEnd(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (drag.kind === "cap") press(drag.cap.userData.input, "pointerup", 300 + event.pointerId);
+    drag = null;
+  }
+  canvas.addEventListener("pointerup", dragEnd);
+  canvas.addEventListener("pointercancel", dragEnd);
+
+  // ---- size ----
+  function fit() {
+    var w = stage.clientWidth || 640;
+    var h = stage.clientHeight || 360;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  var sizer = new ResizeObserver(fit);
+  sizer.observe(stage);
+  fit();
+
+  // ---- every frame: the stage follows the controls, and lights what moved ----
+  var clock = new THREE.Clock();
+  var frame = 0;
+  var tmp = new THREE.Vector3();
+  var flareTo = new THREE.Vector3();
+  var levelOf = function (el) {
+    var raw = getComputedStyle(el).getPropertyValue("--oscar-level").trim();
+    var n = parseFloat(raw);
+    return isFinite(n) ? Math.max(0, Math.min(1, n / 100)) : 0;
+  };
+  function flareAt(object, colour, strength) {
+    object.getWorldPosition(flareTo);
+    flare.position.copy(flareTo).add(tmp.set(0, 0.25, 0.1));
+    flare.color.copy(colour);
+    flare.intensity = Math.max(flare.intensity, strength);
+  }
+  function animate() {
+    frame = requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    var t = clock.elapsedTime;
+    var decay = Math.pow(0.02, dt);
+
+    views.forEach(function (v) {
+      // The fader cap follows its slider, and glows when it moves.
+      var cap = v.cap;
+      if (cap.userData.input) {
+        var f = fraction(cap.userData.input);
+        var zTo = -0.12 + RAIL / 2 - f * RAIL;
+        if (cap.userData.last !== null && Math.abs(f - cap.userData.last) > 0.0005) {
+          cap.userData.glow = 1;
+          flareAt(cap, accent, 6);
+        }
+        cap.userData.last = f;
+        cap.position.z += (zTo - cap.position.z) * Math.min(1, dt * 18);
+        cap.userData.glow *= decay;
+        cap.userData.halo.material.opacity = cap.userData.glow * 0.9;
+        // The lamp over the strip: as bright as the fader is high, plus the glow of a move.
+        v.lamp.material.opacity = 0.08 + f * 0.3 + cap.userData.glow * 0.35;
+      }
+      // The LED ladders follow the meters.
+      v.leds.forEach(function (m) {
+        var level = levelOf(m.el);
+        m.leds.forEach(function (led, i) {
+          var on = i / (LEDS - 1) < level;
+          led.material.color.copy(on ? led.userData.lit : led.userData.off);
+        });
+      });
+      // The keys follow their buttons: lit when down, and a flare when they change.
+      v.keys.forEach(function (k) {
+        var on = k.userData.button.classList.contains("toggle");
+        if (on !== k.userData.on) {
+          k.userData.on = on;
+          k.userData.glow = 1;
+          flareAt(k, k.userData.colour, on ? 10 : 4);
+        }
+        k.userData.glow *= decay;
+        var e = on ? 0.9 : 0;
+        k.userData.body.material.emissive.copy(k.userData.colour).multiplyScalar(e + k.userData.glow * 0.6);
+        k.userData.body.material.color.copy(on ? k.userData.colour : new THREE.Color(0x24262b));
+        k.userData.light.material.color.copy(k.userData.colour);
+        k.userData.light.material.opacity = (on ? 0.35 : 0) + k.userData.glow * 0.6;
+      });
+    });
+    flare.intensity *= Math.pow(0.004, dt);
+
+    // The seat: a slow drift, or where the drag put it.
+    if (!still && !drag) orbit.yawTo = Math.sin(t * 0.13) * 0.08;
+    orbit.yaw += (orbit.yawTo - orbit.yaw) * Math.min(1, dt * 4);
+    orbit.pitch += (orbit.pitchTo - orbit.pitch) * Math.min(1, dt * 4);
+    var dist = big ? 3.1 : 3.8;
+    tmp.set(Math.sin(orbit.yaw) * dist, 3.2 + orbit.pitch * 2.5, Math.cos(orbit.yaw) * dist);
+    camera.position.copy(tmp);
+    camera.lookAt(0, 0, -0.05);
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.acnStop = function () {
+    cancelAnimationFrame(frame);
+    sizer.disconnect();
+    if (classic) classic.removeEventListener("click", toggleClassic);
+    root.classList.remove("acn-3d");
+    renderer.dispose();
+    if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    window.acnStop = null;
+  };
+})();
+</script>
 </body>
 </html>
