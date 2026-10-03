@@ -107,6 +107,7 @@ function removeMcpHandshake() {
 // OSCAR_NO_TELEMETRY=1 both silence it; a build with no key baked in is
 // silent by construction.
 const { createTelemetry, crashWords } = require("./lib/telemetry");
+const { targetsOf } = require("./lib/telemetry-targets");
 const telemetry = createTelemetry({ settings });
 
 // A crash is counted -- its class and the OSCAR file:line, never the
@@ -819,6 +820,8 @@ surfaces.onPublished((id) => {
         dmxUsb: widgets.some((w) => w.config && !!w.config.dmxEnabled && /^(usbpro|opendmx)$/.test(w.config.dmxProtocol)),
         bridge: widgets.some((w) => w.config && [w.config.oscSendWhen, w.config.midiSendWhen, w.config.dmxSendWhen].indexOf("data") !== -1),
       });
+      // And what it talks to, by name from a fixed list: never a setting.
+      targetsOf(widgets).forEach((seen) => telemetry.tell("target_seen", seen));
     })
     .catch(() => {});
 });

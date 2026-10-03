@@ -121,7 +121,7 @@ test("close flushes what is queued, for quitting", async () => {
 const readSource = (...parts) => fs.readFileSync(path.join(__dirname, "..", ...parts), "utf8").replace(/\r\n/g, "\n");
 
 test("the events OSCAR speaks are few, named, and where they claim to be", () => {
-  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["access_changed", "app_error", "app_start", "draft_loaded", "file_exported", "file_opened", "mcp_tool_called", "surface_published", "template_loaded"]);
+  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["access_changed", "app_error", "app_start", "draft_loaded", "file_exported", "file_opened", "mcp_tool_called", "surface_published", "target_seen", "template_loaded"]);
   const server = readSource("server.js");
   assert.match(server, /telemetry\.tell\("app_start", Object\.assign\(\{ version: pkg\.version, os: process\.platform, arch: process\.arch \}, counts\)\)/);
   assert.match(server, /\(\[projects, pages\]\) => \(\{ projects: projects\.length, published: pages\.length \}\), \(\) => \(\{\}\)/, "two counts, or none if they cannot be had");
