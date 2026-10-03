@@ -3,17 +3,18 @@
 <head>
 <title>Drum Kit</title>
 <!--
-  Drum Kit: a five-piece kit seen from the stool, on a rug, under a light.
-  Kick, snare and rim, two rack toms and a floor tom, a hi-hat that plays
-  closed, open and with the pedal, a crash, and a ride with its bell. Every
-  pad sends a MIDI note on channel 10, the drum channel of General MIDI,
-  with OSC off, to the first MIDI output this computer has. On Windows that
-  is usually the Microsoft GS Wavetable Synth, so the kit makes a sound
-  straight away. To play a drum machine or a DAW, pick its port under
-  MIDI > Out port on each pad, or make a loopMIDI port and pick that.
+  Drum Kit: a five-piece kit in three dimensions, lit on a rug, seen from
+  the front row. Kick, snare and rim, two rack toms and a floor tom, a hi-hat
+  that plays closed, open and with the pedal, a crash, and a ride with its
+  bell. Tap a drum or a cymbal on the stage, or a pad under it: every piece
+  sends a MIDI note on channel 10, the drum channel of General MIDI, with
+  OSC off, to the first MIDI output this computer has. On Windows that is
+  usually the Microsoft GS Wavetable Synth, so the kit makes a sound straight
+  away. To play a drum machine or a DAW, pick its port under MIDI > Out port
+  on each pad, or make a loopMIDI port and pick that.
 
-  Open it from Load, or paste this whole file into Import. It is ordinary
-  HTML and CSS with two OSCAR additions:
+  Open it from File > Open project or template, or paste this whole file into
+  Import. It is ordinary HTML and CSS with two OSCAR additions:
 
   - data-gjs-* attributes hold each widget's settings: data-gjs-midi-type,
     -midi-number and -midi-channel say what it sends, and
@@ -23,24 +24,32 @@
     the layout when dragged instead of being pulled out of it.
   - data-osc-style="own" on <body> says the page brings its own look, and the
     first rule sets the colour tokens for it. Pick another widget style in
-    the editor and the whole kit is redrawn in that style's colours: every
-    rule that paints is written for "own" alone, and a short set of rules
-    further down, made of tokens only, dresses it for the others.
+    the editor and the page is redrawn in that style's colours: every rule
+    that paints is written for "own" alone, and a short set of rules further
+    down, made of tokens only, dresses it for the others. The stage takes
+    the style's two accent colours for its lights and its rings.
 
   How a hit is made. Each pad is an OSCAR button in momentary mode: pressed,
   it sends Value ON, which MIDI reads as full, so a note on at velocity 127;
   let go, a note off, which a drum sound ignores. Two fingers on two pads
-  play both, as two sticks do.
+  play both, as two sticks do. A tap on a piece of the stage presses its
+  pad for a moment, so the stage sends exactly what the pads send.
 
-  How the waves are made. OSCAR puts the class "toggle" on a pad while it is
-  down; that can be a moment, too short for an animation to be seen. So the
-  script at the end watches for it and starts two animations that run their
-  full length whatever the finger does: rings that spread from the drum
-  (a cymbal wobbles as well), and a pulse through the scope at the top, as
-  tall and as long as the drum is loud and long -- a crash rings, a closed
-  hat ticks. It only reads the class, so a hit on another device showing
-  the page makes waves here too. The script also plays the kit from the
-  computer keyboard, by pressing the pads as a finger does.
+  How the kit is drawn. The <script> at the end builds it in three.js: shells
+  with a head at each end and chrome hoops, lathed cymbals on stands, two
+  sticks, a spotlight and two coloured lamps, and a small studio rendered
+  once for the metal to reflect. A hit swings the nearer stick at the piece,
+  dents the head and springs it back, sets a cymbal wobbling, spreads a ring
+  from the head, flashes a lamp, and on the kick jolts the seat. The hi-hat
+  lifts when played open and snaps shut on the pedal. The seat sways slowly
+  and can be dragged to look around; tapping a piece never drags. three.js
+  is fetched from the web, so without internet the stage stays a dark room
+  and the pads and the scope still play.
+
+  The script only reads the class "toggle", which OSCAR puts on a pad while
+  it is down; a hit on another device showing the page is seen here too.
+  It also pulses the scope at the top, as tall and as long as the drum is
+  loud and long, and plays the kit from the computer keyboard.
 
   The layout rearranges at 992px and 480px, the widths of the editor's
   Tablet and Mobile views, so edits made in those views land in the same
@@ -206,85 +215,89 @@
 .drk-bar:nth-child(47) { --peak: 0.127; animation-delay: 202ms; }
 .drk-bar:nth-child(48) { --peak: 0.12; animation-delay: 211ms; }
 
-/* ---- the kit: on a rug, as the drummer sees it --------------------------------------------- */
-.drk-kit {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-areas:
-    "hats crash toms ride"
-    "hats snare kick floor";
-  align-items: center;
-  gap: 26px 28px;
-  padding: 34px 30px;
-  border-radius: 48% / 22%;
+/* ---- the stage: the kit in three dimensions, lit on its rug -------------------------------- */
+.drk-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 300px;
+  overflow: hidden;
+  border-radius: 18px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
-[data-osc-style="own"] .drk-kit {
+[data-osc-style="own"] .drk-stage {
   background:
-    repeating-radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 0) 0 22px, rgba(0, 0, 0, 0.12) 22px 25px),
-    radial-gradient(ellipse at 50% 50%, #5a1f2a, #3b1219 70%, #2a0c12);
-  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.9), inset 0 0 60px rgba(0, 0, 0, 0.5);
+    radial-gradient(60% 55% at 50% 60%, rgba(255, 214, 160, 0.1), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(180deg, #0a080c, #130f17 60%, #080609);
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+.drk-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.drk-stage-hint {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  bottom: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.45;
+  pointer-events: none;
 }
 
-.drk-cell {
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: 12px;
-  min-width: 0;
-}
-.drk-hats { grid-area: hats; }
-.drk-crash-cell { grid-area: crash; }
-.drk-toms { grid-area: toms; grid-template-columns: 1fr 1fr; align-items: center; }
-.drk-ride-cell { grid-area: ride; }
-.drk-snare-cell { grid-area: snare; }
-.drk-kick-cell { grid-area: kick; }
-.drk-floor-cell { grid-area: floor; }
-
-.drk-row {
+/* ---- the pads: every piece as a button under the stage, the same hits by thumb ------------- */
+.drk-pads {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
+  align-items: center;
+  gap: 12px 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
 }
-/* Side by side, the small pads keep their size rather than share the width. */
-.drk-row > .drk-pad {
-  flex: none;
-  width: var(--size);
+[data-osc-style="own"] .drk-pads {
+  background: linear-gradient(180deg, #17121a, #100c13);
+  box-shadow: inset 0 0 0 1px #221b26, 0 20px 40px -24px rgba(0, 0, 0, 0.9);
 }
 
-/* ---- a pad: round, labelled at the bottom, and ringing when struck ------------------------- */
+/* ---- a pad: round, labelled, and ringing when struck -------------------------------------- */
 .drk-pad {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  width: 100%;
-  max-width: var(--size, 130px);
-  height: auto;
+  flex: none;
+  width: var(--size);
+  height: var(--size);
   min-height: 0;
-  aspect-ratio: 1;
   margin: 0;
-  padding: 0 0 15%;
+  padding: 0;
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   transition: transform 60ms ease-out;
   touch-action: none;
-  --size: 130px;
+  --size: 66px;
 }
-#drk-kick { --size: 230px; padding-bottom: 12%; font-size: 11px; }
-#drk-floor { --size: 160px; }
-#drk-snare { --size: 140px; }
-#drk-tom1 { --size: 104px; }
-#drk-tom2 { --size: 112px; }
-#drk-crash { --size: 170px; }
-#drk-ride { --size: 180px; }
-#drk-hihat { --size: 140px; }
-.drk-small { --size: 60px; padding-bottom: 0; align-items: center; font-size: 9px; letter-spacing: 0.08em; }
+#drk-kick { --size: 84px; font-size: 10px; }
+#drk-floor { --size: 74px; }
+#drk-snare { --size: 70px; }
+#drk-crash { --size: 74px; }
+#drk-ride { --size: 78px; }
+.drk-small { --size: 50px; font-size: 8px; letter-spacing: 0.06em; }
 
 .drk-pad.toggle {
-  transform: scale(0.96);
+  transform: scale(0.94);
 }
 
 /* The rings: two, a moment apart, spreading from the rim. */
@@ -341,35 +354,6 @@
 [data-osc-style="own"] .drk-drum.toggle:hover {
   background: radial-gradient(circle, #e9e2d3 0 55%, #d8ceba 85%, #c5b89f);
   box-shadow: 0 0 0 4px #ffffff, 0 0 0 6px #6f757c, 0 0 0 12px #c8202a, 0 0 0 13px #5e0b0f, 0 0 34px rgba(255, 90, 90, 0.45), 0 10px 18px rgba(0, 0, 0, 0.65);
-}
-
-/* The kick shows its front head: black, a red ring, the maker's name. */
-.drk-kick-cell {
-  display: grid;
-  place-items: center;
-}
-.drk-kick-cell > * {
-  grid-area: 1 / 1;
-}
-[data-osc-style="own"] #drk-kick {
-  background: radial-gradient(circle, #1b1b1d 0 52%, #a3161c 53% 58%, #1b1b1d 59%);
-  color: #f1ece4;
-}
-[data-osc-style="own"] #drk-kick.toggle,
-[data-osc-style="own"] #drk-kick.toggle:hover {
-  background: radial-gradient(circle, #232326 0 52%, #d0222c 53% 58%, #232326 59%);
-}
-.drk-logo {
-  font-size: 26px;
-  font-style: italic;
-  font-weight: 900;
-  letter-spacing: 0.18em;
-  pointer-events: none;
-  transform: translateY(-8%);
-}
-[data-osc-style="own"] .drk-logo {
-  color: #f1ece4;
-  text-shadow: 0 2px 0 #a3161c;
 }
 
 /* Cymbals: lathed bronze, a bell in the middle, a sheen across it. */
@@ -482,7 +466,8 @@ body:not([data-osc-style="own"]) .drk-notes {
 body:not([data-osc-style="own"]) .drk-bar {
   background: var(--osc-primary);
 }
-body:not([data-osc-style="own"]) .drk-kit {
+body:not([data-osc-style="own"]) .drk-stage,
+body:not([data-osc-style="own"]) .drk-pads {
   border: 1px solid var(--osc-border);
   background: var(--osc-card);
 }
@@ -506,18 +491,15 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
     padding: 20px 14px 40px;
   }
 
-  .drk-kit {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-areas:
-      "crash toms ride"
-      "hats snare floor"
-      "kick kick kick";
-    gap: 22px;
-    padding: 28px 20px;
-    border-radius: 36px;
+  .drk-stage {
+    aspect-ratio: 4 / 3;
+    min-height: 260px;
   }
 
-  #drk-kick { --size: 200px; }
+  .drk-pads {
+    gap: 10px 12px;
+    padding: 14px;
+  }
 
   .drk-notes-list {
     grid-template-columns: 1fr;
@@ -546,33 +528,25 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
     gap: 2px;
   }
 
-  .drk-kit {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "crash ride"
-      "toms toms"
-      "hats snare"
-      "floor kick";
-    gap: 20px 14px;
-    padding: 22px 12px;
-    border-radius: 24px;
+  .drk-stage {
+    aspect-ratio: 1;
+    min-height: 240px;
+    border-radius: 14px;
   }
 
-  #drk-kick { --size: 150px; }
-  #drk-crash { --size: 140px; }
-  #drk-ride { --size: 140px; }
-  #drk-tom1,
-  #drk-tom2 { --size: 120px; }
-
-  .drk-small { --size: 52px; }
-
-  .drk-row {
-    gap: 8px;
+  .drk-stage-hint {
+    display: none;
   }
 
-  .drk-logo {
-    font-size: 18px;
+  .drk-pads {
+    gap: 8px 10px;
+    padding: 12px 8px;
+    border-radius: 14px;
   }
+
+  .drk-pad { --size: 58px; }
+  #drk-kick { --size: 72px; }
+  .drk-small { --size: 46px; }
 
   .drk-notes {
     padding: 18px 14px;
@@ -650,37 +624,24 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
       <span id="drk-bar-48" class="drk-bar" data-gjs-dmode="flow"></span>
   </div>
 
-  <section id="drk-kit" class="drk-kit" data-gjs-dmode="flow">
-    <div id="drk-hats" class="drk-cell drk-hats" data-gjs-dmode="flow">
-      <button id="drk-hihat" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/hihat" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="42">Hi-hat</button>
-      <div id="drk-hats-row" class="drk-row" data-gjs-dmode="flow">
-        <button id="drk-open" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/open" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="46">Open</button>
-        <button id="drk-pedal" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/pedal" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="44">Pedal</button>
-      </div>
-    </div>
-    <div id="drk-crash-cell" class="drk-cell drk-crash-cell" data-gjs-dmode="flow">
-      <button id="drk-crash" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/crash" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="49">Crash</button>
-    </div>
-    <div id="drk-toms" class="drk-cell drk-toms" data-gjs-dmode="flow">
-      <button id="drk-tom1" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/tom1" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="50">Tom 1</button>
-      <button id="drk-tom2" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/tom2" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="47">Tom 2</button>
-    </div>
-    <div id="drk-ride-cell" class="drk-cell drk-ride-cell" data-gjs-dmode="flow">
-      <button id="drk-ride" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/ride" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="51">Ride</button>
-      <button id="drk-bell" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/bell" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="53">Bell</button>
-    </div>
-    <div id="drk-snare-cell" class="drk-cell drk-snare-cell" data-gjs-dmode="flow">
-      <button id="drk-snare" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/snare" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="38">Snare</button>
-      <button id="drk-rim" class="drk-pad drk-drum drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/rim" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="37">Rim</button>
-    </div>
-    <div id="drk-kick-cell" class="drk-cell drk-kick-cell" data-gjs-dmode="flow">
-      <button id="drk-kick" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/kick" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="36">Kick</button>
-      <span id="drk-logo" class="drk-logo" data-gjs-dmode="flow">OSCAR</span>
-    </div>
-    <div id="drk-floor-cell" class="drk-cell drk-floor-cell" data-gjs-dmode="flow">
-      <button id="drk-floor" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/floor" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="43">Floor tom</button>
-    </div>
-  </section>
+  <div id="drk-stage" class="drk-stage" data-gjs-dmode="flow">
+    <span id="drk-stage-hint" class="drk-stage-hint" data-gjs-dmode="flow">Tap a drum &middot; drag the floor to look around</span>
+  </div>
+
+  <div id="drk-pads" class="drk-pads" data-gjs-dmode="flow">
+    <button id="drk-hihat" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/hihat" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="42">Hi-hat</button>
+    <button id="drk-open" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/open" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="46">Open</button>
+    <button id="drk-pedal" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/pedal" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="44">Pedal</button>
+    <button id="drk-crash" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/crash" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="49">Crash</button>
+    <button id="drk-tom1" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/tom1" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="50">Tom 1</button>
+    <button id="drk-tom2" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/tom2" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="47">Tom 2</button>
+    <button id="drk-ride" class="drk-pad drk-cymbal" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/ride" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="51">Ride</button>
+    <button id="drk-bell" class="drk-pad drk-cymbal drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/bell" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="53">Bell</button>
+    <button id="drk-snare" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/snare" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="38">Snare</button>
+    <button id="drk-rim" class="drk-pad drk-drum drk-small" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/rim" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="37">Rim</button>
+    <button id="drk-kick" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/kick" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="36">Kick</button>
+    <button id="drk-floor" class="drk-pad drk-drum" data-gjs-dmode="flow" data-gjs-mode="momentary" data-gjs-message="/drums/floor" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i" data-gjs-osc-enabled="false" data-gjs-midi-enabled="true" data-gjs-midi-channel="10" data-gjs-midi-type="note" data-gjs-midi-number="43">Floor tom</button>
+  </div>
 
   <aside id="drk-notes" class="drk-notes" data-gjs-dmode="flow">
     <h2 id="drk-notes-title" class="drk-notes-title" data-gjs-dmode="flow">Every pad is a MIDI note</h2>
@@ -689,7 +650,7 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
       <div id="drk-notes-row-1" class="drk-notes-row" data-gjs-dmode="flow">
         <dt id="drk-notes-key-1" class="drk-notes-key" data-gjs-dmode="flow">KICK</dt>
         <dd id="drk-notes-note-1" class="drk-notes-note" data-gjs-dmode="flow">Note 36</dd>
-        <dd id="drk-notes-how-1" class="drk-notes-how" data-gjs-dmode="flow">The front head, or X or B on the keyboard.</dd>
+        <dd id="drk-notes-how-1" class="drk-notes-how" data-gjs-dmode="flow">The kick on the stage, its pad, or X or B on the keyboard.</dd>
       </div>
       <div id="drk-notes-row-2" class="drk-notes-row" data-gjs-dmode="flow">
         <dt id="drk-notes-key-2" class="drk-notes-key" data-gjs-dmode="flow">SNARE, RIM</dt>
@@ -715,14 +676,24 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
   </aside>
 </div>
 <script id="drk-script" type="module" data-gjs-dmode="flow">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js";
+
+// Two halves. The first is the kit's nervous system: it watches the pads
+// for a hit (OSCAR puts "toggle" on a pad while it is down, here or on
+// another device), pulses the scope, and plays the pads from the keyboard.
+// The second is the kit itself, in three.js: the drums and cymbals, lit on
+// a rug, which are struck when a pad is hit and which press the pads when
+// they are tapped. three.js comes from the web; without it the pads and
+// the scope still work, and the stage stays a dark room.
 (function () {
   var doc = document;
   var byId = function (id) { return doc.getElementById(id); };
   var scope = byId("drk-scope");
+  var stage = byId("drk-stage");
   if (!scope) return;
 
   // How loud and how long each piece rings: the height and the length of its pulse.
-  var WAVES = {"drk-kick": [1.0, 720], "drk-snare": [0.85, 380], "drk-rim": [0.45, 200], "drk-tom1": [0.75, 480], "drk-tom2": [0.8, 540], "drk-floor": [0.9, 650], "drk-hihat": [0.35, 170], "drk-open": [0.55, 520], "drk-pedal": [0.25, 140], "drk-crash": [1.0, 1150], "drk-ride": [0.55, 760], "drk-bell": [0.65, 620]};
+  var WAVES = {"drk-kick": [1.0, 720], "drk-snare": [0.85, 380], "drk-rim": [0.45, 200], "drk-tom1": [0.75, 480], "drk-tom2": [0.8, 540], "drk-floor": [0.9, 650], "drk-hihat": [0.35, 170], "drk-open": [0.55, 520], "drk-pedal": [0.25, 140], "drk-crash": [1.0, 1400], "drk-ride": [0.6, 900], "drk-bell": [0.5, 700]};
 
   // Start an animation from the top, even while the last one is still running.
   function restart(el, cls) {
@@ -731,6 +702,8 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
     el.classList.add(cls);
   }
 
+  var strike = function () {}; // the 3D half fills this in, if it loads
+
   function waves(pad) {
     var wave = WAVES[pad.id] || [0.6, 500];
     scope.style.setProperty("--amp", String(wave[0]));
@@ -738,17 +711,18 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
     restart(scope, "drk-wave");
     restart(pad, "drk-hit");
     if (pad.classList.contains("drk-cymbal")) restart(pad, "drk-struck");
+    strike(pad.id);
   }
 
-  // OSCAR puts "toggle" on a pad while it is down, here or on another device.
-  // Only the moment it goes on is a hit; any other change of class is not.
-  // Every change is read in order, from the class each one replaced: a tap
-  // can be down and up again before the observer hears of either.
+  // Only the moment "toggle" goes on is a hit; any other change of class is
+  // not. Every change is read in order, from the class each one replaced: a
+  // tap can be down and up again before the observer hears of either.
   var isDown = function (cls) { return (" " + (cls || "") + " ").indexOf(" toggle ") !== -1; };
+  var observers = [];
   Object.keys(WAVES).forEach(function (id) {
     var pad = byId(id);
     if (!pad) return;
-    new MutationObserver(function (records) {
+    var observer = new MutationObserver(function (records) {
       var states = records.map(function (r) { return isDown(r.oldValue); });
       states.push(pad.classList.contains("toggle"));
       for (var i = 1; i < states.length; i++) {
@@ -757,15 +731,25 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
           return;
         }
       }
-    }).observe(pad, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+    });
+    observer.observe(pad, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+    observers.push(observer);
   });
 
-  // The computer keyboard presses the pads, as a finger does.
-  var KEYS = {"KeyX": "drk-kick", "KeyD": "drk-snare", "KeyF": "drk-rim", "KeyW": "drk-tom1", "KeyE": "drk-tom2", "KeyG": "drk-floor", "KeyA": "drk-hihat", "KeyS": "drk-open", "KeyZ": "drk-pedal", "KeyQ": "drk-crash", "KeyR": "drk-ride", "KeyT": "drk-bell", "KeyB": "drk-kick"};
-  var held = {};
-  function press(pad, type) {
-    pad.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 43, isPrimary: false, button: 0 }));
+  // A pad pressed as a finger presses it, from the keyboard or from a drum on the stage.
+  var pointerIds = 43;
+  function press(pad, type, id) {
+    pad.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: id || 43, isPrimary: false, button: 0 }));
   }
+  function tap(pad) {
+    var id = ++pointerIds;
+    press(pad, "pointerdown", id);
+    setTimeout(function () { press(pad, "pointerup", id); }, 70);
+  }
+
+  // The computer keyboard presses the pads.
+  var KEYS = {"KeyX": "drk-kick", "KeyB": "drk-kick", "KeyD": "drk-snare", "KeyF": "drk-rim", "KeyW": "drk-tom1", "KeyE": "drk-tom2", "KeyG": "drk-floor", "KeyA": "drk-hihat", "KeyS": "drk-open", "KeyZ": "drk-pedal", "KeyQ": "drk-crash", "KeyR": "drk-ride", "KeyT": "drk-bell"};
+  var held = {};
   function typing(e) {
     var t = e.target;
     return t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
@@ -786,6 +770,479 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
     press(pad, "pointerup");
   });
   window.addEventListener("blur", function () { held = {}; });
+
+  // ---- the kit in three.js ----------------------------------------------------------------
+  if (!stage) return;
+  // The editor runs this again whenever it redraws the script; hand the old
+  // stage back first, or each run would leave a WebGL context behind.
+  if (window.drkStop) window.drkStop();
+
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var big = window.innerWidth > 700;
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  } catch (err) {
+    return; // no WebGL here: the pads and the scope are the kit
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = big;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  renderer.domElement.className = "drk-canvas";
+  stage.appendChild(renderer.domElement);
+
+  // A colour as the style wrote it, oklch() included, through the browser's own parser.
+  var probe = doc.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  function token(name, fallback) {
+    var value = getComputedStyle(doc.body).getPropertyValue(name).trim();
+    probe.clearRect(0, 0, 1, 1);
+    probe.fillStyle = fallback;
+    if (value) probe.fillStyle = value;
+    probe.fillRect(0, 0, 1, 1);
+    var px = probe.getImageData(0, 0, 1, 1).data;
+    return new THREE.Color().setRGB(px[0] / 255, px[1] / 255, px[2] / 255, THREE.SRGBColorSpace);
+  }
+  var accent = token("--osc-primary", "#2ef2b8");
+  var accent2 = token("--osc-ring", "#ff3663");
+
+  var scene = new THREE.Scene();
+  // The room fades to the dark of the stage behind it: no horizon, no edge to the floor.
+  scene.fog = new THREE.Fog(0x0b090d, 5, 11);
+  var camera = new THREE.PerspectiveCamera(36, 16 / 9, 0.1, 60);
+  var LOOK = new THREE.Vector3(0, 0.78, 0);
+
+  // ---- the room's light, for the metal to reflect: a small studio, rendered once ----
+  var pmrem = new THREE.PMREMGenerator(renderer);
+  var room = new THREE.Scene();
+  room.add(new THREE.Mesh(new THREE.BoxGeometry(12, 8, 12), new THREE.MeshBasicMaterial({ color: 0x15131a, side: THREE.BackSide })));
+  function panel(w, h, x, y, z, color, strength, ry) {
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(strength) }));
+    m.position.set(x, y, z);
+    m.rotation.y = ry || 0;
+    m.lookAt(0, y, 0);
+    room.add(m);
+  }
+  panel(5, 2, 0, 3.8, 0, 0xfff2e0, 6);
+  panel(2, 4, -5.5, 2, 1, accent.getHex(), 3);
+  panel(2, 4, 5.5, 2, -1, accent2.getHex(), 2.5);
+  panel(6, 1.5, 0, 1.5, -5.5, 0xffffff, 1.5);
+  scene.environment = pmrem.fromScene(room, 0.04).texture;
+  pmrem.dispose();
+
+  // ---- lights ----
+  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+  var key = new THREE.SpotLight(0xfff0dc, 70, 0, 0.5, 0.55, 1.4);
+  key.position.set(0.6, 4.4, 2.6);
+  key.target.position.copy(LOOK);
+  key.castShadow = big;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.bias = -0.0005;
+  scene.add(key, key.target);
+  var rimA = new THREE.PointLight(accent, 10, 8, 2);
+  rimA.position.set(-2.6, 1.4, 0.6);
+  var rimB = new THREE.PointLight(accent2, 7, 8, 2);
+  rimB.position.set(2.6, 1.1, -0.8);
+  scene.add(rimA, rimB);
+  // The flash of a hit, moved to the piece and faded again.
+  var flash = new THREE.PointLight(0xffffff, 0, 3, 2);
+  scene.add(flash);
+
+  // ---- the floor: a dark stage and a round rug ----
+  var ground = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ color: 0x0c0b0f, roughness: 0.9, metalness: 0.05 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  var rug = new THREE.Mesh(new THREE.CircleGeometry(2.3, 64), new THREE.MeshStandardMaterial({ color: 0x4a1620, roughness: 0.98 }));
+  rug.rotation.x = -Math.PI / 2;
+  rug.position.y = 0.004;
+  rug.receiveShadow = true;
+  scene.add(rug);
+
+  // ---- materials ----
+  var chrome = new THREE.MeshStandardMaterial({ color: 0xe6e9ee, metalness: 1, roughness: 0.22 });
+  var shellRed = new THREE.MeshStandardMaterial({ color: 0x9c1420, metalness: 0.55, roughness: 0.3, emissive: 0x000000 });
+  var headSkin = new THREE.MeshStandardMaterial({ color: 0xf1ebdf, roughness: 0.82, metalness: 0 });
+  var headBlack = new THREE.MeshStandardMaterial({ color: 0x17171a, roughness: 0.55, metalness: 0.1, emissive: 0x000000 });
+  var bronze = new THREE.MeshStandardMaterial({ color: 0xd9b45c, metalness: 0.95, roughness: 0.32 });
+  var wood = new THREE.MeshStandardMaterial({ color: 0xd9b78c, roughness: 0.7 });
+  var ringMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+
+  function shadowed(mesh) {
+    mesh.castShadow = big;
+    mesh.receiveShadow = big;
+    return mesh;
+  }
+
+  // A drum: a shell with a head at each end, a chrome hoop round each head, and lugs.
+  function drum(r, h, shell, skin) {
+    var g = new THREE.Group();
+    var body = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 48, 1, true), shell.clone()));
+    body.material.side = THREE.DoubleSide;
+    g.add(body);
+    var head = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(r * 0.985, r * 0.985, 0.012, 48), skin.clone()));
+    head.position.y = h / 2;
+    g.add(head);
+    var under = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.985, r * 0.985, 0.012, 48), skin.clone());
+    under.position.y = -h / 2;
+    g.add(under);
+    [h / 2, -h / 2].forEach(function (y) {
+      var hoop = shadowed(new THREE.Mesh(new THREE.TorusGeometry(r + 0.006, 0.013, 12, 64), chrome));
+      hoop.rotation.x = Math.PI / 2;
+      hoop.position.y = y;
+      g.add(hoop);
+    });
+    var lugs = 8;
+    for (var i = 0; i < lugs; i++) {
+      var a = (i / lugs) * Math.PI * 2;
+      var lug = new THREE.Mesh(new THREE.BoxGeometry(0.035, h * 0.42, 0.03), chrome);
+      lug.position.set(Math.cos(a) * (r + 0.012), 0, Math.sin(a) * (r + 0.012));
+      lug.rotation.y = -a;
+      g.add(lug);
+    }
+    g.userData.head = head;
+    g.userData.body = body;
+    g.userData.r = r;
+    g.userData.dent = { x: 0, v: 0 };
+    return g;
+  }
+
+  // A cymbal: a shallow cone of bronze with a bell, hung on its stand's tilter.
+  function cymbal(r) {
+    var g = new THREE.Group();
+    var disc = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(r * 0.12, r, r * 0.09, 72, 1), bronze));
+    disc.position.y = r * 0.045;
+    g.add(disc);
+    var bell = new THREE.Mesh(new THREE.SphereGeometry(r * 0.2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), bronze);
+    bell.position.y = r * 0.07;
+    bell.scale.y = 0.6;
+    g.add(bell);
+    var nut = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.05, 12), chrome);
+    nut.position.y = r * 0.1;
+    g.add(nut);
+    g.userData.r = r;
+    g.userData.wobble = { t: 9, a: 0 };
+    g.userData.bell = bell;
+    return g;
+  }
+
+  // A stand: a chrome tube from the floor, three feet at the bottom.
+  function stand(x, z, top, tilt) {
+    var g = new THREE.Group();
+    var tube = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.017, top, 12), chrome);
+    tube.position.y = top / 2;
+    g.add(tube);
+    for (var i = 0; i < 3; i++) {
+      var a = (i / 3) * Math.PI * 2 + 0.4;
+      var foot = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.36, 8), chrome);
+      foot.position.set(Math.cos(a) * 0.14, 0.09, Math.sin(a) * 0.14);
+      foot.rotation.z = Math.cos(a) * 1.05;
+      foot.rotation.x = -Math.sin(a) * 1.05;
+      g.add(foot);
+    }
+    if (tilt) {
+      var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, tilt, 10), chrome);
+      arm.position.y = top + tilt / 2;
+      g.add(arm);
+    }
+    g.position.set(x, 0, z);
+    scene.add(g);
+    return g;
+  }
+
+  // ---- the kit, laid out as the drummer's audience sees it ----
+  var pieces = {};
+  function place(id, g, x, y, z, rx, rz, ry) {
+    g.position.set(x, y, z);
+    g.rotation.set(rx || 0, ry || 0, rz || 0);
+    g.userData.pad = id;
+    g.userData.base = { x: rx || 0, z: rz || 0, y: y };
+    pieces[id] = g;
+    scene.add(g);
+    return g;
+  }
+
+  // Kick: on its side, the front head to the audience.
+  var kick = drum(0.44, 0.52, shellRed, headBlack);
+  place("drk-kick", kick, 0, 0.46, 0.1, Math.PI / 2, 0);
+  // Its front head is the kick's; the rim ring around it, OSCAR's red.
+  var badge = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.33, 64), new THREE.MeshStandardMaterial({ color: 0xc8202a, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }));
+  badge.position.y = 0.27;
+  badge.rotation.x = -Math.PI / 2;
+  kick.add(badge);
+  // Two spurs keep it from walking.
+  [-1, 1].forEach(function (s) {
+    var spur = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.4, 8), chrome);
+    spur.position.set(s * 0.5, 0.2, 0.3);
+    spur.rotation.z = s * 0.55;
+    scene.add(spur);
+  });
+
+  var snare = drum(0.2, 0.15, shellRed, headSkin);
+  place("drk-snare", snare, -0.58, 0.66, 0.68, 0.12, 0.05);
+  stand(-0.58, 0.68, 0.58);
+  // The rim is the snare's hoop, struck from the side: the same piece, another hit.
+  pieces["drk-rim"] = snare;
+
+  var tom1 = drum(0.17, 0.2, shellRed, headSkin);
+  place("drk-tom1", tom1, -0.26, 0.98, -0.02, 0.42, 0.08);
+  var tom2 = drum(0.19, 0.23, shellRed, headSkin);
+  place("drk-tom2", tom2, 0.27, 0.99, -0.02, 0.42, -0.08);
+  // The toms hang off a bar out of the kick.
+  var tomMount = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.5, 10), chrome);
+  tomMount.position.set(0, 0.95, -0.05);
+  tomMount.rotation.z = Math.PI / 2;
+  scene.add(tomMount);
+  var tomPost = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.32, 10), chrome);
+  tomPost.position.set(0, 0.8, -0.05);
+  scene.add(tomPost);
+
+  var floor = drum(0.25, 0.34, shellRed, headSkin);
+  place("drk-floor", floor, 0.78, 0.5, 0.6, 0.06, -0.04);
+  for (var i = 0; i < 3; i++) {
+    var a = (i / 3) * Math.PI * 2 + 0.5;
+    var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.42, 8), chrome);
+    leg.position.set(0.78 + Math.cos(a) * 0.27, 0.21, 0.6 + Math.sin(a) * 0.27);
+    leg.rotation.z = Math.cos(a) * 0.12;
+    leg.rotation.x = -Math.sin(a) * 0.12;
+    scene.add(leg);
+  }
+
+  // The hi-hat: two cymbals on one stand; the top one lifts when it is open.
+  var hatBottom = cymbal(0.2);
+  hatBottom.rotation.x = Math.PI;
+  hatBottom.position.set(-1.08, 0.98, 0.32);
+  scene.add(hatBottom);
+  var hat = cymbal(0.2);
+  place("drk-hihat", hat, -1.08, 1.01, 0.32, 0, 0);
+  pieces["drk-open"] = hat;
+  pieces["drk-pedal"] = hat;
+  var hatOpen = { x: 0, target: 0 };
+  stand(-1.08, 0.32, 0.98, 0.25);
+
+  var crash = cymbal(0.31);
+  place("drk-crash", crash, -0.8, 1.52, -0.34, 0.5, 0.3);
+  stand(-0.72, -0.46, 1.1, 0.45);
+
+  var ride = cymbal(0.37);
+  place("drk-ride", ride, 0.92, 1.4, -0.3, 0.42, -0.26);
+  pieces["drk-bell"] = ride;
+  stand(0.86, -0.42, 1.05, 0.4);
+
+  // ---- the sticks: one in each hand, swung at whatever is hit ----
+  function stick(x) {
+    var g = new THREE.Group(); // the hand: placed and aimed
+    var pitch = new THREE.Group(); // the wrist: swung
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.014, 0.44, 10), wood);
+    m.rotation.x = Math.PI / 2;
+    m.position.z = 0.22;
+    var tip = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), wood);
+    tip.position.z = 0.44;
+    pitch.add(m, tip);
+    g.add(pitch);
+    g.position.set(x, 1.38, 1.35);
+    g.userData.pitch = pitch;
+    g.userData.swing = { t: 9 };
+    g.userData.aim = new THREE.Vector3(x * 0.6, 1.0, 0.3);
+    g.lookAt(g.userData.aim);
+    pitch.rotation.x = -0.6;
+    scene.add(g);
+    return g;
+  }
+  var sticks = { left: stick(-0.34), right: stick(0.34) };
+
+  // ---- rings that spread from a struck head ----
+  var rings = [];
+  for (var k = 0; k < 6; k++) {
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.012, 8, 64), ringMat.clone());
+    ring.visible = false;
+    scene.add(ring);
+    rings.push({ mesh: ring, t: 9 });
+  }
+  var head = new THREE.Vector3();
+  function ripple(g, r, colour) {
+    var slot = rings.find(function (s) { return s.t > 1; }) || rings[0];
+    var mesh = slot.mesh;
+    mesh.material.color.copy(colour);
+    g.getWorldPosition(head);
+    mesh.position.copy(head);
+    mesh.quaternion.copy(g.getWorldQuaternion(new THREE.Quaternion()));
+    mesh.rotateX(Math.PI / 2);
+    mesh.userData.r = r;
+    mesh.visible = true;
+    slot.t = 0;
+  }
+
+  // ---- a hit: the sticks swing, the piece answers, the light flashes ----
+  var shake = { x: 0, v: 0 };
+  var PIECE_SOUNDS = { "drk-kick": 1.2, "drk-snare": 0.9, "drk-rim": 0.5, "drk-tom1": 0.7, "drk-tom2": 0.75, "drk-floor": 0.9, "drk-hihat": 0.35, "drk-open": 0.6, "drk-pedal": 0.3, "drk-crash": 1.0, "drk-ride": 0.55, "drk-bell": 0.5 };
+  strike = function (id) {
+    var g = pieces[id];
+    if (!g) return;
+    var loud = PIECE_SOUNDS[id] || 0.6;
+    var worldAt = g.getWorldPosition(new THREE.Vector3());
+    // Which hand: the nearer one, unless both are busy with the other side.
+    if (id !== "drk-kick" && id !== "drk-pedal") {
+      var hand = worldAt.x < 0 ? sticks.left : sticks.right;
+      hand.userData.aim.copy(worldAt).add(new THREE.Vector3(0, 0.02, 0));
+      hand.lookAt(hand.userData.aim);
+      hand.userData.swing.t = 0;
+    }
+    if (g.userData.dent) {
+      g.userData.dent.v = -0.9 * loud;
+      g.userData.head.material.emissive.setRGB(0.25 * loud, 0.12 * loud, 0.06 * loud);
+      g.userData.body.material.emissive.copy(accent2).multiplyScalar(0.15 * loud);
+    }
+    if (g.userData.wobble) {
+      g.userData.wobble.t = 0;
+      g.userData.wobble.a = (id === "drk-bell" ? 0.03 : 0.11) * loud;
+    }
+    if (id === "drk-open") hatOpen.target = 1;
+    if (id === "drk-hihat" || id === "drk-pedal") hatOpen.target = 0;
+    if (id === "drk-kick") shake.v = -0.5;
+    flash.position.copy(worldAt).add(new THREE.Vector3(0, 0.35, 0.3));
+    flash.intensity = 14 * loud;
+    flash.color.copy(g.userData.wobble ? accent2 : accent);
+    ripple(g, g.userData.r, g.userData.wobble ? accent2 : accent);
+  };
+
+  // ---- the audience's seat: a slow sway, a drag to look around ----
+  var orbit = { yaw: 0, pitch: 0, yawTo: 0, pitchTo: 0 };
+  var drag = null;
+  var raycaster = new THREE.Raycaster();
+  var ndc = new THREE.Vector2();
+  var hittable = Object.keys(pieces).map(function (id) { return pieces[id]; });
+  function padOf(object) {
+    while (object) {
+      if (object.userData && object.userData.pad) return object.userData.pad;
+      object = object.parent;
+    }
+    return null;
+  }
+  function pieceAt(event) {
+    var box = renderer.domElement.getBoundingClientRect();
+    ndc.set(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    var hits = raycaster.intersectObjects(hittable, true);
+    if (!hits.length) return null;
+    var id = padOf(hits[0].object);
+    // The ride's bell and the snare's rim are parts of a piece, not pieces.
+    if (id === "drk-ride" && hits[0].object === ride.userData.bell) id = "drk-bell";
+    if (id === "drk-hihat" && hits[0].object.geometry.type === "TorusGeometry") id = "drk-hihat";
+    if (id === "drk-snare" && hits[0].object.geometry.type === "TorusGeometry") id = "drk-rim";
+    return id;
+  }
+  var canvas = renderer.domElement;
+  canvas.addEventListener("pointerdown", function (event) {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    var id = pieceAt(event);
+    if (id) {
+      var pad = byId(id);
+      if (pad) tap(pad);
+      event.preventDefault();
+      return;
+    }
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw: orbit.yawTo, pitch: orbit.pitchTo };
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", function (event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    orbit.yawTo = Math.max(-0.7, Math.min(0.7, drag.yaw - (event.clientX - drag.x) * 0.004));
+    orbit.pitchTo = Math.max(-0.12, Math.min(0.3, drag.pitch + (event.clientY - drag.y) * 0.003));
+  });
+  function dragEnd(event) {
+    if (drag && event.pointerId === drag.id) drag = null;
+  }
+  canvas.addEventListener("pointerup", dragEnd);
+  canvas.addEventListener("pointercancel", dragEnd);
+
+  // ---- size ----
+  function fit() {
+    var w = stage.clientWidth || 640;
+    var h = stage.clientHeight || 360;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  var sizer = new ResizeObserver(fit);
+  sizer.observe(stage);
+  fit();
+
+  // ---- every frame ----
+  var clock = new THREE.Clock();
+  var frame = 0;
+  var tmp = new THREE.Vector3();
+  function spring(s, dt, k, d) {
+    s.v += (-k * s.x - d * s.v) * dt;
+    s.x += s.v * dt;
+  }
+  function animate() {
+    frame = requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    var t = clock.elapsedTime;
+
+    // Drums: the head springs back from the dent, the glow fades.
+    Object.keys(pieces).forEach(function (id) {
+      var g = pieces[id];
+      if (g.userData.done === t) return;
+      g.userData.done = t;
+      if (g.userData.dent) {
+        spring(g.userData.dent, dt, 900, 14);
+        g.userData.head.position.y = g.userData.body.geometry.parameters.height / 2 + g.userData.dent.x * 0.06;
+        g.userData.head.material.emissive.multiplyScalar(Math.pow(0.02, dt));
+        g.userData.body.material.emissive.multiplyScalar(Math.pow(0.05, dt));
+      }
+      if (g.userData.wobble) {
+        var wb = g.userData.wobble;
+        wb.t += dt;
+        var fade = Math.exp(-wb.t * 2.2) * wb.a;
+        g.rotation.x = g.userData.base.x + Math.sin(wb.t * 21) * fade;
+        g.rotation.z = g.userData.base.z + Math.cos(wb.t * 17) * fade;
+      }
+    });
+    // The hi-hat opens and closes.
+    hatOpen.x += (hatOpen.target - hatOpen.x) * Math.min(1, dt * (hatOpen.target ? 14 : 30));
+    if (hatOpen.target === 1) hatOpen.target = Math.max(0, 1 - (hat.userData.wobble.t / 1.2));
+    hat.position.y = hat.userData.base.y + hatOpen.x * 0.09;
+    // The sticks swing down and up.
+    [sticks.left, sticks.right].forEach(function (s) {
+      var sw = s.userData.swing;
+      sw.t += dt;
+      var p = sw.t < 0.07 ? sw.t / 0.07 : sw.t < 0.3 ? 1 - (sw.t - 0.07) / 0.23 : 0;
+      s.userData.pitch.rotation.x = -0.6 + 0.62 * Math.sin(p * Math.PI / 2);
+    });
+    // Rings spread and fade.
+    rings.forEach(function (s) {
+      if (s.t > 1) { s.mesh.visible = false; return; }
+      s.t += dt * 1.8;
+      var r = s.mesh.userData.r * (1 + s.t * 0.9);
+      s.mesh.scale.set(r, r, 1);
+      s.mesh.material.opacity = 0.85 * (1 - s.t);
+    });
+    flash.intensity *= Math.pow(0.001, dt);
+    spring(shake, dt, 500, 12);
+
+    // The seat: a slow sway, or where the drag put it.
+    if (!still && !drag) orbit.yawTo = Math.sin(t * 0.17) * 0.12;
+    orbit.yaw += (orbit.yawTo - orbit.yaw) * Math.min(1, dt * 4);
+    orbit.pitch += (orbit.pitchTo - orbit.pitch) * Math.min(1, dt * 4);
+    var dist = big ? 4.9 : 5.6;
+    tmp.set(Math.sin(orbit.yaw) * dist, 1.75 + orbit.pitch * 2 + shake.x * 0.05, Math.cos(orbit.yaw) * dist);
+    camera.position.copy(tmp);
+    camera.lookAt(LOOK.x, LOOK.y + shake.x * 0.05, LOOK.z);
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.drkStop = function () {
+    cancelAnimationFrame(frame);
+    sizer.disconnect();
+    observers.forEach(function (o) { o.disconnect(); });
+    renderer.dispose();
+    if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    window.drkStop = null;
+  };
 })();
 </script>
 </body>
