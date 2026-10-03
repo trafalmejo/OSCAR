@@ -1148,9 +1148,20 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 
   /** File > New project: an empty canvas, nobody until its first change. */
+  /**
+   * The right column shows the Blocks: what a new project is built from. A
+   * column left on the styles or the layers of the last project shows the
+   * new one nothing to drag in.
+   */
+  function showBlocks() {
+    var button = pn.getButton("views", "open-blocks");
+    if (button && !button.get("active")) button.set("active", true);
+  }
+
   function newProject() {
     projectSync.begin("", function () {
       loadTemplate("");
+      showBlocks();
     });
   }
 
@@ -1438,6 +1449,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       .then(function (html) {
         return projectSync.begin(name || "", function () {
           loadTemplate(html);
+          showBlocks();
         });
       })
       .then(
@@ -1464,6 +1476,33 @@ function initGrape(ipServer, socketPort, oscInPort) {
     editor.setComponents(html);
     editor.UndoManager.clear();
   }
+
+  // ---- the empty canvas says what to do --------------------------------
+  // A new project is a blank page, and a blank page says nothing. This hint
+  // is drawn by the editor over an empty canvas -- it is not part of the
+  // project, so it is never saved, published or exported -- and goes the
+  // moment the first control lands. Hidden in preview, where there is
+  // nothing to drag. Clicks pass through it to the canvas beneath.
+  var emptyHint = null;
+
+  function paintEmptyHint() {
+    var canvas = editor.Canvas.getElement();
+    if (!canvas) return;
+    if (!emptyHint) {
+      emptyHint = document.createElement("div");
+      emptyHint.className = "oscar-canvas-empty";
+      emptyHint.innerHTML =
+        '<div class="oscar-canvas-empty-card">' +
+        '<p class="oscar-canvas-empty-title">This project is empty</p>' +
+        "<p>Drag a control in from the right, or open a template from File.</p>" +
+        "</div>";
+      canvas.appendChild(emptyHint);
+    }
+    var wrapper = editor.getWrapper();
+    var empty = !!wrapper && wrapper.components().length === 0;
+    emptyHint.style.display = empty && !editor.Commands.isActive("preview") ? "" : "none";
+  }
+  editor.on("load component:add component:remove command:run:preview command:stop:preview", paintEmptyHint);
 
   // ---- a project as a file --------------------------------------------
   // A project lives in OSCAR. An .oscar file is a copy of one: to keep as a

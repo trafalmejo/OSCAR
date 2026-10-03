@@ -1551,3 +1551,40 @@ body.oscar-log-dragging iframe {
   color: #f1a10d;
   font-weight: 600;
 }
+
+/* What an empty canvas says (oscar_editor.js paintEmptyHint): over the
+   frame, under the canvas tools, and out of the way of the pointer, so a
+   control can be dropped straight through it. The words sit on a card of
+   the editor's own colours: the canvas beneath may be white (the Default
+   style) or black (the others), and the hint must read on either. */
+.oscar-canvas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.oscar-canvas-empty-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 34em;
+  padding: 18px 26px;
+  border: 1px solid var(--o-border-strong);
+  border-radius: var(--o-radius-md);
+  background: color-mix(in srgb, var(--o-panel) 92%, transparent);
+  color: var(--o-text-muted);
+  font-size: var(--o-text-sm);
+  text-align: center;
+}
+.oscar-canvas-empty p {
+  margin: 0;
+}
+.oscar-canvas-empty-title {
+  color: var(--o-text);
+  font-size: 18px;
+  font-weight: 600;
+}
