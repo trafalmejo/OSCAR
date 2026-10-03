@@ -1,5 +1,5 @@
 {
- "instructions": "OSCAR is an editor and a server for control interfaces: pages of buttons, sliders and other widgets that phones and tablets open in a browser, and that send OSC, MIDI and DMX to show software, instruments and lights. Use the app's words with the person: a project is what they edit in OSCAR (File > Open lists them); a published interface is the live copy of a project that phones open; a draft is an interface you wrote for them to review. Start with status. To find why something does not respond: installation_map for everything the published interfaces send to and listen for and what this computer has plugged in, read_published for one interface's controls (or read_project for a project that is not published), then recent_activity for what was actually sent and received. To build: installation_map to see the gear that is here, describe_widgets, then validate_draft until it is clean, then create_draft, and tell the person to open the draft from File > Open, where it carries a Draft badge, check it, and publish it themselves. No tool here sends anything to the rig, publishes, or changes a project: if asked to operate the show, say that OSCAR does not let an assistant do that.",
+ "instructions": "OSCAR is an editor and a server for control interfaces: pages of buttons, sliders and other widgets that phones and tablets open in a browser, and that send OSC, MIDI and DMX to show software, instruments and lights. Use the app's words with the person: a project is what they edit in OSCAR (File > Open project or template lists them); a published interface is the copy of a project that phones open, made by pressing Publish; a draft is an interface you wrote for them to review. Start with status. To find why something does not respond: installation_map for everything the published interfaces send to and listen for and what this computer has plugged in, read_published for one interface's controls (or read_project for a project that is not published), then recent_activity for what was actually sent and received. To build: installation_map to see the gear that is here, describe_widgets, then validate_draft until it is clean, then create_draft, and tell the person to open the draft from File > Open project or template, where it carries a Draft badge, check it, and publish it themselves. No tool here sends anything to the rig, publishes, or changes a project: if asked to operate the show, say that OSCAR does not let an assistant do that.",
  "tools": [
   {
    "name": "status",
@@ -21,7 +21,7 @@
   {
    "name": "list_projects",
    "title": "The projects in OSCAR",
-   "description": "Every project OSCAR holds, with its id and its title, as File > Open lists them. A project is what a person edits; it reaches phones only once it is published (list_published).",
+   "description": "Every project OSCAR holds, with its id and its title, as File > Open project or template lists them. A project is what a person edits; it reaches phones only once it is published (list_published).",
    "inputSchema": {
     "type": "object",
     "properties": {},
@@ -64,7 +64,7 @@
   {
    "name": "list_published",
    "title": "The published interfaces",
-   "description": "Every published interface: its name, the project it was published from, the path it is served at, who can open it (access: \"network\", or \"off\" for one no device can open, whose schedules and bridges still run), and how many widgets it holds. Published interfaces are live -- phones and tablets may be on them, and the rig hears them.",
+   "description": "Every published interface: its name, the project it was published from, the path it is served at, who can open it (access: \"network\", or \"off\" for one no device can open, whose schedules and bridges still run), and how many widgets it holds. Published interfaces are running -- phones and tablets may be on them, and the rig hears them.",
    "inputSchema": {
     "type": "object",
     "properties": {},
@@ -208,7 +208,7 @@
   {
    "name": "create_draft",
    "title": "Save a draft for the person to review",
-   "description": "Validate an interface and, if it is clean, save it as a draft: it appears in OSCAR under File > Open, with a Draft badge. It is a file for a person to review: nothing is published, nothing is sent, and no project is changed. An existing draft of the same name is only replaced when overwrite is true.",
+   "description": "Validate an interface and, if it is clean, save it as a draft: it appears in OSCAR under File > Open project or template, with a Draft badge. It is a file for a person to review: nothing is published, nothing is sent, and no project is changed. An existing draft of the same name is only replaced when overwrite is true.",
    "inputSchema": {
     "type": "object",
     "properties": {
@@ -216,7 +216,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 80,
-      "description": "The draft's name, shown in File > Open"
+      "description": "The draft's name, shown in File > Open project or template"
      },
      "html": {
       "type": "string",

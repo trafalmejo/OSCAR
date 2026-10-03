@@ -11,8 +11,8 @@ With it, an assistant such as Claude can:
   your computer: its projects, what is published, every widget's settings,
   the MIDI ports, and what OSCAR lately received and sent.
 - **Draft an interface for you.** It writes one, OSCAR's own validators check
-  it, and it appears in OSCAR under **File > Open** with a Draft badge, for
-  you to open, check and publish yourself.
+  it, and it appears in OSCAR under **File > Open project or template** with a
+  Draft badge, for you to open, check and publish yourself.
 
 It **never** sends anything to your rig, publishes, or changes a project.
 

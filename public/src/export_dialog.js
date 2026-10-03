@@ -588,7 +588,7 @@ function install(editor, options) {
         useBootstrap: false,
         buttons: {
           confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
-          cancel: { text: "Keep it live" },
+          cancel: { text: "Keep it published" },
         },
       });
     } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
@@ -660,7 +660,7 @@ function install(editor, options) {
       // pill in the top bar.
       var live = document.createElement("span");
       live.className = "oscar-published-live";
-      live.title = "Live: OSCAR is serving this surface right now.";
+      live.title = "Published: OSCAR is serving this interface right now.";
       if (isOff) {
         // Grey and still: the page is kept, and nobody can open it.
         live.className = "oscar-published-live oscar-published-off";
@@ -998,7 +998,7 @@ function install(editor, options) {
     fetch("/publish", request(as))
       .then(function (res) {
         return res.json().then(function (answer) {
-          if (!res.ok) throw new Error((answer && answer.error) || "The surface could not be published.");
+          if (!res.ok) throw new Error((answer && answer.error) || "The interface could not be published.");
           return answer;
         });
       })

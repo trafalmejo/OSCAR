@@ -3,18 +3,18 @@
 <head>
 <title>Live Visuals Controller</title>
 <!--
-  Live Visuals Controller: a surface for running visuals at a show, dressed
+  Live Visuals Controller: an interface for running visuals at a show, dressed
   as a wall of neon signs.
 
-  Open it from Load, or paste this whole file into Import. It is ordinary
-  HTML and CSS with two OSCAR additions:
+  Open it from File > Open project or template, or paste this whole file into
+  File > Import HTML/CSS. It is ordinary HTML and CSS with two OSCAR additions:
 
   - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
     OSC address) and data-gjs-dmode="flow", which makes a part move through
     the layout when dragged instead of being pulled out of it.
   - data-osc-style="own" on <body> says the page brings its own look, and the
     first rule sets the colour tokens for it. Pick another widget style in
-    the editor and the whole surface is redrawn in that style's colours:
+    the editor and the whole interface is redrawn in that style's colours:
     every rule that paints is written for "own" alone, and a short set of
     rules further down, made of tokens only, dresses it for the others.
 
@@ -325,7 +325,7 @@
 [data-osc-style="own"] #lvc-fx-feedback { --neon: #ff7a1a; }
 [data-osc-style="own"] #lvc-pad-wrap { --neon: #9dff3a; }
 
-/* ---- under any other widget style: the same surface, in that style's colours ---- */
+/* ---- under any other widget style: the same interface, in that style's colours ---- */
 body:not([data-osc-style="own"]) .lvc {
   background: var(--osc-background);
   color: var(--osc-foreground);

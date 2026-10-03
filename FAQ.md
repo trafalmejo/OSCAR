@@ -18,7 +18,7 @@ OSCAR ignores:
 
 The head is dropped because OSCAR loads its fonts and widget styles into the canvas head, and an imported head would replace them.
 
-Your CSS always wins over OSCAR's default widget styling, so you can restyle anything from a `<style>` block. To change a style's colours, set them on the surface:
+Your CSS always wins over OSCAR's default widget styling, so you can restyle anything from a `<style>` block. To change a style's colours, set them on the page's body:
 
 ```css
 body, [data-osc-style] { --osc-primary: hotpink; }
@@ -30,7 +30,7 @@ To set a widget's OSC settings in the code, use `data-gjs-*` attributes:
 <button data-gjs-message="/scene/1" data-gjs-mode="toggle">Scene 1</button>
 ```
 
-The templates in the Load list are files in this format, so open one to see a full example.
+The templates under File → Open project or template… are files in this format, so open one to see a full example.
 
 ## Why does my exported page do nothing on a phone?
 
@@ -40,7 +40,8 @@ iOS will not run one at all, so the page never reaches OSCAR. The same file
 works on a computer, where it opens as an ordinary `file://` page.
 
 On a phone or tablet, use **Publish**, in the top bar, rather than a
-downloaded file (**Download as a file**, in the menu of a live interface).
+downloaded file (**Download as a file**, in a published interface's menu in
+the Running on this OSCAR window).
 OSCAR then serves the very same page at an address, shown with a QR code, and
 any browser on the network can open it.
 

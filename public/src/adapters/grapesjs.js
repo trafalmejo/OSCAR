@@ -1473,13 +1473,13 @@ function paintWidgetLights(editor) {
       title:
         owners.length === 0
           ? "Comms on: this control sends from the canvas."
-          : "Live on " +
+          : "Published on " +
             owners
               .map(function (name) {
                 return '"' + name + '"';
               })
               .join(", ") +
-            ": the published copy is playing, so this control sends nothing from the canvas. Publish again to make your edits the show.",
+            ": the published interface is playing, so this control sends nothing from the canvas. Publish changes to make your edits the show.",
     });
   });
   // Redrawn whole on membership or colour changes; between paints the dots

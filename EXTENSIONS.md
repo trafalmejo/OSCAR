@@ -12,7 +12,7 @@ A working example is in `examples/sample-extension`. It uses every part describe
 OSCAR_EXTENSIONS=./examples/sample-extension npm run serve
 ```
 
-You get a puzzle-piece button at the end of the toolbar, a "Sample Board" template in Load, and a route at `/x/sample/hello`. The startup banner names the extension, and so does the environment block of a bug report made from About.
+You get a puzzle-piece button at the end of the toolbar, a "Sample Board" template under File → Open project or template, and a route at `/x/sample/hello`. The startup banner names the extension, and so does the environment block of a bug report made from About.
 
 ## Which extensions are loaded
 
@@ -46,7 +46,7 @@ Only `name` and `oscarApi` are required. The rest are the four things an extensi
 
 ### 2. Add templates
 
-`templatesDir` is a folder of `.html` templates, in the same format as `public/templates`. They appear in the Load list after OSCAR's own. It may be a function returning the folder, for one that only exists once the extension has downloaded something. It is asked again on every listing.
+`templatesDir` is a folder of `.html` templates, in the same format as `public/templates`. They appear under File → Open project or template after OSCAR's own. It may be a function returning the folder, for one that only exists once the extension has downloaded something. It is asked again on every listing.
 
 ### 3. Add to the editor
 
@@ -61,7 +61,7 @@ window.OSCAR.ready(function (oscar) {
 });
 ```
 
-`ready` waits until the editor has finished loading. The surface (`/preview`, published pages) loads none of this.
+`ready` waits until the editor has finished loading. The pages devices open (`/preview`, published interfaces) load none of this.
 
 ### 4. Run on the server
 
@@ -71,11 +71,11 @@ window.OSCAR.ready(function (oscar) {
 | --- | --- |
 | `api`, `version` | the extension API number, and OSCAR's version |
 | `app` | the Express app. Put routes under `/x/<name>/` |
-| `io` | the socket.io server the surfaces are connected to |
+| `io` | the socket.io server the published interfaces and the preview are connected to |
 | `settings` | `get(key)`, `set(key, value)`, kept across restarts. Prefix keys with the extension's name |
 | `projectsDir` | where projects are kept; a place for the extension's own files |
 | `lock` | `isLocked()`, `setLocked(value)` |
-| `surfaces` | the published surfaces: `list()`, `widgets(id)`, and `drive(id, widgetId, state)`, which puts one widget in one state. The caller never says where that goes: the destination, encoding and range come from the surface as published. Use this, not raw OSC, for anything acting on a rig: a schedule, or an instruction from somewhere untrusted. `snapshot(id)` is what every control of one surface is showing, and `onState(fn)` follows the changes, whoever made them: `fn(widgetId, state, info)`, where `info.surface` is the surface it changed on. Each surface has a record of its own, so two surfaces that share widget ids do not move each other. `list()` says who can open each one (`access`: `"off"`, no device at all, or `"network"`), and `onAccess(fn)` is told `(id, access)` when that changes: a copy kept elsewhere should close when a surface is switched off |
+| `surfaces` | the published interfaces: `list()`, `widgets(id)`, and `drive(id, widgetId, state)`, which puts one widget in one state. The caller never says where that goes: the destination, encoding and range come from the interface as published. Use this, not raw OSC, for anything acting on a rig: a schedule, or an instruction from somewhere untrusted. `snapshot(id)` is what every control of one interface is showing, and `onState(fn)` follows the changes, whoever made them: `fn(widgetId, state, info)`, where `info.surface` is the interface it changed on. Each interface has a record of its own, so two interfaces that share widget ids do not move each other. `list()` says who can open each one (`access`: `"off"`, no device at all, or `"network"`), and `onAccess(fn)` is told `(id, access)` when that changes: a copy kept elsewhere should close when an interface is switched off |
 | `features` | the resolved switches |
 | `log` | `log`, `error` |
 | `onShutdown(fn)` | run `fn` when OSCAR quits. It may return a promise; OSCAR waits up to two seconds |

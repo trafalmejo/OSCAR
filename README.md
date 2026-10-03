@@ -5,7 +5,7 @@
 OSCAR is a tool to create beautiful graphical user interaces (GUIs) to send OSC messages and control interactive installations ([Modul8](https://www.garagecube.com/modul8/), [MapMapper](https://madmapper.com/), [Resolume arena](https://resolume.com/), [TouchDesigner](https://derivative.ca/), [Ableton Live](https://www.ableton.com/), [Processing](https://processing.org/), [Pure Data](https://puredata.info/), [Unity](https://unity.com/), [Unreal Engine](https://www.unrealengine.com/en-US/), etc).
 Let's create beautiful, responsive and touchable interfaces.
 
-Build a layout in the browser, drop in buttons and sliders, point each one at an IP, port and OSC address, then open the same page from a phone or tablet on the same network and use it as a control surface.
+Build a layout in the browser, drop in buttons and sliders, point each one at an IP, port and OSC address, then publish it and open it from a phone or tablet on the same network to drive your software, gear and lights.
 
 <a href="https://www.youtube.com/watch?v=JO6r7gUNlgo&list=PLScMjUz4HRHxxDL2OYcNCMCsD-srohkIW" target="_blank"><img src="http://img.youtube.com/vi/ZcW8zBWRLf0/0.jpg" alt="OSCAR tool to create GUIs to control interactive installations" width="1200" height="600" border="10"/></a>
 
@@ -28,7 +28,7 @@ These builds aren't code signed, so your system warns you the first time. On
 Windows, click *More info* then *Run anyway*. On macOS, right-click the app and
 choose *Open*.
 
-The first time OSCAR is opened in a browser, the canvas shows the **Showcase** template, where every widget works, so there is something to try straight away. After that the canvas is whatever you left on it, including empty. It is a template like any other: open **Load** to get it back, or to start from another.
+The first time OSCAR is opened in a browser, the canvas shows the **Showcase** template, where every widget works, so there is something to try straight away. After that the canvas is whatever you left on it, including empty. It is a template like any other: open **File → Open project or template…** to get it back, or to start from another.
 
 ## Keep in touch
 
@@ -51,7 +51,7 @@ npm start       # builds the bundle and starts the server
 
 OSCAR opens your browser at `http://localhost:8080` and also prints a LAN
 address such as `http://192.168.1.20:8080`. Open that second address on a phone
-or tablet on the same Wi-Fi to use the interface as a control surface.
+or tablet on the same Wi-Fi to use the interface from there.
 
 Make sure your firewall allows communication between devices on the network.
 
@@ -203,9 +203,9 @@ in two-message mode), and a toggle button lights up and adopts the state, so
 the next press sends the opposite edge. A momentary button only lights up,
 because its state is your finger's.
 
-On a published surface OSCAR reads the message once and tells every device the
+On a published interface OSCAR reads the message once and tells every device the
 result, the same way it tells them about a finger on a button. So every tablet
-shows the same thing, one that opens the surface later shows where the rig left
+shows the same thing, one that opens the interface later shows where the rig left
 it, and it works with no device looking at all. The media browser is the one
 exception: each page reads the message for itself.
 
@@ -218,7 +218,7 @@ second click calls it off.
 Data in is off by default, so nothing starts moving on its own. Untick **Data
 out** and a widget keeps following the rig while sending nothing. **Master
 comms**, at the top of every widget, is over all of it: a widget with it off
-is deaf as well as silent on every protocol, so you can lay a surface out
+is deaf as well as silent on every protocol, so you can lay an interface out
 while the rig is live. A hand on a control outranks the network: while you
 are dragging a slider or a pad, or holding a button, what arrives is ignored
 until you let go. A widget never sends in answer to what it hears, so software
@@ -309,9 +309,8 @@ nodes ship on), and the packets go the right way.
 
 ## Running a show
 
-The editor lives at `/`. The control surface lives at `/preview` — the same
-layout with every editing tool stripped out, which is what you open on a phone
-or tablet.
+The editor lives at `/`. The preview lives at `/preview` — the same layout
+with every editing tool stripped out, as a phone or tablet shows it.
 
 Choose **File → Push to preview** to send the current layout to it.
 Every device showing `/preview` picks the new layout up straight away; there is
@@ -343,7 +342,7 @@ a whole number from 0 to 127, so options valued 0, 1, 2 pick programs 0, 1, 2.
 Pitch bend uses all 14 bits.
 
 The ports belong to the computer running OSCAR. A tablet or a phone showing a
-published surface sends MIDI through it, exactly as it sends OSC and DMX.
+published interface sends MIDI through it, exactly as it sends OSC and DMX.
 
 To reach software on the same computer (Ableton Live, Resolume, a DAW) you need
 a virtual MIDI port. macOS has one built in: enable the **IAC Driver** in Audio
@@ -391,14 +390,14 @@ with software that echoes its own state impossible. Each protocol's **Send
 when** setting relaxes that per widget: *Changed by the user* is the rule
 above and the default; *Changed by the user or by data in* also sends what
 Data in put the widget in. That makes OSCAR a bridge -- a MIDI fader box
-drives Resolume through a surface, a sensor's OSC drives a fixture -- and any
+drives Resolume through an interface, a sensor's OSC drives a fixture -- and any
 of MIDI in or OSC in can feed any of OSC, MIDI or DMX out.
 
-The bridged send happens **once**, from whoever serves the surface: the
-server for published surfaces, however many devices show them and whether any
+The bridged send happens **once**, from whoever serves the interface: the
+server for published interfaces, however many devices show them and whether any
 browser is open at all; a downloaded file for itself, which is why such a
 file should be open in one copy only. The editor's canvas and the preview
-only follow, so a surface open in the editor while it is published never
+only follow, so a project open in the editor while it is published never
 drives the rig twice. Two things stand between a bridge and a loop: the
 **Loop guard** (default on) passes on only a change that changed the value,
 so an echo moves nothing and nothing is re-sent -- untick it for triggers
@@ -471,8 +470,8 @@ computer OSCAR runs on, any browser that may edit sees the same projects.
 
 ### Templates and widget styles
 
-**Load** also lists the templates OSCAR ships with: whole surfaces to start
-from, every control on them live. Some are built for one piece of software
+**File → Open project or template…** also lists the templates OSCAR ships
+with: whole interfaces to start from, every control on them working. Some are built for one piece of software
 and carry a card listing its addresses: the **Resolume Video Desk** (a clip
 grid, layer strips, crossfader, master, tempo; Resolume's own addresses, port
 7000) and the **QLab Stage Manager's Desk** (GO, STOP, PANIC, playhead and a
@@ -514,7 +513,7 @@ and build for it: your projects, what is published and what each widget is
 set to, the MIDI ports, the recent network activity ("why isn't my light
 responding?"), every widget's settings and how an interface is written -- and
 it can draft a whole interface as HTML, judged by the widgets' own validators
-and listed under **File > Open** with a Draft badge for you to review. **No
+and listed under **File → Open project or template…** with a Draft badge for you to review. **No
 tool touches the wire**: nothing is sent, published or driven, and no project
 is changed; a draft does nothing until you open it and decide.
 
@@ -698,13 +697,13 @@ be shown again -- and a label may contain `=`: the value is what follows the
 last one. Walking a dropdown with the arrow keys sends only the row you stop
 on, when you press Enter or leave the list; a click or a tap sends at once.
 
-## Several devices on one surface
+## Several devices on one interface
 
 Every device showing the same layout shows the same state. Toggle a button
 on one tablet and it lights up on the others, so the next press anywhere
 sends the opposite edge rather than the one that has already gone out; move a
 slider or an XY pad and the thumb or handle moves on every other device. A
-tablet that connects mid-show is caught up the moment it loads the surface,
+tablet that connects mid-show is caught up the moment it loads the interface,
 and a widget following the rig with **Data in** on passes what it hears along
 too, so a device joining later starts where the rig left things. Nothing
 needs switching on: two tablets agreeing is not a setting.
@@ -720,7 +719,7 @@ the other devices report is ignored until you let go. Pushing a new layout
 to the preview forgets every state, because the widgets in the old one may
 not exist in the new.
 
-The devices are the pages showing the surface (`/preview`). The editor is
+The devices are the pages showing the interface (`/preview`). The editor is
 not one of them: it neither follows the tablets nor moves them, so a show
 running on the tablets never rewrites the values saved in the project you
 have open, and a different project open in the editor cannot reach them.
@@ -762,7 +761,7 @@ tile that is already selected sends again, because relaunching a clip is a
 real instruction. With **Data in** on, a value arriving at Message moves the
 highlight to the tile that sends it and nothing goes back out; a value no
 tile sends, or one OSCAR cannot read, changes nothing. Several tablets on one
-surface agree on the highlight without Data in. The highlight is never saved
+interface agree on the highlight without Data in. The highlight is never saved
 in the project: what is playing is the software's to say.
 
 The labels and URLs you type are put on the page as text, never as markup,
@@ -808,7 +807,7 @@ that talks back is heard like any other OSC in, so a meter with **Data in** on
 can show a potentiometer.
 
 The port is opened by the computer running OSCAR, not by the tablet showing
-the surface, and it is remembered in `oscar-settings.json`: an installation
+the interface, and it is remembered in `oscar-settings.json`: an installation
 that reboots overnight reconnects on its own. So does a cable pulled out and
 pushed back in, or a board that vanishes for a few seconds while a sketch
 uploads -- OSCAR retries every two seconds until told to disconnect. Nothing
@@ -835,7 +834,7 @@ and Safari and Firefox do not have it at all.
 > publishing and export learn to carry every page. The editor shows one page,
 > and a project saved with several shows its first.
 
-A surface can hold more than one page: a page per fixture group, per scene,
+An interface can hold more than one page: a page per fixture group, per scene,
 or per operator. In the editor, the **Pages** button in the top bar lists
 them. Click a name to open that page, **Rename** or **Delete** it from its
 row, and add one with the box underneath (leave the name empty and it is
@@ -844,10 +843,10 @@ be told apart. The last page cannot be deleted. Deleting a page releases
 the DMX channels of every widget on it.
 
 On the tablet (`/preview`) the pages appear as a row of finger-sized tabs
-along the bottom edge. The surface is made shorter by the height of the bar
+along the bottom edge. The interface is made shorter by the height of the bar
 rather than covered by it, so nothing on the bottom row of a page sits under
-a tab. A surface with a single page has no bar and keeps the whole screen.
-The editor's own preview shows the same tabs, so a surface can be tried out
+a tab. An interface with a single page has no bar and keeps the whole screen.
+The editor's own preview shows the same tabs, so an interface can be tried out
 before it is pushed.
 
 Pushing a new layout while a show is running leaves each tablet on the page
@@ -887,22 +886,23 @@ open it, the QR code for its address, and one button.
   number added if that is taken) and stays the same from then on. Renaming
   the project does not move it, so printed codes keep working.
 - **One button, which says what it does.** **Publish** for a project that is
-  not live; **Publish changes** when the canvas is ahead of what phones see;
+  not published yet; **Publish changes** when the canvas is ahead of what phones see;
   and no button at all, beside "Up to date", when there is nothing to send.
   Saving never changes what phones see; only publishing does.
 - **One code.** The QR code is always there, for the address that goes with
   who can open the interface. Copy copies the same address.
-- **Also live on this OSCAR** lists whatever else is published, each under
-  its project's title: who can open it, **Edit**, which puts the project it
-  was published from on the canvas, and a menu with **Download as a file**
-  and **Take down**. Click a row to see its code.
+- **Running on this OSCAR**, the window behind the **RUNNING** pill in the
+  top bar, lists every published interface, each under its project's title:
+  who can open it, how many devices are on it, **Edit**, which puts the
+  project it was published from on the canvas, and a menu with **Download as
+  a file** and **Take down**. Click a row to see its code.
 
 A published interface remembers the project it was published from, and OSCAR
 keeps a copy of that project beside the page: what phones are showing, and
 what **File → Revert to the published version** goes back to. A published
 page stays reachable while OSCAR is locked.
 
-Each live interface has one setting for **who can open it**. **This
+Each published interface has one setting for **who can open it**. **This
 network** is any phone, tablet or computer on the same Wi-Fi, and is what a
 newly published interface is. **Off** is no device at all: its address
 answers "This interface is switched off", and a phone that had it open is
@@ -916,17 +916,18 @@ working if the computer's IP address changes. Unlike
 `/preview`, which always shows the last push from the editor, a published
 page stays as it was until you publish it again.
 
-**The canvas yields to the show.** Once a control's id is live on a published
-surface, moving it on the canvas sends nothing: the published copy is
+**The canvas yields to the show.** Once a control's id is on a published
+interface, moving it on the canvas sends nothing: the published interface is
 playing, and two masters on one id would fight on the wire. Every control on
 the canvas wears a small light, top right: green, it sends from the canvas;
-red, a published surface owns it, and the light's hover text names which.
-Controls you add while building stay green and live until they are published
-too, and publishing again makes your edits the show, greening nothing --
+red, a published interface owns it, and the light's hover text names which.
+Controls you add while building stay green, sending from the canvas, until
+they are published too, and publishing again makes your edits the show, greening nothing --
 ownership simply moves with the copy. The judgement is per control, by id,
-so one canvas can hold live show controls and half-built new ones at once.
+so one canvas can hold the show's published controls and half-built new ones
+at once.
 
-**Download**, on each published surface in that list, saves the same page as
+**Download as a file**, on each published interface in that list, saves the same page as
 an `.html` file to host on a web server or open on another **computer**. A
 file cannot ask where OSCAR is, so the window that opens is where you say:
 the address and bridge port are filled in with what OSCAR reports for itself.

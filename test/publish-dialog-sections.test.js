@@ -150,7 +150,7 @@ test("each row wears a green live dot: served, not stored; grey and still when i
   const at = dialog.indexOf('live.className = "oscar-published-live"');
   const name = dialog.indexOf('var name = el("span", "oscar-published-name"');
   assert.ok(at !== -1 && name !== -1 && at < name, "the dot comes before the name");
-  assert.match(dialog, /live\.title = "Live: OSCAR is serving this surface right now\."/, "and says what it means");
+  assert.match(dialog, /live\.title = "Published: OSCAR is serving this interface right now\."/, "and says what it means");
   assert.match(dialog, /live\.className = "oscar-published-live oscar-published-off";/);
   const css = read("public/css/oscar_export.css");
   assert.match(css, /\.oscar-published-list \.oscar-published-live \{/, "with the pill's green and breath");
@@ -164,7 +164,7 @@ test("before an interface is taken down, a section may give a reason to think tw
   assert.match(dialog, /section\.guard\(page\.id\)/);
   assert.match(dialog, /if \(!warnings\.length\) return unpublish\(\);/, "with no reason, no question");
   assert.match(dialog, /text: "Take it off the internet and take it down"/);
-  assert.match(dialog, /text: "Keep it live"/);
+  assert.match(dialog, /text: "Keep it published"/);
   assert.match(dialog, /typeof w\.first === "function" \? w\.first\(\) : null/);
 });
 

@@ -22368,13 +22368,13 @@ function paintWidgetLights(editor) {
       title:
         owners.length === 0
           ? "Comms on: this control sends from the canvas."
-          : "Live on " +
+          : "Published on " +
             owners
               .map(function (name) {
                 return '"' + name + '"';
               })
               .join(", ") +
-            ": the published copy is playing, so this control sends nothing from the canvas. Publish again to make your edits the show.",
+            ": the published interface is playing, so this control sends nothing from the canvas. Publish changes to make your edits the show.",
     });
   });
   // Redrawn whole on membership or colour changes; between paints the dots
@@ -23322,7 +23322,7 @@ function install(editor, options) {
         useBootstrap: false,
         buttons: {
           confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
-          cancel: { text: "Keep it live" },
+          cancel: { text: "Keep it published" },
         },
       });
     } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
@@ -23394,7 +23394,7 @@ function install(editor, options) {
       // pill in the top bar.
       var live = document.createElement("span");
       live.className = "oscar-published-live";
-      live.title = "Live: OSCAR is serving this surface right now.";
+      live.title = "Published: OSCAR is serving this interface right now.";
       if (isOff) {
         // Grey and still: the page is kept, and nobody can open it.
         live.className = "oscar-published-live oscar-published-off";
@@ -23732,7 +23732,7 @@ function install(editor, options) {
     fetch("/publish", request(as))
       .then(function (res) {
         return res.json().then(function (answer) {
-          if (!res.ok) throw new Error((answer && answer.error) || "The surface could not be published.");
+          if (!res.ok) throw new Error((answer && answer.error) || "The interface could not be published.");
           return answer;
         });
       })
@@ -24859,7 +24859,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     };
     var buttons = {
       confirm: {
-        text: live ? "Delete, keep it live" : "Confirm",
+        text: live ? "Delete, keep it published" : "Confirm",
         action: function () {
           remove(false);
         },
@@ -24880,7 +24880,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       content: draft
         ? "Delete this assistant-written draft? Anything you loaded from it and saved as a project stays."
         : "Are you sure you want to delete this project? You won't be able to recover it afterwards." +
-          (live ? " It is live at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
+          (live ? " It is published at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
       boxWidth: live ? "560px" : undefined,
       useBootstrap: live ? false : undefined,
       buttons: buttons,
@@ -26239,7 +26239,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     className: "oscar-file-btn",
     label: "File",
     command: null,
-    attributes: { title: "Open and save", "data-tooltip-pos": "bottom" },
+    attributes: { title: "Open, export and publish", "data-tooltip-pos": "bottom" },
     active: false,
     disable: true,
   });
@@ -26812,7 +26812,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         } else if (row.dir === "in" && row.canvas) {
           line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-canvas", "Canvas", "Followed by a widget on the editor's canvas"));
         } else if (unfollowed(row)) {
-          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-unfollowed", "Unfollowed", "Nothing follows this: no published surface, and not the editor's canvas."));
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-unfollowed", "Unfollowed", "Nothing follows this: no published interface, and not the editor's canvas."));
         }
         line.appendChild(span("oscar-log-what", String(row.what || "")));
         // What the latest of them carried.
@@ -26824,7 +26824,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
           // Who sent what came in: it is the first thing to know about it.
           if (row.device) line.appendChild(span("oscar-log-from", row.device === "serial" ? "from the serial cable" : "from " + row.device));
           (row.surfaces || []).forEach(function (surface) {
-            line.appendChild(span("oscar-log-surface", '"' + surface + '"', "Followed on this published surface"));
+            line.appendChild(span("oscar-log-surface", '"' + surface + '"', "Followed on this published interface"));
           });
         }
         if (row.n > 1) {

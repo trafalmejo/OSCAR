@@ -937,7 +937,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     };
     var buttons = {
       confirm: {
-        text: live ? "Delete, keep it live" : "Confirm",
+        text: live ? "Delete, keep it published" : "Confirm",
         action: function () {
           remove(false);
         },
@@ -958,7 +958,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       content: draft
         ? "Delete this assistant-written draft? Anything you loaded from it and saved as a project stays."
         : "Are you sure you want to delete this project? You won't be able to recover it afterwards." +
-          (live ? " It is live at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
+          (live ? " It is published at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
       boxWidth: live ? "560px" : undefined,
       useBootstrap: live ? false : undefined,
       buttons: buttons,
@@ -2317,7 +2317,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     className: "oscar-file-btn",
     label: "File",
     command: null,
-    attributes: { title: "Open and save", "data-tooltip-pos": "bottom" },
+    attributes: { title: "Open, export and publish", "data-tooltip-pos": "bottom" },
     active: false,
     disable: true,
   });
@@ -2890,7 +2890,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
         } else if (row.dir === "in" && row.canvas) {
           line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-canvas", "Canvas", "Followed by a widget on the editor's canvas"));
         } else if (unfollowed(row)) {
-          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-unfollowed", "Unfollowed", "Nothing follows this: no published surface, and not the editor's canvas."));
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-unfollowed", "Unfollowed", "Nothing follows this: no published interface, and not the editor's canvas."));
         }
         line.appendChild(span("oscar-log-what", String(row.what || "")));
         // What the latest of them carried.
@@ -2902,7 +2902,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
           // Who sent what came in: it is the first thing to know about it.
           if (row.device) line.appendChild(span("oscar-log-from", row.device === "serial" ? "from the serial cable" : "from " + row.device));
           (row.surfaces || []).forEach(function (surface) {
-            line.appendChild(span("oscar-log-surface", '"' + surface + '"', "Followed on this published surface"));
+            line.appendChild(span("oscar-log-surface", '"' + surface + '"', "Followed on this published interface"));
           });
         }
         if (row.n > 1) {
