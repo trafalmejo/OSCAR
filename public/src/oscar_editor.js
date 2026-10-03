@@ -1873,7 +1873,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     showBarMenu(".gjs-pn-devices-c .oscar-file-btn", [
       { label: "New project", run: newProject },
       {
-        label: "Open\u2026",
+        label: "Open project or template\u2026",
         run: function () {
           editor.runCommand("open-projects", { type: "Load" });
         },

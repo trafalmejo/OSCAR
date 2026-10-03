@@ -141,7 +141,7 @@ function install(editor, options) {
     asks.appendChild(el("li", null, "“Build me an OSCAR interface with four faders and a blackout button.”"));
     asks.appendChild(el("li", null, "“My OSCAR slider is not moving the light. Can you see why?”"));
     right.appendChild(asks);
-    right.appendChild(el("p", "oscar-assist-note", "A draft appears under File → Open, marked Draft."));
+    right.appendChild(el("p", "oscar-assist-note", "A draft appears under File → Open project or template, marked Draft."));
 
     right.appendChild(el("h4", "oscar-assist-head", "What assistants lately asked for"));
     parts.calls = el("ul", "oscar-assist-calls");

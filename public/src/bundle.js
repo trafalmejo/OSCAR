@@ -22624,7 +22624,7 @@ function install(editor, options) {
     asks.appendChild(el("li", null, "“Build me an OSCAR interface with four faders and a blackout button.”"));
     asks.appendChild(el("li", null, "“My OSCAR slider is not moving the light. Can you see why?”"));
     right.appendChild(asks);
-    right.appendChild(el("p", "oscar-assist-note", "A draft appears under File → Open, marked Draft."));
+    right.appendChild(el("p", "oscar-assist-note", "A draft appears under File → Open project or template, marked Draft."));
 
     right.appendChild(el("h4", "oscar-assist-head", "What assistants lately asked for"));
     parts.calls = el("ul", "oscar-assist-calls");
@@ -25795,7 +25795,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
     showBarMenu(".gjs-pn-devices-c .oscar-file-btn", [
       { label: "New project", run: newProject },
       {
-        label: "Open\u2026",
+        label: "Open project or template\u2026",
         run: function () {
           editor.runCommand("open-projects", { type: "Load" });
         },

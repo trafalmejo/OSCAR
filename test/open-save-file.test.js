@@ -28,7 +28,7 @@ test("File holds every way in and out, and no Save: a new project, three opens, 
   const labels = (menu.match(/label: "[^"]*"/g) || []).map((l) => l.slice(8, -1));
   assert.deepStrictEqual(labels, [
     "New project",
-    "Open\\u2026",
+    "Open project or template\\u2026",
     "Open a file\\u2026",
     "Import HTML/CSS\\u2026",
     "Make a copy",

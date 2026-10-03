@@ -448,7 +448,7 @@ tab was closed in between.
 - **File → New project** starts an empty canvas called "Untitled". It joins
   your projects at its first change, so one you only looked at leaves nothing
   behind. A template opens the same way, named after the template.
-- **File → Open…** lists your projects and the templates.
+- **File → Open project or template…** lists your projects and the templates.
 - **File → Make a copy** makes a second project like this one.
 - **File → Export a copy…** writes an `.oscar` file wherever you choose: a
   backup, or something to send. **File → Open a file…**, or double-clicking
