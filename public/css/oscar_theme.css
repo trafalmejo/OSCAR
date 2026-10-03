@@ -1580,6 +1580,11 @@ body.oscar-log-dragging iframe {
   font-size: var(--o-text-sm);
   text-align: center;
 }
+.oscar-canvas-empty-logo {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 6px;
+}
 .oscar-canvas-empty p {
   margin: 0;
 }

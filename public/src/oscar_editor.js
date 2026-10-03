@@ -1493,6 +1493,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
       emptyHint.className = "oscar-canvas-empty";
       emptyHint.innerHTML =
         '<div class="oscar-canvas-empty-card">' +
+        '<img class="oscar-canvas-empty-logo" src="images/oscar-circle.png" width="56" height="56" alt="">' +
         '<p class="oscar-canvas-empty-title">This project is empty</p>' +
         "<p>Drag a control in from the right, or open a template from File.</p>" +
         "</div>";
