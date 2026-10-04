@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "oscar",
   "display_name": "OSCAR",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Connect Claude to OSCAR: see why a control is not responding, and have an interface drafted for you to review.",
   "long_description": "OSCAR is a free, open-source editor and server for control interfaces: pages of buttons, sliders and other controls that phones and tablets open, and that send OSC, MIDI and DMX to show software, instruments and lights.\n\nWith this extension Claude can read the OSCAR running on this computer (its projects, what is published, each widget's settings, the MIDI ports, the recent network activity) and write an interface as a draft, which appears in OSCAR under File > Open for you to check.\n\nIt never sends anything to your rig, publishes, or changes a project. OSCAR must be running, with the MCP pill in its top bar green.",
   "author": {

@@ -1,6 +1,6 @@
 {
   "name": "createwithoscar",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Connect an AI assistant (Claude and other MCP clients) to OSCAR, the editor and server for OSC, MIDI and DMX control interfaces.",
   "bin": {
     "createwithoscar": "index.js"
