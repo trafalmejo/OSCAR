@@ -336,8 +336,9 @@ module.exports = function createRouter({
       // The stamp of what the editor sent, not of the page built from it:
       // building embeds what the page needs (a media browser's pictures go
       // into its settings), so the built page never matches the canvas again
-      // and the interface would read as outdated for ever.
-      const stamp = surfaceStamp(req.body.html);
+      // and the interface would read as outdated for ever. Markup and
+      // styles both: a visual edit is a change to publish too.
+      const stamp = surfaceStamp(req.body.html, typeof req.body.css === "string" ? req.body.css : "");
       const saved = await published.save(address, result.page, project ? { project, source, stamp } : null);
       res.json({ id: saved.id, path: "/show/" + saved.id, replaced: saved.replaced, linked: result.linked.slice(0, 20) });
     } catch (err) {

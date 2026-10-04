@@ -613,37 +613,52 @@ function hash(text) {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
+/** A widget's settings as one line: sorted, with what a hand changes left out. */
+function settled(raw) {
+  let config;
+  try {
+    config = JSON.parse(unescapeHtml(raw));
+  } catch (err) {
+    config = { unreadable: raw };
+  }
+  if (!config || typeof config !== "object") return "none";
+  for (const key of VOLATILE) delete config[key];
+  return Object.keys(config)
+    .sort()
+    .map((key) => key + "=" + JSON.stringify(config[key]))
+    .join(",");
+}
+
 /**
  * The stamp of a page's widgets, or "" for markup with none: two pages with
  * the same stamp hold the same controls, set the same way.
  *
+ * Given the page's CSS as well, the stamp is of the whole page: the markup
+ * around the widgets and the styles too, so that a heading reworded or a
+ * colour changed counts as a change to publish, as it is. The widgets'
+ * volatile settings are still left out of the markup before it is hashed,
+ * so a fader moved on the canvas does not count. That form is for the
+ * editor's canvas and what the editor sends to publish, which are the same
+ * document; a published page, built around the runtime, is only ever
+ * stamped by its widgets.
+ *
  * @param {string} html any markup holding widget tags: a canvas snapshot, a
  *        published page, a template
+ * @param {string} [css] the page's own styles, for the stamp of the whole page
  */
-function surfaceStamp(html) {
+function surfaceStamp(html, css) {
   const parts = [];
-  String(html || "").replace(TAG, function (tag, name) {
+  const page = String(html || "").replace(TAG, function (tag, name) {
     const id = ID.exec(tag);
     const raw = CONFIG.exec(tag);
-    let config = null;
-    if (raw) {
-      try {
-        config = JSON.parse(unescapeHtml(raw[1]));
-      } catch (err) {
-        config = { unreadable: raw[1] };
-      }
-    }
-    if (config && typeof config === "object") {
-      for (const key of VOLATILE) delete config[key];
-      config = Object.keys(config)
-        .sort()
-        .map((key) => key + "=" + JSON.stringify(config[key]))
-        .join(",");
-    }
+    const config = raw ? settled(raw[1]) : null;
     parts.push((id ? id[1] : "") + "|" + name + "|" + (config === null ? "none" : config));
-    return tag;
+    // The tag as hashed with the page: its settings settled the same way.
+    return raw ? tag.replace(CONFIG, " " + CONFIG_ATTR + '="' + config + '"') : tag;
   });
-  return parts.length ? hash(parts.join("\n")) : "";
+  if (!parts.length) return "";
+  if (css === undefined) return hash(parts.join("\n"));
+  return hash(parts.join("\n") + "\n--\n" + page + "\n--\n" + String(css || ""));
 }
 
 module.exports = { surfaceStamp, VOLATILE };
@@ -22979,7 +22994,9 @@ function install(editor, options) {
   /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
   function restamp() {
     try {
-      canvasStamp = surfaceStamp(exportSnapshot(editor).html);
+      // Markup and styles, as sent to publish: a visual edit counts too.
+      var snapshot = exportSnapshot(editor);
+      canvasStamp = surfaceStamp(snapshot.html, snapshot.css || "");
     } catch (err) {
       canvasStamp = null;
     }

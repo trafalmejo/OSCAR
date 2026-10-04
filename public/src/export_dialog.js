@@ -245,7 +245,9 @@ function install(editor, options) {
   /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
   function restamp() {
     try {
-      canvasStamp = surfaceStamp(exportSnapshot(editor).html);
+      // Markup and styles, as sent to publish: a visual edit counts too.
+      var snapshot = exportSnapshot(editor);
+      canvasStamp = surfaceStamp(snapshot.html, snapshot.css || "");
     } catch (err) {
       canvasStamp = null;
     }

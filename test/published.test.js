@@ -395,12 +395,13 @@ test("an interface is not outdated because building it embedded its pictures: th
   const { surfaceStamp } = require("../lib/export/stamp");
   await withServer(async (base, store) => {
     const sent = '<body><div id="m1" data-oscar="oscar-media-browser" data-oscar-config="{&quot;items&quot;:&quot;Beams|1|images/beams.jpg&quot;}"></div></body>';
-    await post(base, "/publish", Object.assign({}, FROM_PROJECT, { html: sent }));
+    const css = ".m { color: red; }";
+    await post(base, "/publish", Object.assign({}, FROM_PROJECT, { html: sent, css }));
     // As building does to a page: the picture goes into the widget's settings.
     const built = await store.read("stage");
     fs.writeFileSync(path.join(store.dir, "stage.html"), built.replace("images/beams.jpg", "data:image/jpeg;base64,AAAA"));
     const [row] = await (await fetch(base + "/published")).json();
-    assert.strictEqual(row.stamp, surfaceStamp(sent), "what the canvas will be compared with is what the canvas sent");
+    assert.strictEqual(row.stamp, surfaceStamp(sent, css), "what the canvas will be compared with is what the canvas sent, markup and styles");
     assert.notStrictEqual(surfaceStamp(await store.read("stage")), row.stamp, "which the built page itself no longer matches");
   });
 });
