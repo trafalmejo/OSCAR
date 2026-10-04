@@ -362,12 +362,16 @@
 .lqc-xy-panel,
 .lqc-transport-panel {
   display: grid;
+  /* Not "auto": a column that may grow to its content's minimum lets the XY
+     pad's own size push the panel out of its column on a tablet. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 20px;
 }
 
 #lqc-xy {
   width: 100%;
+  min-width: 0;
   height: auto;
   aspect-ratio: 3 / 1;
   border-radius: 20px;

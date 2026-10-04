@@ -646,7 +646,12 @@ body:not([data-osc-style="own"]) .arc-manual-key {
 
   .arc-key-coin,
   .arc-key-start {
+    padding: 8px 6px;
     font-size: 9px;
+    /* "INSERT COIN 25¢" is wider than half a phone: the price takes a
+       second line rather than running off the cap. */
+    white-space: normal;
+    line-height: 1.7;
   }
 
   .arc-manual {
