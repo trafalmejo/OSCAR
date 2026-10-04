@@ -1,7 +1,7 @@
 {
   "name": "oscar",
   "productName": "OSCAR",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
   "main": "main.js",
   "scripts": {
@@ -40,7 +40,7 @@
     "lighting",
     "vj"
   ],
-  "author": "Daniel Casta\u00f1o",
+  "author": "Daniel Castaño",
   "license": "BSD-3-Clause",
   "engines": {
     "node": ">=18"
@@ -127,7 +127,7 @@
         }
       ],
       "category": "AudioVideo",
-      "maintainer": "Daniel Casta\u00f1o <hello@createwithoscar.site>"
+      "maintainer": "Daniel Castaño <hello@createwithoscar.site>"
     },
     "publish": [
       {
