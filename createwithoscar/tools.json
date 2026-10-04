@@ -214,9 +214,7 @@
     "properties": {
      "name": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 80,
-      "description": "The draft's name, shown in File > Open project or template"
+      "description": "The draft's name, shown in File > Open project or template (up to 80 characters; longer is cut)"
      },
      "html": {
       "type": "string",
@@ -225,7 +223,10 @@
      },
      "overwrite": {
       "description": "Replace an existing draft of the same name",
-      "type": "boolean"
+      "type": [
+       "boolean",
+       "string"
+      ]
      }
     },
     "required": [

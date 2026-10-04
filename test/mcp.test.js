@@ -215,6 +215,17 @@ test("create_draft refuses what the validators refuse, saves what is clean, and 
   assert.match(again.problems[0], /already exists/);
   const replaced = await by.create_draft.handler({ name: "Show Desk", html, overwrite: true });
   assert.strictEqual(replaced.saved, true);
+  assert.strictEqual((await by.create_draft.handler({ name: "Show Desk", html, overwrite: "true" })).saved, true, "an assistant that says it as a word is understood");
+
+  // Loose at the door: what is wrong is said in OSCAR's words, never refused
+  // by the library before OSCAR hears of it.
+  assert.ok(!("max" in by.create_draft.schema.name._def && by.create_draft.schema.name._def.checks && by.create_draft.schema.name._def.checks.some((c) => c.kind === "max")), "the name has no limit at the door");
+  const long = await by.create_draft.handler({ name: "A very long name for a desk ".repeat(6), html });
+  assert.strictEqual(long.saved, true, "a long name is cut, not refused");
+  assert.match(fs.readFileSync(path.join(dir, "assistant", long.draft + ".html"), "utf8"), /<title>[^<]{1,80}<\/title>/);
+  const unnamed = await by.create_draft.handler({ name: "", html });
+  assert.strictEqual(unnamed.saved, false);
+  assert.match(unnamed.problems[0], /needs a name/);
 });
 
 test("no tool touches the wire: nothing named send, drive, publish or unpublish", async () => {
