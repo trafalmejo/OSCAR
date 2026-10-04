@@ -24451,11 +24451,14 @@ function initGrape(ipServer, socketPort, oscInPort) {
   askForPublished();
   setInterval(askForPublished, 5000);
   // Position follows the layout every frame, so a dragged widget carries
-  // its light; membership and colour repaint on edits, debounced.
-  (function beat() {
-    adapters.repositionWidgetLights(editor);
-    window.requestAnimationFrame(beat);
-  })();
+  // its light; membership and colour repaint on edits, debounced. No
+  // lights while the feature is off: no frame asked for every 16 ms either.
+  if (features.CANVAS_YIELD) {
+    (function beat() {
+      adapters.repositionWidgetLights(editor);
+      window.requestAnimationFrame(beat);
+    })();
+  }
   var repaintLights = (function () {
     var wait = null;
     return function () {

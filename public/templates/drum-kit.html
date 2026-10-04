@@ -728,6 +728,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
       for (var i = 1; i < states.length; i++) {
         if (states[i] && !states[i - 1]) {
           waves(pad);
+          wake();
           return;
         }
       }
@@ -777,7 +778,11 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
   // stage back first, or each run would leave a WebGL context behind.
   if (window.drkStop) window.drkStop();
 
-  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Still: drawn while a hit or a drag has it moving, then asleep. For anyone
+  // who asked their system for less motion, and in the editor, where the kit
+  // sits in the canvas frame all day with nobody watching it sway.
+  var inEditor = !!(window.frameElement && window.frameElement.classList.contains("gjs-frame"));
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches || inEditor;
   var big = window.innerWidth > 700;
   var renderer;
   try {
@@ -1135,6 +1140,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
   }
   var canvas = renderer.domElement;
   canvas.addEventListener("pointerdown", function (event) {
+    wake();
     if (event.button !== 0 && event.pointerType === "mouse") return;
     var id = pieceAt(event);
     if (id) {
@@ -1148,6 +1154,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
   });
   canvas.addEventListener("pointermove", function (event) {
     if (!drag || event.pointerId !== drag.id) return;
+    wake();
     orbit.yawTo = Math.max(-0.7, Math.min(0.7, drag.yaw - (event.clientX - drag.x) * 0.004));
     orbit.pitchTo = Math.max(-0.12, Math.min(0.3, drag.pitch + (event.clientY - drag.y) * 0.003));
   });
@@ -1177,7 +1184,23 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     s.v += (-k * s.x - d * s.v) * dt;
     s.x += s.v * dt;
   }
-  function animate() {
+  // Awake for a moment after a hit or a drag; a still kit then sleeps, and a
+  // moving one draws thirty frames a second, plenty for a slow sway and half
+  // the work of sixty on a tablet that shows this page all day.
+  var awakeUntil = 0;
+  var lastDrawn = 0;
+  function wake() {
+    awakeUntil = performance.now() + 2500;
+    if (!frame) frame = requestAnimationFrame(animate);
+  }
+  function animate(now) {
+    frame = 0;
+    if (still && now > awakeUntil) return;
+    if (!still && now - lastDrawn < 28) {
+      frame = requestAnimationFrame(animate);
+      return;
+    }
+    lastDrawn = now;
     frame = requestAnimationFrame(animate);
     var dt = Math.min(clock.getDelta(), 0.05);
     var t = clock.elapsedTime;
@@ -1233,7 +1256,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     camera.lookAt(LOOK.x, LOOK.y + shake.x * 0.05, LOOK.z);
     renderer.render(scene, camera);
   }
-  animate();
+  wake();
 
   window.drkStop = function () {
     cancelAnimationFrame(frame);

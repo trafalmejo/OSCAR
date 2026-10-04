@@ -332,7 +332,8 @@
   border: 1px solid var(--osc-border);
   border-radius: calc(var(--osc-radius) + 4px);
   background: linear-gradient(180deg, color-mix(in srgb, var(--osh-b) 7%, transparent), transparent 45%), color-mix(in srgb, var(--osc-card) 86%, transparent);
-  backdrop-filter: blur(6px);
+  /* No backdrop blur: at 86% the card hides what is behind it anyway, and a
+     blur over the moving particles is redone every frame, for every card. */
   transition: border-color 0.2s, translate 0.2s;
 }
 .osh-card:hover {
@@ -497,7 +498,6 @@
 .osh-footer {
   border-top: 1px solid var(--osc-border);
   background: color-mix(in srgb, var(--osc-background) 82%, transparent);
-  backdrop-filter: blur(8px);
   font-size: 14px;
 }
 .osh-footer-inner {
@@ -942,8 +942,14 @@ const stage = document.getElementById("osh-stage");
 if (window.oshStop) window.oshStop();
 
 if (stage) {
-  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  // Still: one frame, redrawn when something changes. For anyone who asked
+  // their system for less motion, and in the editor, where the page sits in
+  // the canvas frame all day and nobody is watching the particles drift.
+  const inEditor = !!(window.frameElement && window.frameElement.classList.contains("gjs-frame"));
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches || inEditor;
+  // Soft dots and faint lines: antialiasing would cost a full-screen
+  // multisample for nothing anyone can see.
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   stage.appendChild(renderer.domElement);
 
@@ -1055,6 +1061,12 @@ if (stage) {
   }
 
   function draw(now) {
+    // Thirty frames a second is all a slow drift needs, and half the work
+    // of sixty on a tablet that shows this page all day.
+    if (!still && last && now - last < 28) {
+      frame = requestAnimationFrame(draw);
+      return;
+    }
     const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
     last = now;
     shown += (energy - shown) * Math.min(1, dt * 5);
