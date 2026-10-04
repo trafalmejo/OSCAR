@@ -38,8 +38,9 @@
 
   The particles behind everything are three.js, in the <script> at the end
   of <body>. A script has to be in the body: OSCAR keeps what is in <body>
-  and throws the <head> away. three.js is fetched from the web, so without
-  internet the page keeps its painted background and everything else works.
+  and throws the <head> away. three.js is the copy OSCAR ships, or from the
+  web where the page is served by the relay; without either the page keeps
+  its painted background and everything else works.
   The script also listens to two of the widgets, which are ordinary form
   controls: the fader sets how lively the particles are and the colour
   picker tints them.
@@ -930,18 +931,21 @@
   </footer>
 </div>
 <script id="osh-script" type="module" data-gjs-dmode="flow">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js";
-
 // A field of particles behind the whole page, in OSCAR's two colours. The
 // page scrolls the camera through it, the pointer tips it, the Faders card
-// sets how lively it is and the Colour card tints it. It comes from the web,
-// so with no internet the page simply keeps its painted background.
+// sets how lively it is and the Colour card tints it. three.js comes from
+// this OSCAR first (the copy it ships with, so a venue with no internet has
+// its particles), then from the web for a page the relay serves to a
+// visitor, and failing both the page simply keeps its painted background.
+const THREE = await import("/assets/js/vendor/three/three.module.min.js")
+  .catch(function () { return import("https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js"); })
+  .catch(function () { return null; });
 const stage = document.getElementById("osh-stage");
 // The editor runs this again whenever it redraws the script; hand the old
 // scene back first, or each run would leave a WebGL context behind.
 if (window.oshStop) window.oshStop();
 
-if (stage) {
+if (stage && THREE) {
   // Still: one frame, redrawn when something changes. For anyone who asked
   // their system for less motion, and in the editor, where the page sits in
   // the canvas frame all day and nobody is watching the particles drift.
