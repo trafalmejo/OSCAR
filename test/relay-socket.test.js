@@ -6,7 +6,7 @@ const assert = require("node:assert");
 const relaySocket = require("../public/src/relay_socket");
 
 /** A WebSocket and a clock that only do what the test tells them to. */
-function setUp() {
+function setUp(extra) {
   const made = [];
   let timers = [];
   let time = 0;
@@ -21,12 +21,12 @@ function setUp() {
   FakeSocket.prototype.open = function () { this.readyState = 1; this.onopen(); };
   FakeSocket.prototype.say = function (message) { this.onmessage({ data: typeof message === "string" ? message : JSON.stringify(message) }); };
 
-  const socket = relaySocket("wss://relay.test/r/lobby/ws", {
+  const socket = relaySocket("wss://relay.test/r/lobby/ws", Object.assign({
     WebSocket: FakeSocket,
     setTimeout: (fn, ms) => { const t = { fn, at: time + ms }; timers.push(t); return t; },
     clearTimeout: (t) => { timers = timers.filter((x) => x !== t); },
     now: () => time,
-  });
+  }, extra || {}));
   const heard = [];
   for (const event of ["connect", "disconnect", "state:all", "state:changed", "osc:in", "relay:latency", "relay:full"]) {
     socket.on(event, (payload) => heard.push(payload === undefined ? [event] : [event, payload]));
@@ -162,4 +162,65 @@ test("a dropped connection comes back by itself, patiently; a full room more pat
   socket.close();
   advance(60000);
   assert.strictEqual(made.length, 4, "and closed is closed");
+});
+
+// ---- the pass that ran out ----------------------------------------------------
+
+/** A relay that answers a plain request to the socket's address as told, a page that can reload, and a tab's memory. */
+function passBench(status) {
+  const asked = [];
+  const reloads = [];
+  const memory = {};
+  const storage = { getItem: (k) => (k in memory ? memory[k] : null), setItem: (k, v) => { memory[k] = v; }, removeItem: (k) => { delete memory[k]; } };
+  const s = setUp({
+    fetch: (url, init) => { asked.push([url, init]); return Promise.resolve({ status: typeof status === "function" ? status() : status }); },
+    reload: () => reloads.push(1),
+    storage,
+  });
+  return Object.assign(s, { asked, reloads, memory, settle: () => new Promise((r) => setImmediate(r)) });
+}
+
+test("a socket refused before it opened asks why, plainly, at its own address", async () => {
+  const { ws, asked, reloads, settle } = passBench(426);
+  ws().close();
+  await settle();
+  assert.strictEqual(asked.length, 1);
+  assert.strictEqual(asked[0][0], "https://relay.test/r/lobby/ws", "the same door, by http");
+  assert.deepStrictEqual(asked[0][1], { credentials: "same-origin", cache: "no-store" }, "with the tab's cookie, uncached");
+  assert.strictEqual(reloads.length, 0, "426: the relay is there and the pass holds, so only the retries are needed");
+});
+
+test("403 means the pass ran out: the page reloads itself, once, and remembers it", async () => {
+  const { ws, advance, reloads, memory, settle } = passBench(403);
+  ws().close();
+  await settle();
+  assert.strictEqual(reloads.length, 1);
+  assert.strictEqual(memory.oscarRelayReloaded, "1", "remembered for the tab");
+  advance(2000);
+  ws().close();
+  await settle();
+  assert.strictEqual(reloads.length, 1, "and not again: a device the check refuses is not spun");
+});
+
+test("a socket that opened and later dropped does not ask; a new open forgets the reload, so a later expiry gets its one too", async () => {
+  const { ws, advance, asked, reloads, memory, settle } = passBench(403);
+  memory.oscarRelayReloaded = "1";
+  ws().open();
+  assert.strictEqual(memory.oscarRelayReloaded, undefined, "opened: the tab's reload is spent and forgotten");
+  ws().close();
+  await settle();
+  assert.strictEqual(asked.length, 0, "it had opened: not the pass, just a drop");
+  advance(2000);
+  ws().close();
+  await settle();
+  assert.strictEqual(asked.length, 1);
+  assert.strictEqual(reloads.length, 1);
+});
+
+test("the relay being away is not the pass: the probe fails, nothing reloads, the retries go on", async () => {
+  const s = setUp({ fetch: () => Promise.reject(new Error("offline")), reload: () => { throw new Error("must not reload"); }, storage: { getItem: () => null, setItem() {}, removeItem() {} } });
+  s.ws().close();
+  await new Promise((r) => setImmediate(r));
+  s.advance(1500);
+  assert.strictEqual(s.made.length, 2, "tried again");
 });

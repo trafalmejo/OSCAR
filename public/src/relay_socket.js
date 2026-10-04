@@ -24,8 +24,16 @@
  * "Connected" means OSCAR is at the other end, not merely the relay: a
  * control that lights up with nobody listening would be a lie.
  *
+ * A visitor's pass (the relay's bot check, a cookie good for twelve hours)
+ * is asked for when the socket opens. A page left open on a wall outlives
+ * it; when its socket then drops and the relay refuses the next one, the
+ * page asks the socket's address plainly: 403 means the pass has run out,
+ * and the page reloads itself once to earn a new one (the check passes
+ * unseen). Once only, remembered for the tab, so a device the check keeps
+ * refusing is left on the check page's own words and never spins.
+ *
  * @param {string} url wss://.../ws
- * @param {{ WebSocket?: Function, setTimeout?: Function, clearTimeout?: Function, now?: Function }} [deps] for tests
+ * @param {{ WebSocket?: Function, setTimeout?: Function, clearTimeout?: Function, now?: Function, fetch?: Function, reload?: Function, storage?: object }} [deps] for tests
  */
 function relaySocket(url, deps) {
   var options = deps || {};
@@ -33,6 +41,10 @@ function relaySocket(url, deps) {
   var later = options.setTimeout || function (fn, ms) { return setTimeout(fn, ms); };
   var cancel = options.clearTimeout || function (timer) { clearTimeout(timer); };
   var now = options.now || function () { return typeof performance !== "undefined" ? performance.now() : Date.now(); };
+  var fetchFn = options.fetch || (typeof fetch === "function" ? fetch : null);
+  var reload = options.reload || function () { if (typeof location !== "undefined") location.reload(); };
+  var storage = options.storage || (typeof sessionStorage !== "undefined" ? sessionStorage : null);
+  var RELOADED_KEY = "oscarRelayReloaded";
 
   var FLUSH_MS = 40;
   var ECHO_MS = 10000;
@@ -148,9 +160,17 @@ function relaySocket(url, deps) {
     } catch (err) {
       return again();
     }
+    var opened = false;
     ws.onopen = function () {
+      opened = true;
       retry = RETRY_MIN;
       socket.full = false;
+      // In again: a later expiry may need the one reload once more.
+      try {
+        if (storage) storage.removeItem(RELOADED_KEY);
+      } catch (err) {
+        /* a browser that keeps nothing */
+      }
     };
     ws.onmessage = function (event) {
       var message;
@@ -173,11 +193,49 @@ function relaySocket(url, deps) {
     ws.onclose = function () {
       ws = null;
       setOnline(false);
+      // Refused before it opened: perhaps the pass. Ask, and meanwhile try again.
+      if (!opened && !closed) askWhy();
       again();
     };
     ws.onerror = function () {
       fire("connect_error");
     };
+  }
+
+  var asking = false;
+  /** A plain request to the socket's address: 403 says the pass has run out, and a reload earns a new one. */
+  function askWhy() {
+    if (asking || !fetchFn) return;
+    var reloaded = false;
+    try {
+      reloaded = !!(storage && storage.getItem(RELOADED_KEY));
+    } catch (err) {
+      reloaded = true; // nothing to remember by: never risk a loop
+    }
+    if (reloaded) return;
+    asking = true;
+    var probe;
+    try {
+      probe = fetchFn(url.replace(/^ws/, "http"), { credentials: "same-origin", cache: "no-store" });
+    } catch (err) {
+      asking = false;
+      return;
+    }
+    Promise.resolve(probe).then(
+      function (res) {
+        asking = false;
+        if (closed || !res || res.status !== 403) return;
+        try {
+          storage.setItem(RELOADED_KEY, "1");
+        } catch (err) {
+          return; // cannot remember the reload: do not make it
+        }
+        reload();
+      },
+      function () {
+        asking = false; // the relay itself is away: the retries handle that
+      }
+    );
   }
 
   function again() {
