@@ -1854,7 +1854,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
       },
       { rule: true },
       // Also the padlock on the bar, which stays.
-      { label: "Lock editing", checked: isLockedNow(), run: function () { setLocked(!isLockedNow()); } },
+      {
+        label: "Lock editing",
+        checked: isLockedNow(),
+        hint: "Only this computer can edit. Published interfaces stay open to the network.",
+        run: function () { setLocked(!isLockedNow()); },
+      },
     ]
       .concat(extraItems("edit"))
       .concat([
@@ -2434,7 +2439,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
     if (!el) return;
     el.innerHTML = icon(locked ? "locked" : "unlocked");
-    el.setAttribute("data-tooltip", locked ? "Locked: tap to allow editing" : "Lock editing");
+    el.setAttribute(
+      "data-tooltip",
+      locked ? "Locked: only this computer can edit. Tap to let other computers in" : "Lock editing: only this computer can edit. Published interfaces stay open"
+    );
     el.setAttribute("data-tooltip-pos", "bottom");
     el.classList.toggle("oscar-locked", !!locked);
   }

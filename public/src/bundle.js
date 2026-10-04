@@ -573,10 +573,10 @@ module.exports = {
  *
  * What a hand changes as it plays is left out -- a fader's value, a pad's
  * position -- or every published surface would be stale the moment anyone
- * touched it. What the stamp does not see: the page's own CSS and anything
- * that is not a widget, so a purely visual edit does not mark. The mark is
- * about behaviour: where things send, what they listen to, whether they are
- * on.
+ * touched it. Given the page's styles as well, the stamp takes in the whole
+ * page, markup and CSS, so a reworded heading or a changed colour is a
+ * change to publish too; that is the form the editor and the publish route
+ * use, since both hold the same document.
  *
  * Runs in the browser and in Node alike: string work and arithmetic only.
  */
@@ -25793,7 +25793,12 @@ function initGrape(ipServer, socketPort, oscInPort) {
       },
       { rule: true },
       // Also the padlock on the bar, which stays.
-      { label: "Lock editing", checked: isLockedNow(), run: function () { setLocked(!isLockedNow()); } },
+      {
+        label: "Lock editing",
+        checked: isLockedNow(),
+        hint: "Only this computer can edit. Published interfaces stay open to the network.",
+        run: function () { setLocked(!isLockedNow()); },
+      },
     ]
       .concat(extraItems("edit"))
       .concat([
@@ -26373,7 +26378,10 @@ function initGrape(ipServer, socketPort, oscInPort) {
     var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
     if (!el) return;
     el.innerHTML = icon(locked ? "locked" : "unlocked");
-    el.setAttribute("data-tooltip", locked ? "Locked: tap to allow editing" : "Lock editing");
+    el.setAttribute(
+      "data-tooltip",
+      locked ? "Locked: only this computer can edit. Tap to let other computers in" : "Lock editing: only this computer can edit. Published interfaces stay open"
+    );
     el.setAttribute("data-tooltip-pos", "bottom");
     el.classList.toggle("oscar-locked", !!locked);
   }
