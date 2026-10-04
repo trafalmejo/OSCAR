@@ -676,16 +676,15 @@ body:not([data-osc-style="own"]) .drk-pad.toggle {
   </aside>
 </div>
 <script id="drk-script" type="module" data-gjs-dmode="flow">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js";
-
 // Two halves. The first is the kit's nervous system: it watches the pads
 // for a hit (OSCAR puts "toggle" on a pad while it is down, here or on
 // another device), pulses the scope, and plays the pads from the keyboard.
 // The second is the kit itself, in three.js: the drums and cymbals, lit on
 // a rug, which are struck when a pad is hit and which press the pads when
-// they are tapped. three.js comes from the web; without it the pads and
-// the scope still work, and the stage stays a dark room.
-(function () {
+// they are tapped. three.js comes from the web, and is asked for only when
+// the first half has run: without internet the pads and the scope still
+// work, and the stage stays a dark room.
+(async function () {
   var doc = document;
   var byId = function (id) { return doc.getElementById(id); };
   var scope = byId("drk-scope");
@@ -774,6 +773,8 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
 
   // ---- the kit in three.js ----------------------------------------------------------------
   if (!stage) return;
+  var THREE = await import("https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js").catch(function () { return null; });
+  if (!THREE) return; // no internet: a dark room behind working pads
   // The editor runs this again whenever it redraws the script; hand the old
   // stage back first, or each run would leave a WebGL context behind.
   if (window.drkStop) window.drkStop();
