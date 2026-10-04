@@ -33,7 +33,13 @@
   into view, headings light up, the hero's layers leave at different speeds,
   the pictures drift inside their frames, the two rows of names slide
   against each other, and a bar across the top fills with the page. Where a
-  browser has no scroll-driven animations the parts are simply there, and
+  browser has no scroll-driven animations (Firefox, in 2026) an animation
+  with no timeline runs for no time and holds whatever its fill mode says:
+  so an effect whose last keyframe is the part's own place (rise, tilt,
+  light) fills "both", and one whose last keyframe is a departure (the hero
+  leaving, the bar filling, the frames pacing, the rows sliding) fills
+  "backwards", which leaves the part where it is. No @supports: the editor's
+  CSS parser drops the block. So the parts are simply there, and
   anyone who has asked their system for less motion gets none.
 
   The particles behind everything are three.js, in the <script> at the end
@@ -109,7 +115,8 @@
   height: 3px;
   background: linear-gradient(90deg, var(--osh-a), var(--osh-b));
   transform-origin: 0 50%;
-  animation: osh-grow linear both;
+  transform: scaleX(0);
+  animation: osh-grow linear backwards;
   animation-timeline: scroll(root);
 }
 .osh-stage {
@@ -143,9 +150,11 @@
   position: relative;
   z-index: 1;
   text-align: center;
-  animation: osh-leave linear both;
-  animation-timeline: view();
-  animation-range: exit 0% exit 80%;
+  /* Leaves with the page's own scroll, over the first screen of it, so that
+     at the top it is whole whatever a browser makes of the hero's box. */
+  animation: osh-leave linear backwards;
+  animation-timeline: scroll(root);
+  animation-range: 0px 100vh;
 }
 .osh-hero-inner {
   display: flex;
@@ -431,7 +440,7 @@
   width: max-content;
   margin: 0 0 10px;
   padding: 0 24px;
-  animation: osh-slide linear both;
+  animation: osh-slide linear backwards;
   animation-timeline: view();
 }
 .osh-marquee-back {
@@ -464,7 +473,7 @@
   border: 1px solid var(--osc-border);
   border-radius: calc(var(--osc-radius) + 4px);
   background: var(--osc-card);
-  animation: osh-pace-slow linear both;
+  animation: osh-pace-slow linear backwards;
   animation-timeline: view();
 }
 .osh-frame-mid {
@@ -481,7 +490,7 @@
   width: 100%;
   height: 130%;
   object-fit: cover;
-  animation: osh-drift linear both;
+  animation: osh-drift linear backwards;
   animation-timeline: view();
 }
 .osh-frame-caption {

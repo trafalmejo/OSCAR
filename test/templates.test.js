@@ -165,6 +165,22 @@ for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith(".html"))) {
     for (const selector of animated) assert.ok(reduced[1].includes(selector), selector + " keeps moving");
     assert.match(reduced[1], /animation:\s*none/);
   });
+
+  test(file + ": a scroll effect leaves the part in place where a browser has no timelines", () => {
+    // Without scroll-driven animations (Firefox, 2026) an animation with no
+    // timeline runs for no time and holds what its fill mode says. One that
+    // ends in a departure -- the hero fading out -- must fill "backwards",
+    // or the part sits at its last keyframe and is never seen.
+    assert.ok(!/@supports\s*\(/.test(html), "the editor's CSS parser drops an @supports block whole");
+    const keyframes = {};
+    for (const m of html.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)) keyframes[m[1]] = m[2];
+    for (const m of html.matchAll(/\{([^}]*animation-timeline:[^}]*)\}/g)) {
+      const shorthand = /animation:\s*([\w-]+)([^;]*);/.exec(m[1]);
+      if (!shorthand) continue;
+      const last = /(?:to|100%)\s*\{([^}]*)\}/.exec(keyframes[shorthand[1]] || "");
+      if (last && /opacity:\s*0\b/.test(last[1])) assert.match(shorthand[2], /\bbackwards\b/, shorthand[1] + " ends gone, so it fills backwards");
+    }
+  });
 }
 
 test("the Showcase follows a picked widget style: outside its own tokens, no colour is fixed", () => {
