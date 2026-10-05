@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.trafalmejo/oscar",
+  "title": "OSCAR",
+  "description": "An assistant reads your OSCAR installation (OSC, MIDI, DMX) and drafts interfaces you review.",
+  "repository": {
+    "url": "https://github.com/trafalmejo/OSCAR",
+    "source": "github",
+    "subfolder": "createwithoscar"
+  },
+  "websiteUrl": "https://www.createwithoscar.site/how-it-works#ai",
+  "version": "1.0.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "createwithoscar",
+      "version": "1.0.2",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
