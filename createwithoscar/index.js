@@ -168,7 +168,7 @@ function main() {
     // Started by a person, not by an assistant: say what this is for.
     console.error(
       [
-        "createwithoscar " + VERSION + ": connects an AI assistant to OSCAR (https://www.createwithoscar.site).",
+        "createwithoscar " + VERSION + ": connects an AI assistant to OSCAR (https://www.createwithoscar.com).",
         "",
         "It is started by the assistant, not by hand. To connect one:",
         "  Claude Code:     claude mcp add oscar -- npx -y createwithoscar",

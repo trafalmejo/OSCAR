@@ -343,7 +343,7 @@ test("the pill opens a window: the switch, how to connect an assistant, and what
   const packed = require("../createwithoscar/package.json");
   assert.strictEqual(dialog.CLAUDE_CODE, "claude mcp add oscar -- npx -y " + packed.name, "what is copied is the package that is published");
   assert.deepStrictEqual(JSON.parse(dialog.OTHER_APPS), { mcpServers: { oscar: { command: "npx", args: ["-y", packed.name] } } }, "and the settings other apps take are valid JSON");
-  assert.match(dialog.BUNDLE_URL, /^https:\/\/www\.createwithoscar\.site\/assets\/OSCAR\.mcpb$/, "the Claude Desktop file comes from the website");
+  assert.match(dialog.BUNDLE_URL, /^https:\/\/www\.createwithoscar.com\/assets\/OSCAR\.mcpb$/, "the Claude Desktop file comes from the website");
 
   const minute = 60 * 1000;
   assert.strictEqual(dialog.ago(1000, 1000), "just now");

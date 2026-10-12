@@ -1,6 +1,6 @@
 # createwithoscar
 
-Connects an AI assistant to [OSCAR](https://www.createwithoscar.site), the
+Connects an AI assistant to [OSCAR](https://www.createwithoscar.com), the
 free, open-source editor and server for control interfaces: pages of buttons,
 sliders and other controls that phones and tablets open, and that send OSC,
 MIDI and DMX to show software, instruments and lights.
@@ -28,7 +28,7 @@ claude mcp add oscar -- npx -y createwithoscar
 ```
 
 **Claude Desktop**: download `OSCAR.mcpb` from
-[createwithoscar.site](https://www.createwithoscar.site/how-it-works) and
+[createwithoscar.site](https://www.createwithoscar.com/how-it-works) and
 double-click it. Nothing else to install.
 
 **Cursor, VS Code, Windsurf, Codex, Gemini CLI and other MCP apps**: add a server with the command `npx`

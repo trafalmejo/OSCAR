@@ -22,8 +22,8 @@ var CLAUDE_CODE = "claude mcp add oscar -- npx -y createwithoscar";
 var OTHER_APPS = '{\n  "mcpServers": {\n    "oscar": {\n      "command": "npx",\n      "args": ["-y", "createwithoscar"]\n    }\n  }\n}';
 
 /** The one-click file for Claude Desktop, and where the steps are written out. */
-var BUNDLE_URL = "https://www.createwithoscar.site/assets/OSCAR.mcpb";
-var HELP_URL = "https://www.createwithoscar.site/how-it-works#ai";
+var BUNDLE_URL = "https://www.createwithoscar.com/assets/OSCAR.mcpb";
+var HELP_URL = "https://www.createwithoscar.com/how-it-works#ai";
 
 function el(tag, className, text) {
   var node = document.createElement(tag);

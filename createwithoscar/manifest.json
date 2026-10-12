@@ -8,10 +8,10 @@
   "author": {
     "name": "OSCAR",
     "email": "hello@createwithoscar.site",
-    "url": "https://www.createwithoscar.site"
+    "url": "https://www.createwithoscar.com"
   },
-  "homepage": "https://www.createwithoscar.site",
-  "documentation": "https://www.createwithoscar.site/how-it-works",
+  "homepage": "https://www.createwithoscar.com",
+  "documentation": "https://www.createwithoscar.com/how-it-works",
   "support": "https://github.com/trafalmejo/OSCAR/issues",
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
   },
   "license": "BSD-3-Clause",
   "privacy_policies": [
-    "https://www.createwithoscar.site/privacy"
+    "https://www.createwithoscar.com/privacy"
   ],
   "icon": "icon.png",
   "keywords": [

@@ -62,13 +62,13 @@ function manifestFor(tools, packed) {
       "appears in OSCAR under File > Open for you to check.\n\n" +
       "It never sends anything to your rig, publishes, or changes a project. OSCAR must be running, with the MCP " +
       "pill in its top bar green.",
-    author: { name: "OSCAR", email: "hello@createwithoscar.site", url: "https://www.createwithoscar.site" },
+    author: { name: "OSCAR", email: "hello@createwithoscar.site", url: "https://www.createwithoscar.com" },
     homepage: packed.homepage,
-    documentation: "https://www.createwithoscar.site/how-it-works",
+    documentation: "https://www.createwithoscar.com/how-it-works",
     support: packed.bugs.url,
     repository: { type: "git", url: "https://github.com/trafalmejo/OSCAR" },
     license: packed.license,
-    privacy_policies: ["https://www.createwithoscar.site/privacy"],
+    privacy_policies: ["https://www.createwithoscar.com/privacy"],
     icon: "icon.png",
     keywords: packed.keywords,
     server: {
