@@ -774,6 +774,37 @@ no asset picker (you type the path or URL), and it shows still images only --
 no video or animated previews, and it does not fetch thumbnails from
 Resolume or any other software.
 
+## The phone itself: Motion and Device feedback
+
+Two widgets are about the phone an interface is opened on rather than
+about the rig. Both are laid out and addressed like any other widget; what
+they do depends on what is holding them.
+
+**Motion** sends the phone's sensors as three floats on one address, at
+the rate you set (the latest reading wins, so a sensor firing sixty times a
+second is twenty messages at a rate of 20). Source picks the reading:
+orientation (alpha, beta, gamma), acceleration (x, y, z), acceleration with
+gravity, or rotation rate. The box shows the live values. Nothing is shared
+between devices: a reading is one phone's own, and two phones on one surface
+are two streams. In the editor and on a laptop the box says "open on a
+phone". On an iPhone the sensors are handed over only after a tap, so the
+box is a button that asks until then; Android asks nothing.
+
+**Device feedback** listens on an address and makes the phone react: a
+vibration, a flash of colour over its own box, the torch. A value above
+zero (or a bare message) is go, zero is stop, which only the torch needs.
+Every message counts: two `/cue 1` are two vibrations. The flash works everywhere,
+the editor included. Vibration works in Android browsers and in the OSCAR
+app, not in an iPhone's Safari; the torch needs the app. Where a feeling is
+asked for that the page cannot give, the box says so and does what it can.
+Through OSCAR Pro's public links, OSCAR hears for the phone and passes the
+state on, so feedback reaches a phone on mobile data too.
+
+Both are honest about plain `http`: a page OSCAR serves on the LAN is not a
+secure context, and browsers hold sensors and the wake lock back from one.
+The OSCAR app runs the same page in a secure context, which is what it is
+for.
+
 ## Arduino and other boards
 
 **A board with Wi-Fi or Ethernet already works, and always has.** OSCAR

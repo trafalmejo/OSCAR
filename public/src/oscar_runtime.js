@@ -10,6 +10,7 @@
 var standalone = require("./adapters/standalone");
 var oscarSocket = require("./oscar_socket");
 var relaySocket = require("./relay_socket");
+var { browserDevice } = require("./device");
 
 /**
  * Who this page is, for OSCAR's network log: "show:<id>" for a surface OSCAR
@@ -62,6 +63,8 @@ function boot() {
   standalone.start({
     document: document,
     window: window,
+    // The phone, as this browser offers it, for the widgets that ask.
+    device: browserDevice(window),
     baked: window.OSCAR_EXPORT,
     search: window.location.search,
     // Set only on a page OSCAR is serving itself; see resolveEndpoint.

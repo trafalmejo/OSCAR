@@ -573,7 +573,7 @@ module.exports = {
   readWidget,
 };
 
-},{"../widgets":25}],5:[function(require,module,exports){
+},{"../widgets":26}],5:[function(require,module,exports){
 "use strict";
 
 /**
@@ -750,6 +750,15 @@ const DEFAULTS = {
    * does not exist and no handshake file is written.
    */
   MCP: true,
+
+  /**
+   * OSCAR announcing itself on the local network as `_oscar._tcp`
+   * (lib/discovery.js), so the phone app lists it by the computer's name
+   * instead of asking for an address. On: it says "I am here" and nothing
+   * else, on pages that were open to the network already. The person's own
+   * off switch is OSCAR_NO_DISCOVERY=1; this one takes it out of a release.
+   */
+  DISCOVERY: true,
 
 };
 
@@ -1632,7 +1641,7 @@ function planPorts(args, env) {
 module.exports = { portsFromEnv, planPorts, DEFAULTS, VARIABLES, isPort };
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":39}],13:[function(require,module,exports){
+},{"_process":41}],13:[function(require,module,exports){
 "use strict";
 
 /**
@@ -3049,7 +3058,7 @@ function checkValueOff(value, config) {
 
 module.exports = { button, MODES, ON_CLASS, DEFAULT_LABEL };
 
-},{"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],21:[function(require,module,exports){
+},{"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./outgoing":34,"./shared":36}],21:[function(require,module,exports){
 "use strict";
 
 const {
@@ -3534,7 +3543,7 @@ function checkWholeNumbers(value, config) {
 
 module.exports = { colour, FORMATS, SCALES, parseHex, normaliseHex, fromWire };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],22:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./outgoing":34,"./shared":36}],22:[function(require,module,exports){
 "use strict";
 
 const {
@@ -3881,7 +3890,238 @@ function checkValue(value, config) {
 
 module.exports = { dropdown, parseOptions };
 
-},{"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34,"./typed":37}],23:[function(require,module,exports){
+},{"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./outgoing":34,"./shared":36,"./typed":39}],23:[function(require,module,exports){
+"use strict";
+
+const { field, enabled, oscFields, checkMessage, checkListenFrom } = require("./fields");
+const { follow } = require("./incoming");
+const { onShared } = require("./shared");
+const { toNumber } = require("../osc-args");
+
+/**
+ * Device feedback: the show reaching the phone.
+ *
+ * Everything else on a surface is the phone reaching the show. This widget
+ * points the other way: a message arriving at its address makes the phone
+ * do something a person feels or sees -- a vibration, a flash of colour
+ * over the widget's box, the torch on or off -- so a cue can be felt in a
+ * pocket, or a crowd's phones can light up together.
+ *
+ * It sends nothing, ever, so it has no Ip or Port: Message is the address
+ * it follows, and Listen is on from the start because following is the
+ * whole of what it does. A value above zero, or a message with no value at
+ * all, is "go"; zero is "stop", which only the torch has a use for. Software
+ * that pulses a cue sends 1 then 0.
+ *
+ * The vibration and the torch belong to the phone, and the widget asks its
+ * host for them through `ctx.device` (the ctx contract in index.js): a
+ * browser on Android can vibrate, one on an iPhone cannot, and only the
+ * OSCAR app can reach the torch. The flash is the widget's own box and
+ * works everywhere, the editor included. Where a feeling is asked for that
+ * the host cannot give, the box says so and does what it can.
+ *
+ * On a phone that cannot hear the rig (through the relay), OSCAR hears for
+ * it and passes the state on (lib/surfaces.js, `hear` below), so the
+ * widget acts on what another device shows exactly as on what the rig sent.
+ */
+
+/** On the element while it flashes. Styled in public/assets/css/toggle.css. */
+const FLASH_CLASS = "oscar-flash";
+
+const MS_MAX = 10000;
+
+const feedback = {
+  name: "oscar-feedback",
+  tag: "div",
+  attributes: { class: "oscar-feedback" },
+
+  sends: false,
+  receives: true,
+  dmx: false,
+
+  block: {
+    label: "Device feedback",
+    category: "IO Widgets",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M17,1H7A2,2 0 0,0 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3A2,2 0 0,0 17,1M17,19H7V5H17V19' +
+      'M1,9H3V15H1V9M21,9H23V15H21V9M12,7L9,12H11V17L15,11H13L12,7Z"/></svg>',
+  },
+
+  defaults: {
+    enabled: true,
+    label: "Feedback",
+    message: "/feedback",
+    // It exists to follow something; there is nothing it could start doing
+    // on its own that a hand would have to fight.
+    listen: true,
+    oscListenFrom: "any",
+    vibrate: true,
+    vibrateMs: 200,
+    flash: true,
+    flashColour: "#ff3663",
+    flashMs: 300,
+    torch: false,
+  },
+
+  fields: [enabled(), field("label", "Label", "text")]
+    .concat(oscFields({ sends: false }))
+    .concat([
+      field("vibrate", "Vibrate", "checkbox", { hint: "Android phones and the OSCAR app. A browser on an iPhone cannot." }),
+      field("vibrateMs", "Vibration (ms)", "number", { min: 1, max: MS_MAX }),
+      field("flash", "Flash the box", "checkbox"),
+      field("flashColour", "Flash colour", "text", { placeholder: "#ff3663" }),
+      field("flashMs", "Flash (ms)", "number", { min: 1, max: MS_MAX }),
+      field("torch", "Torch", "checkbox", { hint: "The OSCAR app only: on above zero, off at zero." }),
+    ]),
+
+  checks: {
+    message: checkMessage,
+    oscListenFrom: checkListenFrom,
+    vibrateMs: checkMs("Vibration"),
+    flashMs: checkMs("Flash"),
+    flashColour: checkColour,
+  },
+
+  /**
+   * The state a message puts the widget in: { value, at }, a bare message
+   * counting as 1. For OSCAR following the rig on behalf of the pages it
+   * serves (lib/surfaces.js). `at` is when the cue arrived: OSCAR tells
+   * the devices of a state only when it changed, and a cue is news every
+   * time, however often the same value is sent -- two "/cue 1" are two
+   * vibrations. The stamp makes each one a change.
+   */
+  hear: function (config, values) {
+    const value = values && values.length ? toNumber(values[0]) : 1;
+    return value === null ? null : { value: value, at: Date.now() };
+  },
+
+  attach: function (el, ctx) {
+    const device = ctx.device || null;
+    let flashTimer = null;
+    let torchOn = false;
+
+    function canVibrate() {
+      return !!(device && typeof device.vibrate === "function");
+    }
+    function canTorch() {
+      return !!(device && typeof device.torch === "function");
+    }
+
+    function paint() {
+      const label = ctx.get("label") || "";
+      const missing = [];
+      if (ctx.get("vibrate") && !canVibrate()) missing.push("vibration");
+      if (ctx.get("torch") && !canTorch()) missing.push("torch");
+      el.textContent = missing.length ? (label ? label + " · " : "") + "needs the app for " + missing.join(" and ") : label;
+      const colour = String(ctx.get("flashColour") || "").trim();
+      if (colour) el.style.setProperty("--oscar-flash", colour);
+      ctx.setClass(FLASH_CLASS, flashTimer !== null);
+    }
+
+    function ms(key) {
+      const value = toNumber(ctx.get(key));
+      return value !== null && value > 0 ? Math.min(MS_MAX, value) : 0;
+    }
+
+    /** Act on a value: above zero is go, zero is stop. Never sends, never shares. */
+    function act(value) {
+      if (value === null) return;
+      const on = value > 0;
+      if (on && ctx.get("vibrate") && canVibrate() && ms("vibrateMs")) {
+        try {
+          device.vibrate(ms("vibrateMs"));
+        } catch (err) {
+          /* a phone that will not */
+        }
+      }
+      if (on && ctx.get("flash") && ms("flashMs")) flash(ms("flashMs"));
+      if (ctx.get("torch") && canTorch() && torchOn !== on) {
+        torchOn = on;
+        try {
+          const done = device.torch(on);
+          if (done && typeof done.catch === "function") done.catch(function () {});
+        } catch (err) {
+          /* no torch after all */
+        }
+      }
+    }
+
+    function flash(duration) {
+      if (flashTimer !== null) clearTimeout(flashTimer);
+      flashTimer = setTimeout(function () {
+        flashTimer = null;
+        ctx.setClass(FLASH_CLASS, false);
+      }, duration);
+      if (flashTimer && typeof flashTimer.unref === "function") flashTimer.unref();
+      ctx.setClass(FLASH_CLASS, true);
+    }
+
+    paint();
+
+    // Who hears the rig for this widget. On a page OSCAR serves, OSCAR does
+    // (ctx.followed), and the cue arrives as a state; everywhere else the
+    // page reads the message itself. Never both: that would be two buzzes.
+    const followed = ctx.followed === true;
+    const stopOsc = follow(ctx, function (values) {
+      if (followed) return;
+      act(values.length ? toNumber(values[0]) : 1);
+    });
+    // The state already known is handed over as the widget subscribes: a
+    // cue from before this page opened, which is not a cue for it. Only a
+    // state that arrives afterwards, and is newer than the last, is one.
+    let live = false;
+    let lastAt = null;
+    const stopShared = onShared(ctx, function (state) {
+      if (!followed || !state || state.value === undefined) return;
+      const at = toNumber(state.at);
+      const seen = at !== null && at === lastAt;
+      if (at !== null) lastAt = at;
+      if (!live || seen) return;
+      act(toNumber(state.value));
+    });
+    live = true;
+    const stopChange = ctx.onChange(["label", "flashColour", "vibrate", "torch"], paint);
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(paint) : null;
+
+    return function detach() {
+      if (flashTimer !== null) clearTimeout(flashTimer);
+      flashTimer = null;
+      // A torch left on by a page that is going away stays on; say stop.
+      if (torchOn && canTorch()) {
+        try {
+          const done = device.torch(false);
+          if (done && typeof done.catch === "function") done.catch(function () {});
+        } catch (err) {
+          /* already dark */
+        }
+      }
+      if (stopOsc) stopOsc();
+      if (stopShared) stopShared();
+      if (stopChange) stopChange();
+      if (stopRewrite) stopRewrite();
+    };
+  },
+};
+
+function checkMs(what) {
+  return function (value) {
+    const n = toNumber(value);
+    if (n !== null && n >= 1 && n <= MS_MAX) return null;
+    return what + " has to be between 1 and " + MS_MAX + " milliseconds";
+  };
+}
+
+function checkColour(value) {
+  const text = String(value == null ? "" : value).trim();
+  if (!text) return "Flash colour has to be a colour, like #ff3663 or red";
+  if (/[;{}<>]/.test(text)) return "Flash colour has to be a colour, not a style rule";
+  return null;
+}
+
+module.exports = { feedback, FLASH_CLASS };
+
+},{"../osc-args":11,"./fields":24,"./incoming":25,"./shared":36}],24:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4477,7 +4717,7 @@ module.exports = {
   IPV4: IPV4,
 };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../ports":12,"../serial-target":17}],24:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../ports":12,"../serial-target":17}],25:[function(require,module,exports){
 "use strict";
 
 const { matchesAddress } = require("../osc-address");
@@ -4571,7 +4811,7 @@ function follow(ctx, fn, addresses) {
 
 module.exports = { incoming, follow };
 
-},{"../osc-address":10}],25:[function(require,module,exports){
+},{"../osc-address":10}],26:[function(require,module,exports){
 "use strict";
 
 /**
@@ -4626,7 +4866,9 @@ module.exports = { incoming, follow };
  *                 knowing the widget. { kind: "on" }, { kind: "value", min,
  *                 max, step }, { kind: "choice", options: [{ label, value }] },
  *                 { kind: "position", minX, maxX, minY, maxY },
- *                 { kind: "colour" } or { kind: "text", maxLength }.
+ *                 { kind: "colour" }, { kind: "text", maxLength }, or
+ *                 { kind: "vector", keys } for several numbers at once (a
+ *                 sensor reading), which no panel offers by hand.
  *   block         { label, category, icon } for the palette
  *   defaults      every setting and its starting value
  *   fields        the settings panel, in order; see fields.js
@@ -4719,6 +4961,22 @@ module.exports = { incoming, follow };
  *                            editor, which is not a device on the surface;
  *                            so widgets go through share() in shared.js,
  *                            which checks.
+ *   followed                 true where OSCAR hears the rig for this widget
+ *                            and hands what it heard over through onShared
+ *                            (a page OSCAR serves, for a widget with `hear`),
+ *                            so onOsc delivers nothing. Optional; absent
+ *                            means the page reads messages itself. For a
+ *                            widget that must act on each message exactly
+ *                            once, and so must not listen with both ears.
+ *   device                   the phone, where the host has one (optional):
+ *                            { motion: { needsTap(), ask(), watch(kind, fn) },
+ *                            vibrate(ms), torch(on) }, each part optional
+ *                            too. A served page gets the browser's
+ *                            (public/src/device.js), the OSCAR app its own,
+ *                            the editor none: a widget that wants the phone
+ *                            says so on its box and does what it can.
+ *                            Nothing read from it may be sent from a
+ *                            receive path; the rules below still hold.
  *   onShared(fn)             run fn(state) when another device changes what
  *                            this widget shows, and, on a host that keeps
  *                            one, with the state already known when the
@@ -4837,7 +5095,7 @@ for (const widget of WIDGETS) {
 
 module.exports = { WIDGETS, byName, validate, FLAGS, outgoing };
 
-},{"./outgoing":32,"./registry":33}],26:[function(require,module,exports){
+},{"./outgoing":34,"./registry":35}],27:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -5341,7 +5599,7 @@ module.exports = {
   COLUMNS_PROPERTY,
 };
 
-},{"../osc-args":11,"./fields":23,"./incoming":24,"./outgoing":32,"./shared":34,"./typed":37}],27:[function(require,module,exports){
+},{"../osc-args":11,"./fields":24,"./incoming":25,"./outgoing":34,"./shared":36,"./typed":39}],28:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, checkMessage, checkNumber, checkListenFrom, ORIENTATIONS } = require("./fields");
@@ -5623,7 +5881,7 @@ function checkPeakHold(value) {
 
 module.exports = { meter, PEAK_CLASS };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./shared":34}],28:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./shared":36}],29:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5735,7 +5993,7 @@ function midiChecks(values, options) {
 
 module.exports = { midiFields: midiFields, midiDefaults: midiDefaults, midiChecks: midiChecks };
 
-},{"../midi/spec":8,"./fields":23}],29:[function(require,module,exports){
+},{"../midi/spec":8,"./fields":24}],30:[function(require,module,exports){
 "use strict";
 
 /**
@@ -5876,7 +6134,7 @@ function followMidi(definition, read, showing) {
 
 module.exports = { stateFromMidi: stateFromMidi, valuesOf: valuesOf, followMidi: followMidi, inputOf: inputOf };
 
-},{"../midi/spec":8,"../osc-args":11}],30:[function(require,module,exports){
+},{"../midi/spec":8,"../osc-args":11}],31:[function(require,module,exports){
 "use strict";
 
 const { followMidi } = require("./midi-in");
@@ -5926,7 +6184,273 @@ var midiKeys = 0;
 
 module.exports = { midiSource: midiSource };
 
-},{"../activity":1,"../midi/spec":8,"./midi-in":29}],31:[function(require,module,exports){
+},{"../activity":1,"../midi/spec":8,"./midi-in":30}],32:[function(require,module,exports){
+"use strict";
+
+const { field, enabled, oscFields, connectionChecks, checkNumber } = require("./fields");
+const { outgoing, routing, asCtx } = require("./outgoing");
+const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
+
+/**
+ * Motion: the phone itself as a control.
+ *
+ * A phone carries an accelerometer and a gyroscope, and a page can read
+ * them. This widget turns one of those readings into an OSC message of
+ * three floats, sent at a steady rate, so tilting the phone pans a light or
+ * steers a camera the way a fader would, with no hand on the screen.
+ *
+ * What the widget needs that the other widgets do not is the phone. It
+ * asks its host for it through `ctx.device.motion` (the ctx contract in
+ * index.js); a host that has none, the editor on a laptop, leaves the
+ * widget saying so, and the designer lays it out and sets its address like
+ * any other. iPhones hand the sensors over only after a tap, so until the
+ * host says it is allowed the widget is a button that asks.
+ *
+ * Nothing here is shared between devices, on purpose: a reading is one
+ * phone's own, and two phones on one surface are two streams. Nothing is
+ * received either. And the stream is throttled to Rate, latest reading
+ * wins, so a sensor that fires sixty times a second does not put sixty
+ * messages a second on a venue's Wi-Fi unless that is what was asked for.
+ */
+
+/** The readings a phone offers, by the name the host's device.motion.watch takes. */
+const SOURCES = [
+  { id: "orientation", name: "Orientation (alpha, beta, gamma)" },
+  { id: "acceleration", name: "Acceleration (x, y, z)" },
+  { id: "gravity", name: "Acceleration with gravity (x, y, z)" },
+  { id: "rotation", name: "Rotation rate (alpha, beta, gamma)" },
+];
+
+const RATE_MIN = 1;
+const RATE_MAX = 60;
+
+/** What the box says it is doing, on its data-motion attribute (styled in toggle.css). */
+const STATES = ["phone", "tap", "waiting", "live"];
+
+function round(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+const motion = {
+  name: "oscar-motion",
+  tag: "div",
+  attributes: { class: "oscar-motion" },
+
+  sends: true,
+  receives: false,
+  dmx: false,
+
+  block: {
+    label: "Motion",
+    category: "IO Widgets",
+    icon:
+      '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
+      'd="M17,1H7A2,2 0 0,0 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3A2,2 0 0,0 17,1M17,19H7V5H17V19M12,6' +
+      'L8,10H11V14H13V10H16L12,6M12,18L16,14H13V12H11V14H8L12,18Z"/></svg>',
+  },
+
+  defaults: {
+    enabled: true,
+    label: "Motion",
+    ip: "localhost",
+    port: 7000,
+    message: "/motion",
+    argType: "f",
+    oscEnabled: true,
+    oscVia: "network",
+    oscSendWhen: "user",
+    oscLoopGuard: true,
+    source: "orientation",
+    rate: 20,
+  },
+
+  fields: [enabled(), field("label", "Label", "text")]
+    .concat(oscFields({ receives: false }))
+    .concat([
+      field("source", "Source", "select", { options: SOURCES, hint: "Which reading the phone sends, as three values in this order." }),
+      field("rate", "Rate (per second)", "number", { min: RATE_MIN, max: RATE_MAX, hint: "Messages a second at most. The latest reading wins." }),
+      field("argType", "Argument type", "select", { section: "osc", dir: "out", options: NUMERIC_ARG_TYPES }),
+    ]),
+
+  checks: Object.assign(withoutListen(connectionChecks()), {
+    source: checkSource,
+    rate: checkRate,
+  }),
+
+  /**
+   * How a state for drive() is asked for: three numbers, whatever the source
+   * calls them. A kind of its own, so a panel that offers on/off, a value or
+   * a position does not offer a sensor reading as one of those.
+   */
+  driveInput: function () {
+    return { kind: "vector", keys: ["x", "y", "z"] };
+  },
+
+  /**
+   * What a reading sends, worked out with no phone: for OSCAR driving the
+   * widget on a phone's behalf (lib/surfaces.js). The state is the reading
+   * as the widget keeps it, rounded as it rounds; the message may be null for
+   * a widget switched off.
+   */
+  drive: function (config, state) {
+    const x = toNumber(state && state.x);
+    const y = toNumber(state && state.y);
+    const z = toNumber(state && state.z);
+    if (x === null || y === null || z === null) return null;
+    const kept = { x: round(x), y: round(y), z: round(z) };
+    return { state: kept, message: outgoing(routing(asCtx(config)), [kept.x, kept.y, kept.z]) };
+  },
+
+  attach: function (el, ctx) {
+    const device = ctx.device && ctx.device.motion ? ctx.device.motion : null;
+    let stopWatching = null;
+    // The latest reading, and the one last sent; a tick sends only a change.
+    let latest = null;
+    let sent = null;
+    let ticker = null;
+    let shown = "phone";
+
+    function words() {
+      if (shown === "phone") return "open on a phone";
+      if (shown === "tap") return "tap to enable motion";
+      if (shown === "waiting") return "waiting for the sensor";
+      return latest ? latest.x.toFixed(2) + "  " + latest.y.toFixed(2) + "  " + latest.z.toFixed(2) : "";
+    }
+
+    function paint() {
+      const label = ctx.get("label");
+      const text = words();
+      el.textContent = label ? (text ? label + " · " + text : label) : text;
+      el.setAttribute("data-motion", shown);
+    }
+
+    function show(state) {
+      shown = STATES.indexOf(state) === -1 ? "phone" : state;
+      paint();
+    }
+
+    /** One reading from the phone. Kept, not sent: the ticker sends. */
+    function onReading(reading) {
+      const x = toNumber(reading && reading.x);
+      const y = toNumber(reading && reading.y);
+      const z = toNumber(reading && reading.z);
+      if (x === null || y === null || z === null) return;
+      latest = { x: round(x), y: round(y), z: round(z) };
+      if (shown !== "live") show("live");
+    }
+
+    function tick() {
+      if (!latest) return;
+      if (sent && sent.x === latest.x && sent.y === latest.y && sent.z === latest.z) return;
+      sent = latest;
+      ctx.send(outgoing(routing(ctx), [latest.x, latest.y, latest.z]));
+      paint();
+    }
+
+    function rateMs() {
+      const rate = toNumber(ctx.get("rate"));
+      const perSecond = rate === null ? 20 : Math.min(RATE_MAX, Math.max(RATE_MIN, rate));
+      return Math.round(1000 / perSecond);
+    }
+
+    function startTicker() {
+      stopTicker();
+      ticker = setInterval(tick, rateMs());
+      // Under Node a pending timer keeps the process alive; a browser's has nothing to unref.
+      if (ticker && typeof ticker.unref === "function") ticker.unref();
+    }
+
+    function stopTicker() {
+      if (ticker !== null) clearInterval(ticker);
+      ticker = null;
+    }
+
+    function startWatching() {
+      stopWatching_();
+      latest = null;
+      sent = null;
+      const source = ctx.get("source");
+      const stop = typeof device.watch === "function" ? device.watch(source, onReading) : null;
+      stopWatching = typeof stop === "function" ? stop : null;
+      show(stopWatching ? "waiting" : "phone");
+      if (stopWatching) startTicker();
+    }
+
+    function stopWatching_() {
+      if (stopWatching) stopWatching();
+      stopWatching = null;
+      stopTicker();
+    }
+
+    /** The tap iPhones ask for, and only that: a tap anywhere else does nothing. */
+    function onTap() {
+      if (shown !== "tap" || typeof device.ask !== "function") return;
+      Promise.resolve()
+        .then(function () {
+          return device.ask();
+        })
+        .then(
+          function (allowed) {
+            if (allowed) startWatching();
+            else show("tap");
+          },
+          function () {
+            show("tap");
+          }
+        );
+    }
+
+    if (!device) {
+      show("phone");
+    } else if (typeof device.needsTap === "function" && device.needsTap()) {
+      show("tap");
+    } else {
+      startWatching();
+    }
+    el.addEventListener("click", onTap);
+
+    const stopSource = ctx.onChange(["source"], function () {
+      if (stopWatching) startWatching();
+    });
+    const stopRate = ctx.onChange(["rate"], function () {
+      if (ticker !== null) startTicker();
+    });
+    const stopLabel = ctx.onChange(["label"], paint);
+    const stopRewrite = ctx.onRewrite ? ctx.onRewrite(paint) : null;
+
+    return function detach() {
+      stopWatching_();
+      el.removeEventListener("click", onTap);
+      if (stopSource) stopSource();
+      if (stopRate) stopRate();
+      if (stopLabel) stopLabel();
+      if (stopRewrite) stopRewrite();
+    };
+  },
+};
+
+/** The connection checks, minus the one for a Data in setting this widget has not got. */
+function withoutListen(checks) {
+  const kept = Object.assign({}, checks);
+  delete kept.oscListenFrom;
+  return kept;
+}
+
+function checkSource(value) {
+  return SOURCES.some((source) => source.id === value) ? null : "Source has to be one of the readings a phone offers";
+}
+
+function checkRate(value) {
+  const rate = toNumber(value);
+  if (rate !== null && rate >= RATE_MIN && rate <= RATE_MAX) return null;
+  return "Rate has to be between " + RATE_MIN + " and " + RATE_MAX + " messages a second";
+}
+
+const checkRateNumber = checkNumber("Rate"); // kept for callers that only need "is a number"
+
+module.exports = { motion, SOURCES, RATE_MIN, RATE_MAX, checkRate, checkRateNumber };
+
+},{"../osc-args":11,"./fields":24,"./outgoing":34}],33:[function(require,module,exports){
 "use strict";
 
 const {
@@ -6303,7 +6827,7 @@ function checkValue(value, config) {
 
 module.exports = { numberInput };
 
-},{"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34,"./typed":37}],32:[function(require,module,exports){
+},{"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./outgoing":34,"./shared":36,"./typed":39}],34:[function(require,module,exports){
 "use strict";
 
 const { toArgs } = require("../osc-args");
@@ -6488,7 +7012,7 @@ function routing(ctx) {
 
 module.exports = { outgoing, only, routing, asCtx };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../serial-target":17,"./fields":23}],33:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../midi/spec":8,"../osc-args":11,"../serial-target":17,"./fields":24}],35:[function(require,module,exports){
 "use strict";
 
 /**
@@ -6510,9 +7034,11 @@ module.exports = [
   require("./number-input").numberInput,
   require("./dropdown").dropdown,
   require("./media-browser").mediaBrowser,
+  require("./motion").motion,
+  require("./feedback").feedback,
 ];
 
-},{"./button":20,"./colour":21,"./dropdown":22,"./media-browser":26,"./meter":27,"./number-input":31,"./slider":35,"./text-input":36,"./xypad":38}],34:[function(require,module,exports){
+},{"./button":20,"./colour":21,"./dropdown":22,"./feedback":23,"./media-browser":27,"./meter":28,"./motion":32,"./number-input":33,"./slider":37,"./text-input":38,"./xypad":40}],36:[function(require,module,exports){
 "use strict";
 
 /**
@@ -6579,7 +7105,7 @@ function onShared(ctx, fn) {
 
 module.exports = { share, onShared };
 
-},{}],35:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 "use strict";
 
 const {
@@ -6880,7 +7406,7 @@ function checkValue(value, config) {
 // this is where it used to be, and a caller that learned it here keeps working.
 module.exports = { slider, ORIENTATIONS };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],36:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./outgoing":34,"./shared":36}],38:[function(require,module,exports){
 "use strict";
 
 const { field, enabled, oscFields, connectionChecks } = require("./fields");
@@ -7079,7 +7605,7 @@ function checkValue(value, config) {
 
 module.exports = { textInput };
 
-},{"../osc-args":11,"./fields":23,"./incoming":24,"./outgoing":32,"./shared":34,"./typed":37}],37:[function(require,module,exports){
+},{"../osc-args":11,"./fields":24,"./incoming":25,"./outgoing":34,"./shared":36,"./typed":39}],39:[function(require,module,exports){
 "use strict";
 
 const { isSendable, toNumber } = require("../osc-args");
@@ -7298,7 +7824,7 @@ function dmxRange(min, max) {
 
 module.exports = { commitOn, refusal, checkArgType, levelOf, dmxRange };
 
-},{"../dmx/levels":2,"../dmx/spec":3,"../osc-args":11}],38:[function(require,module,exports){
+},{"../dmx/levels":2,"../dmx/spec":3,"../osc-args":11}],40:[function(require,module,exports){
 "use strict";
 
 const {
@@ -7709,7 +8235,7 @@ function within(value, min, max) {
 
 module.exports = { xypad, SEND_MODES };
 
-},{"../dmx/levels":2,"../osc-args":11,"./fields":23,"./incoming":24,"./midi-fields":28,"./outgoing":32,"./shared":34}],39:[function(require,module,exports){
+},{"../dmx/levels":2,"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./outgoing":34,"./shared":36}],41:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -7895,7 +8421,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],40:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 /*!
  * jquery-confirm v3.3.4 (http://craftpip.github.io/jquery-confirm/)
  * Author: Boniface Pereira
@@ -7906,7 +8432,7 @@ process.umask = function() { return 0; };
  * Licensed under MIT (https://github.com/craftpip/jquery-confirm/blob/master/LICENSE)
  */
 (function(factory){if(typeof define==="function"&&define.amd){define(["jquery"],factory);}else{if(typeof module==="object"&&module.exports){module.exports=function(root,jQuery){if(jQuery===undefined){if(typeof window!=="undefined"){jQuery=require("jquery");}else{jQuery=require("jquery")(root);}}factory(jQuery);return jQuery;};}else{factory(jQuery);}}}(function($){var w=window;$.fn.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}$(this).each(function(){var $this=$(this);if($this.attr("jc-attached")){console.warn("jConfirm has already been attached to this element ",$this[0]);return;}$this.on("click",function(e){e.preventDefault();var jcOption=$.extend({},options);if($this.attr("data-title")){jcOption.title=$this.attr("data-title");}if($this.attr("data-content")){jcOption.content=$this.attr("data-content");}if(typeof jcOption.buttons==="undefined"){jcOption.buttons={};}jcOption["$target"]=$this;if($this.attr("href")&&Object.keys(jcOption.buttons).length===0){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];jcOption.buttons=buttons;jcOption.buttons[firstBtn].action=function(){location.href=$this.attr("href");};}jcOption.closeIcon=false;var instance=$.confirm(jcOption);});$this.attr("jc-attached",true);});return $(this);};$.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});options.buttons=buttons;}return w.jconfirm(options);};$.alert=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];options.buttons[firstBtn]=buttons[firstBtn];}return w.jconfirm(options);};$.dialog=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false,closeIcon:function(){}};}options.buttons={};if(typeof options.closeIcon==="undefined"){options.closeIcon=function(){};}options.confirmKeys=[13];return w.jconfirm(options);};w.jconfirm=function(options){if(typeof options==="undefined"){options={};}var pluginOptions=$.extend(true,{},w.jconfirm.pluginDefaults);if(w.jconfirm.defaults){pluginOptions=$.extend(true,pluginOptions,w.jconfirm.defaults);}pluginOptions=$.extend(true,{},pluginOptions,options);var instance=new w.Jconfirm(pluginOptions);w.jconfirm.instances.push(instance);return instance;};w.Jconfirm=function(options){$.extend(this,options);this._init();};w.Jconfirm.prototype={_init:function(){var that=this;if(!w.jconfirm.instances.length){w.jconfirm.lastFocused=$("body").find(":focus");}this._id=Math.round(Math.random()*99999);this.contentParsed=$(document.createElement("div"));if(!this.lazyOpen){setTimeout(function(){that.open();},0);}},_buildHTML:function(){var that=this;this._parseAnimation(this.animation,"o");this._parseAnimation(this.closeAnimation,"c");this._parseBgDismissAnimation(this.backgroundDismissAnimation);this._parseColumnClass(this.columnClass);this._parseTheme(this.theme);this._parseType(this.type);var template=$(this.template);template.find(".jconfirm-box").addClass(this.animationParsed).addClass(this.backgroundDismissAnimationParsed).addClass(this.typeParsed);if(this.typeAnimated){template.find(".jconfirm-box").addClass("jconfirm-type-animated");}if(this.useBootstrap){template.find(".jc-bs3-row").addClass(this.bootstrapClasses.row);template.find(".jc-bs3-row").addClass("justify-content-md-center justify-content-sm-center justify-content-xs-center justify-content-lg-center");template.find(".jconfirm-box-container").addClass(this.columnClassParsed);if(this.containerFluid){template.find(".jc-bs3-container").addClass(this.bootstrapClasses.containerFluid);}else{template.find(".jc-bs3-container").addClass(this.bootstrapClasses.container);}}else{template.find(".jconfirm-box").css("width",this.boxWidth);}if(this.titleClass){template.find(".jconfirm-title-c").addClass(this.titleClass);}template.addClass(this.themeParsed);var ariaLabel="jconfirm-box"+this._id;template.find(".jconfirm-box").attr("aria-labelledby",ariaLabel).attr("tabindex",-1);template.find(".jconfirm-content").attr("id",ariaLabel);if(this.bgOpacity!==null){template.find(".jconfirm-bg").css("opacity",this.bgOpacity);}if(this.rtl){template.addClass("jconfirm-rtl");}this.$el=template.appendTo(this.container);this.$jconfirmBoxContainer=this.$el.find(".jconfirm-box-container");this.$jconfirmBox=this.$body=this.$el.find(".jconfirm-box");this.$jconfirmBg=this.$el.find(".jconfirm-bg");this.$title=this.$el.find(".jconfirm-title");this.$titleContainer=this.$el.find(".jconfirm-title-c");this.$content=this.$el.find("div.jconfirm-content");this.$contentPane=this.$el.find(".jconfirm-content-pane");this.$icon=this.$el.find(".jconfirm-icon-c");this.$closeIcon=this.$el.find(".jconfirm-closeIcon");this.$holder=this.$el.find(".jconfirm-holder");this.$btnc=this.$el.find(".jconfirm-buttons");this.$scrollPane=this.$el.find(".jconfirm-scrollpane");that.setStartingPoint();this._contentReady=$.Deferred();this._modalReady=$.Deferred();this.$holder.css({"padding-top":this.offsetTop,"padding-bottom":this.offsetBottom,});this.setTitle();this.setIcon();this._setButtons();this._parseContent();this.initDraggable();if(this.isAjax){this.showLoading(false);}$.when(this._contentReady,this._modalReady).then(function(){if(that.isAjaxLoading){setTimeout(function(){that.isAjaxLoading=false;that.setContent();that.setTitle();that.setIcon();setTimeout(function(){that.hideLoading(false);that._updateContentMaxHeight();},100);if(typeof that.onContentReady==="function"){that.onContentReady();}},50);}else{that._updateContentMaxHeight();that.setTitle();that.setIcon();if(typeof that.onContentReady==="function"){that.onContentReady();}}if(that.autoClose){that._startCountDown();}}).then(function(){that._watchContent();});if(this.animation==="none"){this.animationSpeed=1;this.animationBounce=1;}this.$body.css(this._getCSS(this.animationSpeed,this.animationBounce));this.$contentPane.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBg.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBoxContainer.css(this._getCSS(this.animationSpeed,1));},_typePrefix:"jconfirm-type-",typeParsed:"",_parseType:function(type){this.typeParsed=this._typePrefix+type;},setType:function(type){var oldClass=this.typeParsed;this._parseType(type);this.$jconfirmBox.removeClass(oldClass).addClass(this.typeParsed);},themeParsed:"",_themePrefix:"jconfirm-",setTheme:function(theme){var previous=this.theme;this.theme=theme||this.theme;this._parseTheme(this.theme);if(previous){this.$el.removeClass(previous);}this.$el.addClass(this.themeParsed);this.theme=theme;},_parseTheme:function(theme){var that=this;theme=theme.split(",");$.each(theme,function(k,a){if(a.indexOf(that._themePrefix)===-1){theme[k]=that._themePrefix+$.trim(a);}});this.themeParsed=theme.join(" ").toLowerCase();},backgroundDismissAnimationParsed:"",_bgDismissPrefix:"jconfirm-hilight-",_parseBgDismissAnimation:function(bgDismissAnimation){var animation=bgDismissAnimation.split(",");var that=this;$.each(animation,function(k,a){if(a.indexOf(that._bgDismissPrefix)===-1){animation[k]=that._bgDismissPrefix+$.trim(a);}});this.backgroundDismissAnimationParsed=animation.join(" ").toLowerCase();},animationParsed:"",closeAnimationParsed:"",_animationPrefix:"jconfirm-animation-",setAnimation:function(animation){this.animation=animation||this.animation;this._parseAnimation(this.animation,"o");},_parseAnimation:function(animation,which){which=which||"o";var animations=animation.split(",");var that=this;$.each(animations,function(k,a){if(a.indexOf(that._animationPrefix)===-1){animations[k]=that._animationPrefix+$.trim(a);}});var a_string=animations.join(" ").toLowerCase();if(which==="o"){this.animationParsed=a_string;}else{this.closeAnimationParsed=a_string;}return a_string;},setCloseAnimation:function(closeAnimation){this.closeAnimation=closeAnimation||this.closeAnimation;this._parseAnimation(this.closeAnimation,"c");},setAnimationSpeed:function(speed){this.animationSpeed=speed||this.animationSpeed;},columnClassParsed:"",setColumnClass:function(colClass){if(!this.useBootstrap){console.warn("cannot set columnClass, useBootstrap is set to false");return;}this.columnClass=colClass||this.columnClass;this._parseColumnClass(this.columnClass);this.$jconfirmBoxContainer.addClass(this.columnClassParsed);},_updateContentMaxHeight:function(){var height=$(window).height()-(this.$jconfirmBox.outerHeight()-this.$contentPane.outerHeight())-(this.offsetTop+this.offsetBottom);this.$contentPane.css({"max-height":height+"px"});},setBoxWidth:function(width){if(this.useBootstrap){console.warn("cannot set boxWidth, useBootstrap is set to true");return;}this.boxWidth=width;this.$jconfirmBox.css("width",width);},_parseColumnClass:function(colClass){colClass=colClass.toLowerCase();var p;switch(colClass){case"xl":case"xlarge":p="col-md-12";break;case"l":case"large":p="col-md-8 col-md-offset-2";break;case"m":case"medium":p="col-md-6 col-md-offset-3";break;case"s":case"small":p="col-md-4 col-md-offset-4";break;case"xs":case"xsmall":p="col-md-2 col-md-offset-5";break;default:p=colClass;}this.columnClassParsed=p;},initDraggable:function(){var that=this;var $t=this.$titleContainer;this.resetDrag();if(this.draggable){$t.on("mousedown",function(e){$t.addClass("jconfirm-hand");that.mouseX=e.clientX;that.mouseY=e.clientY;that.isDrag=true;});$(window).on("mousemove."+this._id,function(e){if(that.isDrag){that.movingX=e.clientX-that.mouseX+that.initialX;that.movingY=e.clientY-that.mouseY+that.initialY;that.setDrag();}});$(window).on("mouseup."+this._id,function(){$t.removeClass("jconfirm-hand");if(that.isDrag){that.isDrag=false;that.initialX=that.movingX;that.initialY=that.movingY;}});}},resetDrag:function(){this.isDrag=false;this.initialX=0;this.initialY=0;this.movingX=0;this.movingY=0;this.mouseX=0;this.mouseY=0;this.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");},setDrag:function(){if(!this.draggable){return;}this.alignMiddle=false;var boxWidth=this.$jconfirmBox.outerWidth();var boxHeight=this.$jconfirmBox.outerHeight();var windowWidth=$(window).width();var windowHeight=$(window).height();var that=this;var dragUpdate=1;if(that.movingX%dragUpdate===0||that.movingY%dragUpdate===0){if(that.dragWindowBorder){var leftDistance=(windowWidth/2)-boxWidth/2;var topDistance=(windowHeight/2)-boxHeight/2;topDistance-=that.dragWindowGap;leftDistance-=that.dragWindowGap;if(leftDistance+that.movingX<0){that.movingX=-leftDistance;}else{if(leftDistance-that.movingX<0){that.movingX=leftDistance;}}if(topDistance+that.movingY<0){that.movingY=-topDistance;}else{if(topDistance-that.movingY<0){that.movingY=topDistance;}}}that.$jconfirmBoxContainer.css("transform","translate("+that.movingX+"px, "+that.movingY+"px)");}},_scrollTop:function(){if(typeof pageYOffset!=="undefined"){return pageYOffset;}else{var B=document.body;var D=document.documentElement;D=(D.clientHeight)?D:B;return D.scrollTop;}},_watchContent:function(){var that=this;if(this._timer){clearInterval(this._timer);}var prevContentHeight=0;this._timer=setInterval(function(){if(that.smoothContent){var contentHeight=that.$content.outerHeight()||0;if(contentHeight!==prevContentHeight){prevContentHeight=contentHeight;}var wh=$(window).height();var total=that.offsetTop+that.offsetBottom+that.$jconfirmBox.height()-that.$contentPane.height()+that.$content.height();if(total<wh){that.$contentPane.addClass("no-scroll");}else{that.$contentPane.removeClass("no-scroll");}}},this.watchInterval);},_overflowClass:"jconfirm-overflow",_hilightAnimating:false,highlight:function(){this.hiLightModal();},hiLightModal:function(){var that=this;if(this._hilightAnimating){return;}that.$body.addClass("hilight");var duration=parseFloat(that.$body.css("animation-duration"))||2;this._hilightAnimating=true;setTimeout(function(){that._hilightAnimating=false;that.$body.removeClass("hilight");},duration*1000);},_bindEvents:function(){var that=this;this.boxClicked=false;this.$scrollPane.click(function(e){if(!that.boxClicked){var buttonName=false;var shouldClose=false;var str;if(typeof that.backgroundDismiss==="function"){str=that.backgroundDismiss();}else{str=that.backgroundDismiss;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}else{that.hiLightModal();}}that.boxClicked=false;});this.$jconfirmBox.click(function(e){that.boxClicked=true;});var isKeyDown=false;$(window).on("jcKeyDown."+that._id,function(e){if(!isKeyDown){isKeyDown=true;}});$(window).on("keyup."+that._id,function(e){if(isKeyDown){that.reactOnKey(e);isKeyDown=false;}});$(window).on("resize."+this._id,function(){that._updateContentMaxHeight();setTimeout(function(){that.resetDrag();},100);});},_cubic_bezier:"0.36, 0.55, 0.19",_getCSS:function(speed,bounce){return{"-webkit-transition-duration":speed/1000+"s","transition-duration":speed/1000+"s","-webkit-transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")","transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")"};},_setButtons:function(){var that=this;var total_buttons=0;if(typeof this.buttons!=="object"){this.buttons={};}$.each(this.buttons,function(key,button){total_buttons+=1;if(typeof button==="function"){that.buttons[key]=button={action:button};}that.buttons[key].text=button.text||key;that.buttons[key].btnClass=button.btnClass||"btn-default";that.buttons[key].action=button.action||function(){};that.buttons[key].keys=button.keys||[];that.buttons[key].isHidden=button.isHidden||false;that.buttons[key].isDisabled=button.isDisabled||false;$.each(that.buttons[key].keys,function(i,a){that.buttons[key].keys[i]=a.toLowerCase();});var button_element=$('<button type="button" class="btn"></button>').html(that.buttons[key].text).addClass(that.buttons[key].btnClass).prop("disabled",that.buttons[key].isDisabled).css("display",that.buttons[key].isHidden?"none":"").click(function(e){e.preventDefault();var res=that.buttons[key].action.apply(that,[that.buttons[key]]);that.onAction.apply(that,[key,that.buttons[key]]);that._stopCountDown();if(typeof res==="undefined"||res){that.close();}});that.buttons[key].el=button_element;that.buttons[key].setText=function(text){button_element.html(text);};that.buttons[key].addClass=function(className){button_element.addClass(className);};that.buttons[key].removeClass=function(className){button_element.removeClass(className);};that.buttons[key].disable=function(){that.buttons[key].isDisabled=true;button_element.prop("disabled",true);};that.buttons[key].enable=function(){that.buttons[key].isDisabled=false;button_element.prop("disabled",false);};that.buttons[key].show=function(){that.buttons[key].isHidden=false;button_element.css("display","");};that.buttons[key].hide=function(){that.buttons[key].isHidden=true;button_element.css("display","none");};that["$_"+key]=that["$$"+key]=button_element;that.$btnc.append(button_element);});if(total_buttons===0){this.$btnc.hide();}if(this.closeIcon===null&&total_buttons===0){this.closeIcon=true;}if(this.closeIcon){if(this.closeIconClass){var closeHtml='<i class="'+this.closeIconClass+'"></i>';this.$closeIcon.html(closeHtml);}this.$closeIcon.click(function(e){e.preventDefault();var buttonName=false;var shouldClose=false;var str;if(typeof that.closeIcon==="function"){str=that.closeIcon();}else{str=that.closeIcon;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}});this.$closeIcon.show();}else{this.$closeIcon.hide();}},setTitle:function(string,force){force=force||false;if(typeof string!=="undefined"){if(typeof string==="string"){this.title=string;}else{if(typeof string==="function"){if(typeof string.promise==="function"){console.error("Promise was returned from title function, this is not supported.");}var response=string();if(typeof response==="string"){this.title=response;}else{this.title=false;}}else{this.title=false;}}}if(this.isAjaxLoading&&!force){return;}this.$title.html(this.title||"");this.updateTitleContainer();},setIcon:function(iconClass,force){force=force||false;if(typeof iconClass!=="undefined"){if(typeof iconClass==="string"){this.icon=iconClass;}else{if(typeof iconClass==="function"){var response=iconClass();if(typeof response==="string"){this.icon=response;}else{this.icon=false;}}else{this.icon=false;}}}if(this.isAjaxLoading&&!force){return;}this.$icon.html(this.icon?'<i class="'+this.icon+'"></i>':"");this.updateTitleContainer();},updateTitleContainer:function(){if(!this.title&&!this.icon){this.$titleContainer.hide();}else{this.$titleContainer.show();}},setContentPrepend:function(content,force){if(!content){return;}this.contentParsed.prepend(content);},setContentAppend:function(content){if(!content){return;}this.contentParsed.append(content);},setContent:function(content,force){force=!!force;var that=this;if(content){this.contentParsed.html("").append(content);}if(this.isAjaxLoading&&!force){return;}this.$content.html("");this.$content.append(this.contentParsed);setTimeout(function(){that.$body.find("input[autofocus]:visible:first").focus();},100);},loadingSpinner:false,showLoading:function(disableButtons){this.loadingSpinner=true;this.$jconfirmBox.addClass("loading");if(disableButtons){this.$btnc.find("button").prop("disabled",true);}},hideLoading:function(enableButtons){this.loadingSpinner=false;this.$jconfirmBox.removeClass("loading");if(enableButtons){this.$btnc.find("button").prop("disabled",false);}},ajaxResponse:false,contentParsed:"",isAjax:false,isAjaxLoading:false,_parseContent:function(){var that=this;var e="&nbsp;";if(typeof this.content==="function"){var res=this.content.apply(this);if(typeof res==="string"){this.content=res;}else{if(typeof res==="object"&&typeof res.always==="function"){this.isAjax=true;this.isAjaxLoading=true;res.always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});this.content=e;}else{this.content=e;}}}if(typeof this.content==="string"&&this.content.substr(0,4).toLowerCase()==="url:"){this.isAjax=true;this.isAjaxLoading=true;var u=this.content.substring(4,this.content.length);$.get(u).done(function(html){that.contentParsed.html(html);}).always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});}if(!this.content){this.content=e;}if(!this.isAjax){this.contentParsed.html(this.content);this.setContent();that._contentReady.resolve();}},_stopCountDown:function(){clearInterval(this.autoCloseInterval);if(this.$cd){this.$cd.remove();}},_startCountDown:function(){var that=this;var opt=this.autoClose.split("|");if(opt.length!==2){console.error("Invalid option for autoClose. example 'close|10000'");return false;}var button_key=opt[0];var time=parseInt(opt[1]);if(typeof this.buttons[button_key]==="undefined"){console.error("Invalid button key '"+button_key+"' for autoClose");return false;}var seconds=Math.ceil(time/1000);this.$cd=$('<span class="countdown"> ('+seconds+")</span>").appendTo(this["$_"+button_key]);this.autoCloseInterval=setInterval(function(){that.$cd.html(" ("+(seconds-=1)+") ");if(seconds<=0){that["$$"+button_key].trigger("click");that._stopCountDown();}},1000);},_getKey:function(key){switch(key){case 192:return"tilde";case 13:return"enter";case 16:return"shift";case 9:return"tab";case 20:return"capslock";case 17:return"ctrl";case 91:return"win";case 18:return"alt";case 27:return"esc";case 32:return"space";}var initial=String.fromCharCode(key);if(/^[A-z0-9]+$/.test(initial)){return initial.toLowerCase();}else{return false;}},reactOnKey:function(e){var that=this;var a=$(".jconfirm");if(a.eq(a.length-1)[0]!==this.$el[0]){return false;}var key=e.which;if(this.$content.find(":input").is(":focus")&&/13|32/.test(key)){return false;}var keyChar=this._getKey(key);if(keyChar==="esc"&&this.escapeKey){if(this.escapeKey===true){this.$scrollPane.trigger("click");}else{if(typeof this.escapeKey==="string"||typeof this.escapeKey==="function"){var buttonKey;if(typeof this.escapeKey==="function"){buttonKey=this.escapeKey();}else{buttonKey=this.escapeKey;}if(buttonKey){if(typeof this.buttons[buttonKey]==="undefined"){console.warn("Invalid escapeKey, no buttons found with key "+buttonKey);}else{this["$_"+buttonKey].trigger("click");}}}}}$.each(this.buttons,function(key,button){if(button.keys.indexOf(keyChar)!==-1){that["$_"+key].trigger("click");}});},setDialogCenter:function(){console.info("setDialogCenter is deprecated, dialogs are centered with CSS3 tables");},_unwatchContent:function(){clearInterval(this._timer);},close:function(onClosePayload){var that=this;if(typeof this.onClose==="function"){this.onClose(onClosePayload);}this._unwatchContent();$(window).unbind("resize."+this._id);$(window).unbind("keyup."+this._id);$(window).unbind("jcKeyDown."+this._id);if(this.draggable){$(window).unbind("mousemove."+this._id);$(window).unbind("mouseup."+this._id);this.$titleContainer.unbind("mousedown");}that.$el.removeClass(that.loadedClass);$("body").removeClass("jconfirm-no-scroll-"+that._id);that.$jconfirmBoxContainer.removeClass("jconfirm-no-transition");setTimeout(function(){that.$body.addClass(that.closeAnimationParsed);that.$jconfirmBg.addClass("jconfirm-bg-h");var closeTimer=(that.closeAnimation==="none")?1:that.animationSpeed;setTimeout(function(){that.$el.remove();var l=w.jconfirm.instances;var i=w.jconfirm.instances.length-1;for(i;i>=0;i--){if(w.jconfirm.instances[i]._id===that._id){w.jconfirm.instances.splice(i,1);}}if(!w.jconfirm.instances.length){if(that.scrollToPreviousElement&&w.jconfirm.lastFocused&&w.jconfirm.lastFocused.length&&$.contains(document,w.jconfirm.lastFocused[0])){var $lf=w.jconfirm.lastFocused;if(that.scrollToPreviousElementAnimate){var st=$(window).scrollTop();var ot=w.jconfirm.lastFocused.offset().top;var wh=$(window).height();if(!(ot>st&&ot<(st+wh))){var scrollTo=(ot-Math.round((wh/3)));$("html, body").animate({scrollTop:scrollTo},that.animationSpeed,"swing",function(){$lf.focus();});}else{$lf.focus();}}else{$lf.focus();}w.jconfirm.lastFocused=false;}}if(typeof that.onDestroy==="function"){that.onDestroy();}},closeTimer*0.4);},50);return true;},open:function(){if(this.isOpen()){return false;}this._buildHTML();this._bindEvents();this._open();return true;},setStartingPoint:function(){var el=false;if(this.animateFromElement!==true&&this.animateFromElement){el=this.animateFromElement;w.jconfirm.lastClicked=false;}else{if(w.jconfirm.lastClicked&&this.animateFromElement===true){el=w.jconfirm.lastClicked;w.jconfirm.lastClicked=false;}else{return false;}}if(!el){return false;}var offset=el.offset();var iTop=el.outerHeight()/2;var iLeft=el.outerWidth()/2;iTop-=this.$jconfirmBox.outerHeight()/2;iLeft-=this.$jconfirmBox.outerWidth()/2;var sourceTop=offset.top+iTop;sourceTop=sourceTop-this._scrollTop();var sourceLeft=offset.left+iLeft;var wh=$(window).height()/2;var ww=$(window).width()/2;var targetH=wh-this.$jconfirmBox.outerHeight()/2;var targetW=ww-this.$jconfirmBox.outerWidth()/2;sourceTop-=targetH;sourceLeft-=targetW;if(Math.abs(sourceTop)>wh||Math.abs(sourceLeft)>ww){return false;}this.$jconfirmBoxContainer.css("transform","translate("+sourceLeft+"px, "+sourceTop+"px)");},_open:function(){var that=this;if(typeof that.onOpenBefore==="function"){that.onOpenBefore();}this.$body.removeClass(this.animationParsed);this.$jconfirmBg.removeClass("jconfirm-bg-h");this.$body.focus();that.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");setTimeout(function(){that.$body.css(that._getCSS(that.animationSpeed,1));that.$body.css({"transition-property":that.$body.css("transition-property")+", margin"});that.$jconfirmBoxContainer.addClass("jconfirm-no-transition");that._modalReady.resolve();if(typeof that.onOpen==="function"){that.onOpen();}that.$el.addClass(that.loadedClass);},this.animationSpeed);},loadedClass:"jconfirm-open",isClosed:function(){return !this.$el||this.$el.parent().length===0;},isOpen:function(){return !this.isClosed();},toggle:function(){if(!this.isOpen()){this.open();}else{this.close();}}};w.jconfirm.instances=[];w.jconfirm.lastFocused=false;w.jconfirm.pluginDefaults={template:'<div class="jconfirm"><div class="jconfirm-bg jconfirm-bg-h"></div><div class="jconfirm-scrollpane"><div class="jconfirm-row"><div class="jconfirm-cell"><div class="jconfirm-holder"><div class="jc-bs3-container"><div class="jc-bs3-row"><div class="jconfirm-box-container jconfirm-animated"><div class="jconfirm-box" role="dialog" aria-labelledby="labelled" tabindex="-1"><div class="jconfirm-closeIcon">&times;</div><div class="jconfirm-title-c"><span class="jconfirm-icon-c"></span><span class="jconfirm-title"></span></div><div class="jconfirm-content-pane"><div class="jconfirm-content"></div></div><div class="jconfirm-buttons"></div><div class="jconfirm-clear"></div></div></div></div></div></div></div></div></div></div>',title:"Hello",titleClass:"",type:"default",typeAnimated:true,draggable:true,dragWindowGap:15,dragWindowBorder:true,animateFromElement:true,alignMiddle:true,smoothContent:true,content:"Are you sure to continue?",buttons:{},defaultButtons:{ok:{action:function(){}},close:{action:function(){}}},contentLoaded:function(){},icon:"",lazyOpen:false,bgOpacity:null,theme:"light",animation:"scale",closeAnimation:"scale",animationSpeed:400,animationBounce:1,escapeKey:true,rtl:false,container:"body",containerFluid:false,backgroundDismiss:false,backgroundDismissAnimation:"shake",autoClose:false,closeIcon:null,closeIconClass:false,watchInterval:100,columnClass:"col-md-4 col-md-offset-4 col-sm-6 col-sm-offset-3 col-xs-10 col-xs-offset-1",boxWidth:"50%",scrollToPreviousElement:true,scrollToPreviousElementAnimate:true,useBootstrap:true,offsetTop:40,offsetBottom:40,bootstrapClasses:{container:"container",containerFluid:"container-fluid",row:"row"},onContentReady:function(){},onOpenBefore:function(){},onOpen:function(){},onClose:function(){},onDestroy:function(){},onAction:function(){}};var keyDown=false;$(window).on("keydown",function(e){if(!keyDown){var $target=$(e.target);var pass=false;if($target.closest(".jconfirm-box").length){pass=true;}if(pass){$(window).trigger("jcKeyDown");}keyDown=true;}});$(window).on("keyup",function(){keyDown=false;});w.jconfirm.lastClicked=false;$(document).on("mousedown","button, a, [jc-source]",function(){w.jconfirm.lastClicked=$(this);});}));
-},{"jquery":41}],41:[function(require,module,exports){
+},{"jquery":43}],43:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -18624,7 +19150,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],42:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -20923,7 +21449,7 @@ var qrcode = function() {
     return qrcode;
 }));
 
-},{}],43:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 /**
  * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
  *
@@ -22511,7 +23037,7 @@ module.exports = {
   revealKeys: revealKeys,
 };
 
-},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":25,"../../../lib/widgets/fields":23,"../../../lib/widgets/midi-source":30}],44:[function(require,module,exports){
+},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":26,"../../../lib/widgets/fields":24,"../../../lib/widgets/midi-source":31}],46:[function(require,module,exports){
 "use strict";
 
 /**
@@ -22762,7 +23288,7 @@ function install(editor, options) {
 
 module.exports = { install: install, ago: ago, CLAUDE_CODE: CLAUDE_CODE, OTHER_APPS: OTHER_APPS, BUNDLE_URL: BUNDLE_URL, HELP_URL: HELP_URL };
 
-},{}],45:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 /**
  * "Publish" in the editor: turning the project on the canvas into a page
  * phones open, and looking after every such page this OSCAR serves.
@@ -23888,7 +24414,7 @@ function install(editor, options) {
 
 module.exports = { install: install, fileStem: fileStem };
 
-},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":16,"./adapters/grapesjs":43,"qrcode-generator":42}],46:[function(require,module,exports){
+},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":16,"./adapters/grapesjs":45,"qrcode-generator":44}],48:[function(require,module,exports){
 "use strict";
 
 /**
@@ -23957,7 +24483,7 @@ function openWelcome(deps) {
 
 module.exports = { isFirstRun: isFirstRun, openWelcome: openWelcome, WELCOME: WELCOME, AUTOSAVE_KEY: AUTOSAVE_KEY };
 
-},{}],47:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 window.$ = $ = window.jQuery = require("jquery");
 
 // jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
@@ -27402,7 +27928,7 @@ function initGrape(ipServer, socketPort, oscInPort) {
   }
 }
 
-},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/open-project":9,"../../lib/project-format":13,"../../lib/project-sync":14,"../../lib/projects-table":15,"../../lib/toolbar-order":18,"../../lib/widget-styles":19,"./adapters/grapesjs":43,"./assistants_dialog":44,"./export_dialog":45,"./first_run":46,"./pages":49,"jquery":41,"jquery-confirm":40}],48:[function(require,module,exports){
+},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/open-project":9,"../../lib/project-format":13,"../../lib/project-sync":14,"../../lib/projects-table":15,"../../lib/toolbar-order":18,"../../lib/widget-styles":19,"./adapters/grapesjs":45,"./assistants_dialog":46,"./export_dialog":47,"./first_run":48,"./pages":51,"jquery":43,"jquery-confirm":42}],50:[function(require,module,exports){
 window.$ = window.jQuery = require("jquery");
 
 // Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
@@ -27572,7 +28098,7 @@ function lockDown() {
   if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
 }
 
-},{"../../lib/widget-styles":19,"./adapters/grapesjs":43,"./pages":49,"jquery":41}],49:[function(require,module,exports){
+},{"../../lib/widget-styles":19,"./adapters/grapesjs":45,"./pages":51,"jquery":43}],51:[function(require,module,exports){
 /**
  * Multiple pages: what the editor and the control surface have in common.
  *
@@ -27853,4 +28379,4 @@ module.exports = {
   pageTabs: pageTabs,
 };
 
-},{"../../lib/features":6,"../../lib/project-format":13}]},{},[48,47]);
+},{"../../lib/features":6,"../../lib/project-format":13}]},{},[50,49]);

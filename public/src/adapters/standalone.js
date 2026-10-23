@@ -128,8 +128,9 @@ function connected(bridge) {
  * @param {Function} [onDropped] called for each message dropped because the
  *        bridge was away
  * @param {object} [definition] the widget's definition, for what MIDI does to it
+ * @param {object} [device] the phone, as the host offers it (public/src/device.js)
  */
-function contextFor(el, config, bridge, id, onDropped, definition) {
+function contextFor(el, config, bridge, id, onDropped, definition, device) {
   var delivering = 0;
   var adopting = 0;
 
@@ -198,6 +199,9 @@ function contextFor(el, config, bridge, id, onDropped, definition) {
   // still reads it for itself.
   var followedForIt = bridge.followed && definition && typeof definition.hear === "function";
   if (followedForIt) {
+    // Said on the ctx too, for a widget that must act on each message once
+    // and needs to know which of its two ears is the live one.
+    ctx.followed = true;
     ctx.onOsc = function () {
       return function () {};
     };
@@ -228,6 +232,9 @@ function contextFor(el, config, bridge, id, onDropped, definition) {
       bridge.shareState(id, state, { heard: heard, release: how && how.release });
     };
   }
+
+  // The phone itself, where there is one: sensors, vibration, the torch.
+  if (device) ctx.device = device;
 
   // A state handed to the widget, from wherever, with the doors shut.
   var adopt = function (deliver) {
@@ -401,7 +408,7 @@ function bridgeAll(root, bridge) {
   };
 }
 
-function attachAll(root, bridge, onDropped) {
+function attachAll(root, bridge, onDropped, device) {
   var elements = root.querySelectorAll(WIDGET_SELECTOR);
   var detachers = [];
   var inert = 0;
@@ -419,7 +426,7 @@ function attachAll(root, bridge, onDropped) {
 
     var id = (typeof el.getAttribute === "function" && el.getAttribute("id")) || null;
     try {
-      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id, onDropped, widget.definition)));
+      detachers.push(widget.definition.attach(el, contextFor(el, widget.config, bridge, id, onDropped, widget.definition, device)));
     } catch (err) {
       // One control that cannot start must not take the surface with it.
       inert++;
@@ -551,6 +558,8 @@ function watchWakeOf(doc, win, bridge) {
  * browser: `connect(host, port)` returns the bridge (oscar_socket.js in the
  * real page). `window` is optional: without one the page still runs, and
  * only does not hear itself being shown again or offer full screen.
+ * `device` is the phone as the host offers it (public/src/device.js), for
+ * the widgets that ask for one; optional too.
  *
  * @param {{ document: Document, window?: Window, baked: object, search: string,
  *           connect: ((host: string, port: number) => object)|null }} env
@@ -580,9 +589,14 @@ function start(env) {
   bridge.followed = !!env.served;
   // Moves made since the bridge was last there, which it never got.
   var dropped = 0;
-  var wired = attachAll(doc, bridge, function () {
-    dropped++;
-  });
+  var wired = attachAll(
+    doc,
+    bridge,
+    function () {
+      dropped++;
+    },
+    env.device
+  );
   // A page OSCAR serves is bridged by OSCAR, once; a file serves itself.
   var bridged = env.served ? { bridged: 0, detach: function () {} } : bridgeAll(doc, bridge);
   var off = wired.inert
@@ -637,7 +651,7 @@ function startOnRelay(env, show) {
     return { error: "no WebSocket" };
   }
   var bridge = env.connectRelay(env.relay.url);
-  var wired = attachAll(doc, bridge, function () {});
+  var wired = attachAll(doc, bridge, function () {}, env.device);
   var away = "This installation is not reachable right now. The controls will work again when it is back.";
 
   show("waiting", "Connecting...");

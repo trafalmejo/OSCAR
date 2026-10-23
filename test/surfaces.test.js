@@ -198,6 +198,8 @@ test("drive and driveInput come as a pair, and drive never sends or stores", () 
       position: () => ({ x: input.minX, y: input.minY }),
       colour: () => ({ value: "#336699" }),
       text: () => ({ value: "hello" }),
+      // Several numbers at once, named by the widget: a sensor reading at rest.
+      vector: () => Object.fromEntries(input.keys.map((key) => [key, 0])),
     };
     assert.ok(first[input.kind], widget.name + " asks for a kind of input nothing knows how to offer: " + input.kind);
     const state = first[input.kind]();

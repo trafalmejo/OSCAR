@@ -468,4 +468,49 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* --- oscar-motion, oscar-feedback -------------------------------------- */
+  /* The phone's own widgets: a box that says what it is doing. Motion reads
+     out the sensor; feedback flashes. Both wear the card's colours, so they
+     sit beside a meter without drawing the eye until something happens. */
+  .oscar-motion,
+  .oscar-feedback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 140px;
+    min-height: var(--osc-control-height);
+    padding: 8px 12px;
+    border: 1px solid var(--osc-border);
+    border-radius: var(--osc-radius);
+    background-color: var(--osc-muted);
+    color: var(--osc-foreground);
+    font-size: var(--osc-font-size);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Until the tap iPhones ask for, the box is a button. */
+  .oscar-motion[data-motion="tap"] {
+    cursor: pointer;
+    border-color: var(--osc-primary);
+    color: var(--osc-primary);
+  }
+
+  .oscar-motion[data-motion="live"] {
+    border-color: var(--osc-primary);
+  }
+
+  .oscar-feedback {
+    --oscar-flash: #ff3663;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .oscar-feedback.oscar-flash {
+    background-color: var(--oscar-flash);
+    color: #fff;
+  }
 }
