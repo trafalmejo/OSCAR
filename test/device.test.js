@@ -23,10 +23,11 @@ function fakeWindow(options) {
   if (!options || options.sensors !== false) {
     win.DeviceMotionEvent = function () {};
     win.DeviceOrientationEvent = function () {};
-    if (options && options.ios) {
+    if (options && (options.ios || options.chromium)) {
       win.DeviceMotionEvent.requestPermission = async () => options.answer || "granted";
       win.DeviceOrientationEvent.requestPermission = async () => options.answer || "granted";
     }
+    win.navigator.userAgent = options && options.ios ? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" : "Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 Chrome/155.0.0.0 Mobile";
   }
   return win;
 }
@@ -60,6 +61,9 @@ test("Android: no tap needed; iPhone: a tap, answered through the event class", 
   const android = browserDevice(fakeWindow());
   assert.strictEqual(android.motion.needsTap(), false);
   assert.strictEqual(await android.motion.ask(), true);
+  // Chrome 155 on a Pixel 9 offers requestPermission too, and answers without a tap.
+  const chromium = browserDevice(fakeWindow({ chromium: true }));
+  assert.strictEqual(chromium.motion.needsTap(), false, "the function alone is not a reason to ask");
 
   const iphone = browserDevice(fakeWindow({ ios: true }));
   assert.strictEqual(iphone.motion.needsTap(), true);

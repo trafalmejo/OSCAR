@@ -23,7 +23,10 @@ function browserDevice(win) {
   var OrientationEvent = win.DeviceOrientationEvent;
   var hasMotion = typeof MotionEvent === "function" || typeof OrientationEvent === "function";
   // iOS 13+: the permission is asked for through the event class, from a tap.
-  var asks = !!(MotionEvent && typeof MotionEvent.requestPermission === "function");
+  // Chromium on Android offers the same function but answers "granted" with
+  // no tap and reports the sensors either way, so only Apple's engines ask.
+  var apple = /iPhone|iPad|iPod|Macintosh/.test(String(nav.userAgent || ""));
+  var asks = !!(apple && MotionEvent && typeof MotionEvent.requestPermission === "function");
   var granted = !asks;
 
   function readingOf(kind, event) {
