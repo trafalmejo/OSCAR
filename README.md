@@ -916,6 +916,33 @@ working if the computer's IP address changes. Unlike
 `/preview`, which always shows the last push from the editor, a published
 page stays as it was until you publish it again.
 
+**On a phone or tablet.** A served page carries what a phone needs to be
+treated as an app of its own, and nothing has to be installed:
+
+- **Add to Home Screen.** On an iPhone or iPad, Share → *Add to Home Screen*
+  puts the interface on the home screen under the project's name, and it
+  opens without Safari's bars. On Android, Chrome's menu → *Add to Home
+  screen* makes the same shortcut; over plain `http`, Android opens it in
+  the browser, so use the Full screen button there.
+- **Full screen.** On a touch screen the page offers a small *Full screen*
+  button, bottom left. It dims after a few seconds and never goes, so a
+  control under that corner stays reachable. It is not offered on a laptop,
+  on a page already opened from the home screen, or on an iPhone, whose
+  Safari allows no page full screen at all (Add to Home Screen is the way
+  there).
+- **Sleep and wake.** A phone that locks its screen, switches apps or walks
+  out of Wi-Fi range has its connection closed without being told. When the
+  page is shown again it checks at once: a connection that is gone is made
+  again right away rather than after the usual wait, and one that looks
+  alive is asked for the snapshot and replaced if it does not answer within
+  a few seconds. Moves made while asleep were never made, as above.
+- **Naming a device.** Add `?device=Bar%20left` to the address a tablet
+  opens, or to the QR code you print, and that tablet is "Bar left" in the
+  network log and under the device count in the Running window (hover it).
+  The name is kept on the device for the next open; `?device=` with nothing
+  after it forgets it. It is a label and nothing more: OSCAR sends nothing
+  differently for it, and a page could claim any name.
+
 **The canvas yields to the show.** Once a control's id is on a published
 interface, moving it on the canvas sends nothing: the published interface is
 playing, and two masters on one id would fight on the wire. Every control on

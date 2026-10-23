@@ -26,6 +26,11 @@ function oscar_socket(editor, options) {
     reconnectionDelayMax: 5000,
   };
   if (options && typeof options.from === "string") connectOptions.query = { from: options.from };
+  // And what the device is called, when the page knows (oscar_runtime.js):
+  // a label for the network log and the Running window, nothing more.
+  if (options && typeof options.device === "string" && options.device) {
+    connectOptions.query = Object.assign({}, connectOptions.query, { device: options.device });
+  }
   editor.socket = (options && options.socket) || io("http://" + host + ":" + port, connectOptions);
 
   /**

@@ -81,6 +81,32 @@ function relaySocket(url, deps) {
       stopTimers();
       if (ws) ws.close();
     },
+    /**
+     * Drop the connection and make it again, now: for a page coming back
+     * from sleep, whose socket may be dead without knowing it
+     * (adapters/wake.js). A retry already waiting is replaced, not added to.
+     */
+    reconnect: function () {
+      if (closed) return socket;
+      if (retryTimer) {
+        cancel(retryTimer);
+        retryTimer = null;
+      }
+      if (ws) {
+        var old = ws;
+        ws = null;
+        old.onopen = old.onmessage = old.onclose = old.onerror = null;
+        try {
+          old.close();
+        } catch (err) {
+          /* already gone */
+        }
+      }
+      setOnline(false);
+      retry = RETRY_MIN;
+      connect();
+      return socket;
+    },
   };
 
   function fire(event, payload) {

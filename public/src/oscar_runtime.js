@@ -21,9 +21,47 @@ function pageFrom(location) {
   return match ? "show:" + match[1] : "file";
 }
 
+/**
+ * What this device is called, for OSCAR's network log and its Running
+ * window. `?device=Bar%20left` on the page's address names it, so a printed
+ * QR code or a bookmark can carry the name, and it is kept on the device
+ * for the next open; `?device=` with nothing after it forgets it. It is a
+ * label and nothing more: OSCAR sends nothing differently for it.
+ */
+function deviceName(location, storage) {
+  var KEY = "oscarDevice";
+  var said = null;
+  try {
+    said = new URLSearchParams((location && location.search) || "").get("device");
+  } catch (err) {
+    said = null;
+  }
+  if (said !== null) said = said.trim();
+  try {
+    if (said !== null) {
+      if (said) storage.setItem(KEY, said);
+      else storage.removeItem(KEY);
+    }
+    return storage.getItem(KEY) || undefined;
+  } catch (err) {
+    // A browser that keeps nothing (private mode, or no storage at all).
+    return said || undefined;
+  }
+}
+
+function localStorageOf(win) {
+  try {
+    return win.localStorage;
+  } catch (err) {
+    return null;
+  }
+}
+
 function boot() {
+  var device = deviceName(window.location, localStorageOf(window));
   standalone.start({
     document: document,
+    window: window,
     baked: window.OSCAR_EXPORT,
     search: window.location.search,
     // Set only on a page OSCAR is serving itself; see resolveEndpoint.
@@ -47,7 +85,7 @@ function boot() {
       typeof io === "function"
         ? function (host, port) {
             var bridge = {};
-            oscarSocket(bridge, { ipserver: host, socketPort: port, surface: true, from: pageFrom(window.location) });
+            oscarSocket(bridge, { ipserver: host, socketPort: port, device: device, surface: true, from: pageFrom(window.location) });
             return bridge;
           }
         : null,

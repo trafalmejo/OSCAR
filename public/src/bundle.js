@@ -34,16 +34,32 @@ function deviceOf(address) {
   return text.replace(/^::ffff:/, "") || undefined;
 }
 
+// A name a page gives its device (`device` in the handshake): one line,
+// short, printable. Anything else is as if nothing was said.
+const DEVICE_NAME = /^[^\u0000-\u001f\u007f]{1,40}$/;
+
+/** "Bar left" as a page said it, or undefined for a name that is not one. */
+function deviceName(said) {
+  if (typeof said !== "string") return undefined;
+  const name = said.trim();
+  return DEVICE_NAME.test(name) ? name : undefined;
+}
+
 /**
  * What a socket connection sends on behalf of, from its handshake's `from`
- * and its peer address.
+ * and its peer address. A page that named its device (`named`, from the
+ * handshake too) is known by that name, with the address kept after it:
+ * "Bar left (192.168.1.31)". A name is a label, like `from`: a page could
+ * claim any, and it changes a word in the log and the Running window.
  *
  * @returns {{ origin: string, surface?: string, device?: string }}
  */
-function socketOrigin(from, address) {
+function socketOrigin(from, address, named) {
   const said = typeof from === "string" ? from : "";
   if (said === "canvas") return { origin: "canvas" };
-  const device = deviceOf(address);
+  const ip = deviceOf(address);
+  const name = deviceName(named);
+  const device = name ? (ip ? name + " (" + ip + ")" : name) : ip;
   if (said === "preview") return { origin: "local", surface: "preview", device };
   if (said.indexOf("show:") === 0 && SURFACE_ID.test(said.slice(5))) return { origin: "local", surface: said.slice(5), device };
   return { origin: "local", device };
@@ -124,7 +140,7 @@ function dmxOut(request) {
   return { what, value, to: dmxTo(request.protocol, request.host) };
 }
 
-module.exports = { ORIGINS, socketOrigin, deviceOf, oscValue, midiOut, midiIn, dmxOut, dmxTo };
+module.exports = { ORIGINS, socketOrigin, deviceOf, deviceName, oscValue, midiOut, midiIn, dmxOut, dmxTo };
 
 },{}],2:[function(require,module,exports){
 "use strict";
@@ -22520,8 +22536,8 @@ var CLAUDE_CODE = "claude mcp add oscar -- npx -y createwithoscar";
 var OTHER_APPS = '{\n  "mcpServers": {\n    "oscar": {\n      "command": "npx",\n      "args": ["-y", "createwithoscar"]\n    }\n  }\n}';
 
 /** The one-click file for Claude Desktop, and where the steps are written out. */
-var BUNDLE_URL = "https://www.createwithoscar.site/assets/OSCAR.mcpb";
-var HELP_URL = "https://www.createwithoscar.site/how-it-works#ai";
+var BUNDLE_URL = "https://www.createwithoscar.com/assets/OSCAR.mcpb";
+var HELP_URL = "https://www.createwithoscar.com/how-it-works#ai";
 
 function el(tag, className, text) {
   var node = document.createElement(tag);
@@ -23143,10 +23159,15 @@ function install(editor, options) {
     var here = Number(page.devices) || 0;
     var there = lead && Number(lead.devices) > 0 ? Number(lead.devices) : 0;
     var n = here + there;
+    // The devices that said their name (?device= on the page's address),
+    // under the pointer: a count says a tablet is missing, a name says which.
+    var named = Array.isArray(page.named) ? page.named.filter(Boolean) : [];
+    var title = there ? here + " on this network, " + there + " through the link" : "";
+    if (named.length) title = (title ? title + ": " : "") + named.join(", ");
     return {
       n: n,
       words: n === 0 ? "No devices connected" : n === 1 ? "1 device connected" : n + " devices connected",
-      title: there ? here + " on this network, " + there + " through the link" : "",
+      title: title,
     };
   }
 

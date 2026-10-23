@@ -24,7 +24,7 @@ const { sharedSync, roomOf } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
 const { extensionIds, loadExtensions } = require("./lib/extensions");
 const { createSurfaces, allWidgetsIn } = require("./lib/surfaces");
-const { socketOrigin, deviceOf, oscValue, midiOut, midiIn, dmxOut, dmxTo } = require("./lib/activity");
+const { socketOrigin, deviceOf, deviceName, oscValue, midiOut, midiIn, dmxOut, dmxTo } = require("./lib/activity");
 const { createWireLog } = require("./lib/wire-log");
 const createRouter = require("./routes/index");
 
@@ -360,7 +360,8 @@ app.use(
     // every editor's LIVE pill recounts.
     onPublishedChanged: () => io.emit("published:changed"),
     // `devicesOn` is made below; this only runs once a request arrives.
-    devicesOn: (id) => devicesOn.get(id) || 0,
+    devicesOn: (id) => (devicesOn.get(id) || new Map()).size,
+    namesOn: (id) => Array.from((devicesOn.get(id) || new Map()).values()).filter(Boolean),
     // The pill's network log, backlog for a window that has just opened.
     // The network log is created above; this only runs once a request arrives.
     liveLog: () => wireLog.rows(),
@@ -578,7 +579,7 @@ published.onRemoved((id) => shared.reset(id));
 // How many devices are showing each surface right now, by what each page
 // said it shows as it connected. Editors are told when that changes, a few
 // times a second at most: a hall of phones arriving is one redraw, not fifty.
-const devicesOn = new Map(); // surface id -> devices connected
+const devicesOn = new Map(); // surface id -> Map(socket id -> the device's name, or "")
 let runningTold = null;
 function tellRunning() {
   if (runningTold) return;
@@ -673,7 +674,8 @@ io.on("connection", (socket) => {
 
   // Who this connection sends for, for the network log: the editor's canvas
   // or a page on this network, and which surface (lib/activity.js).
-  const from = socketOrigin(socket.handshake.query && socket.handshake.query.from, socket.handshake.address);
+  const query = socket.handshake.query || {};
+  const from = socketOrigin(query.from, socket.handshake.address, query.device);
 
   // A page of a surface that is switched off: turned away before it is given
   // a way to send anything. It will keep asking; the answer stays the same
@@ -686,12 +688,13 @@ io.on("connection", (socket) => {
   // One more device on that surface, until it goes: what the Running panel
   // says beside each interface. The preview is not a surface OSCAR runs.
   if (from.surface && from.surface !== "preview") {
-    devicesOn.set(from.surface, (devicesOn.get(from.surface) || 0) + 1);
+    if (!devicesOn.has(from.surface)) devicesOn.set(from.surface, new Map());
+    devicesOn.get(from.surface).set(socket.id, deviceName(query.device) || "");
     tellRunning();
     socket.on("disconnect", () => {
-      const left = (devicesOn.get(from.surface) || 1) - 1;
-      if (left > 0) devicesOn.set(from.surface, left);
-      else devicesOn.delete(from.surface);
+      const on = devicesOn.get(from.surface);
+      if (on) on.delete(socket.id);
+      if (on && !on.size) devicesOn.delete(from.surface);
       tellRunning();
     });
   }

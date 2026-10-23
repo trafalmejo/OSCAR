@@ -104,8 +104,9 @@ test("each interface says how many devices are on it: per interface, never one t
   const editor = read("public/src/oscar_editor.js");
   assert.match(editor, /editor\.socket\.on\("running:changed", function \(\) \{\s*if \(publishDialog\) publishDialog\.refresh\(\);/);
   const server = read("server.js");
-  assert.match(server, /if \(from\.surface && from\.surface !== "preview"\) \{\s*devicesOn\.set\(from\.surface, \(devicesOn\.get\(from\.surface\) \|\| 0\) \+ 1\);/, "counted as each page connects, by what it says it shows");
-  assert.match(server, /else devicesOn\.delete\(from\.surface\);\s*tellRunning\(\);/, "and as it goes");
+  assert.match(server, /if \(from\.surface && from\.surface !== "preview"\) \{\s*if \(!devicesOn\.has\(from\.surface\)\) devicesOn\.set\(from\.surface, new Map\(\)\);\s*devicesOn\.get\(from\.surface\)\.set\(socket\.id, deviceName\(query\.device\) \|\| ""\);/, "counted as each page connects, by what it says it shows, and by name when it gave one");
+  assert.match(server, /if \(on && !on\.size\) devicesOn\.delete\(from\.surface\);\s*tellRunning\(\);/, "and as it goes");
+  assert.match(server, /namesOn: \(id\) => Array\.from\(\(devicesOn\.get\(id\) \|\| new Map\(\)\)\.values\(\)\)\.filter\(Boolean\),/, "the names reach the Running window");
   assert.match(server, /runningTold = setTimeout\(\(\) => \{\s*runningTold = null;\s*io\.emit\("running:changed"\);\s*\}, 300\);/, "a hall of phones arriving is one redraw, not fifty");
   assert.match(read("routes/index.js"), /devices: devicesOn \? devicesOn\(page\.id\) : 0,/);
 });

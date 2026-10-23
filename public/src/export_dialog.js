@@ -394,10 +394,15 @@ function install(editor, options) {
     var here = Number(page.devices) || 0;
     var there = lead && Number(lead.devices) > 0 ? Number(lead.devices) : 0;
     var n = here + there;
+    // The devices that said their name (?device= on the page's address),
+    // under the pointer: a count says a tablet is missing, a name says which.
+    var named = Array.isArray(page.named) ? page.named.filter(Boolean) : [];
+    var title = there ? here + " on this network, " + there + " through the link" : "";
+    if (named.length) title = (title ? title + ": " : "") + named.join(", ");
     return {
       n: n,
       words: n === 0 ? "No devices connected" : n === 1 ? "1 device connected" : n + " devices connected",
-      title: there ? here + " on this network, " + there + " through the link" : "",
+      title: title,
     };
   }
 

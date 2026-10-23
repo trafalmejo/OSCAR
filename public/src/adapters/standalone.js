@@ -27,6 +27,8 @@ var { incoming } = require("../../../lib/widgets/incoming");
 var { stateFromMidi, valuesOf } = require("../../../lib/widgets/midi-in");
 var { midiIndex } = require("../../../lib/midi/spec");
 var { bridgePlan, BRIDGE_WINDOW_MS, BRIDGE_CEILING } = require("../../../lib/widgets/bridge");
+var { watchWake } = require("./wake");
+var { offerFullscreen } = require("./fullscreen");
 
 /**
  * Where OSCAR's bridge is: { host, port }, or { error }.
@@ -503,13 +505,54 @@ function statusBanner(doc) {
 }
 
 /**
+ * Drop the socket and connect again, now.
+ *
+ * socket.io's own pair does it: disconnect() ends a back-off in progress as
+ * well as a connection, so the connect() after it is immediate. The relay
+ * socket has a reconnect() of its own (relay_socket.js).
+ */
+function reconnectNow(socket) {
+  if (!socket) return;
+  if (typeof socket.reconnect === "function") return socket.reconnect();
+  if (typeof socket.disconnect === "function" && typeof socket.connect === "function") {
+    socket.disconnect();
+    socket.connect();
+  }
+}
+
+/**
+ * Back from sleep, another app or a dead Wi-Fi: the socket is looked at as
+ * the page comes back rather than whenever its ping gives out
+ * (adapters/wake.js), on every page that shows a surface.
+ */
+function watchWakeOf(doc, win, bridge) {
+  return watchWake({
+    doc: doc,
+    win: win,
+    connected: function () {
+      return connected(bridge);
+    },
+    reconnect: function () {
+      reconnectNow(bridge.socket);
+    },
+    sync: function () {
+      if (typeof bridge.syncSharedState === "function") bridge.syncSharedState();
+    },
+    onSynced: function (fn) {
+      if (bridge.socket && typeof bridge.socket.on === "function") bridge.socket.on("state:all", fn);
+    },
+  });
+}
+
+/**
  * Start an exported page.
  *
  * Everything it needs is handed in, so a test can start one without a
  * browser: `connect(host, port)` returns the bridge (oscar_socket.js in the
- * real page).
+ * real page). `window` is optional: without one the page still runs, and
+ * only does not hear itself being shown again or offer full screen.
  *
- * @param {{ document: Document, baked: object, search: string,
+ * @param {{ document: Document, window?: Window, baked: object, search: string,
  *           connect: ((host: string, port: number) => object)|null }} env
  */
 function start(env) {
@@ -576,7 +619,10 @@ function start(env) {
     show("offline", offline);
   });
 
-  return { bridge: bridge, wired: wired, endpoint: where, bridged: bridged };
+  var waking = watchWakeOf(doc, env.window, bridge);
+  var fullscreen = offerFullscreen(doc, env.window);
+
+  return { bridge: bridge, wired: wired, endpoint: where, bridged: bridged, waking: waking, fullscreen: fullscreen };
 }
 
 /**
@@ -621,7 +667,10 @@ function startOnRelay(env, show) {
     readout.textContent = ms + " ms";
   });
 
-  return { bridge: bridge, wired: wired, relay: env.relay.url };
+  var waking = watchWakeOf(doc, env.window, bridge);
+  var fullscreen = offerFullscreen(doc, env.window);
+
+  return { bridge: bridge, wired: wired, relay: env.relay.url, waking: waking, fullscreen: fullscreen };
 }
 
 module.exports = {
@@ -630,5 +679,6 @@ module.exports = {
   contextFor: contextFor,
   attachAll: attachAll,
   statusBanner: statusBanner,
+  reconnectNow: reconnectNow,
   start: start,
 };

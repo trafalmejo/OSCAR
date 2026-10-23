@@ -5,7 +5,7 @@ const express = require("express");
 const { openProject, stripEditorState, isProjectId, projectIdOf, isGrapesProject } = require("../lib/project-format");
 const { isLoopbackAddress } = require("../lib/net");
 const { buildExport } = require("../lib/export");
-const { markServed, rebake } = require("../lib/published");
+const { markServed, manifestFor, rebake } = require("../lib/published");
 const { readConnection } = require("../lib/export/connection");
 const { surfaceStamp } = require("../lib/export/stamp");
 const { allWidgetsIn } = require("../lib/surfaces");
@@ -54,6 +54,7 @@ module.exports = function createRouter({
   published,
   onPublishedChanged,
   devicesOn,
+  namesOn,
   liveLog,
   takeBootFile,
   telemetryState,
@@ -377,8 +378,10 @@ module.exports = function createRouter({
         rows.push(
           Object.assign({ path: "/show/" + page.id, widgets: reading.widgets }, page, {
             stamp: page.stamp || reading.stamp,
-            // How many devices on this network have it open right now.
+            // How many devices on this network have it open right now, and
+            // the names of those that gave one (oscar_runtime.js, ?device=).
             devices: devicesOn ? devicesOn(page.id) : 0,
+            named: namesOn ? namesOn(page.id) : [],
           })
         );
       }
@@ -491,7 +494,22 @@ module.exports = function createRouter({
   });
 
   // After /show/preview above, which is the editor's hand-off and not a page.
+  // A surface's manifest, beside its page: what a phone reads to put the
+  // surface on its home screen (lib/published.js). The name is the
+  // project's, as the Running window shows it; a page with no record is
+  // named by its address.
+  async function sendManifest(id, res) {
+    const page = published ? await published.read(id) : null;
+    if (page === null) return res.status(404).type("text/plain").send("There is no interface published here.");
+    const record = await published.record(id);
+    const name = record && record.project && typeof record.project.name === "string" ? record.project.name : "";
+    res.setHeader("Cache-Control", "no-store");
+    res.type("application/manifest+json").send(JSON.stringify(manifestFor(id, name)));
+  }
+
   router.get("/show/:id", async (req, res) => {
+    const asked = String(req.params.id || "");
+    if (asked.endsWith(".webmanifest")) return sendManifest(asked.slice(0, -".webmanifest".length), res);
     const page = published ? await published.read(req.params.id) : null;
     if (page === null) return res.status(404).type("text/plain").send("There is no interface published here.");
     // Switched off: the address answers, and says so, to every device -- this
@@ -505,7 +523,7 @@ module.exports = function createRouter({
     // Publishing again has to show at once on a tablet that reloads.
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.send(markServed(page, socketPort ? socketPort() : undefined));
+    res.send(markServed(page, socketPort ? socketPort() : undefined, req.params.id));
   });
 
   // An assistant's draft, served to the editor the way a template is. The

@@ -132,7 +132,7 @@ test("the server writes the log where traffic crosses the wire", () => {
 });
 
 test("every send over a socket carries whose it is to the send function", () => {
-  assert.match(serverSource, /const from = socketOrigin\(socket\.handshake\.query && socket\.handshake\.query\.from, socket\.handshake\.address\);/, "each connection says who it is");
+  assert.match(serverSource, /const from = socketOrigin\(query\.from, socket\.handshake\.address, query\.device\);/, "each connection says who it is, and what its device is called");
   assert.match(serverSource, /sendOSC\(msg\.ip, msg\.port, msg\.address, msg\.args, from\);/, "OSC from a page or the canvas");
   assert.match(serverSource, /sendOSC\(ip, port, address, \[\{ type, value \}\], from\);/, "the old single-value form");
   assert.match(serverSource, /sendDMX\(request, from\);/, "DMX");
