@@ -532,7 +532,10 @@ module.exports = function createRouter({
   router.get("/drafts/:file", editorOnly, (req, res) => {
     const file = String(req.params.file || "");
     if (!draftsDir || !/^[a-z0-9][a-z0-9-]*\.html$/.test(file)) return res.status(404).type("text/plain").send("No such draft.");
-    res.sendFile(require("path").join(draftsDir, file), (err) => {
+    // dotfiles: "allow", because the folder itself may sit under a dot
+    // directory -- the packaged app on Linux keeps user data in ~/.config --
+    // and the sender's default refuses any path with a dot segment in it.
+    res.sendFile(require("path").join(draftsDir, file), { dotfiles: "allow" }, (err) => {
       if (err && !res.headersSent) res.status(404).type("text/plain").send("No such draft.");
     });
   });

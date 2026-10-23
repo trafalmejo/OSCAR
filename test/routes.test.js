@@ -512,3 +512,23 @@ test("a locked OSCAR lets nobody on the network open, change, create or delete a
     assert.ok(routes.includes(route), route);
   }
 });
+
+test("GET /drafts/<file> serves a draft whose folder sits under a dot directory", async () => {
+  // The packaged app on Linux keeps user data in ~/.config/OSCAR, and the
+  // file sender's default refuses any path with a dot segment: a draft that
+  // was listed could not be opened.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-route-home-"));
+  const draftsDir = path.join(home, ".config", "OSCAR", "projects", "assistant");
+  fs.mkdirSync(draftsDir, { recursive: true });
+  fs.writeFileSync(path.join(draftsDir, "jellyfish.html"), "<!doctype html><title>Jellyfish</title><body></body>");
+  await withServer(
+    async (base) => {
+      const res = await fetch(base + "/drafts/jellyfish.html");
+      assert.strictEqual(res.status, 200);
+      assert.match(await res.text(), /Jellyfish/);
+      assert.strictEqual((await fetch(base + "/drafts/missing.html")).status, 404);
+      assert.strictEqual((await fetch(base + "/drafts/..%2Fjellyfish.html")).status, 404);
+    },
+    { draftsDir }
+  );
+});
