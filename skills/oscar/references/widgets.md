@@ -157,8 +157,12 @@ Defaults on the wire: `data-gjs-port="7000"`, `data-gjs-message="/motion"`, `dat
 | Attribute | Panel label | Type | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `data-gjs-label` | Label | text | `Motion` | |
-| `data-gjs-source` | Source | select | `orientation` | Options: `orientation`, `acceleration`, `gravity`, `rotation`. Which reading the phone sends, as three values in this order. |
-| `data-gjs-rate` | Rate (per second) | number | `20` | Messages a second at most. The latest reading wins. |
+| `data-gjs-send-orientation` | Orientation | checkbox | `true` | Which way the phone is held, in degrees: alpha (turn around the vertical, 0 to 360), beta (tilt front to back, -180 to 180), gamma (tilt side to side, -90 to 90). Sent on Message/orientation, as 3 values. |
+| `data-gjs-send-acceleration` | Acceleration | checkbox | `false` | How the phone is being moved, in m/s², gravity taken out: zero when still, a spike on a shake. Sent on Message/acceleration, as 3 values. |
+| `data-gjs-send-gravity` | Acceleration with gravity | checkbox | `false` | The same with gravity left in: a steady tilt reading, about 9.8 on whichever axis points down. Sent on Message/gravity, as 3 values. |
+| `data-gjs-send-rotation` | Rotation rate | checkbox | `false` | How fast the phone is turning, in degrees a second around each axis: zero when still. Sent on Message/rotation, as 3 values. |
+| `data-gjs-send-heading` | Compass heading | checkbox | `false` | Degrees from north, 0 to 360, one value. Needs a phone with a compass, and a browser that shares it. Sent on Message/heading, as 1 value. |
+| `data-gjs-rate` | Rate (per second) | number | `20` | Messages a second at most, per reading. The latest reading wins. |
 
 ### oscar-feedback
 

@@ -4,7 +4,10 @@
  *
  *   motion.needsTap()      iPhones hand the sensors over only after a tap
  *   motion.ask()           the request that tap makes; resolves to allowed
- *   motion.watch(kind, fn) fn({ x, y, z }) as the sensor reports; returns stop
+ *   motion.watch(kind, fn) fn({ x, y, z }) as the sensor reports; returns stop.
+ *                          The kinds: orientation, acceleration, gravity,
+ *                          rotation (three values) and heading (one, x:
+ *                          degrees from north)
  *   vibrate(ms)            Android browsers only; false where it cannot
  *   torch(on)              no browser can; false
  *
@@ -31,6 +34,11 @@ function browserDevice(win) {
 
   function readingOf(kind, event) {
     var source = null;
+    if (kind === "heading") {
+      // iOS says it outright; Android gives an absolute alpha, counted the other way round.
+      var heading = typeof event.webkitCompassHeading === "number" ? event.webkitCompassHeading : event.absolute === true && typeof event.alpha === "number" ? (360 - event.alpha) % 360 : null;
+      return typeof heading === "number" ? { x: heading } : null;
+    }
     if (kind === "orientation") source = { x: event.alpha, y: event.beta, z: event.gamma };
     else if (kind === "acceleration") source = event.acceleration && { x: event.acceleration.x, y: event.acceleration.y, z: event.acceleration.z };
     else if (kind === "gravity") source = event.accelerationIncludingGravity && { x: event.accelerationIncludingGravity.x, y: event.accelerationIncludingGravity.y, z: event.accelerationIncludingGravity.z };
@@ -39,6 +47,11 @@ function browserDevice(win) {
     // A sensor the phone has not got reports nulls, which are not a reading.
     if (typeof source.x !== "number" || typeof source.y !== "number" || typeof source.z !== "number") return null;
     return source;
+  }
+
+  /** Android fires a separate absolute event for the compass; iOS puts the heading on the usual one. */
+  function headingEvent() {
+    return "ondeviceorientationabsolute" in win ? "deviceorientationabsolute" : "deviceorientation";
   }
 
   var motion = {
@@ -63,7 +76,7 @@ function browserDevice(win) {
     },
     watch: function (kind, fn) {
       if (!hasMotion || typeof fn !== "function") return null;
-      var type = kind === "orientation" ? "deviceorientation" : "devicemotion";
+      var type = kind === "orientation" ? "deviceorientation" : kind === "heading" ? headingEvent() : "devicemotion";
       var handler = function (event) {
         var reading = readingOf(kind, event);
         if (reading) fn(reading);

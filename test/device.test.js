@@ -20,6 +20,7 @@ function fakeWindow(options) {
     fire: (type, event) => (listeners[type] || []).forEach((fn) => fn(event)),
     count: (type) => (listeners[type] || []).length,
   };
+  if (options && options.absolute) win.ondeviceorientationabsolute = null;
   if (!options || options.sensors !== false) {
     win.DeviceMotionEvent = function () {};
     win.DeviceOrientationEvent = function () {};
@@ -49,6 +50,20 @@ test("each kind of reading is taken from the event that carries it, as x, y, z",
     gravity: { x: 1, y: 2, z: 12.8 },
     rotation: { x: 4, y: 5, z: 6 },
   });
+  // The compass: iOS says the heading, Android gives an absolute alpha the other way round.
+  const stopHeading = device.motion.watch("heading", (r) => (heard.heading = r));
+  win.fire("deviceorientation", { alpha: 10, beta: 20, gamma: 30, webkitCompassHeading: 123.5 });
+  assert.deepStrictEqual(heard.heading, { x: 123.5 }, "an iPhone");
+  win.fire("deviceorientation", { alpha: 10, beta: 20, gamma: 30 });
+  assert.deepStrictEqual(heard.heading, { x: 123.5 }, "a relative alpha is not a heading");
+  const android = fakeWindow({ absolute: true });
+  const compass = browserDevice(android);
+  let bearing = null;
+  compass.motion.watch("heading", (r) => (bearing = r));
+  assert.strictEqual(android.count("deviceorientationabsolute"), 1, "Android's own event");
+  android.fire("deviceorientationabsolute", { absolute: true, alpha: 90, beta: 0, gamma: 0 });
+  assert.deepStrictEqual(bearing, { x: 270 });
+  stopHeading();
   // A sensor the phone has not got reports nulls: not a reading.
   delete heard.acceleration;
   win.fire("devicemotion", { acceleration: { x: null, y: null, z: null }, rotationRate: null });

@@ -797,18 +797,26 @@ Two widgets are about the phone an interface is opened on rather than
 about the rig. Both are laid out and addressed like any other widget; what
 they do depends on what is holding them.
 
-**Motion** sends the phone's sensors as three floats on one address, at
-the rate you set (the latest reading wins, so a sensor firing sixty times a
-second is twenty messages at a rate of 20). Source picks the reading:
-orientation (alpha, beta, gamma), acceleration (x, y, z), acceleration with
-gravity, or rotation rate. The box shows the live values. Nothing is shared
-between devices: a reading is one phone's own, and two phones on one surface
-are two streams. In the editor and on a laptop the box says "open on a
+**Motion** sends the phone's sensors, each reading as its own stream on
+its own address under the widget's Message, at the rate you set (the latest
+reading wins, so a sensor firing sixty times a second is twenty messages at
+a rate of 20). Tick the readings you want: orientation (alpha, beta, gamma,
+in degrees), acceleration (x, y, z in m/s², gravity taken out), acceleration
+with gravity (a steady tilt), rotation rate (degrees a second), and compass
+heading (one value, degrees from north). With Message `/phone`, orientation
+goes out as `/phone/orientation`, heading as `/phone/heading`, and so on.
+The box lists every stream it sends with the live values and the address
+beside each, so a glance at the phone says what is going where. Pages
+published before readings could be ticked separately keep their one Source
+on the plain Message. Nothing is shared between devices: a reading is one
+phone's own, and two phones on one surface are two streams. In the editor and on a laptop the box says "open on a
 phone". On an iPhone the sensors are handed over only after a tap, so the
 box is a button that asks until then; Android asks nothing.
 
 **Device feedback** listens on an address and makes the phone react: a
-vibration, a flash of colour over its own box, the torch. A value above
+vibration, a flash of colour over its own box, the torch. It is not a
+button: nothing happens when it is pressed, and its box says what it is
+waiting for ("on /cue: vibrate, flash"). A value above
 zero (or a bare message) is go, zero is stop, which only the torch needs.
 Every message counts: two `/cue 1` are two vibrations. The flash works everywhere,
 the editor included. Vibration works in Android browsers and in the OSCAR

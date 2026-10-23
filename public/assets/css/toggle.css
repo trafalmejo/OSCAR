@@ -504,6 +504,12 @@
     border-color: var(--osc-primary);
   }
 
+  /* One line per reading under the label: its name, the live values, where it goes. */
+  .oscar-motion {
+    white-space: pre-line;
+    line-height: 1.5;
+  }
+
   .oscar-feedback {
     --oscar-flash: #ff3663;
     transition: background-color 0.15s, color 0.15s;

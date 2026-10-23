@@ -26,7 +26,7 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 test("a message at its address vibrates the phone and flashes the box; nothing goes back out", async () => {
   const phone = fakePhone();
   const { el, ctx, detach } = mountWith(phone, { message: "/cue", vibrateMs: 150, flashMs: 20 });
-  assert.strictEqual(el.textContent, "Feedback");
+  assert.strictEqual(el.textContent, "Feedback · on /cue: vibrate, flash");
   assert.strictEqual(el.style.properties["--oscar-flash"], "#ff3663");
 
   ctx.receive("/cue", [1]);
@@ -112,15 +112,21 @@ test("hear() is what OSCAR follows the rig with for the pages it serves: the val
 
 test("where the host cannot give what is asked for, the box says so and still flashes", () => {
   const { el, ctx, detach } = mountWith(null, { torch: true, flashMs: 5000 });
-  assert.strictEqual(el.textContent, "Feedback · needs the app for vibration and torch");
+  assert.strictEqual(el.textContent, "Feedback · on /feedback: flash · needs the app for vibration and torch");
   ctx.receive("/feedback", [1]);
   assert.strictEqual(ctx.classes[FLASH_CLASS], true);
   ctx.edit("torch", false);
   ctx.edit("vibrate", false);
-  assert.strictEqual(el.textContent, "Feedback");
+  assert.strictEqual(el.textContent, "Feedback · on /feedback: flash");
+  ctx.edit("message", "/cue");
+  ctx.edit("flash", false);
+  assert.strictEqual(el.textContent, "Feedback · on /cue: nothing");
   const browser = fakePhone({ torch: false });
-  const second = mountWith(browser, { torch: true, label: "Lights" });
-  assert.strictEqual(second.el.textContent, "Lights · needs the app for torch");
+  const second = mountWith(browser, { torch: true, label: "Lights", message: "/go" });
+  assert.strictEqual(second.el.textContent, "Lights · on /go: vibrate, flash · needs the app for torch");
+  const app = mountWith(fakePhone(), { torch: true, label: "" });
+  assert.strictEqual(app.el.textContent, "on /feedback: vibrate, flash, torch");
+  app.detach();
   second.detach();
   detach();
 });
