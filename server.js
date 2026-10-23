@@ -19,6 +19,7 @@ const { receiver: oscReceiver, listenOn, atMostOncePer, parse: parseOsc } = requ
 const { portsFromEnv } = require("./lib/ports");
 const { createRemoteMidi } = require("./lib/midi/remote");
 const features = require("./lib/features");
+const { createDiscovery } = require("./lib/discovery");
 const { buildRequest: buildDmxRequest, readSource, createDmxOutput, openDmxSocket, createUsbDmx, isUsb } = require("./lib/dmx");
 const { sharedSync, roomOf } = require("./lib/shared-sync");
 const { SerialLink, serialControl, isSerialTarget } = require("./lib/serial");
@@ -923,6 +924,20 @@ if (features.MCP) {
   });
 }
 
+// OSCAR announcing itself on the network as _oscar._tcp, so the phone app
+// lists it by this computer's name instead of asking for an address
+// (lib/discovery.js). Started once the port is certain; says goodbye on the
+// way out. The library is loaded only when the feature is on.
+const discovery = createDiscovery({
+  Bonjour: features.DISCOVERY ? require("bonjour-service").Bonjour : null,
+  hostname: os.hostname(),
+  httpPort: HTTP_PORT,
+  socketPort: SOCKET_PORT,
+  version: pkg.version,
+  env: process.env,
+  enabled: features.DISCOVERY,
+});
+
 const httpServer = app.listen(HTTP_PORT, () => {
   console.log("");
   console.log("  OSCAR is running.");
@@ -947,6 +962,7 @@ const httpServer = app.listen(HTTP_PORT, () => {
     removeMcpHandshake();
     console.log("  Assistants (MCP):     off -- the MCP pill in the editor's top bar turns it on");
   }
+  if (discovery.start()) console.log("  On the network as:    " + discovery.name + " (_oscar._tcp)");
   if (oscInLine) console.log(oscInLine);
   if (dmxLine) console.log(dmxLine);
   if (serialLine) console.log(serialLine);
@@ -998,8 +1014,9 @@ function shutdown() {
   // bounds how long an unreachable node can hold that up.
   const released = (DMX_HOLD_ON_EXIT ? Promise.resolve(dmx.close()) : dmx.stopAll()).then(() => usbDmx.close());
   released.then(() => dmxSocket.close());
-  // Extensions get the same bounded wait the rig does.
-  const letGo = Promise.all([released, extensions.stop()]);
+  // Extensions get the same bounded wait the rig does, and so does the
+  // goodbye on the network.
+  const letGo = Promise.all([released, extensions.stop(), discovery.stop()]);
   httpServer.close(() => letGo.then(() => process.exit(0)));
   setTimeout(() => process.exit(0), 2000).unref();
 }

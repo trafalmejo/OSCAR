@@ -494,6 +494,28 @@ module.exports = function createRouter({
   });
 
   // After /show/preview above, which is the editor's hand-off and not a page.
+  // What this OSCAR is serving, for a device on the network: the index of
+  // /show/<id>. Open to the network, locked or not, because it says only
+  // what the pages at those addresses already say -- a surface that is
+  // switched off is left out, as its address answers nothing -- and it is
+  // how the phone app offers a list instead of asking for an address. GET
+  // /published, the editor's list, stays the editor's: it carries the
+  // project, the stamp and who is on it, which are the designer's business.
+  router.get("/show", async (req, res) => {
+    try {
+      const pages = published ? await published.list() : [];
+      res.setHeader("Cache-Control", "no-store");
+      res.json(
+        pages
+          .filter((page) => page.access !== "off")
+          .map((page) => ({ id: page.id, path: "/show/" + page.id, name: page.name || page.id }))
+      );
+    } catch (err) {
+      console.error("Could not list the served interfaces:", err.message);
+      res.status(500).json({ error: "Could not read the interfaces" });
+    }
+  });
+
   // A surface's manifest, beside its page: what a phone reads to put the
   // surface on its home screen (lib/published.js). The name is the
   // project's, as the Running window shows it; a page with no record is

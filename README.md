@@ -936,6 +936,13 @@ treated as an app of its own, and nothing has to be installed:
   again right away rather than after the usual wait, and one that looks
   alive is asked for the snapshot and replaced if it does not answer within
   a few seconds. Moves made while asleep were never made, as above.
+- **Found by name.** OSCAR announces itself on the local network as
+  `_oscar._tcp`, the way printers do, under "OSCAR on *computer name*", and
+  answers `GET /show` with the list of interfaces it is serving (name and
+  address; nothing that is switched off). That is how the OSCAR phone app
+  lists your OSCAR and its interfaces with nothing typed. It only says "I am
+  here" on pages that were open to the network already; `OSCAR_NO_DISCOVERY=1`
+  keeps it quiet.
 - **Naming a device.** Add `?device=Bar%20left` to the address a tablet
   opens, or to the QR code you print, and that tablet is "Bar left" in the
   network log and under the device count in the Running window (hover it).

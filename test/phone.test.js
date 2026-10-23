@@ -121,6 +121,24 @@ test("GET /show/<id>.webmanifest answers beside the page, named after the projec
   });
 });
 
+test("GET /show lists what is served, by name, leaving out what is switched off, locked or not", async () => {
+  await withServer(async (base, store) => {
+    assert.deepStrictEqual(await (await fetch(base + "/show")).json(), []);
+    await store.save("Main Stage", PAGE, { project: { id: "p-1", name: "Main Stage" } });
+    await store.save("Lobby", PAGE, null);
+    await store.save("Old Bar", PAGE, null);
+    await store.setAccess("old-bar", "off");
+    const res = await fetch(base + "/show");
+    assert.strictEqual(res.headers.get("cache-control"), "no-store");
+    assert.deepStrictEqual(await res.json(), [
+      { id: "lobby", path: "/show/lobby", name: "lobby" },
+      { id: "main-stage", path: "/show/main-stage", name: "Main Stage" },
+    ]);
+    // Nothing the editor's list carries: no project id, no stamp, no devices.
+    for (const row of await (await fetch(base + "/show")).json()) assert.deepStrictEqual(Object.keys(row).sort(), ["id", "name", "path"]);
+  });
+});
+
 // ---- which tablet ----------------------------------------------------------------
 
 test("a page that names its device is known by that name, with its address kept", () => {

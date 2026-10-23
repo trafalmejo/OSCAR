@@ -250,6 +250,7 @@ test("a locked OSCAR still serves its published surfaces, and lets nobody on the
   assert.strictEqual(guarded("delete", "/published/:id"), true, "so is unpublishing");
   assert.strictEqual(guarded("get", "/published"), true);
   assert.strictEqual(guarded("get", "/show/:id"), false, "opening a surface is driving the show");
+  assert.strictEqual(guarded("get", "/show"), false, "and so is finding one: the phone app's list");
 });
 
 test("an OSCAR started without anywhere to publish says so instead of failing", async () => {
