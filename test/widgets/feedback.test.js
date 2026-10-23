@@ -25,25 +25,36 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test("a message at its address vibrates the phone and flashes the box; nothing goes back out", async () => {
   const phone = fakePhone();
-  const { el, ctx, detach } = mountWith(phone, { message: "/cue", vibrateMs: 150, flashMs: 20 });
+  const { el, ctx, detach } = mountWith(phone, { message: "/cue", vibrateMs: 30, flashMs: 20 });
   assert.strictEqual(el.textContent, "Feedback · on /cue: vibrate, flash");
   assert.strictEqual(el.style.properties["--oscar-flash"], "#ff3663");
 
   ctx.receive("/cue", [1]);
-  assert.deepStrictEqual(phone.vibrated, [150]);
+  assert.deepStrictEqual(phone.vibrated, [30]);
   assert.strictEqual(ctx.classes[FLASH_CLASS], true);
   await tick(40);
   assert.strictEqual(ctx.classes[FLASH_CLASS], false, "the flash is over");
   assert.deepStrictEqual(ctx.sent, []);
   assert.deepStrictEqual(ctx.shared, []);
 
-  // A bare message is go; zero is not.
+  // A bare message is go; zero is not. (The first vibration is over by now.)
   ctx.receive("/cue", []);
-  assert.deepStrictEqual(phone.vibrated, [150, 150]);
+  assert.deepStrictEqual(phone.vibrated, [30, 30]);
   ctx.receive("/cue", [0]);
-  assert.deepStrictEqual(phone.vibrated, [150, 150]);
+  assert.deepStrictEqual(phone.vibrated, [30, 30]);
   ctx.receive("/elsewhere", [1]);
-  assert.deepStrictEqual(phone.vibrated, [150, 150], "another address is not its business");
+  assert.deepStrictEqual(phone.vibrated, [30, 30], "another address is not its business");
+  detach();
+});
+
+test("a flood of cues, one every frame, is one long vibration, not a motor restarted every frame", async () => {
+  const phone = fakePhone();
+  const { ctx, detach } = mountWith(phone, { vibrateMs: 40, flashMs: 40 });
+  for (let i = 0; i < 10; i++) ctx.receive("/feedback", [1]);
+  assert.deepStrictEqual(phone.vibrated, [40], "the first cue vibrates, the rest ride on it");
+  await tick(50);
+  ctx.receive("/feedback", [1]);
+  assert.deepStrictEqual(phone.vibrated, [40, 40], "after it ends, the next cue is a new one");
   detach();
 });
 
@@ -60,10 +71,10 @@ test("the torch follows the value: on above zero, off at zero, and off again whe
   assert.deepStrictEqual(phone.torched, [true, false, true, false], "a torch left on by a page that is gone would stay on");
 });
 
-test("on a page OSCAR serves, the cue arrives as a state: each new one acts once, the same one again does not, and the one from before the page opened never", () => {
+test("on a page OSCAR serves, the cue arrives as a state: each new one acts once, the same one again does not, and the one from before the page opened never", async () => {
   const phone = fakePhone();
   const el = fakeElement();
-  const ctx = fakeContext(Object.assign({}, feedback.defaults, { flash: false }));
+  const ctx = fakeContext(Object.assign({}, feedback.defaults, { flash: false, vibrateMs: 10 }));
   ctx.device = phone;
   ctx.followed = true;
   // The host hands the state already known over as the widget subscribes.
@@ -77,16 +88,18 @@ test("on a page OSCAR serves, the cue arrives as a state: each new one acts once
   assert.deepStrictEqual(phone.vibrated, [], "a cue from before this page opened is not a cue for it");
 
   ctx.receiveShared({ value: 1, at: 2000 });
-  assert.deepStrictEqual(phone.vibrated, [200]);
+  assert.deepStrictEqual(phone.vibrated, [10]);
   ctx.receiveShared({ value: 1, at: 2000 });
-  assert.deepStrictEqual(phone.vibrated, [200], "the snapshot after a reconnect: the same cue, not a new one");
+  assert.deepStrictEqual(phone.vibrated, [10], "the snapshot after a reconnect: the same cue, not a new one");
+  await tick(15);
   ctx.receiveShared({ value: 1, at: 3000 });
-  assert.deepStrictEqual(phone.vibrated, [200, 200], "the same value again is a second cue");
+  assert.deepStrictEqual(phone.vibrated, [10, 10], "the same value again is a second cue");
   ctx.receiveShared({ value: 0, at: 4000 });
-  assert.deepStrictEqual(phone.vibrated, [200, 200]);
+  assert.deepStrictEqual(phone.vibrated, [10, 10]);
   // With OSCAR hearing for it, the page's own ear is shut: no double buzz.
+  await tick(15);
   ctx.receive("/feedback", [1]);
-  assert.deepStrictEqual(phone.vibrated, [200, 200]);
+  assert.deepStrictEqual(phone.vibrated, [10, 10]);
   detach();
 });
 
