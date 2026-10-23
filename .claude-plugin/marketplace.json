@@ -1,0 +1,17 @@
+{
+  "name": "createwithoscar",
+  "owner": { "name": "Daniel Castaño", "url": "https://www.createwithoscar.com" },
+  "metadata": {
+    "description": "OSCAR: control interfaces for phones and tablets that send OSC, MIDI and DMX to show software and lights.",
+    "homepage": "https://www.createwithoscar.com"
+  },
+  "plugins": [
+    {
+      "name": "oscar",
+      "source": "./skills/oscar",
+      "description": "Design phone and tablet control interfaces for Resolume, TouchDesigner, QLab, DAWs and DMX lights with OSCAR, and read a running OSCAR through its MCP server. Never sends to a rig.",
+      "category": "productivity",
+      "keywords": ["osc", "midi", "dmx", "resolume", "touchdesigner", "qlab", "lighting"]
+    }
+  ]
+}

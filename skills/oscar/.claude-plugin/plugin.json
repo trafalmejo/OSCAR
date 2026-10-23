@@ -1,0 +1,16 @@
+{
+  "name": "oscar",
+  "displayName": "OSCAR",
+  "version": "2.1.0",
+  "description": "Design phone and tablet control interfaces that send OSC, MIDI and DMX to Resolume, TouchDesigner, QLab, DAWs and lights, with OSCAR. A skill for the design and the wire, and OSCAR's read-and-draft MCP server. Never sends to a rig.",
+  "author": { "name": "Daniel Castaño", "url": "https://www.createwithoscar.com" },
+  "homepage": "https://www.createwithoscar.com",
+  "repository": "https://github.com/trafalmejo/OSCAR",
+  "documentationUrl": "https://www.createwithoscar.com/how-it-works#ai",
+  "supportUrl": "https://github.com/trafalmejo/OSCAR/issues",
+  "privacyPolicyUrl": "https://www.createwithoscar.com/privacy",
+  "license": "BSD-3-Clause",
+  "icon": "./.claude-plugin/icon.png",
+  "keywords": ["osc", "midi", "dmx", "resolume", "touchdesigner", "qlab", "lighting", "control-surface", "art-net", "sacn"],
+  "skills": ["./"]
+}

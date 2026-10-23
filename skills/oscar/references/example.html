@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<title>Resolume Pocket Desk</title>
+<!--
+  A small Resolume remote for a phone in portrait: six clip keys on layer 1,
+  the layer's opacity fader (which follows Resolume when its OSC Output is
+  pointed at OSCAR on port 8880), the crossfader, and a clear key. Every
+  control sends to port 7000 at localhost; if Resolume is on another
+  computer, set every control's Ip to that computer in the editor.
+
+  This is the shape of a draft: one document, one <style>, ordinary CSS
+  layout, every element with data-gjs-dmode="flow", every widget with a
+  unique id and its settings as data-gjs-* attributes. The <body> is left
+  plain, so the editor's widget style dresses the controls.
+-->
+<style>
+  .desk { display: grid; grid-template-rows: auto 1fr auto auto; gap: 16px; min-height: 100vh; padding: 16px; box-sizing: border-box; }
+  .desk h1 { margin: 0; font-size: 18px; }
+  .desk small { display: block; opacity: 0.7; font-size: 12px; }
+  .clips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .clips button { min-height: 72px; font-size: 18px; }
+  .faders { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: center; }
+  .faders label { display: block; font-size: 12px; margin-bottom: 6px; }
+  .faders input { width: 100%; }
+  .clear { min-height: 56px; }
+  @media (max-width: 480px) { .clips { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div id="desk" class="desk" data-gjs-dmode="flow">
+  <div id="head" data-gjs-dmode="flow">
+    <h1 id="title" data-gjs-dmode="flow">Layer 1</h1>
+    <small id="note" data-gjs-dmode="flow">Resolume Arena, OSC port 7000</small>
+  </div>
+
+  <div id="clips" class="clips" data-gjs-dmode="flow">
+    <button id="clip-1" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/clips/1/connect" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i">Clip 1</button>
+    <button id="clip-2" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/clips/2/connect" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i">Clip 2</button>
+    <button id="clip-3" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/clips/3/connect" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i">Clip 3</button>
+    <button id="clip-4" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/clips/4/connect" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i">Clip 4</button>
+    <button id="clip-5" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/clips/5/connect" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i">Clip 5</button>
+    <button id="clip-6" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/clips/6/connect" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i">Clip 6</button>
+  </div>
+
+  <div id="faders" class="faders" data-gjs-dmode="flow">
+    <div id="opacity-box" data-gjs-dmode="flow">
+      <label id="opacity-label" data-gjs-dmode="flow">Opacity</label>
+      <input id="opacity" type="range" step="0.01" min="0" max="1" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/video/opacity" data-gjs-min="0" data-gjs-max="1" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-listen="true" data-gjs-arg-type="f">
+    </div>
+    <div id="cross-box" data-gjs-dmode="flow">
+      <label id="cross-label" data-gjs-dmode="flow">Crossfader</label>
+      <input id="crossfader" type="range" step="0.01" min="0" max="1" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/crossfader/phase" data-gjs-min="0" data-gjs-max="1" data-gjs-value="0" data-gjs-orientation="horizontal" data-gjs-listen="true" data-gjs-arg-type="f">
+    </div>
+  </div>
+
+  <button id="clear" class="clear" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/composition/layers/1/clear" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="" data-gjs-arg-type="i">Clear layer</button>
+</div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "oscar",
+  "version": "2.1.0",
+  "description": "Design phone and tablet control interfaces that send OSC, MIDI and DMX to Resolume, TouchDesigner, QLab, DAWs and lights, with OSCAR. Bundles the oscar skill and OSCAR's read-and-draft MCP server; never sends to a rig.",
+  "mcpServers": {
+    "oscar": {
+      "command": "npx",
+      "args": ["-y", "createwithoscar@1.0.2"]
+    }
+  }
+}

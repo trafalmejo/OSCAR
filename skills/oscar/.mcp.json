@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "oscar": {
+      "command": "npx",
+      "args": ["-y", "createwithoscar@1.0.2"]
+    }
+  }
+}

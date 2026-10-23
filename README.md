@@ -526,7 +526,24 @@ claude mcp add oscar -- npx -y createwithoscar
 
 That is Claude Code. Claude Desktop takes the one-click bundle `OSCAR.mcpb`
 from the website; any other MCP app takes a server with the command `npx` and
-the arguments `-y createwithoscar`. [`createwithoscar`](createwithoscar/) is
+the arguments `-y createwithoscar`.
+
+The same repository is also a **skill**, a **Claude Code plugin** and a
+**Gemini CLI extension**, all from [`skills/oscar/`](skills/oscar/): how to
+design a good phone or tablet surface, what Resolume, TouchDesigner, QLab,
+DAWs and DMX expect on the wire, and every widget with its settings
+(`references/widgets.md`, generated from the registry by `npm run build:skill`).
+A skill works in any assistant that reads them, with or without OSCAR running:
+
+```
+npx skills add trafalmejo/OSCAR                        # the skill alone, any assistant
+claude plugin marketplace add trafalmejo/OSCAR         # Claude Code: the skill plus the MCP server
+claude plugin install oscar@createwithoscar
+gemini extensions install https://github.com/trafalmejo/OSCAR
+```
+
+`test/skill.test.js` keeps the three in step with the app and with the
+helper's published version. [`createwithoscar`](createwithoscar/) is
 the helper the assistant starts: a small program with no dependencies that
 finds this OSCAR through `~/.oscar/mcp.json` (written on every start) and
 passes each request on. When OSCAR is not running the assistant still sees

@@ -1,0 +1,23 @@
+{
+  "name": "oscar",
+  "version": "2.1.0",
+  "description": "Design phone and tablet control interfaces that send OSC, MIDI and DMX to Resolume, TouchDesigner, QLab, DAWs and lights, with OSCAR. A skill for the design and the wire, and OSCAR's read-and-draft MCP server. Never sends to a rig.",
+  "author": { "name": "Daniel Castaño", "url": "https://www.createwithoscar.com" },
+  "homepage": "https://www.createwithoscar.com",
+  "repository": "https://github.com/trafalmejo/OSCAR",
+  "license": "BSD-3-Clause",
+  "keywords": ["osc", "midi", "dmx", "resolume", "touchdesigner", "qlab", "lighting"],
+  "skills": "./",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OSCAR",
+    "shortDescription": "OSC, MIDI, DMX from a phone",
+    "longDescription": "OSCAR is a free, open-source editor and server for control interfaces: pages of buttons, sliders, pads and faders that phones and tablets open in a browser and that send OSC, MIDI and DMX to show software, instruments and lights. This plugin teaches the assistant how to design a good touch surface and what Resolume, TouchDesigner, QLab, DAWs and DMX fixtures expect on the wire, and connects it to the OSCAR running on this computer to read its projects, published interfaces, settings and network log, and to save a draft the person reviews. It never sends anything to software or gear, never publishes, and never changes a project.",
+    "developerName": "Daniel Castaño",
+    "category": "Productivity",
+    "capabilities": [],
+    "logo": "./.claude-plugin/icon.png",
+    "composerIcon": "./.claude-plugin/icon.png",
+    "websiteURL": "https://www.createwithoscar.com"
+  }
+}

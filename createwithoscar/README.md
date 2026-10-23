@@ -45,6 +45,17 @@ and the arguments `-y createwithoscar`. In most apps that is:
 If it does not start on Windows, use the command `cmd` with the arguments
 `/c npx -y createwithoscar`.
 
+**As a plugin or a skill.** The OSCAR repository also carries a skill that
+teaches an assistant how to design a surface and what each target expects on
+the wire, usable with or without OSCAR running:
+
+```
+npx skills add trafalmejo/OSCAR                        # the skill, any assistant
+claude plugin marketplace add trafalmejo/OSCAR         # Claude Code: skill + this server
+claude plugin install oscar@createwithoscar
+gemini extensions install https://github.com/trafalmejo/OSCAR
+```
+
 Then ask, for example:
 
 - "Build me an OSCAR interface with four faders and a blackout button for my
