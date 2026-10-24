@@ -8,7 +8,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { createDiscovery, instanceName, SERVICE_TYPE } = require("../lib/discovery");
+const { createDiscovery, instanceName, addressesOf, SERVICE_TYPE } = require("../lib/discovery");
 
 function fakeBonjour() {
   const made = [];
@@ -103,6 +103,37 @@ test("a network that refuses, or a library that throws, costs one line and nothi
   assert.strictEqual(throwing.silent, "not started");
   // And without the library at all (a test, or a build without it), nothing.
   assert.strictEqual(createDiscovery({ hostname: "x", httpPort: 1, socketPort: 2, env: {}, log }).start(), false);
+});
+
+test("the announcement is made again when the computer's address changes, and every so often regardless", async () => {
+  const { Bonjour, made } = fakeBonjour();
+  const lines = [];
+  let nets = { "Wi-Fi": [{ address: "192.168.2.11", family: "IPv4", internal: false }, { address: "fe80::1", family: "IPv6", internal: false }], lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }] };
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: { log: (l) => lines.push(l), error() {} }, networkInterfaces: () => nets, watchMs: 15, refreshMs: 10000 });
+  assert.strictEqual(discovery.start(), true);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.strictEqual(made.length, 1, "nothing changed: the same responder");
+  // The DHCP lease moves the computer.
+  nets = { "Wi-Fi": [{ address: "192.168.2.66", family: "IPv4", internal: false }] };
+  await new Promise((r) => setTimeout(r, 40));
+  assert.strictEqual(made.length, 2, "a fresh responder for the new address");
+  assert.strictEqual(made[0].destroyed, true, "the old one gone");
+  assert.strictEqual(made[0].unpublished, false, "no goodbye: the service is still here");
+  assert.deepStrictEqual(lines, ["  Announcing on the network again: the computer's address changed."]);
+  assert.strictEqual(discovery.silent, null);
+  await discovery.stop();
+  assert.strictEqual(made[1].unpublished, true, "the goodbye comes at the end");
+
+  // And, with nothing changing, again after a while anyway.
+  const again = fakeBonjour();
+  const steady = createDiscovery({ Bonjour: again.Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: quiet, networkInterfaces: () => nets, watchMs: 15, refreshMs: 30 });
+  steady.start();
+  await new Promise((r) => setTimeout(r, 80));
+  assert.ok(again.made.length >= 2, "announced again by time: " + again.made.length);
+  await steady.stop();
+
+  assert.strictEqual(addressesOf(() => nets), "192.168.2.66");
+  assert.strictEqual(addressesOf(() => { throw new Error("no"); }), "");
 });
 
 test("the name a phone lists is the computer's, kept short and printable", () => {
