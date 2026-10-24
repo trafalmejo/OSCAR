@@ -820,7 +820,10 @@ waiting for ("on /cue: vibrate, flash"). A value above
 zero (or a bare message) is go, zero is stop, which only the torch needs.
 Every message counts: two `/cue 1` are two vibrations. The flash works everywhere,
 the editor included. Vibration works in Android browsers and in the OSCAR
-app, not in an iPhone's Safari; the torch needs the app. Where a feeling is
+app, not in an iPhone's Safari; the torch needs the app. An Android
+browser vibrates as touch feedback, which the phone drops when touch
+feedback is off in its settings; the app vibrates as media does and gets
+through. Where a feeling is
 asked for that the page cannot give, the box says so and does what it can.
 Through OSCAR Pro's public links, OSCAR hears for the phone and passes the
 state on, so feedback reaches a phone on mobile data too.
