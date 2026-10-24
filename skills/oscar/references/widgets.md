@@ -178,7 +178,6 @@ Defaults on the wire: `data-gjs-message="/cue"`.
 | `data-gjs-flash-ms` | Lit for (ms) | number | `300` | |
 | `data-gjs-vibrate` | Vibrate | checkbox | `true` | The phone buzzes. The OSCAR app, and Android browsers; a browser on an iPhone cannot. |
 | `data-gjs-vibrate-ms` | Vibration (ms) | number | `200` | |
-| `data-gjs-torch` | Torch | checkbox | `false` | The camera light, the OSCAR app only: on above zero, off at zero. |
 
 ## OSC section
 

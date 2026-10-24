@@ -7,9 +7,8 @@ const { feedback, FLASH_CLASS } = require("../../lib/widgets/feedback");
 const { fakeElement, fakeContext } = require("../helpers/fake-dom");
 
 function fakePhone(options) {
-  const phone = { vibrated: [], torched: [] };
+  const phone = { vibrated: [] };
   if (!options || options.vibrate !== false) phone.vibrate = (ms) => phone.vibrated.push(ms) && true;
-  if (!options || options.torch !== false) phone.torch = async (on) => phone.torched.push(on);
   return phone;
 }
 
@@ -57,19 +56,6 @@ test("a flood of cues, one every frame, is one long vibration, not a motor resta
   ctx.receive("/cue", [1]);
   assert.deepStrictEqual(phone.vibrated, [40, 40], "after it ends, the next cue is a new one");
   detach();
-});
-
-test("the torch follows the value: on above zero, off at zero, and off again when the page goes", async () => {
-  const phone = fakePhone();
-  const { ctx, detach } = mountWith(phone, { torch: true, vibrate: false, flash: false });
-  ctx.receive("/cue", [1]);
-  ctx.receive("/cue", [1]);
-  assert.deepStrictEqual(phone.torched, [true], "said once, not on every message");
-  ctx.receive("/cue", [0]);
-  assert.deepStrictEqual(phone.torched, [true, false]);
-  ctx.receive("/cue", [0.5]);
-  detach();
-  assert.deepStrictEqual(phone.torched, [true, false, true, false], "a torch left on by a page that is gone would stay on");
 });
 
 test("on a page OSCAR serves, the cue arrives as a state: each new one acts once, the same one again does not, and the one from before the page opened never", async () => {
@@ -124,25 +110,24 @@ test("hear() is what OSCAR follows the rig with for the pages it serves: the val
   assert.strictEqual(feedback.hear(feedback.defaults, ["loud"]), null);
 });
 
-test("where the host cannot give what is asked for, the box says so and still flashes", () => {
-  const { el, ctx, detach } = mountWith(null, { torch: true, flashMs: 5000 });
-  assert.strictEqual(el.textContent, "Cue · needs the app for vibration and torch");
+test("where the host cannot give what is asked for, the face says so and the light still lights", () => {
+  const { el, ctx, detach } = mountWith(null, { flashMs: 5000 });
+  assert.strictEqual(el.textContent, "Cue · needs the app for vibration");
   assert.strictEqual(el.getAttribute("title"), "On /cue: light.");
   ctx.receive("/cue", [1]);
   assert.strictEqual(ctx.classes[FLASH_CLASS], true);
-  ctx.edit("torch", false);
   ctx.edit("vibrate", false);
   assert.strictEqual(el.textContent, "Cue");
   ctx.edit("message", "/go");
   ctx.edit("flash", false);
   assert.strictEqual(el.getAttribute("title"), "On /go: nothing.");
-  const browser = fakePhone({ torch: false });
-  const second = mountWith(browser, { torch: true, label: "Lights", message: "/go" });
-  assert.strictEqual(second.el.textContent, "Lights · needs the app for torch");
-  assert.strictEqual(second.el.getAttribute("title"), "On /go: light, vibrate.");
-  const app = mountWith(fakePhone(), { torch: true, label: "" });
+  const browser = fakePhone({ vibrate: false });
+  const second = mountWith(browser, { label: "Lights", message: "/go" });
+  assert.strictEqual(second.el.textContent, "Lights · needs the app for vibration");
+  assert.strictEqual(second.el.getAttribute("title"), "On /go: light.");
+  const app = mountWith(fakePhone(), { label: "" });
   assert.strictEqual(app.el.textContent, "");
-  assert.strictEqual(app.el.getAttribute("title"), "On /cue: light, vibrate, torch.");
+  assert.strictEqual(app.el.getAttribute("title"), "On /cue: light, vibrate.");
   app.detach();
   second.detach();
   detach();

@@ -814,18 +814,18 @@ phone". On an iPhone the sensors are handed over only after a tap, so the
 box is a button that asks until then; Android asks nothing.
 
 **Feedback cue** is a light on the page. It listens on an address and, when
-a message arrives, lights up in its colour for the time you set, buzzes the
-phone, and switches the camera torch on or off, each one a checkbox. It is
-not a button: nothing happens when it is pressed. Its tooltip says what it
-is waiting for ("On /cue: light, vibrate, torch"). A value above
-zero (or a bare message) is go, zero is stop, which only the torch needs.
-Every message counts: two `/cue 1` are two vibrations. The flash works everywhere,
-the editor included. Vibration works in Android browsers and in the OSCAR
-app, not in an iPhone's Safari; the torch needs the app. An Android
-browser vibrates as touch feedback, which the phone drops when touch
-feedback is off in its settings; the app vibrates as media does and gets
-through. Where a feeling is
-asked for that the page cannot give, the box says so and does what it can.
+a message arrives, lights up in its colour for the time you set and buzzes
+the phone, each one a checkbox. It is not a button: nothing happens when it
+is pressed. Its tooltip says what it is waiting for ("On /cue: light,
+vibrate"). A value above zero (or a bare message) is go; zero does nothing.
+Every message counts: two `/cue 1` are two cues, though a cue that lands
+while the phone is still buzzing from the last one rides on it. The light
+works everywhere, the editor included. Vibration works in the OSCAR app and
+in Android browsers, not in an iPhone's Safari. An Android browser vibrates
+as touch feedback, which the phone drops when touch feedback is off in its
+settings; the app vibrates as media does and gets through. Where a buzz is
+asked for that the page cannot give, the face says so and the light still
+lights.
 Through OSCAR Pro's public links, OSCAR hears for the phone and passes the
 state on, so feedback reaches a phone on mobile data too.
 
