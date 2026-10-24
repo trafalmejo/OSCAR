@@ -1,8 +1,8 @@
 name: Release
 
 # Tagging is the whole release process: push a v* tag and this builds OSCAR
-# for all three platforms in parallel and attaches the installers to a draft
-# GitHub release.
+# for all three platforms in parallel, signs the Windows files through
+# SignPath, and attaches the installers to a draft GitHub release.
 on:
   push:
     tags:
@@ -12,6 +12,10 @@ on:
 
 permissions:
   contents: write
+  # SignPath's action fetches the unsigned artifact from this run with the
+  # job's token. Naming one permission turns every other one off, so this
+  # one has to be named too.
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -22,8 +26,9 @@ jobs:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     env:
-      # Whether the secret is set: a step's `if` cannot read secrets itself.
+      # Whether a secret is set: a step's `if` cannot read secrets itself.
       HAS_PRO_KEY: ${{ secrets.OSCAR_PRO_DEPLOY_KEY != '' }}
+      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
     strategy:
       # One platform failing shouldn't throw away the other two builds.
       fail-fast: false
@@ -85,12 +90,19 @@ jobs:
       - name: Run tests
         run: npm test
 
-      # Only a tag publishes. Running this workflow by hand builds the
-      # installers and leaves them as run artifacts, without touching releases.
-      - name: Build${{ startsWith(github.ref, 'refs/tags/') && ' and publish' || ' only (no release)' }}
-        run: npm run build && npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+      # The version being built, for SignPath: it refuses a file whose
+      # ProductVersion is not this, so a stray build cannot be signed as a release.
+      - name: Read the version
+        shell: bash
+        run: echo "OSCAR_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
+      # Nothing publishes from here. Every platform leaves its installers in
+      # release-builds/, and the "Draft release" job below attaches them all at
+      # once, so that the Windows files arrive signed.
+      - name: Build (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: npm run build && npx electron-builder --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # OSCAR has no Apple certificate. Without this, macOS builds stall
           # looking for a signing identity that isn't there. The Mac app is
           # signed ad-hoc instead (see "identity": "-" in package.json), which
@@ -99,6 +111,112 @@ jobs:
           # at all, an Apple Silicon Mac refuses to open it and says the app is
           # damaged.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Windows is built in two passes so that SignPath can sign in between.
+      # SignPath signs what it is handed and cannot open an NSIS installer, so
+      # OSCAR.exe is signed first, as an unpacked app, and the installer is
+      # then wrapped around the signed app and signed in turn. The signing
+      # steps run only where the SIGNPATH_API_TOKEN secret exists; a fork
+      # makes the same installers, unsigned.
+      - name: Build the unpacked app (Windows)
+        if: runner.os == 'Windows'
+        run: npm run build && npx electron-builder --win dir --x64 --arm64
+
+      # SignPath wants a GitHub run artifact, which is a zip. Two paths share a
+      # root, so the zip holds win-unpacked/OSCAR.exe and win-arm64-unpacked/OSCAR.exe.
+      - name: Upload the unsigned app
+        if: runner.os == 'Windows' && env.HAS_SIGNPATH == 'true'
+        id: unsigned-app
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-app
+          retention-days: 1
+          path: |
+            release-builds/win-unpacked/OSCAR.exe
+            release-builds/win-arm64-unpacked/OSCAR.exe
+
+      # A tag is signed with the real certificate, after a person approves the
+      # request in SignPath (SignPath Foundation asks for that approval; the
+      # long timeout waits for it). Anything else uses the test certificate.
+      - name: Sign the app (SignPath)
+        if: runner.os == 'Windows' && env.HAS_SIGNPATH == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed/app
+          parameters: |
+            version: "${{ env.OSCAR_VERSION }}"
+
+      - name: Put the signed app in place
+        if: runner.os == 'Windows' && env.HAS_SIGNPATH == 'true'
+        shell: bash
+        run: |
+          cp signed/app/win-unpacked/OSCAR.exe release-builds/win-unpacked/OSCAR.exe
+          cp signed/app/win-arm64-unpacked/OSCAR.exe release-builds/win-arm64-unpacked/OSCAR.exe
+
+      # --prepackaged wraps an installer around a folder as it is, so the
+      # signed OSCAR.exe goes in untouched. One pass per CPU.
+      - name: Build the installers (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          npx electron-builder --win nsis --x64 --prepackaged release-builds/win-unpacked --publish never
+          npx electron-builder --win nsis --arm64 --prepackaged release-builds/win-arm64-unpacked --publish never
+
+      - name: Upload the unsigned installers
+        if: runner.os == 'Windows' && env.HAS_SIGNPATH == 'true'
+        id: unsigned-installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          retention-days: 1
+          path: release-builds/*.exe
+
+      - name: Sign the installers (SignPath)
+        if: runner.os == 'Windows' && env.HAS_SIGNPATH == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed/installer
+          parameters: |
+            version: "${{ env.OSCAR_VERSION }}"
+
+      - name: Put the signed installers in place
+        if: runner.os == 'Windows' && env.HAS_SIGNPATH == 'true'
+        shell: bash
+        run: cp signed/installer/*.exe release-builds/
+
+      # Fails loudly when a signature is missing: an unsigned installer must
+      # never reach the release. The test certificate is self-signed, which
+      # Windows reports as UnknownError rather than Valid; both pass here, an
+      # absent signature does not. A signature without a timestamp fails too:
+      # Windows judges a signature by the certificate's state at its timestamp,
+      # so a timestamped installer stays valid after the certificate expires
+      # or is revoked, and an untimestamped one would not.
+      - name: Check the installers are signed and timestamped
+        if: runner.os == 'Windows' && env.HAS_SIGNPATH == 'true'
+        shell: pwsh
+        run: |
+          Get-ChildItem release-builds/*.exe | ForEach-Object {
+            $signature = Get-AuthenticodeSignature $_.FullName
+            $timestamper = if ($signature.TimeStamperCertificate) { $signature.TimeStamperCertificate.Subject } else { "NO TIMESTAMP" }
+            Write-Host ("{0}: {1} | signer {2} | timestamp {3}" -f $_.Name, $signature.Status, $signature.SignerCertificate.Subject, $timestamper)
+            if ($signature.Status -ne "Valid" -and $signature.Status -ne "UnknownError") { exit 1 }
+            if (-not $signature.TimeStamperCertificate) { exit 1 }
+          }
 
       # MIDI needs a compiled module, and one that is left inside the archive
       # cannot be loaded. This fails the build rather than ship an OSCAR whose
@@ -125,13 +243,14 @@ jobs:
             echo "Pro is in $asar"
           done
 
-      # Keeps the installers available from the run even if publishing is
-      # skipped (for example on a workflow_dispatch dry run).
+      # The installers of this platform, for the release job and for anyone
+      # checking a dry run. Named apart from the unsigned-* artifacts above so
+      # the release job never picks those up.
       - name: Upload installers as run artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: oscar-${{ matrix.os }}
+          name: installers-${{ matrix.os }}
           retention-days: 14
           if-no-files-found: ignore
           path: |
@@ -139,3 +258,32 @@ jobs:
             release-builds/*.dmg
             release-builds/*.AppImage
             release-builds/*.deb
+
+  # Only a tag publishes. One job attaches every platform's installers to a
+  # draft release, so the signed Windows files go up and no two jobs race to
+  # create the release. It runs even when a platform failed: the others' work
+  # is kept, and the missing one can be re-cut.
+  publish:
+    name: Draft release
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: installers
+
+      - name: Attach the installers to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l installers
+          test -n "$(ls installers)"
+          # A re-run finds the draft already there; if the view misses it, the
+          # create says so and the upload below still lands on the existing one.
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "OSCAR ${GITHUB_REF_NAME#v}" --notes "" || echo "Release $GITHUB_REF_NAME exists already"
+          fi
+          gh release upload "$GITHUB_REF_NAME" installers/* --repo "$GITHUB_REPOSITORY" --clobber
