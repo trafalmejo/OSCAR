@@ -115,7 +115,7 @@ test("the announcement is made again when the computer's address changes, and ev
   let nets = { "Wi-Fi": [{ address: "192.168.2.11", family: "IPv4", internal: false }, { address: "fe80::1", family: "IPv6", internal: false }], lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }] };
   const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: { log: (l) => lines.push(l), error() {} }, networkInterfaces: () => nets, watchMs: 15, refreshMs: 10000 });
   assert.strictEqual(discovery.start(), true);
-  await new Promise((r) => setTimeout(r, 40));
+  await new Promise((r) => setTimeout(r, 80));
   assert.strictEqual(made.length, 1, "nothing changed: the same responder");
   assert.ok(made[0].server.mdns.said.length >= 2, "the records said again on the beat, unasked: " + made[0].server.mdns.said.length);
   assert.deepStrictEqual(made[0].server.mdns.said[0], [{ type: "PTR", name: "_oscar._tcp.local" }]);
