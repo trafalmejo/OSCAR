@@ -1593,3 +1593,18 @@ body.oscar-log-dragging iframe {
   font-size: 18px;
   font-weight: 600;
 }
+
+/* A widget only the OSCAR app can run: the badge on its block in the panel. */
+.oscar-block-app {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #ff3663;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}

@@ -797,8 +797,8 @@ Two widgets are about the phone an interface is opened on rather than
 about the rig. Both are laid out and addressed like any other widget; what
 they do depends on what is holding them.
 
-**Motion** sends the phone's sensors, each reading as its own stream on
-its own address under the widget's Message, at the rate you set (the latest
+**Motion** (app only) sends the phone's sensors, each reading as its own
+stream on its own address under the widget's Message, at the rate you set (the latest
 reading wins, so a sensor firing sixty times a second is twenty messages at
 a rate of 20). Tick the readings you want: orientation (alpha, beta, gamma,
 in degrees), acceleration (x, y, z in m/s², gravity taken out), acceleration
@@ -809,7 +809,11 @@ The box lists every stream it sends with the live values and the address
 beside each, so a glance at the phone says what is going where. Pages
 published before readings could be ticked separately keep their one Source
 on the plain Message. Nothing is shared between devices: a reading is one
-phone's own, and two phones on one surface are two streams. In the editor and on a laptop the box says "open on a
+phone's own, and two phones on one surface are two streams. It works in
+the OSCAR app only, and its block in the editor says so: a phone's browser
+could give some of it, but not the same on Android and iPhone, and OSCAR
+offers a widget in the browser only when both get it. In a browser, as in
+the editor, the box says "needs the OSCAR app". In the editor and on a laptop the box says "open on a
 phone". On an iPhone the sensors are handed over only after a tap, so the
 box is a button that asks until then; Android asks nothing.
 
@@ -820,19 +824,19 @@ is pressed. Its tooltip says what it is waiting for ("On /cue: light,
 vibrate"). A value above zero (or a bare message) is go; zero does nothing.
 Every message counts: two `/cue 1` are two cues, though a cue that lands
 while the phone is still buzzing from the last one rides on it. The light
-works everywhere, the editor included. Vibration works in the OSCAR app and
-in Android browsers, not in an iPhone's Safari. An Android browser vibrates
-as touch feedback, which the phone drops when touch feedback is off in its
-settings; the app vibrates as media does and gets through. Where a buzz is
-asked for that the page cannot give, the face says so and the light still
-lights.
+works everywhere, the editor included. Vibrate is app only: an iPhone's
+browser cannot, so it is not offered in browsers at all, and in one the
+face says "needs the app for vibration" while the light still lights. (In
+the app it vibrates as media does, which Android plays even with touch
+feedback switched off.)
 Through OSCAR Pro's public links, OSCAR hears for the phone and passes the
 state on, so feedback reaches a phone on mobile data too.
 
-Both are honest about plain `http`: a page OSCAR serves on the LAN is not a
-secure context, and browsers hold sensors and the wake lock back from one.
-The OSCAR app runs the same page in a secure context, which is what it is
-for.
+The rule behind both: a page OSCAR serves on the LAN is plain `http`, not a
+secure context, and browsers hold sensors, vibration and the wake lock back
+from one, each differently. OSCAR offers in a browser only what every phone's
+browser gives; the rest is the OSCAR app's, which runs the same page in a
+secure context with the phone's own hardware behind it.
 
 ## Arduino and other boards
 

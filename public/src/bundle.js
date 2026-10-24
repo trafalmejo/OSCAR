@@ -3970,7 +3970,7 @@ const feedback = {
       field("flash", "Light", "checkbox", { hint: "The light on the page lights up for a moment. Works everywhere, the editor included." }),
       field("flashColour", "Light colour", "text", { placeholder: "#ff3663" }),
       field("flashMs", "Lit for (ms)", "number", { min: 1, max: MS_MAX }),
-      field("vibrate", "Vibrate", "checkbox", { hint: "The phone buzzes. The OSCAR app, and Android browsers; a browser on an iPhone cannot." }),
+      field("vibrate", "Vibrate (app only)", "checkbox", { hint: "The phone buzzes. The OSCAR app only: a browser on an iPhone cannot, so it is not offered in browsers at all." }),
       field("vibrateMs", "Vibration (ms)", "number", { min: 1, max: MS_MAX }),
     ]),
 
@@ -4961,12 +4961,16 @@ module.exports = { incoming, follow };
  *                            widget that must act on each message exactly
  *                            once, and so must not listen with both ears.
  *   device                   the phone, where the host has one (optional):
- *                            { motion: { needsTap(), ask(), watch(kind, fn) },
+ *                            { app, motion: { needsTap(), ask(), watch(kind, fn) },
  *                            vibrate(ms), torch(on) }, each part optional
- *                            too. A served page gets the browser's
- *                            (public/src/device.js), the OSCAR app its own,
- *                            the editor none: a widget that wants the phone
- *                            says so on its box and does what it can.
+ *                            too. `app` is true only in the OSCAR app. A
+ *                            page in a browser gets none (what a browser
+ *                            offers differs between Android and iPhone, and
+ *                            OSCAR offers in browsers only what both get),
+ *                            the OSCAR app its own (public/src/device.js
+ *                            underneath), the editor none: a widget that
+ *                            wants the phone says so on its box and does
+ *                            what it can.
  *                            Nothing read from it may be sent from a
  *                            receive path; the rules below still hold.
  *   onShared(fn)             run fn(state) when another device changes what
@@ -6199,12 +6203,14 @@ const { NUMERIC_ARG_TYPES, toNumber } = require("../osc-args");
  * sending that reading on the plain Message, so nothing already on a wall
  * changes address (see datasetsOn).
  *
- * What the widget needs that the other widgets do not is the phone. It
- * asks its host for it through `ctx.device.motion` (the ctx contract in
- * index.js); a host that has none, the editor on a laptop, leaves the
- * widget saying so, and the designer lays it out and sets its address like
- * any other. iPhones hand the sensors over only after a tap, so until the
- * host says it is allowed the widget is a button that asks.
+ * What the widget needs that the other widgets do not is the phone, and
+ * only the OSCAR app offers it (`ctx.device.motion` with `device.app`, the
+ * ctx contract in index.js). A phone's browser could give some of it, but
+ * not the same on Android and on iPhone, and OSCAR offers a widget in the
+ * browser only when both get it: so in a browser, as in the editor, the
+ * box says the app is needed and the designer lays it out and sets its
+ * address like any other. iPhones hand the sensors over only after a tap,
+ * so until the app says it is allowed the widget is a button that asks.
  *
  * Nothing here is shared between devices, on purpose: a reading is one
  * phone's own, and two phones on one surface are two streams. Nothing is
@@ -6339,6 +6345,8 @@ const motion = {
   block: {
     label: "Motion",
     category: "IO Widgets",
+    // Offered to the OSCAR app only: the editor says so on the block.
+    app: true,
     icon:
       '<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" ' +
       'd="M17,1H7A2,2 0 0,0 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3A2,2 0 0,0 17,1M17,19H7V5H17V19M12,6' +
@@ -6420,7 +6428,7 @@ const motion = {
     let shown = "phone";
 
     function words() {
-      if (shown === "phone") return "open on a phone";
+      if (shown === "phone") return "needs the OSCAR app";
       if (shown === "tap") return "tap to enable motion";
       if (shown === "waiting") return "waiting for the sensor";
       return "";
@@ -6527,7 +6535,7 @@ const motion = {
         );
     }
 
-    if (!device) {
+    if (!device || !(ctx.device && ctx.device.app === true)) {
       show("phone");
     } else if (typeof device.needsTap === "function" && device.needsTap()) {
       show("tap");
@@ -22378,7 +22386,9 @@ function register(definition) {
     });
 
     editor.BlockManager.add(definition.name, {
-      label: definition.block.label,
+      // A widget the OSCAR app alone can run wears a badge, so nobody draws
+      // one for a browser and wonders.
+      label: definition.block.app ? definition.block.label + ' <span class="oscar-block-app" title="Works in the OSCAR app on a phone or tablet, not in a browser">App</span>' : definition.block.label,
       // GrapesJS 0.21+ no longer ships Font Awesome, so icons are inline SVG.
       media: definition.block.icon,
       category: definition.block.category,

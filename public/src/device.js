@@ -89,6 +89,8 @@ function browserDevice(win) {
   };
 
   return {
+    // Not the OSCAR app: the app's own device sets this true (oscar-app src/phone.js).
+    app: false,
     motion: motion,
     vibrate: function (ms) {
       if (typeof nav.vibrate !== "function") return false;

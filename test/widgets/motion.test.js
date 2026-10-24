@@ -9,6 +9,7 @@ const { fakeElement, fakeContext } = require("../helpers/fake-dom");
 /** A phone's sensors as a host offers them: readings arrive when the test says. */
 function fakePhone(options) {
   const phone = {
+    app: !(options && options.app === false),
     watching: [],
     asked: 0,
     allow: !options || options.allow !== false,
@@ -47,12 +48,18 @@ function mountWith(phone, overrides) {
 const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 const sentAs = (ctx) => ctx.sent.map((m) => [m.address, m.args.map((a) => a.value)]);
 
-test("on a laptop the box says to open it on a phone, lists what it would send and where, and sends nothing", () => {
+test("on a laptop, and in a phone's browser, the box says the app is needed, lists what it would send and where, and sends nothing", () => {
   const { el, ctx, detach } = mountWith(null, { message: "/tilt", sendAcceleration: true });
-  assert.strictEqual(el.textContent, "Motion · open on a phone\norientation  → /tilt/orientation\nacceleration  → /tilt/acceleration");
+  assert.strictEqual(el.textContent, "Motion · needs the OSCAR app\norientation  → /tilt/orientation\nacceleration  → /tilt/acceleration");
   assert.strictEqual(el.getAttribute("data-motion"), "phone");
   assert.deepStrictEqual(ctx.sent, []);
   detach();
+  // A browser's device, sensors and all, is not the app's: not offered, the same on every phone.
+  const browser = mountWith(fakePhone({ app: false }));
+  assert.strictEqual(browser.el.getAttribute("data-motion"), "phone");
+  assert.deepStrictEqual(browser.ctx.device.watching, [], "the browser's sensors are left alone");
+  browser.detach();
+  assert.strictEqual(motion.block.app, true, "the editor brands the block");
 });
 
 test("on a phone every ticked reading is watched at once, and each goes out on its own address at the rate asked for", async () => {
