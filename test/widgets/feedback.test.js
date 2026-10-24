@@ -26,7 +26,8 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 test("a message at its address vibrates the phone and flashes the box; nothing goes back out", async () => {
   const phone = fakePhone();
   const { el, ctx, detach } = mountWith(phone, { message: "/cue", vibrateMs: 30, flashMs: 20 });
-  assert.strictEqual(el.textContent, "Feedback · on /cue: vibrate, flash");
+  assert.strictEqual(el.textContent, "Cue");
+  assert.strictEqual(el.getAttribute("title"), "On /cue: light, vibrate.");
   assert.strictEqual(el.style.properties["--oscar-flash"], "#ff3663");
 
   ctx.receive("/cue", [1]);
@@ -50,10 +51,10 @@ test("a message at its address vibrates the phone and flashes the box; nothing g
 test("a flood of cues, one every frame, is one long vibration, not a motor restarted every frame", async () => {
   const phone = fakePhone();
   const { ctx, detach } = mountWith(phone, { vibrateMs: 40, flashMs: 40 });
-  for (let i = 0; i < 10; i++) ctx.receive("/feedback", [1]);
+  for (let i = 0; i < 10; i++) ctx.receive("/cue", [1]);
   assert.deepStrictEqual(phone.vibrated, [40], "the first cue vibrates, the rest ride on it");
   await tick(50);
-  ctx.receive("/feedback", [1]);
+  ctx.receive("/cue", [1]);
   assert.deepStrictEqual(phone.vibrated, [40, 40], "after it ends, the next cue is a new one");
   detach();
 });
@@ -61,12 +62,12 @@ test("a flood of cues, one every frame, is one long vibration, not a motor resta
 test("the torch follows the value: on above zero, off at zero, and off again when the page goes", async () => {
   const phone = fakePhone();
   const { ctx, detach } = mountWith(phone, { torch: true, vibrate: false, flash: false });
-  ctx.receive("/feedback", [1]);
-  ctx.receive("/feedback", [1]);
+  ctx.receive("/cue", [1]);
+  ctx.receive("/cue", [1]);
   assert.deepStrictEqual(phone.torched, [true], "said once, not on every message");
-  ctx.receive("/feedback", [0]);
+  ctx.receive("/cue", [0]);
   assert.deepStrictEqual(phone.torched, [true, false]);
-  ctx.receive("/feedback", [0.5]);
+  ctx.receive("/cue", [0.5]);
   detach();
   assert.deepStrictEqual(phone.torched, [true, false, true, false], "a torch left on by a page that is gone would stay on");
 });
@@ -98,7 +99,7 @@ test("on a page OSCAR serves, the cue arrives as a state: each new one acts once
   assert.deepStrictEqual(phone.vibrated, [10, 10]);
   // With OSCAR hearing for it, the page's own ear is shut: no double buzz.
   await tick(15);
-  ctx.receive("/feedback", [1]);
+  ctx.receive("/cue", [1]);
   assert.deepStrictEqual(phone.vibrated, [10, 10]);
   detach();
 });
@@ -108,7 +109,7 @@ test("on a page that reads the rig itself, a state from another device is not a 
   const { ctx, detach } = mountWith(phone, { flash: false });
   ctx.receiveShared({ value: 1, at: 5000 });
   assert.deepStrictEqual(phone.vibrated, []);
-  ctx.receive("/feedback", [1]);
+  ctx.receive("/cue", [1]);
   assert.deepStrictEqual(phone.vibrated, [200]);
   detach();
 });
@@ -125,20 +126,23 @@ test("hear() is what OSCAR follows the rig with for the pages it serves: the val
 
 test("where the host cannot give what is asked for, the box says so and still flashes", () => {
   const { el, ctx, detach } = mountWith(null, { torch: true, flashMs: 5000 });
-  assert.strictEqual(el.textContent, "Feedback · on /feedback: flash · needs the app for vibration and torch");
-  ctx.receive("/feedback", [1]);
+  assert.strictEqual(el.textContent, "Cue · needs the app for vibration and torch");
+  assert.strictEqual(el.getAttribute("title"), "On /cue: light.");
+  ctx.receive("/cue", [1]);
   assert.strictEqual(ctx.classes[FLASH_CLASS], true);
   ctx.edit("torch", false);
   ctx.edit("vibrate", false);
-  assert.strictEqual(el.textContent, "Feedback · on /feedback: flash");
-  ctx.edit("message", "/cue");
+  assert.strictEqual(el.textContent, "Cue");
+  ctx.edit("message", "/go");
   ctx.edit("flash", false);
-  assert.strictEqual(el.textContent, "Feedback · on /cue: nothing");
+  assert.strictEqual(el.getAttribute("title"), "On /go: nothing.");
   const browser = fakePhone({ torch: false });
   const second = mountWith(browser, { torch: true, label: "Lights", message: "/go" });
-  assert.strictEqual(second.el.textContent, "Lights · on /go: vibrate, flash · needs the app for torch");
+  assert.strictEqual(second.el.textContent, "Lights · needs the app for torch");
+  assert.strictEqual(second.el.getAttribute("title"), "On /go: light, vibrate.");
   const app = mountWith(fakePhone(), { torch: true, label: "" });
-  assert.strictEqual(app.el.textContent, "on /feedback: vibrate, flash, torch");
+  assert.strictEqual(app.el.textContent, "");
+  assert.strictEqual(app.el.getAttribute("title"), "On /cue: light, vibrate, torch.");
   app.detach();
   second.detach();
   detach();
@@ -147,9 +151,9 @@ test("where the host cannot give what is asked for, the box says so and still fl
 test("Enabled off, or Listen off, makes it deaf", () => {
   const phone = fakePhone();
   const off = mountWith(phone, { enabled: false });
-  off.ctx.receive("/feedback", [1]);
+  off.ctx.receive("/cue", [1]);
   const deaf = mountWith(phone, { listen: false });
-  deaf.ctx.receive("/feedback", [1]);
+  deaf.ctx.receive("/cue", [1]);
   assert.deepStrictEqual(phone.vibrated, []);
   off.detach();
   deaf.detach();

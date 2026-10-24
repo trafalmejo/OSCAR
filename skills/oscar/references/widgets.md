@@ -168,17 +168,17 @@ Defaults on the wire: `data-gjs-port="7000"`, `data-gjs-message="/motion"`, `dat
 
 Tag: `<div class="oscar-feedback" id="..." data-gjs-dmode="flow" ...>`
 
-Defaults on the wire: `data-gjs-message="/feedback"`.
+Defaults on the wire: `data-gjs-message="/cue"`.
 
 | Attribute | Panel label | Type | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `data-gjs-label` | Label | text | `Feedback` | |
-| `data-gjs-vibrate` | Vibrate | checkbox | `true` | Android phones and the OSCAR app. A browser on an iPhone cannot. |
+| `data-gjs-label` | Label | text | `Cue` | |
+| `data-gjs-flash` | Light | checkbox | `true` | The light on the page lights up for a moment. Works everywhere, the editor included. |
+| `data-gjs-flash-colour` | Light colour | text | `#ff3663` | |
+| `data-gjs-flash-ms` | Lit for (ms) | number | `300` | |
+| `data-gjs-vibrate` | Vibrate | checkbox | `true` | The phone buzzes. The OSCAR app, and Android browsers; a browser on an iPhone cannot. |
 | `data-gjs-vibrate-ms` | Vibration (ms) | number | `200` | |
-| `data-gjs-flash` | Flash the box | checkbox | `true` | |
-| `data-gjs-flash-colour` | Flash colour | text | `#ff3663` | |
-| `data-gjs-flash-ms` | Flash (ms) | number | `300` | |
-| `data-gjs-torch` | Torch | checkbox | `false` | The OSCAR app only: on above zero, off at zero. |
+| `data-gjs-torch` | Torch | checkbox | `false` | The camera light, the OSCAR app only: on above zero, off at zero. |
 
 ## OSC section
 

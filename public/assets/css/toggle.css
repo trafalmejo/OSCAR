@@ -470,9 +470,10 @@
   }
 
   /* --- oscar-motion, oscar-feedback -------------------------------------- */
-  /* The phone's own widgets: a box that says what it is doing. Motion reads
-     out the sensor; feedback flashes. Both wear the card's colours, so they
-     sit beside a meter without drawing the eye until something happens. */
+  /* The phone's own widgets. Motion is a box that reads out the sensors;
+     the feedback cue is a light with its label, dark until a cue lights it.
+     Both wear the card's colours, so they sit beside a meter without drawing
+     the eye until something happens. */
   .oscar-motion,
   .oscar-feedback {
     display: inline-flex;
@@ -510,13 +511,33 @@
     line-height: 1.5;
   }
 
+  /* The light: a lamp before the label, lit in the cue's colour with a glow. */
   .oscar-feedback {
     --oscar-flash: #ff3663;
-    transition: background-color 0.15s, color 0.15s;
+    justify-content: flex-start;
+    gap: 10px;
+    min-width: 0;
+    padding: 8px 14px 8px 10px;
+    border-radius: 999px;
+    transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
   }
-
+  .oscar-feedback::before {
+    content: "";
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--osc-foreground) 25%, transparent);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+    transition: background-color 0.1s, box-shadow 0.1s;
+  }
   .oscar-feedback.oscar-flash {
     background-color: var(--oscar-flash);
     color: #fff;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--oscar-flash) 35%, transparent);
+  }
+  .oscar-feedback.oscar-flash::before {
+    background: #fff;
+    box-shadow: 0 0 12px 4px rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(0, 0, 0, 0.1);
   }
 }

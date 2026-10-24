@@ -791,7 +791,7 @@ no asset picker (you type the path or URL), and it shows still images only --
 no video or animated previews, and it does not fetch thumbnails from
 Resolume or any other software.
 
-## The phone itself: Motion and Device feedback
+## The phone itself: Motion and Feedback cue
 
 Two widgets are about the phone an interface is opened on rather than
 about the rig. Both are laid out and addressed like any other widget; what
@@ -813,10 +813,11 @@ phone's own, and two phones on one surface are two streams. In the editor and on
 phone". On an iPhone the sensors are handed over only after a tap, so the
 box is a button that asks until then; Android asks nothing.
 
-**Device feedback** listens on an address and makes the phone react: a
-vibration, a flash of colour over its own box, the torch. It is not a
-button: nothing happens when it is pressed, and its box says what it is
-waiting for ("on /cue: vibrate, flash"). A value above
+**Feedback cue** is a light on the page. It listens on an address and, when
+a message arrives, lights up in its colour for the time you set, buzzes the
+phone, and switches the camera torch on or off, each one a checkbox. It is
+not a button: nothing happens when it is pressed. Its tooltip says what it
+is waiting for ("On /cue: light, vibrate, torch"). A value above
 zero (or a bare message) is go, zero is stop, which only the torch needs.
 Every message counts: two `/cue 1` are two vibrations. The flash works everywhere,
 the editor included. Vibration works in Android browsers and in the OSCAR
