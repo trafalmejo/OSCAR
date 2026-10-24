@@ -3982,7 +3982,7 @@ const feedback = {
       field("flash", "Light", "checkbox", { hint: "The light on the page lights up for a moment. Works everywhere, the editor included." }),
       field("flashColour", "Light colour", "text", { placeholder: "#ff3663" }),
       field("flashMs", "Lit for (ms)", "number", { min: 1, max: MS_MAX }),
-      field("vibrate", "Vibrate (app only)", "checkbox", { hint: "The phone buzzes. The OSCAR app only: a browser on an iPhone cannot, so it is not offered in browsers at all." }),
+      field("vibrate", "Vibrate (Android only)", "checkbox", { hint: "The phone buzzes. In a browser only Android phones vibrate, an iPhone's Safari cannot; the OSCAR app vibrates on both." }),
       field("vibrateMs", "Vibration (ms)", "number", { min: 1, max: MS_MAX }),
     ]),
 

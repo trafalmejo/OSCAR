@@ -828,19 +828,20 @@ is pressed. Its tooltip says what it is waiting for ("On /cue: light,
 vibrate"). A value above zero (or a bare message) is go; zero does nothing.
 Every message counts: two `/cue 1` are two cues, though a cue that lands
 while the phone is still buzzing from the last one rides on it. The light
-works everywhere, the editor included. Vibrate is app only: an iPhone's
-browser cannot, so it is not offered in browsers at all, and in one the
-face says "needs the app for vibration" while the light still lights. (In
-the app it vibrates as media does, which Android plays even with touch
-feedback switched off.)
+works everywhere, the editor included. Vibrate is Android only in a
+browser: an iPhone's Safari cannot, and on one the face says "needs the
+app for vibration" while the light still lights. The OSCAR app vibrates on
+both platforms, as media does on Android, so it plays even with touch
+feedback switched off.
 Through OSCAR Pro's public links, OSCAR hears for the phone and passes the
 state on, so feedback reaches a phone on mobile data too.
 
 The rule behind both: a page OSCAR serves on the LAN is plain `http`, not a
 secure context, and browsers hold sensors, vibration and the wake lock back
-from one, each differently. OSCAR offers in a browser only what every phone's
-browser gives; the rest is the OSCAR app's, which runs the same page in a
-secure context with the phone's own hardware behind it.
+from one, each differently. Motion follows the rule that OSCAR offers in a
+browser only what every phone's browser gives, so it is the OSCAR app's;
+Vibrate is offered with its limit named (Android only). The app runs the
+same page in a secure context with the phone's own hardware behind it.
 
 ## Arduino and other boards
 

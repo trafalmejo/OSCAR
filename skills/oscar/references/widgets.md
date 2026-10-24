@@ -159,7 +159,7 @@ Defaults on the wire: `data-gjs-message="/cue"`.
 | `data-gjs-flash` | Light | checkbox | `true` | The light on the page lights up for a moment. Works everywhere, the editor included. |
 | `data-gjs-flash-colour` | Light colour | text | `#ff3663` | |
 | `data-gjs-flash-ms` | Lit for (ms) | number | `300` | |
-| `data-gjs-vibrate` | Vibrate (app only) | checkbox | `true` | The phone buzzes. The OSCAR app only: a browser on an iPhone cannot, so it is not offered in browsers at all. |
+| `data-gjs-vibrate` | Vibrate (Android only) | checkbox | `true` | The phone buzzes. In a browser only Android phones vibrate, an iPhone's Safari cannot; the OSCAR app vibrates on both. |
 | `data-gjs-vibrate-ms` | Vibration (ms) | number | `200` | |
 
 ## OSC section
