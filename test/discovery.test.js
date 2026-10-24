@@ -17,10 +17,14 @@ function fakeBonjour() {
       published: [],
       unpublished: false,
       destroyed: false,
+      server: { mdns: { said: [], respond(records, cb) { this.said.push(records); if (cb) cb(); } } },
       publish(options) {
         const handlers = {};
         const service = {
           options,
+          records() {
+            return [{ type: "PTR", name: "_oscar._tcp.local" }];
+          },
           on(event, fn) {
             handlers[event] = fn;
           },
@@ -113,6 +117,8 @@ test("the announcement is made again when the computer's address changes, and ev
   assert.strictEqual(discovery.start(), true);
   await new Promise((r) => setTimeout(r, 40));
   assert.strictEqual(made.length, 1, "nothing changed: the same responder");
+  assert.ok(made[0].server.mdns.said.length >= 2, "the records said again on the beat, unasked: " + made[0].server.mdns.said.length);
+  assert.deepStrictEqual(made[0].server.mdns.said[0], [{ type: "PTR", name: "_oscar._tcp.local" }]);
   // The DHCP lease moves the computer.
   nets = { "Wi-Fi": [{ address: "192.168.2.66", family: "IPv4", internal: false }] };
   await new Promise((r) => setTimeout(r, 40));
