@@ -800,9 +800,12 @@ function register(definition) {
       },
     });
 
+    // A widget the OSCAR app alone can run is not in the palette unless
+    // asked for (lib/features.js APP_WIDGETS); its type stays registered, so
+    // a project that already has one still opens. Offered, it wears a badge,
+    // so nobody draws one for a browser and wonders.
+    if (definition.block.app && !features.APP_WIDGETS) return;
     editor.BlockManager.add(definition.name, {
-      // A widget the OSCAR app alone can run wears a badge, so nobody draws
-      // one for a browser and wonders.
       label: definition.block.app ? definition.block.label + ' <span class="oscar-block-app" title="Works in the OSCAR app on a phone or tablet, not in a browser">App</span>' : definition.block.label,
       // GrapesJS 0.21+ no longer ships Font Awesome, so icons are inline SVG.
       media: definition.block.icon,

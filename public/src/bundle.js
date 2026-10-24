@@ -760,6 +760,18 @@ const DEFAULTS = {
    */
   DISCOVERY: true,
 
+  /**
+   * Widgets only the OSCAR app can run (Motion: the phone's sensors) in the
+   * editor's palette, the assistant's widget list and the skill reference.
+   *
+   * Off (2026-10-23), by decision: a widget nobody can draw for a browser
+   * does not belong in a browser-first editor. The widget itself stays
+   * registered, so the app's own page (Settings → Send device sensors in
+   * the OSCAR app, which is where the sensors are reached) and any page
+   * that already carries one keep working. On, the block comes back with
+   * its "App" badge, for interfaces designed around the phone.
+   */
+  APP_WIDGETS: false,
 };
 
 function isOn(name) {
@@ -22385,9 +22397,12 @@ function register(definition) {
       },
     });
 
+    // A widget the OSCAR app alone can run is not in the palette unless
+    // asked for (lib/features.js APP_WIDGETS); its type stays registered, so
+    // a project that already has one still opens. Offered, it wears a badge,
+    // so nobody draws one for a browser and wonders.
+    if (definition.block.app && !features.APP_WIDGETS) return;
     editor.BlockManager.add(definition.name, {
-      // A widget the OSCAR app alone can run wears a badge, so nobody draws
-      // one for a browser and wonders.
       label: definition.block.app ? definition.block.label + ' <span class="oscar-block-app" title="Works in the OSCAR app on a phone or tablet, not in a browser">App</span>' : definition.block.label,
       // GrapesJS 0.21+ no longer ships Font Awesome, so icons are inline SVG.
       media: definition.block.icon,

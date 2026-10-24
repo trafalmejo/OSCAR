@@ -797,8 +797,8 @@ Two widgets are about the phone an interface is opened on rather than
 about the rig. Both are laid out and addressed like any other widget; what
 they do depends on what is holding them.
 
-**Motion** (app only) sends the phone's sensors, each reading as its own
-stream on its own address under the widget's Message, at the rate you set (the latest
+**Motion** sends the phone's sensors, each reading as its own stream on
+its own address under the widget's Message, at the rate you set (the latest
 reading wins, so a sensor firing sixty times a second is twenty messages at
 a rate of 20). Tick the readings you want: orientation (alpha, beta, gamma,
 in degrees), acceleration (x, y, z in m/s², gravity taken out), acceleration
@@ -810,10 +810,14 @@ beside each, so a glance at the phone says what is going where. Pages
 published before readings could be ticked separately keep their one Source
 on the plain Message. Nothing is shared between devices: a reading is one
 phone's own, and two phones on one surface are two streams. It works in
-the OSCAR app only, and its block in the editor says so: a phone's browser
-could give some of it, but not the same on Android and iPhone, and OSCAR
-offers a widget in the browser only when both get it. In a browser, as in
-the editor, the box says "needs the OSCAR app". In the editor and on a laptop the box says "open on a
+the OSCAR app only: a phone's browser could give some of it, but not the
+same on Android and iPhone, and OSCAR offers a widget in the browser only
+when both get it. So it is not in the editor's palette (the `APP_WIDGETS`
+switch in lib/features.js puts it back, with an "App" badge): the way to
+the sensors is the OSCAR app itself, Settings → Send device sensors, which
+makes a page with this widget alone and sends every reading under
+`/device`. A page that already carries one keeps working; in a browser, as
+in the editor, its box says "needs the OSCAR app". In the editor and on a laptop the box says "open on a
 phone". On an iPhone the sensors are handed over only after a tap, so the
 box is a button that asks until then; Android asks nothing.
 

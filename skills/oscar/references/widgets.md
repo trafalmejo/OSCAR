@@ -28,7 +28,6 @@ Rules the validator holds you to:
 | oscar-number-input | `<input type="number" class="oscar-number-input" enterkeyhint="send">` | yes | yes | yes |
 | oscar-dropdown | `<select class="oscar-dropdown">` | yes | yes | yes |
 | oscar-media-browser | `<div class="oscar-media-browser">` | yes | yes | no |
-| oscar-motion | `<div class="oscar-motion">` | yes | no | no |
 | oscar-feedback | `<div class="oscar-feedback">` | no | yes | no |
 
 ### oscar-button
@@ -147,22 +146,6 @@ Defaults on the wire: `data-gjs-port="7000"`, `data-gjs-message="/clip"`, `data-
 | `data-gjs-items` | Items | text | `Clip 1; Clip 2; Clip 3; Clip 4; Clip 5; Clip 6` | |
 | `data-gjs-columns` | Columns | number | `3` | |
 | `data-gjs-show-labels` | Show labels | checkbox | `true` | |
-
-### oscar-motion
-
-Tag: `<div class="oscar-motion" id="..." data-gjs-dmode="flow" ...>`
-
-Defaults on the wire: `data-gjs-port="7000"`, `data-gjs-message="/motion"`, `data-gjs-arg-type="f"`.
-
-| Attribute | Panel label | Type | Default | Meaning |
-| --- | --- | --- | --- | --- |
-| `data-gjs-label` | Label | text | `Motion` | |
-| `data-gjs-send-orientation` | Orientation | checkbox | `true` | Which way the phone is held, in degrees: alpha (turn around the vertical, 0 to 360), beta (tilt front to back, -180 to 180), gamma (tilt side to side, -90 to 90). Sent on Message/orientation, as 3 values. |
-| `data-gjs-send-acceleration` | Acceleration | checkbox | `false` | How the phone is being moved, in m/s², gravity taken out: zero when still, a spike on a shake. Sent on Message/acceleration, as 3 values. |
-| `data-gjs-send-gravity` | Acceleration with gravity | checkbox | `false` | The same with gravity left in: a steady tilt reading, about 9.8 on whichever axis points down. Sent on Message/gravity, as 3 values. |
-| `data-gjs-send-rotation` | Rotation rate | checkbox | `false` | How fast the phone is turning, in degrees a second around each axis: zero when still. Sent on Message/rotation, as 3 values. |
-| `data-gjs-send-heading` | Compass heading | checkbox | `false` | Degrees from north, 0 to 360, one value. Needs a phone with a compass, and a browser that shares it. Sent on Message/heading, as 1 value. |
-| `data-gjs-rate` | Rate (per second) | number | `20` | Messages a second at most, per reading. The latest reading wins. |
 
 ### oscar-feedback
 
