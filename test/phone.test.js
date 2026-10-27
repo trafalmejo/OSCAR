@@ -18,6 +18,7 @@ const vm = require("node:vm");
 const express = require("express");
 
 const { PublishedStore, markServed, manifestFor } = require("../lib/published");
+const { protocolsOf } = require("../lib/protocols");
 const { ProjectStore } = require("../lib/projects");
 const { socketOrigin, deviceName } = require("../lib/activity");
 const createRouter = require("../routes/index");
@@ -131,11 +132,11 @@ test("GET /show lists what is served, by name, leaving out what is switched off,
     const res = await fetch(base + "/show");
     assert.strictEqual(res.headers.get("cache-control"), "no-store");
     assert.deepStrictEqual(await res.json(), [
-      { id: "lobby", path: "/show/lobby", name: "lobby" },
-      { id: "main-stage", path: "/show/main-stage", name: "Main Stage" },
+      { id: "lobby", path: "/show/lobby", name: "lobby", protocols: protocolsOf(PAGE) },
+      { id: "main-stage", path: "/show/main-stage", name: "Main Stage", protocols: protocolsOf(PAGE) },
     ]);
     // Nothing the editor's list carries: no project id, no stamp, no devices.
-    for (const row of await (await fetch(base + "/show")).json()) assert.deepStrictEqual(Object.keys(row).sort(), ["id", "name", "path"]);
+    for (const row of await (await fetch(base + "/show")).json()) assert.deepStrictEqual(Object.keys(row).sort(), ["id", "name", "path", "protocols"]);
   });
 });
 

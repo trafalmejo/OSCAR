@@ -508,7 +508,7 @@ module.exports = function createRouter({
       res.json(
         pages
           .filter((page) => page.access !== "off")
-          .map((page) => ({ id: page.id, path: "/show/" + page.id, name: page.name || page.id }))
+          .map((page) => ({ id: page.id, path: "/show/" + page.id, name: page.name || page.id, protocols: page.protocols || [] }))
       );
     } catch (err) {
       console.error("Could not list the served interfaces:", err.message);
