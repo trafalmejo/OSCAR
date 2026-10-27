@@ -157,7 +157,7 @@ test("publish, open, list, publish again, unpublish", async () => {
 
     const list = await (await fetch(base + "/published")).json();
     assert.deepStrictEqual(list.map((p) => [p.id, p.path]), [["main-stage", "/show/main-stage"]]);
-    assert.ok(Array.isArray(list[0].protocols), "what the page drives, for the phone's list (lib/protocols.js says what)");
+    assert.ok(Array.isArray(list[0].protocols), "what the page speaks, for the phone's list (lib/protocols.js says what)");
     const shown = await (await fetch(base + "/show")).json();
     assert.deepStrictEqual(shown.map((p) => Array.isArray(p.protocols)), [true], "said on the public list too");
 

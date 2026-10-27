@@ -18,7 +18,7 @@ function tag(name, id, overrides) {
   return "<" + widget.tag + " " + text + "></" + widget.tag + ">";
 }
 
-test("a page's protocols are what its switched-on widgets send: osc, midi, dmx, in that order", () => {
+test("a page's protocols are what its switched-on widgets send or listen on: osc, midi, dmx, in that order", () => {
   assert.deepStrictEqual(ORDER, ["osc", "midi", "dmx"]);
   const osc = tag("oscar-button", "go", { message: "/go" });
   assert.deepStrictEqual(protocolsOf("<body>" + osc + "</body>"), ["osc"]);
@@ -27,11 +27,16 @@ test("a page's protocols are what its switched-on widgets send: osc, midi, dmx, 
   const midi = tag("oscar-slider", "f2", { oscEnabled: false, midiEnabled: true, midiPort: "any", midiChannel: 1, midiKind: "cc", midiNumber: 1 });
   assert.deepStrictEqual(protocolsOf("<body>" + dmx + midi + osc + "</body>"), ["osc", "midi", "dmx"], "every protocol found, in the fixed order");
 
-  // Switched off, or receive-only, counts for nothing.
-  const off = tag("oscar-button", "mute", { enabled: false, message: "/mute" });
+  // Listening counts too: a meter is an OSC widget, a pad that follows a controller is a MIDI one.
   const meter = tag("oscar-meter", "level", { message: "/level" });
-  const cue = tag("oscar-feedback", "cue", { message: "/cue" });
-  assert.deepStrictEqual(protocolsOf("<body>" + off + meter + cue + "</body>"), []);
+  assert.deepStrictEqual(protocolsOf("<body>" + meter + "</body>"), ["osc"]);
+  const mirror = tag("oscar-button", "pad1", { oscEnabled: false, midiEnabled: false, midiListen: true, midiInPort: "LPD8", midiChannel: 1, midiType: "note", midiNumber: 40 });
+  assert.deepStrictEqual(protocolsOf("<body>" + mirror + "</body>"), ["midi"]);
+
+  // Switched off, or set to neither send nor listen, counts for nothing.
+  const off = tag("oscar-button", "mute", { enabled: false, message: "/mute" });
+  const deaf = tag("oscar-button", "idle", { oscEnabled: false, listen: false });
+  assert.deepStrictEqual(protocolsOf("<body>" + off + deaf + "</body>"), []);
   assert.deepStrictEqual(protocolsOf(""), []);
   assert.deepStrictEqual(protocolsOf("<body><p>no widgets</p></body>"), []);
 });
