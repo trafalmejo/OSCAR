@@ -28,7 +28,7 @@ function setUp(extra) {
     now: () => time,
   }, extra || {}));
   const heard = [];
-  for (const event of ["connect", "disconnect", "state:all", "state:changed", "osc:in", "relay:latency", "relay:full"]) {
+  for (const event of ["connect", "disconnect", "state:all", "state:changed", "osc:in", "relay:latency", "relay:full", "relay:host"]) {
     socket.on(event, (payload) => heard.push(payload === undefined ? [event] : [event, payload]));
   }
   function advance(ms) {
@@ -61,11 +61,19 @@ test("connected means OSCAR is there, not merely the relay", () => {
   assert.strictEqual(socket.connected, false, "the relay alone is nobody to talk to");
   ws().say({ t: "host", online: true });
   assert.strictEqual(socket.connected, true);
-  assert.deepStrictEqual(heard, [["connect"]]);
+  assert.deepStrictEqual(heard, [["relay:host", true], ["connect"]]);
   assert.deepStrictEqual(ws().sent[0], { t: "sync" }, "and the first thing asked for is what everything is showing");
   ws().say({ t: "host", online: false });
   assert.strictEqual(socket.connected, false);
-  assert.deepStrictEqual(heard[1], ["disconnect"]);
+  assert.deepStrictEqual(heard.slice(2), [["relay:host", false], ["disconnect"]]);
+});
+
+test("a page that opens while OSCAR is away is told so, though nothing has changed for it", () => {
+  const { socket, ws, heard } = setUp();
+  ws().open();
+  ws().say({ t: "host", online: false });
+  assert.strictEqual(socket.connected, false);
+  assert.deepStrictEqual(heard, [["relay:host", false]], "no disconnect, there was no connection; the relay's word is passed on so the page can say OSCAR is away instead of connecting forever");
 });
 
 test("all a page can say is: this control, this state", () => {

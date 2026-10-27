@@ -658,6 +658,11 @@ function startOnRelay(env, show) {
   bridge.socket.on("connect", function () {
     show("online", "Connected.");
   });
+  // The relay answered and OSCAR is not there: said at once, or the page
+  // would read "Connecting..." for as long as OSCAR stays away.
+  bridge.socket.on("relay:host", function (online) {
+    if (!online) show("offline", away);
+  });
   bridge.socket.on("disconnect", function () {
     show("offline", bridge.socket.full ? "A lot of people are playing with this right now. It will let you in as soon as there is room." : away);
   });

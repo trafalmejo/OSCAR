@@ -22,7 +22,11 @@
  * stays inside the relay's rate limit.
  *
  * "Connected" means OSCAR is at the other end, not merely the relay: a
- * control that lights up with nobody listening would be a lie.
+ * control that lights up with nobody listening would be a lie. What the
+ * relay says about OSCAR is also passed on as it is, as "relay:host" with
+ * true or false, every time it is said: a page that opens while OSCAR is
+ * away hears nothing else, since "disconnect" has nothing to change, and
+ * would otherwise say "connecting" for as long as OSCAR stays away.
  *
  * A visitor's pass (the relay's bot check, a cookie good for twelve hours)
  * is asked for when the socket opens. A page left open on a wall outlives
@@ -206,7 +210,10 @@ function relaySocket(url, deps) {
         return;
       }
       if (!message || typeof message !== "object") return;
-      if (message.t === "host") setOnline(message.online === true);
+      if (message.t === "host") {
+        fire("relay:host", message.online === true);
+        setOnline(message.online === true);
+      }
       else if (message.t === "all") fire("state:all", message.states && typeof message.states === "object" ? message.states : {});
       else if (message.t === "state" && typeof message.w === "string") fire("state:changed", { id: message.w, state: message.s });
       else if (message.t === "osc" && typeof message.a === "string") fire("osc:in", { address: message.a, args: Array.isArray(message.v) ? message.v : [] });
