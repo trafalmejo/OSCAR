@@ -12,8 +12,9 @@ const { createDiscovery, instanceName, addressesOf, SERVICE_TYPE } = require("..
 
 function fakeBonjour() {
   const made = [];
-  function Bonjour() {
+  function Bonjour(options, onError) {
     const instance = {
+      onError, // where bonjour-service sends its socket's errors; without one it rethrows them
       published: [],
       unpublished: false,
       destroyed: false,
@@ -107,6 +108,21 @@ test("a network that refuses, or a library that throws, costs one line and nothi
   assert.strictEqual(throwing.silent, "not started");
   // And without the library at all (a test, or a build without it), nothing.
   assert.strictEqual(createDiscovery({ hostname: "x", httpPort: 1, socketPort: 2, env: {}, log }).start(), false);
+});
+
+test("a failed multicast send is a line in the log, not the end of the server", () => {
+  // bonjour-service hands its socket's errors to a callback given at
+  // construction, and rethrows them when there is none: an EHOSTUNREACH on
+  // one announcement took a whole OSCAR down on 2026-10-28.
+  const lines = [];
+  const log = { log() {}, error: (line) => lines.push(line) };
+  const { Bonjour, made } = fakeBonjour();
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log });
+  assert.strictEqual(discovery.start(), true);
+  assert.strictEqual(typeof made[0].onError, "function", "the library is given somewhere to send socket errors");
+  made[0].onError(new Error("send EHOSTUNREACH 224.0.0.251:5353"));
+  assert.deepStrictEqual(lines, ["  Not announcing on the network: send EHOSTUNREACH 224.0.0.251:5353"]);
+  assert.strictEqual(discovery.silent, null, "still announcing: the next beat may well get through");
 });
 
 test("the announcement is made again when the computer's address changes, and every so often regardless", async () => {
