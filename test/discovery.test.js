@@ -14,6 +14,7 @@ function fakeBonjour() {
   const made = [];
   function Bonjour(options, onError) {
     const instance = {
+      options, // what the responder was opened with: the interface to announce on, and the bind address
       onError, // where bonjour-service sends its socket's errors; without one it rethrows them
       published: [],
       unpublished: false,
@@ -125,12 +126,27 @@ test("a failed multicast send is a line in the log, not the end of the server", 
   assert.strictEqual(discovery.silent, null, "still announcing: the next beat may well get through");
 });
 
+test("the responder is opened on OSCAR's own interface, bound to every address, and on none while there is no network", () => {
+  // Left to itself the library announces on "0.0.0.0", which is whatever
+  // interface the system likes best: on Windows a VPN's unplugged tunnel
+  // adapter at metric 1 took every announcement on 2026-10-28.
+  const { Bonjour, made } = fakeBonjour();
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: quiet, address: () => "192.168.2.66" });
+  assert.strictEqual(discovery.start(), true);
+  assert.deepStrictEqual(made[0].options, { interface: "192.168.2.66", bind: "0.0.0.0" });
+
+  const alone = fakeBonjour();
+  createDiscovery({ Bonjour: alone.Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: quiet, address: () => "127.0.0.1" }).start();
+  assert.strictEqual(alone.made[0].options, undefined, "no network yet: the library's own choice, until an address comes");
+});
+
 test("the announcement is made again when the computer's address changes, and every so often regardless", async () => {
   const { Bonjour, made } = fakeBonjour();
   const lines = [];
   let nets = { "Wi-Fi": [{ address: "192.168.2.11", family: "IPv4", internal: false }, { address: "fe80::1", family: "IPv6", internal: false }], lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }] };
-  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: { log: (l) => lines.push(l), error() {} }, networkInterfaces: () => nets, watchMs: 15, refreshMs: 10000 });
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: { log: (l) => lines.push(l), error() {} }, networkInterfaces: () => nets, address: () => nets["Wi-Fi"][0].address, watchMs: 15, refreshMs: 10000 });
   assert.strictEqual(discovery.start(), true);
+  assert.strictEqual(made[0].options.interface, "192.168.2.11");
   await new Promise((r) => setTimeout(r, 80));
   assert.strictEqual(made.length, 1, "nothing changed: the same responder");
   assert.ok(made[0].server.mdns.said.length >= 2, "the records said again on the beat, unasked: " + made[0].server.mdns.said.length);
@@ -139,6 +155,7 @@ test("the announcement is made again when the computer's address changes, and ev
   nets = { "Wi-Fi": [{ address: "192.168.2.66", family: "IPv4", internal: false }] };
   await new Promise((r) => setTimeout(r, 40));
   assert.strictEqual(made.length, 2, "a fresh responder for the new address");
+  assert.strictEqual(made[1].options.interface, "192.168.2.66", "opened on the new address");
   assert.strictEqual(made[0].destroyed, true, "the old one gone");
   assert.strictEqual(made[0].unpublished, false, "no goodbye: the service is still here");
   assert.deepStrictEqual(lines, ["  Announcing on the network again: the computer's address changed."]);
