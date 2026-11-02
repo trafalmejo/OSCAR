@@ -1,0 +1,26 @@
+<!--
+  SignPath artifact configuration "app": OSCAR.exe for both CPUs, as the
+  release workflow uploads them (one zip, one folder per CPU). The copy that
+  counts is the one saved in the SignPath project; this file is the record.
+  SignPath Foundation asks that product name and version be enforced, so a
+  file that is not OSCAR at the version being released is refused.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <!--
+    electron-builder writes the app's ProductVersion in Windows' four-part
+    form ("2.1.0.0", checked on a local build), while the installer gets the
+    plain "2.1.0". Hence the ".0" here and not in installer.xml.
+  -->
+  <zip-file>
+    <pe-file-set product-name="OSCAR" product-version="${version}.0">
+      <include path="win-unpacked/OSCAR.exe" />
+      <include path="win-arm64-unpacked/OSCAR.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>
