@@ -132,8 +132,34 @@ Running the workflow by hand from the Actions tab builds the installers and
 leaves them as downloadable run artifacts without creating a release — useful
 for checking a build before tagging.
 
-Builds are **not code signed**, so Windows SmartScreen and macOS Gatekeeper
-will warn on first run. On macOS, right-click the app and choose Open.
+From OSCAR 2.2 onward the Windows installers are code signed (see the policy
+below). Releases up to 2.1.0 are not, and the macOS build is not yet: Windows
+SmartScreen and macOS Gatekeeper warn on first run. On macOS, right-click the
+app and choose Open.
+
+### Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+Windows builds from OSCAR 2.2 onward are signed inside the release workflow
+(`.github/workflows/release.yml`): SignPath checks that the files came out of
+this repository's own GitHub Actions run, and a maintainer approves every
+release before the certificate is used. The artifact configurations that say
+which files may be signed, and at which version, are kept in `build/signpath/`.
+
+Roles: committers and reviewers are the
+[contributors](https://github.com/trafalmejo/OSCAR/graphs/contributors);
+the approver is [Daniel Castaño](https://github.com/trafalmejo).
+
+Privacy: OSCAR does not transfer information to other networked systems
+unless you ask it to (sending OSC, MIDI or DMX, publishing an interface,
+signing in to OSCAR Pro), with two exceptions you can read in full in the
+source. Once a day it asks GitHub for the latest release number
+(`lib/updates.js`), and it sends anonymous usage counts to PostHog
+(`lib/telemetry.js`): no addresses, no project contents, no account, one
+random id, switched off in the About window or with `OSCAR_NO_TELEMETRY=1`.
+The privacy policy is at [createwithoscar.com/privacy](https://www.createwithoscar.com/privacy).
 
 When run as a desktop app, projects are stored in the per-user data folder
 (`%APPDATA%/OSCAR/projects` on Windows, `~/Library/Application Support/OSCAR/projects`
