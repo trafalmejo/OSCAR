@@ -135,20 +135,21 @@ certificate; a tag waits for a maintainer to approve the two signing requests
 (the app, then the installers) in SignPath before the real certificate is
 used, so a release build pauses until that approval arrives.
 
-The Windows installers are code signed (see the policy below). The macOS
-build is **not**: Gatekeeper warns on first run, so right-click the app and
-choose Open.
+From OSCAR 2.2 onward the Windows installers are code signed (see the policy
+below). Releases up to 2.1.0 are not, and the macOS build is not yet: Windows
+SmartScreen and macOS Gatekeeper warn on first run. On macOS, right-click the
+app and choose Open.
 
 ### Code signing policy
 
-Windows builds are signed through [SignPath.io](https://about.signpath.io/),
-with a certificate issued by the [SignPath Foundation](https://signpath.org/),
-free of charge for open source software. Signing happens inside the release
-workflow (`.github/workflows/release.yml`): SignPath checks that the files
-came out of this repository's own GitHub Actions run, and a maintainer
-approves every release before the certificate is used. The artifact
-configurations that say which files may be signed, and at which version, are
-kept in `build/signpath/`.
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+Windows builds from OSCAR 2.2 onward are signed inside the release workflow
+(`.github/workflows/release.yml`): SignPath checks that the files came out of
+this repository's own GitHub Actions run, and a maintainer approves every
+release before the certificate is used. The artifact configurations that say
+which files may be signed, and at which version, are kept in `build/signpath/`.
 
 Roles: committers and reviewers are the
 [contributors](https://github.com/trafalmejo/OSCAR/graphs/contributors);
