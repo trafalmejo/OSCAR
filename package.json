@@ -108,8 +108,11 @@
         }
       ],
       "category": "public.app-category.music",
-      "identity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
     },
     "linux": {
       "target": [

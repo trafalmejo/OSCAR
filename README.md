@@ -136,9 +136,10 @@ certificate; a tag waits for a maintainer to approve the two signing requests
 used, so a release build pauses until that approval arrives.
 
 From OSCAR 2.2 onward the Windows installers are code signed (see the policy
-below). Releases up to 2.1.0 are not, and the macOS build is not yet: Windows
-SmartScreen and macOS Gatekeeper warn on first run. On macOS, right-click the
-app and choose Open.
+below) and the Mac app is signed with a Developer ID and notarized by Apple,
+so both open without a warning. Releases up to 2.1.0 are not signed: Windows
+SmartScreen and macOS Gatekeeper warn on first run, and on macOS you
+right-click the app and choose Open.
 
 ### Code signing policy
 
@@ -150,6 +151,10 @@ Windows builds from OSCAR 2.2 onward are signed inside the release workflow
 this repository's own GitHub Actions run, and a maintainer approves every
 release before the certificate is used. The artifact configurations that say
 which files may be signed, and at which version, are kept in `build/signpath/`.
+
+The Mac app is signed in the same workflow with the maintainer's own Apple
+Developer ID certificate and notarized by Apple, under the hardened runtime
+with the entitlements in `build/entitlements.mac.plist`.
 
 Roles: committers and reviewers are the
 [contributors](https://github.com/trafalmejo/OSCAR/graphs/contributors);
