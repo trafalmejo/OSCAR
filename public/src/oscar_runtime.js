@@ -10,7 +10,7 @@
 var standalone = require("./adapters/standalone");
 var oscarSocket = require("./oscar_socket");
 var relaySocket = require("./relay_socket");
-var { browserDevice } = require("./device");
+var { browserDevice, formFactor } = require("./device");
 
 /**
  * Who this page is, for OSCAR's network log: "show:<id>" for a surface OSCAR
@@ -60,6 +60,9 @@ function localStorageOf(win) {
 
 function boot() {
   var device = deviceName(window.location, localStorageOf(window));
+  // Phone, tablet or desktop, for OSCAR's anonymous count of what shows a
+  // surface. One word, judged here from the screen; nothing else is sent.
+  var kind = formFactor(window);
   standalone.start({
     document: document,
     window: window,
@@ -92,7 +95,7 @@ function boot() {
       typeof io === "function"
         ? function (host, port) {
             var bridge = {};
-            oscarSocket(bridge, { ipserver: host, socketPort: port, device: device, surface: true, from: pageFrom(window.location) });
+            oscarSocket(bridge, { ipserver: host, socketPort: port, device: device, kind: kind, surface: true, from: pageFrom(window.location) });
             return bridge;
           }
         : null,

@@ -208,7 +208,7 @@ test("the runtime reads the name off the page's address and keeps it on the devi
   assert.match(source, /get\("device"\)/, "?device= on the address");
   assert.match(source, /storage\.setItem\(KEY, said\)/, "kept for the next open");
   assert.match(source, /storage\.removeItem\(KEY\)/, "and forgotten with ?device=");
-  assert.match(source, /device: device, surface: true, from: pageFrom\(window\.location\)/, "handed to the socket");
+  assert.match(source, /device: device, kind: kind, surface: true, from: pageFrom\(window\.location\)/, "handed to the socket");
   assert.match(source, /window: window,/, "the page can hear itself being shown again");
 });
 

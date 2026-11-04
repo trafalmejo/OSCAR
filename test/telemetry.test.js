@@ -9,7 +9,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { createTelemetry, crashWords, EVENTS, KEY } = require("../lib/telemetry");
+const { createTelemetry, crashWords, deviceWord, EVENTS, KEY } = require("../lib/telemetry");
 
 function fakeSettings(initial) {
   const held = Object.assign({}, initial);
@@ -121,7 +121,7 @@ test("close flushes what is queued, for quitting", async () => {
 const readSource = (...parts) => fs.readFileSync(path.join(__dirname, "..", ...parts), "utf8").replace(/\r\n/g, "\n");
 
 test("the events OSCAR speaks are few, named, and where they claim to be", () => {
-  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["access_changed", "app_error", "app_start", "draft_loaded", "file_exported", "file_opened", "mcp_tool_called", "surface_published", "target_seen", "template_loaded"]);
+  assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["access_changed", "app_error", "app_start", "draft_loaded", "file_exported", "file_opened", "mcp_tool_called", "surface_opened", "surface_published", "target_seen", "template_loaded"]);
   const server = readSource("server.js");
   assert.match(server, /telemetry\.tell\("app_start", Object\.assign\(\{ version: pkg\.version, os: process\.platform, arch: process\.arch \}, counts\)\)/);
   assert.match(server, /\(\[projects, pages\]\) => \(\{ projects: projects\.length, published: pages\.length \}\), \(\) => \(\{\}\)/, "two counts, or none if they cannot be had");
@@ -130,6 +130,10 @@ test("the events OSCAR speaks are few, named, and where they claim to be", () =>
     assert.match(server, new RegExp(word), "the protocols' directions are booleans too");
   }
   assert.match(server, /count: \(event, props\) => telemetry\.tell\(event, props\),/, "the routes count through the same door");
+  assert.match(server, /if \(from\.surface && from\.surface !== "preview"\) \{[\s\S]{0,400}?telemetry\.tell\("surface_opened", \{ device: deviceWord\(query\.kind\) \}\);/, "a device on a served surface is counted by its shape, through the word list, and the preview is not");
+  const runtime = readSource("public", "src", "oscar_runtime.js");
+  assert.match(runtime, /var kind = formFactor\(window\);/, "the page judges its own shape");
+  assert.match(runtime, /device: device, kind: kind, surface: true, from: pageFrom\(window\.location\)/, "and says it in the handshake, beside its name");
   assert.match(server, /telemetry\.tell\(opened\[1\] === "drafts" \? "draft_loaded" : "template_loaded"/);
   assert.match(server, /onToolCall: \(tool\) => \{\s*telemetry\.tell\("mcp_tool_called", \{ tool \}\);/);
   const routes = readSource("routes", "index.js");
@@ -145,6 +149,15 @@ test("the events OSCAR speaks are few, named, and where they claim to be", () =>
   assert.match(editorSource, /if \(!state \|\| !state\.wired\) return;/, "the About row hides when the build cannot speak");
   const about = readSource("public", "partials", "about.ejs");
   assert.match(about, /lib\/telemetry\.js/, "the label links to the whole truth");
+});
+
+test("a device's shape is one of three words, or unknown: a page cannot smuggle a fourth", () => {
+  assert.strictEqual(deviceWord("phone"), "phone");
+  assert.strictEqual(deviceWord("tablet"), "tablet");
+  assert.strictEqual(deviceWord("desktop"), "desktop");
+  assert.strictEqual(deviceWord(undefined), "unknown", "a page from before the word, or the app until it says");
+  assert.strictEqual(deviceWord("iPhone 15 Pro"), "unknown", "a model name is not a shape");
+  assert.strictEqual(deviceWord(["phone", "tablet"]), "unknown", "a repeated query parameter is not a string");
 });
 
 test("no key is baked in yet, or the key is a public write-only one", () => {

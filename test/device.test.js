@@ -8,7 +8,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { browserDevice } = require("../public/src/device");
+const { browserDevice, formFactor } = require("../public/src/device");
 
 function fakeWindow(options) {
   const listeners = {};
@@ -99,4 +99,17 @@ test("vibration where the browser has it, the torch nowhere, and nothing without
   assert.strictEqual(device.torch(true), false);
   assert.strictEqual(browserDevice(undefined), null);
   assert.strictEqual(browserDevice(fakeWindow({ sensors: false })).motion.watch("orientation", () => {}), null, "a laptop: nothing to watch");
+});
+
+test("a device's shape is judged from touch and the shorter side of the screen, never the user agent", () => {
+  const shaped = (touch, width, height, agent) => ({ navigator: { maxTouchPoints: touch, userAgent: agent || "" }, screen: { width, height } });
+  assert.strictEqual(formFactor(shaped(5, 393, 852)), "phone", "an iPhone");
+  assert.strictEqual(formFactor(shaped(5, 412, 915)), "phone", "an Android phone: CSS pixels, not the panel's 1080");
+  assert.strictEqual(formFactor(shaped(5, 820, 1180, "Mozilla/5.0 (Macintosh; Intel Mac OS X) Safari")), "tablet", "an iPad, whatever it calls itself");
+  assert.strictEqual(formFactor(shaped(10, 1280, 800)), "tablet", "an Android tablet, landscape");
+  assert.strictEqual(formFactor(shaped(0, 1920, 1080)), "desktop", "a laptop");
+  assert.strictEqual(formFactor(shaped(10, 2560, 1440)), "tablet", "a touch laptop is counted as a tablet: coarse on purpose");
+  assert.strictEqual(formFactor({ navigator: { maxTouchPoints: 5 }, screen: {} }), "tablet", "touch with no screen size is not a phone");
+  assert.strictEqual(formFactor({ ontouchstart: null, navigator: {}, screen: { width: 400, height: 800 } }), "phone", "an old browser says touch another way");
+  assert.strictEqual(formFactor(undefined), "desktop", "and nothing without a window");
 });

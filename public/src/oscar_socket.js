@@ -31,6 +31,11 @@ function oscar_socket(editor, options) {
   if (options && typeof options.device === "string" && options.device) {
     connectOptions.query = Object.assign({}, connectOptions.query, { device: options.device });
   }
+  // And what shape the device is -- "phone", "tablet", "desktop" (device.js
+  // formFactor) -- for OSCAR's anonymous count of what shows its surfaces.
+  if (options && typeof options.kind === "string" && options.kind) {
+    connectOptions.query = Object.assign({}, connectOptions.query, { kind: options.kind });
+  }
   editor.socket = (options && options.socket) || io("http://" + host + ":" + port, connectOptions);
 
   /**

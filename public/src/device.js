@@ -106,4 +106,26 @@ function browserDevice(win) {
   };
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { browserDevice: browserDevice };
+/**
+ * What shape the device is: "phone", "tablet" or "desktop". For OSCAR's
+ * anonymous count of what shows its surfaces (lib/telemetry.js), so this is
+ * deliberately coarse: a screen that takes touch and whose shorter side is
+ * under 600 CSS pixels is a phone, any other touch screen a tablet, and a
+ * screen without touch a desktop. Judged from the screen and the touch
+ * points alone -- not from the user agent, which an iPad hides behind a Mac's
+ * and which would be a fingerprint's first word.
+ *
+ * @param {Window} win
+ * @returns {string} "desktop" without a window
+ */
+function formFactor(win) {
+  if (!win) return "desktop";
+  var nav = win.navigator || {};
+  var screen = win.screen || {};
+  var touch = (typeof nav.maxTouchPoints === "number" && nav.maxTouchPoints > 0) || "ontouchstart" in win;
+  if (!touch) return "desktop";
+  var shorter = Math.min(Number(screen.width) || 0, Number(screen.height) || 0);
+  return shorter > 0 && shorter < 600 ? "phone" : "tablet";
+}
+
+if (typeof module !== "undefined" && module.exports) module.exports = { browserDevice: browserDevice, formFactor: formFactor };
