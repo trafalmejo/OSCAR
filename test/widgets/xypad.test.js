@@ -226,6 +226,22 @@ test("a drag that loses the window counts as released, so the pad is not left de
   });
 });
 
+test("a touch the system takes back ends the drag where it was, not in the corner a pointercancel reports", () => {
+  const { el, ctx } = mount(xypad, { rect: SQUARE, minX: 0, maxX: 1, minY: 0, maxY: 1 });
+  el.fire("pointerdown", { clientX: 50, clientY: 50 });
+  el.fire("pointermove", { clientX: 80, clientY: 20 });
+  // WebKit gives a pointercancel no position: 0, 0, the top left corner.
+  el.fire("pointercancel", { clientX: 0, clientY: 0 });
+  assert.deepStrictEqual(lastArgs(ctx).map((a) => a.value), [0.8, 0.8], "the last place the finger was is what goes out");
+  assert.deepStrictEqual([ctx.config.x, ctx.config.y], [0.8, 0.8]);
+  assert.strictEqual(el.style.properties["--oscar-x"], "80.00%");
+  assert.strictEqual(el.style.properties["--oscar-y"], "20.00%");
+  // And the drag is over: a move after it does nothing.
+  const sent = ctx.sent.length;
+  el.fire("pointermove", { clientX: 10, clientY: 10 });
+  assert.strictEqual(ctx.sent.length, sent);
+});
+
 test("a blur with no drag in progress sends nothing", () => {
   withWindow((win) => {
     const { ctx } = mount(xypad, { rect: SQUARE });
