@@ -109,7 +109,8 @@ the `dist` scripts produce installers under `release-builds/`:
 Each platform's installer has to be built on that platform. All three are
 built for both Intel (`x64`) and ARM (`arm64`); on Linux the ARM build is what
 runs on a Raspberry Pi with a 64-bit OS. Electron no longer ships a 32-bit
-Windows build. Icons are generated from `build/icon.png`.
+Windows build. Icons are generated from `build/icon.png`. The Microsoft
+Store package takes its logos from `build/appx/`, made from the same icon.
 
 ### Cutting a release
 
@@ -137,6 +138,11 @@ Apple, so it opens without a warning. The Windows installers are code signed
 from OSCAR 2.2 onward (see the policy below); until then Windows SmartScreen
 warns on first run. Releases up to 2.1.0 are not signed on either system, and
 on macOS you right-click the app and choose Open.
+
+The Windows job also builds two packages for the Microsoft Store and leaves
+them as the run artifact `store-packages`. They are uploaded in Partner Center
+by hand; the Store signs them and updates its own copies, which is why OSCAR's
+update check is off when it runs from the Store (`main.js`).
 
 ### Code signing policy
 

@@ -43,6 +43,11 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(start);
 }
 
+// A copy installed from the Microsoft Store is updated by the Store. OSCAR's
+// own check would announce the same release and send people to an installer
+// that is a second, separate copy, so it is switched off there.
+const STORE_ENV = process.windowsStore ? { OSCAR_NO_UPDATE_CHECK: "1" } : {};
+
 function startServer() {
   return new Promise((resolve, reject) => {
     serverProcess = fork(path.join(__dirname, "server.js"), [], {
@@ -54,7 +59,7 @@ function startServer() {
         OSCAR_NO_OPEN: "1",
         // The double-clicked project, if any, for the editor to open.
         OSCAR_OPEN_FILE: fileToOpen,
-      }),
+      }, STORE_ENV),
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
 

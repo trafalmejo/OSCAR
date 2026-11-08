@@ -3,7 +3,8 @@ name: Release
 # Tagging is the whole release process: push a v* tag and this builds OSCAR
 # for all three platforms in parallel, signs the Windows files through
 # SignPath, signs and notarizes the Mac app with Apple, and attaches the
-# installers to a draft GitHub release.
+# installers to a draft GitHub release. The Windows job also leaves the
+# packages for the Microsoft Store as a run artifact.
 on:
   push:
     tags:
@@ -261,6 +262,26 @@ jobs:
             if ($signature.Status -ne "Valid" -and $signature.Status -ne "UnknownError") { exit 1 }
             if (-not $signature.TimeStamperCertificate) { exit 1 }
           }
+
+      # The Microsoft Store takes an MSIX package, not an installer, and signs
+      # it itself, so these are built unsigned: one per CPU, wrapped around the
+      # same unpacked app as the installers. They are uploaded in Partner
+      # Center by hand and never attached to the release, since nothing but the
+      # Store can install them.
+      - name: Build the Microsoft Store packages (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          npx electron-builder --win appx --x64 --prepackaged release-builds/win-unpacked --publish never
+          npx electron-builder --win appx --arm64 --prepackaged release-builds/win-arm64-unpacked --publish never
+
+      - name: Upload the Store packages as a run artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-packages
+          retention-days: 14
+          path: release-builds/*.appx
 
       # MIDI needs a compiled module, and one that is left inside the archive
       # cannot be loaded. This fails the build rather than ship an OSCAR whose
