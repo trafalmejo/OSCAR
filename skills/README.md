@@ -91,6 +91,8 @@ Without a plugin, Codex takes the skill with `npx skills add trafalmejo/OSCAR -a
 
 ## Still to do, in order
 
+Tracked as [issue #71](https://github.com/trafalmejo/OSCAR/issues/71); tick there, and here when the list is done.
+
 - [ ] Merge to `master` and release (the usual procedure in the main README).
 - [ ] `gh repo edit trafalmejo/OSCAR --add-topic gemini-cli-extension`, then look for "oscar" at https://geminicli.com/extensions/browse a day later.
 - [ ] Rebuild and deploy the site (`node site/build.js && cd site && npx wrangler deploy` in `oscar-site`), which carries the install links and `llms.txt`.
