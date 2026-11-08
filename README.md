@@ -24,9 +24,9 @@ Get the installer for your machine from the
 | **Linux** (Debian, Ubuntu) | `OSCAR-*-linux-amd64.deb` |
 | **Raspberry Pi** and other ARM Linux (64-bit OS) | `OSCAR-*-linux-arm64.AppImage` or `OSCAR-*-linux-arm64.deb` |
 
-These builds aren't code signed, so your system warns you the first time. On
-Windows, click *More info* then *Run anyway*. On macOS, right-click the app and
-choose *Open*.
+From OSCAR 2.1.1 the Mac app is signed and notarized by Apple, and opens like
+any other. The Windows installers aren't code signed yet, so Windows warns you
+the first time: click *More info* then *Run anyway*.
 
 The first time OSCAR is opened in a browser, the canvas shows the **Showcase** template, where every widget works, so there is something to try straight away. After that the canvas is whatever you left on it, including empty. It is a template like any other: open **File → Open project or template…** to get it back, or to start from another.
 
@@ -132,10 +132,11 @@ Running the workflow by hand from the Actions tab builds the installers and
 leaves them as downloadable run artifacts without creating a release — useful
 for checking a build before tagging.
 
-From OSCAR 2.2 onward the Windows installers are code signed (see the policy
-below). Releases up to 2.1.0 are not, and the macOS build is not yet: Windows
-SmartScreen and macOS Gatekeeper warn on first run. On macOS, right-click the
-app and choose Open.
+From OSCAR 2.1.1 the Mac app is signed with a Developer ID and notarized by
+Apple, so it opens without a warning. The Windows installers are code signed
+from OSCAR 2.2 onward (see the policy below); until then Windows SmartScreen
+warns on first run. Releases up to 2.1.0 are not signed on either system, and
+on macOS you right-click the app and choose Open.
 
 ### Code signing policy
 
@@ -147,6 +148,10 @@ Windows builds from OSCAR 2.2 onward are signed inside the release workflow
 this repository's own GitHub Actions run, and a maintainer approves every
 release before the certificate is used. The artifact configurations that say
 which files may be signed, and at which version, are kept in `build/signpath/`.
+
+The Mac app is signed in the same workflow with the maintainer's own Apple
+Developer ID certificate and notarized by Apple, under the hardened runtime
+with the entitlements in `build/entitlements.mac.plist`.
 
 Roles: committers and reviewers are the
 [contributors](https://github.com/trafalmejo/OSCAR/graphs/contributors);

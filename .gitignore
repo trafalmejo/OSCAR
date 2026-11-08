@@ -26,3 +26,6 @@ oscar-settings.json
 # The exported page's runtime: build output (npm run build), inlined into every
 # export by POST /export.
 public/src/runtime.bundle.js
+
+# Signing certificates and API keys (see secrets/README.md). Never committed.
+/secrets/

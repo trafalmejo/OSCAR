@@ -58,7 +58,7 @@
     "browserify": "^17.0.1",
     "concurrently": "^10.0.5",
     "electron": "^44.2.0",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.18.1",
     "nodemon": "^3.1.14",
     "watchify": "^4.0.0"
   },
@@ -106,8 +106,11 @@
         }
       ],
       "category": "public.app-category.music",
-      "identity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
     },
     "linux": {
       "target": [

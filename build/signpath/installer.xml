@@ -1,0 +1,19 @@
+<!--
+  SignPath artifact configuration "installer": the two NSIS installers, built
+  around the already signed app. Same rules as app.xml. The version is in the
+  file name too, but the check that matters is the ProductVersion inside.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="OSCAR" product-version="${version}">
+      <include path="OSCAR-*-win-x64.exe" />
+      <include path="OSCAR-*-win-arm64.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

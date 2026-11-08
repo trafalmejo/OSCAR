@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What OSCAR is allowed under macOS's hardened runtime, which notarization
+  requires. The same three entries as electron-builder's own default: the
+  first two because Electron's JavaScript engine compiles code at run time,
+  the third so the MIDI and serial drivers (compiled modules loaded from
+  app.asar.unpacked) are not refused by library validation. Nothing else:
+  OSCAR is not sandboxed, so network, files and USB need no entitlement.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>
