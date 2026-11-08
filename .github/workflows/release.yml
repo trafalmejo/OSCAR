@@ -29,7 +29,13 @@ jobs:
     env:
       # Whether a secret is set: a step's `if` cannot read secrets itself.
       HAS_PRO_KEY: ${{ secrets.OSCAR_PRO_DEPLOY_KEY != '' }}
-      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+      # Signing through SignPath needs its token and, on a tag, the word that
+      # the production certificate exists: the repository variable
+      # SIGNPATH_RELEASE_READY set to "true". Until SignPath Foundation has
+      # issued that certificate a tag builds the Windows installers unsigned,
+      # as every release up to 2.1.0 was, instead of failing at the signing
+      # request. A dry run still signs with the test certificate.
+      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && (!startsWith(github.ref, 'refs/tags/') || vars.SIGNPATH_RELEASE_READY == 'true') }}
       HAS_APPLE: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
     strategy:
       # One platform failing shouldn't throw away the other two builds.
