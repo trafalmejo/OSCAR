@@ -3,7 +3,8 @@ name: Release
 # Tagging is the whole release process: push a v* tag and this builds OSCAR
 # for all three platforms in parallel, signs the Windows files through
 # SignPath, signs and notarizes the Mac app with Apple, and attaches the
-# installers to a draft GitHub release.
+# installers to a draft GitHub release. The Windows job also leaves the
+# packages for the Microsoft Store as a run artifact.
 on:
   push:
     tags:
@@ -29,7 +30,13 @@ jobs:
     env:
       # Whether a secret is set: a step's `if` cannot read secrets itself.
       HAS_PRO_KEY: ${{ secrets.OSCAR_PRO_DEPLOY_KEY != '' }}
-      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+      # Signing through SignPath needs its token and, on a tag, the word that
+      # the production certificate exists: the repository variable
+      # SIGNPATH_RELEASE_READY set to "true". Until SignPath Foundation has
+      # issued that certificate a tag builds the Windows installers unsigned,
+      # as every release up to 2.1.0 was, instead of failing at the signing
+      # request. A dry run still signs with the test certificate.
+      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && (!startsWith(github.ref, 'refs/tags/') || vars.SIGNPATH_RELEASE_READY == 'true') }}
       HAS_APPLE: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
     strategy:
       # One platform failing shouldn't throw away the other two builds.
@@ -255,6 +262,26 @@ jobs:
             if ($signature.Status -ne "Valid" -and $signature.Status -ne "UnknownError") { exit 1 }
             if (-not $signature.TimeStamperCertificate) { exit 1 }
           }
+
+      # The Microsoft Store takes an MSIX package, not an installer, and signs
+      # it itself, so these are built unsigned: one per CPU, wrapped around the
+      # same unpacked app as the installers. They are uploaded in Partner
+      # Center by hand and never attached to the release, since nothing but the
+      # Store can install them.
+      - name: Build the Microsoft Store packages (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          npx electron-builder --win appx --x64 --prepackaged release-builds/win-unpacked --publish never
+          npx electron-builder --win appx --arm64 --prepackaged release-builds/win-arm64-unpacked --publish never
+
+      - name: Upload the Store packages as a run artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-packages
+          retention-days: 14
+          path: release-builds/*.appx
 
       # MIDI needs a compiled module, and one that is left inside the archive
       # cannot be loaded. This fails the build rather than ship an OSCAR whose

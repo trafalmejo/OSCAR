@@ -1,7 +1,7 @@
 {
   "name": "oscar",
   "productName": "OSCAR",
-  "version": "2.1.0",
+  "version": "2.1.2",
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
   "main": "main.js",
   "scripts": {
@@ -23,6 +23,7 @@
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
+    "dist:store": "npm run build && electron-builder --win appx --x64 --arm64",
     "test": "node --test",
     "release": "npm run build && electron-builder --publish always"
   },
@@ -96,6 +97,19 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "appx": {
+      "identityName": "trafalmejo.OSCAROSCMIDIDMXControl",
+      "publisher": "CN=BE8987D7-FD8C-47B3-AF7B-AF70FD255333",
+      "publisherDisplayName": "trafalmejo",
+      "displayName": "OSCAR: OSC, MIDI & DMX Control",
+      "applicationId": "OSCAR",
+      "backgroundColor": "transparent",
+      "customManifestPath": "build/appxmanifest.xml",
+      "minVersion": "10.0.17763.0",
+      "languages": [
+        "en-US"
+      ]
     },
     "mac": {
       "target": [

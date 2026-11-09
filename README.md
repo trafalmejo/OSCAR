@@ -24,9 +24,9 @@ Get the installer for your machine from the
 | **Linux** (Debian, Ubuntu) | `OSCAR-*-linux-amd64.deb` |
 | **Raspberry Pi** and other ARM Linux (64-bit OS) | `OSCAR-*-linux-arm64.AppImage` or `OSCAR-*-linux-arm64.deb` |
 
-These builds aren't code signed, so your system warns you the first time. On
-Windows, click *More info* then *Run anyway*. On macOS, right-click the app and
-choose *Open*.
+From OSCAR 2.1.2 the Mac app is signed and notarized by Apple, and opens like
+any other. The Windows installers aren't code signed yet, so Windows warns you
+the first time: click *More info* then *Run anyway*.
 
 The first time OSCAR is opened in a browser, the canvas shows the **Showcase** template, where every widget works, so there is something to try straight away. After that the canvas is whatever you left on it, including empty. It is a template like any other: open **File → Open project or template…** to get it back, or to start from another.
 
@@ -109,7 +109,8 @@ the `dist` scripts produce installers under `release-builds/`:
 Each platform's installer has to be built on that platform. All three are
 built for both Intel (`x64`) and ARM (`arm64`); on Linux the ARM build is what
 runs on a Raspberry Pi with a 64-bit OS. Electron no longer ships a 32-bit
-Windows build. Icons are generated from `build/icon.png`.
+Windows build. Icons are generated from `build/icon.png`. The Microsoft
+Store package takes its logos from `build/appx/`, made from the same icon.
 
 ### Cutting a release
 
@@ -135,11 +136,18 @@ certificate; a tag waits for a maintainer to approve the two signing requests
 (the app, then the installers) in SignPath before the real certificate is
 used, so a release build pauses until that approval arrives.
 
-From OSCAR 2.2 onward the Windows installers are code signed (see the policy
-below) and the Mac app is signed with a Developer ID and notarized by Apple,
-so both open without a warning. Releases up to 2.1.0 are not signed: Windows
-SmartScreen and macOS Gatekeeper warn on first run, and on macOS you
-right-click the app and choose Open.
+From OSCAR 2.1.2 the Mac app is signed with a Developer ID and notarized by
+Apple, so it opens without a warning. The Windows installers are code signed
+from OSCAR 2.2 onward (see the policy below); until then Windows SmartScreen
+warns on first run. Releases up to 2.1.0 are not signed on either system, and
+on macOS you right-click the app and choose Open.
+
+The Windows job also builds two packages for the Microsoft Store and leaves
+them as the run artifact `store-packages`. They are uploaded in Partner Center
+by hand; the Store signs them and updates its own copies, which is why OSCAR's
+update check is off when it runs from the Store (`main.js`). The package also
+declares its own firewall rules (`build/appxmanifest.xml`), so a Store copy
+never shows the Windows firewall prompt that the installer's copy does.
 
 ### Code signing policy
 
