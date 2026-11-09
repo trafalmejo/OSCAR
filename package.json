@@ -1,7 +1,7 @@
 {
   "name": "oscar",
   "productName": "OSCAR",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "OSCAR creates GUIs to control interactive installations sending OSC",
   "main": "main.js",
   "scripts": {
