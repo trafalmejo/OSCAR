@@ -103,6 +103,8 @@
       "displayName": "OSCAR: OSC, MIDI & DMX Control",
       "applicationId": "OSCAR",
       "backgroundColor": "transparent",
+      "customManifestPath": "build/appxmanifest.xml",
+      "minVersion": "10.0.17763.0",
       "languages": [
         "en-US"
       ]

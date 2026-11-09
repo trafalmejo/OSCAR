@@ -142,7 +142,9 @@ on macOS you right-click the app and choose Open.
 The Windows job also builds two packages for the Microsoft Store and leaves
 them as the run artifact `store-packages`. They are uploaded in Partner Center
 by hand; the Store signs them and updates its own copies, which is why OSCAR's
-update check is off when it runs from the Store (`main.js`).
+update check is off when it runs from the Store (`main.js`). The package also
+declares its own firewall rules (`build/appxmanifest.xml`), so a Store copy
+never shows the Windows firewall prompt that the installer's copy does.
 
 ### Code signing policy
 

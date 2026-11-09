@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The manifest of the Microsoft Store package (package.json, build.appx
+  customManifestPath). It is electron-builder's own template, which fills in
+  every ${...}, with one addition at the end: the firewall rules.
+
+  OSCAR is a server on the local network: phones and tablets open the
+  interfaces it serves, and gear sends OSC back to it. Windows asks about that
+  the first time a program listens, and a person who answers Cancel has a
+  block rule from then on: the editor still works and no phone can reach it.
+  A Store copy would be asked again after every update, because the rule is
+  kept per program path and the path of a Store app carries its version.
+
+  Declared here, Windows adds the rules with the package and removes them
+  with it, without asking. Every profile, because Windows calls a new Wi-Fi
+  network Public until someone says otherwise, and that is where most
+  people's phones are. No port numbers: every port can be moved
+  (lib/ports.js), and this is what answering Allow grants.
+
+  The rules are a package-level extension, which electron-builder's
+  customExtensionsPath cannot place (it writes inside the application), hence
+  the whole template. When electron-builder is updated, compare this with
+  node_modules/app-builder-lib/templates/appx/appxmanifest.xml.
+-->
+<!--suppress XmlUnusedNamespaceDeclaration -->
+<Package
+   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+   xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+  <Identity Name="${identityName}"
+    ProcessorArchitecture="${arch}"
+    Publisher="${publisher}"
+    Version="${version}" />
+  <Properties>
+    <DisplayName>${displayName}</DisplayName>
+    <PublisherDisplayName>${publisherDisplayName}</PublisherDisplayName>
+    <Description>${description}</Description>
+    <Logo>${logo}</Logo>
+  </Properties>
+  <Resources>
+    ${resourceLanguages}
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="${minVersion}" MaxVersionTested="${maxVersionTested}" />
+  </Dependencies>
+  ${capabilities}
+  <Applications>
+    <Application Id="${applicationId}" Executable="${executable}" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+       BackgroundColor="${backgroundColor}"
+       DisplayName="${displayName}"
+       Square150x150Logo="${square150x150Logo}"
+       Square44x44Logo="${square44x44Logo}"
+       Description="${description}">
+        ${lockScreen}
+        ${defaultTile}
+        ${splashScreen}
+      </uap:VisualElements>
+      ${extensions}
+    </Application>
+  </Applications>
+  <Extensions>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="${executable}">
+        <desktop2:Rule Direction="in" IPProtocol="TCP" Profile="all" />
+        <desktop2:Rule Direction="in" IPProtocol="UDP" Profile="all" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
+</Package>
