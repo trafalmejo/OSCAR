@@ -24,7 +24,7 @@ Get the installer for your machine from the
 | **Linux** (Debian, Ubuntu) | `OSCAR-*-linux-amd64.deb` |
 | **Raspberry Pi** and other ARM Linux (64-bit OS) | `OSCAR-*-linux-arm64.AppImage` or `OSCAR-*-linux-arm64.deb` |
 
-From OSCAR 2.1.1 the Mac app is signed and notarized by Apple, and opens like
+From OSCAR 2.1.2 the Mac app is signed and notarized by Apple, and opens like
 any other. The Windows installers aren't code signed yet, so Windows warns you
 the first time: click *More info* then *Run anyway*.
 
@@ -133,7 +133,7 @@ Running the workflow by hand from the Actions tab builds the installers and
 leaves them as downloadable run artifacts without creating a release — useful
 for checking a build before tagging.
 
-From OSCAR 2.1.1 the Mac app is signed with a Developer ID and notarized by
+From OSCAR 2.1.2 the Mac app is signed with a Developer ID and notarized by
 Apple, so it opens without a warning. The Windows installers are code signed
 from OSCAR 2.2 onward (see the policy below); until then Windows SmartScreen
 warns on first run. Releases up to 2.1.0 are not signed on either system, and
