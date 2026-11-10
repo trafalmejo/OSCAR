@@ -2,8 +2,7 @@
 
 # OSCAR - Visit [our website](https://www.createwithoscar.com/)
 
-OSCAR is a tool to create beautiful graphical user interaces (GUIs) to send OSC messages and control interactive installations ([Modul8](https://www.garagecube.com/modul8/), [MapMapper](https://madmapper.com/), [Resolume arena](https://resolume.com/), [TouchDesigner](https://derivative.ca/), [Ableton Live](https://www.ableton.com/), [Processing](https://processing.org/), [Pure Data](https://puredata.info/), [Unity](https://unity.com/), [Unreal Engine](https://www.unrealengine.com/en-US/), etc).
-Let's create beautiful, responsive and touchable interfaces.
+OSCAR is a free, open-source app that turns any phone or tablet into a control surface for show software, lights and gear: design buttons, faders and pads in the browser, open them by QR code with no app to install, and send OSC, MIDI and DMX. It works with Resolume, TouchDesigner, QLab, Ableton Live and anything else that speaks OSC or MIDI, drives lights over Art-Net, sACN or a USB DMX interface, and runs on Windows, macOS, Linux and Raspberry Pi. An AI assistant can draft an interface for you over MCP.
 
 Build a layout in the browser, drop in buttons and sliders, point each one at an IP, port and OSC address, then publish it and open it from a phone or tablet on the same network to drive your software, gear and lights.
 

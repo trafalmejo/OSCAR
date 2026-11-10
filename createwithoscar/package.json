@@ -1,7 +1,7 @@
 {
   "name": "createwithoscar",
   "version": "1.0.1",
-  "description": "Connect an AI assistant (Claude and other MCP clients) to OSCAR, the editor and server for OSC, MIDI and DMX control interfaces.",
+  "description": "OSCAR is a free, open-source app that turns any phone or tablet into a control surface for show software, lights and gear: design buttons, faders and pads in the browser, open them by QR code with no app to install, and send OSC, MIDI and DMX. This package is the MCP helper that connects an AI assistant (Claude and other MCP clients) to the OSCAR on the same computer.",
   "bin": {
     "createwithoscar": "index.js"
   },
