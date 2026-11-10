@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.trafalmejo/oscar",
   "title": "OSCAR",
-  "description": "An assistant reads your OSCAR installation (OSC, MIDI, DMX) and drafts interfaces you review.",
+  "description": "OSCAR: free, open-source control surfaces for OSC, MIDI and DMX on any phone or tablet, designed in the browser, no app on the phone. An assistant reads your OSCAR installation and drafts interfaces you review; it never sends to the rig.",
   "repository": {
     "url": "https://github.com/trafalmejo/OSCAR",
     "source": "github",

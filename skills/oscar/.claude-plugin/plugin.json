@@ -2,7 +2,7 @@
   "name": "oscar",
   "displayName": "OSCAR",
   "version": "2.1.2",
-  "description": "Design phone and tablet control interfaces that send OSC, MIDI and DMX to Resolume, TouchDesigner, QLab, DAWs and lights, with OSCAR. A skill for the design and the wire, and OSCAR's read-and-draft MCP server. Never sends to a rig.",
+  "description": "OSCAR: free, open-source control surfaces for OSC, MIDI and DMX on any phone or tablet, designed in the browser, no app on the phone. This plugin: a skill to design interfaces for Resolume, TouchDesigner, QLab, DAWs and lights, A skill for the design and the wire, and OSCAR's read-and-draft MCP server. Never sends to a rig.",
   "author": { "name": "Daniel Castaño", "url": "https://www.createwithoscar.com" },
   "homepage": "https://www.createwithoscar.com",
   "repository": "https://github.com/trafalmejo/OSCAR",
