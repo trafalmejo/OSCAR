@@ -101,7 +101,7 @@ Tracked as [issue #71](https://github.com/trafalmejo/OSCAR/issues/71); tick ther
 - [ ] Submit to Anthropic's plugin directory (text below). Needs a paid claude.ai plan on the submitting account.
 - [ ] Submit `OSCAR.mcpb` through the desktop extensions form (text below).
 - [ ] Claim the aggregator pages (list below).
-- [ ] Reply in the Resolume threads (the line below), per `docs/forum-outreach.md`.
+- [ ] Reply in the Resolume threads (the line below), per the maintainer's private notes (`forum-outreach.md`, kept outside this repository).
 - [ ] Later: a skills-only submission to OpenAI's universal directory, with the same screenshots and the long description.
 - [ ] Later: an `onboardingSkill` or a `/oscar:connect` skill that prints the install steps for the person's own app, once there is feedback on which apps people arrive from.
 
