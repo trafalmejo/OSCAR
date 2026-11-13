@@ -719,11 +719,12 @@
 
 /* A level that cannot be chosen, picked anyway: its reason and the one action
    that would change that, on a sheet over the dialog (askWhy in
-   export_dialog.js). It lives inside the modal's container, so it sits above
-   the dialog without a z-index race. */
+   export_dialog.js). It lives inside the modal's container; the dialog in
+   there is at z-index 2, so the sheet is one above it. */
 .oscar-export-ask {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;

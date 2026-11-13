@@ -293,6 +293,8 @@ test("a level that cannot be chosen says why on a sheet, with the one action tha
   assert.match(dialog, /var later = button\("Not now"\);/, "and there is always a way to say no");
   assert.match(dialog, /document\.querySelector\("\.gjs-mdl-container"\) \|\| document\.body/, "inside the modal's container, above the dialog");
   assert.doesNotMatch(dialog, /window\.alert\(/, "OSCAR's own sheet, never the browser's");
+  const css = read("public/css/oscar_export.css");
+  assert.match(css, /\.oscar-export-ask \{[^}]*position: absolute;[^}]*z-index: 3;/, "above the dialog, which GrapesJS puts at z-index 2 inside the same container");
   const doc = read("EXTENSIONS.md");
   assert.match(doc, /\{ reason, action: \{ label, run\(editor\) \} \}/, "the object form is in the contract");
   const sample = read("examples/sample-extension/public/editor.js");
