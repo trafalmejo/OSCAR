@@ -107,7 +107,7 @@ function removeMcpHandshake() {
 // contract is that one file). The About window's switch and
 // OSCAR_NO_TELEMETRY=1 both silence it; a build with no key baked in is
 // silent by construction.
-const { createTelemetry, crashWords, deviceWord } = require("./lib/telemetry");
+const { createTelemetry, crashWords, deviceWord, viaWord } = require("./lib/telemetry");
 const { targetsOf } = require("./lib/telemetry-targets");
 const telemetry = createTelemetry({ settings });
 
@@ -695,8 +695,9 @@ io.on("connection", (socket) => {
     devicesOn.get(from.surface).set(socket.id, deviceName(query.device) || "");
     tellRunning();
     // And an anonymous count of the device's shape: phone, tablet or desktop,
-    // as the page judged it (lib/telemetry.js). Never its name or address.
-    telemetry.tell("surface_opened", { device: deviceWord(query.kind) });
+    // as the page judged it, and whether the OSCAR app or a browser opened it
+    // (lib/telemetry.js). Never its name or address.
+    telemetry.tell("surface_opened", { device: deviceWord(query.kind), via: viaWord(query.via) });
     socket.on("disconnect", () => {
       const on = devicesOn.get(from.surface);
       if (on) on.delete(socket.id);

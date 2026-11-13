@@ -36,6 +36,11 @@ function oscar_socket(editor, options) {
   if (options && typeof options.kind === "string" && options.kind) {
     connectOptions.query = Object.assign({}, connectOptions.query, { kind: options.kind });
   }
+  // And "app" when the OSCAR app is what opened the page, for the same
+  // count; a browser says nothing and is counted as one.
+  if (options && options.via === "app") {
+    connectOptions.query = Object.assign({}, connectOptions.query, { via: "app" });
+  }
   editor.socket = (options && options.socket) || io("http://" + host + ":" + port, connectOptions);
 
   /**

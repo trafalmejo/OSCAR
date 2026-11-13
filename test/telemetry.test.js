@@ -9,7 +9,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { createTelemetry, crashWords, deviceWord, EVENTS, KEY } = require("../lib/telemetry");
+const { createTelemetry, crashWords, deviceWord, viaWord, EVENTS, KEY } = require("../lib/telemetry");
 
 function fakeSettings(initial) {
   const held = Object.assign({}, initial);
@@ -187,7 +187,7 @@ test("the events OSCAR speaks are few, named, and where they claim to be", () =>
     assert.match(server, new RegExp(word), "the protocols' directions are booleans too");
   }
   assert.match(server, /count: \(event, props\) => telemetry\.tell\(event, props\),/, "the routes count through the same door");
-  assert.match(server, /if \(from\.surface && from\.surface !== "preview"\) \{[\s\S]{0,400}?telemetry\.tell\("surface_opened", \{ device: deviceWord\(query\.kind\) \}\);/, "a device on a served surface is counted by its shape, through the word list, and the preview is not");
+  assert.match(server, /if \(from\.surface && from\.surface !== "preview"\) \{[\s\S]{0,400}?telemetry\.tell\("surface_opened", \{ device: deviceWord\(query\.kind\), via: viaWord\(query\.via\) \}\);/, "a device on a served surface is counted by its shape and by what opened it, through the word lists, and the preview is not");
   const runtime = readSource("public", "src", "oscar_runtime.js");
   assert.match(runtime, /var kind = formFactor\(window\);/, "the page judges its own shape");
   assert.match(runtime, /device: device, kind: kind, surface: true, from: pageFrom\(window\.location\)/, "and says it in the handshake, beside its name");
@@ -215,6 +215,16 @@ test("a device's shape is one of three words, or unknown: a page cannot smuggle 
   assert.strictEqual(deviceWord(undefined), "unknown", "a page from before the word, or the app until it says");
   assert.strictEqual(deviceWord("iPhone 15 Pro"), "unknown", "a model name is not a shape");
   assert.strictEqual(deviceWord(["phone", "tablet"]), "unknown", "a repeated query parameter is not a string");
+});
+
+test("what opened a surface is the app or a browser, and nothing else", () => {
+  assert.strictEqual(viaWord("app"), "app");
+  assert.strictEqual(viaWord(undefined), "browser", "a page from before the word is a browser");
+  assert.strictEqual(viaWord("browser"), "browser");
+  assert.strictEqual(viaWord("OSCAR/1.0 (Android)"), "browser", "a user agent is not a word");
+  assert.strictEqual(viaWord(["app", "app"]), "browser", "a repeated query parameter is not a string");
+  const socket = readSource("public", "src", "oscar_socket.js");
+  assert.match(socket, /if \(options && options\.via === "app"\) \{\s*connectOptions\.query = Object\.assign\(\{\}, connectOptions\.query, \{ via: "app" \}\);/, "the handshake carries the word only when the app says it");
 });
 
 test("no key is baked in yet, or the key is a public write-only one", () => {
