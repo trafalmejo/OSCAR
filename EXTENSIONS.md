@@ -63,6 +63,8 @@ window.OSCAR.ready(function (oscar) {
 
 `ready` waits until the editor has finished loading. The pages devices open (`/preview`, published interfaces) load none of this.
 
+`oscar.publishDialog.addAccessLevel(level)` adds an answer to "who can open it" on every row of the Publish dialog, after OSCAR's own Off and This network; the level's shape is described above `addAccessLevel` in `public/src/export_dialog.js`. A level that cannot be chosen right now says so from `disabled()`, one of two ways. A sentence: the row is greyed, with the sentence on the setting. Or `{ reason, action: { label, run(editor) } }`: the row stays pickable, and picking it shows the reason on a small sheet over the dialog with the action's one button, so the person learns what the level is for and what would switch it on, instead of meeting a greyed word. OSCAR draws the words and the button; what they mean, and what `run` does, is the extension's. `examples/sample-extension/public/editor.js` has one.
+
 ### 4. Run on the server
 
 `server(host)` is called once, after everything in OSCAR is set up.

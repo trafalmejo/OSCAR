@@ -75,6 +75,26 @@ function el(tag, className, text) {
   return node;
 }
 
+/**
+ * What a level says when it cannot be chosen now: nothing, a sentence, or a
+ * sentence with the one action that would change that, as
+ * { reason, action: { label, run(editor) } }. A sentence alone greys the row,
+ * as it always did; with an action the row stays pickable, so the pick can
+ * show the reason and the way. An action without a run, or a reason that is
+ * empty, is no action and nothing to say.
+ *
+ * @param {string|{reason?: string, action?: {label?: string, run?: Function}}|null|undefined} said
+ * @returns {{ reason: string, action: { label: string, run: Function }|null }|null}
+ */
+function whyNot(said) {
+  if (!said) return null;
+  if (typeof said === "string") return { reason: said, action: null };
+  var reason = said.reason ? String(said.reason) : "";
+  if (!reason) return null;
+  var action = said.action && typeof said.action.run === "function" && said.action.label ? { label: String(said.action.label), run: said.action.run } : null;
+  return { reason: reason, action: action };
+}
+
 function button(label, className) {
   var node = el("button", className || "o-btn", label);
   node.type = "button";
@@ -334,39 +354,92 @@ function install(editor, options) {
       .then(refreshPublished);
   }
 
+  /**
+   * A level that cannot be chosen, picked anyway: its reason in words, and
+   * the one action that would change that, both from the extension that
+   * offers the level. A sheet of OSCAR's own over the dialog, never the
+   * browser's alert; the dialog stays as it was underneath, and Not now,
+   * Escape or a click beside the card put it away. The action closes the
+   * sheet first, since what it opens may well replace this dialog.
+   */
+  function askWhy(label, why) {
+    var sheet = el("div", "oscar-export-ask");
+    var card = el("div", "oscar-export-ask-card");
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", label);
+    card.appendChild(el("h3", "oscar-export-ask-title", label));
+    card.appendChild(el("p", "oscar-export-ask-reason", why.reason));
+    var actions = el("div", "oscar-export-ask-actions");
+    var later = button("Not now");
+    var go = button(why.action.label, "o-btn o-btn-primary");
+    function close() {
+      if (sheet.parentNode) sheet.parentNode.removeChild(sheet);
+      document.removeEventListener("keydown", onKey, true);
+    }
+    function onKey(event) {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      close();
+    }
+    later.onclick = close;
+    go.onclick = function () {
+      close();
+      why.action.run(editor);
+    };
+    sheet.onclick = function (event) {
+      if (event.target === sheet) close();
+    };
+    actions.appendChild(later);
+    actions.appendChild(go);
+    card.appendChild(actions);
+    sheet.appendChild(card);
+    (document.querySelector(".gjs-mdl-container") || document.body).appendChild(sheet);
+    document.addEventListener("keydown", onKey, true);
+    go.focus();
+  }
+
   /** Who can open it: one setting, the interface's own. */
   function accessSelect(page, at) {
     var isOff = page.access === "off";
     var access = el("select", "o-input oscar-published-access");
     access.setAttribute("aria-label", "Who can open " + titleOf(page));
-    [{ id: "off", label: "Off" }, { id: "network", label: "This network" }]
-      .concat(
-        levels
-          .filter(function (level) {
-            return levelMaps[level.id];
-          })
-          .map(function (level) {
-            // Why it cannot be chosen, when it cannot: it is on the list, greyed, and says so.
-            var why = typeof level.disabled === "function" ? level.disabled() : "";
-            return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label, why: why || "" };
-          })
-      )
-      .forEach(function (choice) {
-        var option = el("option", "", choice.label);
-        option.value = choice.id;
-        if (choice.why) {
-          option.disabled = true;
-          // A browser shows no tooltip for an option: the reason is on the setting itself.
-          access.title = choice.why;
-        }
-        access.appendChild(option);
-      });
-    access.value = isOff ? "off" : at ? at.id : "network";
+    var choices = [{ id: "off", label: "Off", why: null }, { id: "network", label: "This network", why: null }].concat(
+      levels
+        .filter(function (level) {
+          return levelMaps[level.id];
+        })
+        .map(function (level) {
+          // Why it cannot be chosen, when it cannot: on the list, and saying so one way or the other.
+          var why = whyNot(typeof level.disabled === "function" ? level.disabled() : "");
+          return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label, why: why };
+        })
+    );
+    choices.forEach(function (choice) {
+      var option = el("option", "", choice.label);
+      option.value = choice.id;
+      if (choice.why && !choice.why.action) {
+        option.disabled = true;
+        // A browser shows no tooltip for an option: the reason is on the setting itself.
+        access.title = choice.why.reason;
+      }
+      // With an action the row stays pickable: the pick is how the reason gets read.
+      access.appendChild(option);
+    });
+    var was = isOff ? "off" : at ? at.id : "network";
+    access.value = was;
     access.onclick = function (event) {
       // On a row, a click anywhere else opens its code; not this one.
       event.stopPropagation();
     };
     access.onchange = function () {
+      var chosen = choices.filter(function (choice) {
+        return choice.id === access.value;
+      })[0];
+      if (chosen && chosen.why && chosen.why.action) {
+        access.value = was;
+        askWhy(chosen.label, chosen.why);
+        return;
+      }
       changeAccess(page, at, access.value, access);
     };
     return access;
@@ -1088,9 +1161,15 @@ function install(editor, options) {
      *   choose(surfaceId)  put the interface at this level; a promise, rejected
      *            with an Error whose message is for the person when it cannot be
      *   leave(surfaceId)   take it off this level; a promise
-     *   disabled()         optional: why the level cannot be chosen now, as a
-     *            sentence for the person, or "" when it can. It stays on the
-     *            list, greyed, with that sentence on the setting
+     *   disabled()         optional: why the level cannot be chosen now, or
+     *            "" when it can. A sentence: the level stays on the list,
+     *            greyed, with the sentence on the setting. Or { reason,
+     *            action: { label, run(editor) } }: the row stays pickable, and
+     *            picking it shows the reason on a sheet over the dialog with
+     *            the action's one button (and Not now), then the setting goes
+     *            back to what it was. run gets the editor, as a menu item's
+     *            does, so the level can open its own dialog. OSCAR draws the
+     *            words and the button; what they mean is the level's
      *   link(surfaceId)    optional: where an interface at this level is
      *            opened, { address, state: { text, tone, title }, devices },
      *            or null. devices is how many it has brought to the
@@ -1121,4 +1200,4 @@ function install(editor, options) {
   };
 }
 
-module.exports = { install: install, fileStem: fileStem };
+module.exports = { install: install, fileStem: fileStem, whyNot: whyNot };

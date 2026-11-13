@@ -716,3 +716,41 @@
 .oscar-assist-off .oscar-assist-asks {
   opacity: 0.55;
 }
+
+/* A level that cannot be chosen, picked anyway: its reason and the one action
+   that would change that, on a sheet over the dialog (askWhy in
+   export_dialog.js). It lives inside the modal's container, so it sits above
+   the dialog without a z-index race. */
+.oscar-export-ask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.oscar-export-ask-card {
+  width: min(440px, 100%);
+  padding: 18px 20px;
+  border: 1px solid var(--o-border);
+  border-radius: var(--o-radius);
+  background: var(--o-panel);
+  box-shadow: var(--o-shadow);
+  color: var(--o-text);
+}
+.oscar-export-ask-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.oscar-export-ask-reason {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.oscar-export-ask-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

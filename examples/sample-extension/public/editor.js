@@ -20,4 +20,25 @@ window.OSCAR.ready(function (oscar) {
         .catch(function () { box.textContent = "The server did not answer."; });
     },
   });
+
+  // An answer to "who can open it" that cannot be chosen until something is
+  // done, with the one thing that would do it: picked, the Publish dialog
+  // shows the reason on a sheet with an Unlock button, then the row is plain.
+  if (oscar.publishDialog && typeof oscar.publishDialog.addAccessLevel === "function") {
+    var unlocked = false;
+    oscar.publishDialog.addAccessLevel({
+      id: "sample",
+      label: "Sample level",
+      read: function () { return Promise.resolve({}); },
+      choose: function () { return Promise.reject(new Error("The sample level takes no interface; it is here to show the way in.")); },
+      leave: function () { return Promise.resolve(); },
+      disabled: function () {
+        if (unlocked) return "";
+        return {
+          reason: "The sample level shows what a level can say when it cannot be chosen yet: what it is for, and the one thing that would switch it on.",
+          action: { label: "Unlock", run: function () { unlocked = true; } },
+        };
+      },
+    });
+  }
 });

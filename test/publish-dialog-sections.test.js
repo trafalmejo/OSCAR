@@ -182,8 +182,8 @@ test("a file is downloaded through a window of its own that gives the dialog bac
 
 test("who can open it is one setting: Off and This network are OSCAR's own", () => {
   const dialog = read("public/src/export_dialog.js");
-  assert.match(dialog, /\[\{ id: "off", label: "Off" \}, \{ id: "network", label: "This network" \}\]/);
-  assert.match(dialog, /access\.value = isOff \? "off" : at \? at\.id : "network";/, "an extension's level outranks the network; off outranks both");
+  assert.match(dialog, /\[\{ id: "off", label: "Off", why: null \}, \{ id: "network", label: "This network", why: null \}\]/);
+  assert.match(dialog, /var was = isOff \? "off" : at \? at\.id : "network";\s*access\.value = was;/, "an extension's level outranks the network; off outranks both");
   assert.match(dialog, /fetch\("\/published\/" \+ encodeURIComponent\(id\) \+ "\/access", \{/);
   const css = read("public/css/oscar_export.css");
   assert.match(css, /\.oscar-publish-columns \{[^}]*grid-template-columns: 1fr;/, "one list, the whole width");
@@ -260,8 +260,8 @@ test("the note about several pages is only for a project with Pages on", () => {
 
 test("a level that cannot be chosen is on the list, greyed, and the setting says why", () => {
   const dialog = read("public/src/export_dialog.js");
-  assert.match(dialog, /var why = typeof level\.disabled === "function" \? level\.disabled\(\) : "";/);
-  assert.match(dialog, /if \(choice\.why\) \{\s*option\.disabled = true;[\s\S]{0,160}access\.title = choice\.why;/);
+  assert.match(dialog, /var why = whyNot\(typeof level\.disabled === "function" \? level\.disabled\(\) : ""\);/);
+  assert.match(dialog, /if \(choice\.why && !choice\.why\.action\) \{\s*option\.disabled = true;[\s\S]{0,160}access\.title = choice\.why\.reason;/);
 });
 
 test("the projects window opens on your projects; the templates fold under one row", () => {
@@ -272,4 +272,29 @@ test("the projects window opens on your projects; the templates fold under one r
   assert.match(editor, /"Templates \(" \+ sections\.templates\.length \+ "\)"/, "the row says how many are behind it");
   assert.match(editor, /templatesChosen = !showTemplates;\s*renderProjects\(\);/, "a click or Enter unfolds them, and it stays as left");
   assert.match(editor, /if \(showTemplates\) sections\.templates\.forEach\(drawRow\);/);
+});
+
+test("a level that cannot be chosen says why on a sheet, with the one action that would change that", () => {
+  // OSCAR#82: a greyed option has no tooltip and a pick on it does nothing,
+  // so nobody learned what the level was or that one action would switch it
+  // on. With an action the row stays pickable and the pick says so.
+  const { whyNot } = require("../public/src/export_dialog");
+  assert.strictEqual(whyNot(""), null);
+  assert.strictEqual(whyNot(undefined), null);
+  assert.deepStrictEqual(whyNot("Not now."), { reason: "Not now.", action: null }, "a sentence greys the row, as it always did");
+  const run = () => {};
+  assert.deepStrictEqual(whyNot({ reason: "Sign in first.", action: { label: "Log in", run } }), { reason: "Sign in first.", action: { label: "Log in", run } });
+  assert.deepStrictEqual(whyNot({ reason: "Sign in first.", action: { label: "Log in" } }), { reason: "Sign in first.", action: null }, "an action without a run is no action");
+  assert.strictEqual(whyNot({ action: { label: "Log in", run } }), null, "no reason: nothing to say, the level can be chosen");
+  const dialog = read("public/src/export_dialog.js");
+  assert.match(dialog, /if \(choice\.why && !choice\.why\.action\) \{\s*option\.disabled = true;/, "greyed only when there is nothing to be done about it");
+  assert.match(dialog, /if \(chosen && chosen\.why && chosen\.why\.action\) \{\s*access\.value = was;\s*askWhy\(chosen\.label, chosen\.why\);\s*return;/, "picked with an action: the setting goes back, the sheet opens, nothing is changed");
+  assert.match(dialog, /go\.onclick = function \(\) \{\s*close\(\);\s*why\.action\.run\(editor\);/, "the action gets the editor, as a menu item's run does, after the sheet is gone");
+  assert.match(dialog, /var later = button\("Not now"\);/, "and there is always a way to say no");
+  assert.match(dialog, /document\.querySelector\("\.gjs-mdl-container"\) \|\| document\.body/, "inside the modal's container, above the dialog");
+  assert.doesNotMatch(dialog, /window\.alert\(/, "OSCAR's own sheet, never the browser's");
+  const doc = read("EXTENSIONS.md");
+  assert.match(doc, /\{ reason, action: \{ label, run\(editor\) \} \}/, "the object form is in the contract");
+  const sample = read("examples/sample-extension/public/editor.js");
+  assert.match(sample, /action: \{ label: "Unlock", run: function \(\) \{ unlocked = true; \} \}/, "and the sample extension shows one");
 });

@@ -1653,7 +1653,7 @@ function planPorts(args, env) {
 module.exports = { portsFromEnv, planPorts, DEFAULTS, VARIABLES, isPort };
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":41}],13:[function(require,module,exports){
+},{"_process":48}],13:[function(require,module,exports){
 "use strict";
 
 /**
@@ -8200,6 +8200,20 @@ const xypad = {
       flush();
     }
 
+    /**
+     * A touch the system takes back -- it decides to scroll, a second finger
+     * lands, a gesture of its own starts -- ends in a pointercancel, and a
+     * pointercancel has no position: WebKit reports 0, 0. Read as a release
+     * (seen on an iPad, 2026-11-04) it threw the handle into the top left
+     * corner and sent that corner to the rig. The drag ends where it last
+     * was, as it does when the window is lost.
+     */
+    function onPointerCancel() {
+      if (!dragging) return;
+      dragging = false;
+      flush();
+    }
+
     /** Work out the values under the pointer and schedule them. */
     function track(e, final) {
       const rect = el.getBoundingClientRect();
@@ -8322,7 +8336,7 @@ const xypad = {
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointermove", onPointerMove);
     el.addEventListener("pointerup", onPointerUp);
-    el.addEventListener("pointercancel", onPointerUp);
+    el.addEventListener("pointercancel", onPointerCancel);
     // Guarded so the widget can be exercised outside a browser.
     const root = typeof window === "undefined" ? null : window;
     if (root) root.addEventListener("blur", onBlur);
@@ -8338,7 +8352,7 @@ const xypad = {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointermove", onPointerMove);
       el.removeEventListener("pointerup", onPointerUp);
-      el.removeEventListener("pointercancel", onPointerUp);
+      el.removeEventListener("pointercancel", onPointerCancel);
       if (root) root.removeEventListener("blur", onBlur);
       if (stop) stop();
       if (stopRewrite) stopRewrite();
@@ -8381,6 +8395,7020 @@ function within(value, min, max) {
 module.exports = { xypad, SEND_MODES };
 
 },{"../dmx/levels":2,"../osc-args":11,"./fields":24,"./incoming":25,"./midi-fields":29,"./outgoing":34,"./shared":36}],41:[function(require,module,exports){
+/**
+ * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
+ *
+ * It translates a neutral widget definition (lib/widgets/) into the things
+ * GrapesJS wants -- a component type, a trait list, a block -- and supplies the
+ * `ctx` the widget's behaviour runs against. Swapping editors means rewriting
+ * this file; the widgets themselves do not change.
+ */
+
+var { WIDGETS } = require("../../../lib/widgets");
+var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
+var features = require("../../../lib/features");
+var { isListening } = require("../../../lib/midi/spec");
+var { midiSource } = require("../../../lib/widgets/midi-source");
+var { exportAttributes } = require("../../../lib/export/config");
+
+/**
+ * The collapsible section a field is drawn in. GrapesJS draws every trait
+ * that has a category above every trait that has none, so the widget's own
+ * settings get a section too -- first, because Enabled is the first field --
+ * rather than ending up underneath the protocols.
+ *
+ * A protocol's section starts open when the widget uses that protocol. The
+ * DMX section of a plain OSC button is one closed line, which keeps its panel
+ * as short as it was before DMX existed.
+ */
+var WIDGET_SECTION = { id: "widget", label: "Widget" };
+var SECTION_ATTRIBUTE = "data-oscar-section";
+
+function categoryOf(field, config) {
+  var section = null;
+  SECTIONS.forEach(function (candidate) {
+    if (candidate.id === field.section) section = candidate;
+  });
+  if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
+  // A protocol that is off starts folded away, so the panel of a widget that
+  // only speaks OSC stays as short as it was before the others existed.
+  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) || isListening(config || {}) : true;
+  // The attribute lands on the section's element, which is how the status
+  // light finds it: by what it is, not by what its title happens to say.
+  var attributes = {};
+  attributes[SECTION_ATTRIBUTE] = section.id;
+  return { id: section.id, label: section.label, open: open, attributes: attributes };
+}
+
+/** Neutral field descriptor -> GrapesJS trait. `config` decides which sections start open. */
+function toTrait(field, config) {
+  var trait = {
+    // Every setting is a component property rather than an HTML attribute.
+    // Attributes would end up in the exported markup, where they are noise at
+    // best and a stale copy of the truth at worst.
+    changeProp: true,
+    name: field.key,
+    label: field.label,
+    type: field.type,
+    category: categoryOf(field, config),
+  };
+
+  if (field.type === "select") {
+    // GrapesJS wants { id, name }, which is the shape lib/widgets uses too.
+    trait.options = field.source ? choicesFor(field, config && config[field.key]) : field.options;
+  }
+  if (field.placeholder) trait.placeholder = field.placeholder;
+  // Shown by the browser on hover. decoratePanel() copies it onto the label
+  // too, which GrapesJS titles with the label's own text.
+  // The field's name goes along so the panel can add to the hints that say
+  // where data goes (see sectionLights).
+  if (field.hint) trait.attributes = { title: field.hint, "data-oscar-field": field.key };
+  if (field.min !== undefined) trait.min = field.min;
+  if (field.max !== undefined) trait.max = field.max;
+  if (field.step !== undefined) trait.step = field.step;
+
+  return trait;
+}
+
+/** The whole panel for a widget in a given state. */
+function traitsFor(definition, config) {
+  return visibleFields(definition, config).map(function (field) {
+    return toTrait(field, config);
+  });
+}
+
+/** The fields a trait list holds, in order, as one comparable string. */
+function traitKeys(traits) {
+  if (!traits || typeof traits.map !== "function") return null;
+  return traits
+    .map(function (trait) {
+      // A GrapesJS trait is a model once the component has built it, and a
+      // plain descriptor before. The label rides along because one key can
+      // wear two faces -- DMX's Node and Interface -- and a change of face
+      // with the same keys still has to redraw the panel.
+      var read = typeof trait.get === "function";
+      var name = trait.key || (read ? trait.get("name") : trait.name);
+      var label = read ? trait.get("label") : trait.label;
+      return name + "=" + (label || "");
+    })
+    .join(" ");
+}
+
+/** Read every configured value off a component, for validators that need context. */
+function configOf(model, definition) {
+  var config = {};
+  for (var key in definition.defaults) {
+    if (Object.prototype.hasOwnProperty.call(definition.defaults, key)) {
+      config[key] = model.get(key);
+    }
+  }
+  return config;
+}
+
+/**
+ * Which settings switch each section's directions on. A section of the panel
+ * opens on its Data in and Data out checkboxes alone; every field tagged with
+ * `dir` (lib/widgets/fields.js) appears only while its direction is on, so an
+ * Out port is not on screen when nothing goes out.
+ */
+var SECTION_DIRECTIONS = {
+  osc: { in: "listen", out: "oscEnabled" },
+  midi: { in: "midiListen", out: "midiEnabled" },
+  dmx: { out: "dmxEnabled" },
+};
+
+function directionOn(config, section, dir) {
+  if (dir === "both") return directionOn(config, section, "in") || directionOn(config, section, "out");
+  var key = (SECTION_DIRECTIONS[section] || {})[dir];
+  var value = key ? config[key] : undefined;
+  return value === true || value === "true";
+}
+
+/**
+ * The fields that apply to a widget as it is currently configured.
+ *
+ * A field may carry `dir` -- shown while its section's direction is on --
+ * and `showIf: { key, in: [...] }` -- shown while that setting holds one of
+ * the listed values (lib/widgets/fields.js). Both are data rather than
+ * callbacks so this file can also work out which settings it has to watch
+ * for the panel to keep up.
+ */
+function visibleFields(definition, config) {
+  return definition.fields.filter(function (field) {
+    // A protocol that is switched off (lib/features.js) has no section, and
+    // with no serial there is no Via to choose and no door to pick with From:
+    // everything is the network.
+    if (field.section === "midi" && !features.MIDI) return false;
+    if ((field.key === "oscVia" || field.key === "oscListenFrom") && !features.SERIAL) return false;
+    if (field.dir && !directionOn(config, field.section, field.dir)) return false;
+    var rule = field.showIf;
+    return !rule || rule.in.indexOf(config[rule.key]) !== -1;
+  });
+}
+
+/** The settings some field's visibility depends on. */
+function revealKeys(definition) {
+  var keys = [];
+  var add = function (key) {
+    if (key && keys.indexOf(key) === -1) keys.push(key);
+  };
+  definition.fields.forEach(function (field) {
+    if (field.showIf) add(field.showIf.key);
+    if (field.dir) {
+      var section = SECTION_DIRECTIONS[field.section] || {};
+      add(section.in);
+      add(section.out);
+    }
+  });
+  return keys;
+}
+
+function changeEvent(keys) {
+  return keys
+    .map(function (key) {
+      return "change:" + key;
+    })
+    .join(" ");
+}
+
+/**
+ * Which components are on their way out because someone deleted them.
+ *
+ * GrapesJS removes a widget's view for more reasons than deletion: opening a
+ * project, and the preview page taking a push, tear the whole surface down
+ * and build the new one (an undo does the same). Releasing DMX on every one
+ * of those would black the stage out on "Push to preview" while a tablet is
+ * mid-show. Only an actual deletion -- the trash icon, the Delete key, a
+ * script calling remove() -- goes through Component.remove(), which announces
+ * itself with component:remove:before; a load resets the wrapper's children
+ * and never does -- what it does remove that way is the wrapper itself, the
+ * page's body, and the whole surface going is not a widget being deleted.
+ * A move is a remove-and-append flagged `temporary`, so it does not count
+ * either. The set is per editor and filled once, however many widgets
+ * register against it.
+ */
+// The widget types that can hold DMX channels, by component type name.
+var DMX_TYPES = {};
+WIDGETS.forEach(function (definition) {
+  if (definition.dmx) DMX_TYPES[definition.name] = true;
+});
+
+var deletionsByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
+
+function deletionsOf(editor) {
+  var marked = deletionsByEditor && deletionsByEditor.get(editor);
+  if (marked) return marked;
+
+  marked = new WeakSet();
+  if (deletionsByEditor) deletionsByEditor.set(editor, marked);
+
+  // A host without events cannot tell a deletion from a reload, and holding
+  // the rig is the safe answer to not knowing.
+  if (typeof editor.on !== "function") return marked;
+
+  // Deleting a whole page is a deletion of everything on it, and GrapesJS
+  // announces it differently: the only component:remove:before is for the
+  // page's wrapper, which is rightly ignored below, and a page that is not
+  // showing has no views whose removal could hand anything back. So the
+  // channels are given up here, by id, before the page's components are gone
+  // (by page:remove they already are). A widget that holds no channels costs
+  // a message the server answers with "not known".
+  editor.on("page:remove:before", function (page) {
+    if (!page || typeof page.getMainComponent !== "function" || !editor.stopDMX) return;
+    var main = page.getMainComponent();
+    if (!main || typeof main.onAll !== "function") return;
+    main.onAll(function (model) {
+      if (DMX_TYPES[model.get("type")]) editor.stopDMX(model.getId());
+    });
+  });
+
+  editor.on("component:remove:before", function (component, remove, opts) {
+    if (!component || (opts && opts.temporary)) return;
+    if (typeof component.get === "function" && component.get("type") === "wrapper") return;
+    var mark = function (model) {
+      marked.add(model);
+    };
+    // A deleted container takes the widgets inside it with it.
+    if (typeof component.onAll === "function") component.onAll(mark);
+    else mark(component);
+  });
+
+  return marked;
+}
+
+/**
+ * Build the `ctx` a widget's behaviour runs against.
+ *
+ * `set` writes with `silent` so that storing a value mid-drag cannot trigger
+ * the validators or a re-render -- the old slider needed a `fromView` flag
+ * threaded through its model to dodge exactly that, and the pad would have
+ * fought its own handle.
+ *
+ * `onOsc` is the network coming the other way, and `send` is shut for as long
+ * as a message is being delivered through it. That is the host's half of the
+ * loop guard: a widget has no way to lift it, so a value that arrived from
+ * outside cannot be bounced straight back out by any widget, however it is
+ * written. (The widgets' half is in lib/widgets/incoming.js.)
+ *
+ * `onShared` is the other devices on the surface, and while their state is
+ * being delivered both `send` and `share` are shut: the device that acted
+ * already put the message on the wire, and a device that re-shared what it
+ * was handed would hand it straight back. `share` stays open while OSC is
+ * being delivered, on purpose -- a value the rig sent is recorded, so a
+ * device joining later starts where the rig left things -- but it goes out
+ * marked as heard, and the server tells nobody: the other devices were sent
+ * the same OSC message (lib/shared-sync.js).
+ *
+ * Only the pages that show the surface take part. The editor is handed no
+ * shareState (see oscar_socket.js), so neither method exists there.
+ *
+ * A message may carry an OSC half, a DMX half, or both (lib/widgets/outgoing.js);
+ * each goes out on its own bridge. The DMX half is stamped with the
+ * component's id on the way, which is what names this widget's claim on its
+ * channels: the same widget replaces its own claim on every move, and hands
+ * it back when deleted. The id lives in the project file, so a tablet that
+ * reloads the surface resumes driving the same channels instead of turning
+ * up as a second source fighting the first.
+ */
+function contextFor(view, editor) {
+  var model = view.model;
+  // How deep this widget is in taking an incoming OSC message, and in
+  // taking another device's state. Each shuts a different door.
+  var delivering = 0;
+  var adopting = 0;
+
+  var ctx = {
+    onRewrite: function (fn) {
+      view.oscarRewrites = (view.oscarRewrites || []).concat([fn]);
+      return function () {
+        view.oscarRewrites = (view.oscarRewrites || []).filter(function (f) {
+          return f !== fn;
+        });
+      };
+    },
+
+    get: function (key) {
+      return model.get(key);
+    },
+
+    set: function (key, value) {
+      model.set(key, value, { silent: true });
+    },
+
+    send: function (message) {
+      if (delivering) {
+        console.warn("OSCAR: a widget tried to answer incoming OSC with outgoing OSC; dropped", message);
+        return;
+      }
+      // The canvas yields to the show: a widget whose id is live on a
+      // published surface sends nothing from here -- the published copy is
+      // playing, and two masters on one id fight on the wire. The light on
+      // the widget says so (publishedOwners below); publishing again is what
+      // makes the canvas the show.
+      if (publishedOwners(editor, model.getId()).length) return;
+      if (adopting) {
+        // The device that acted already sent this; a second copy from every
+        // tablet watching would be a retrigger downstream.
+        console.warn("OSCAR: a widget tried to answer another device's state by sending; dropped", message);
+        return;
+      }
+      if (!message) return;
+      if (message.address && editor.sendOSC) {
+        editor.sendOSC(message.ip, message.port, message.address, message.args);
+      }
+      if (message.dmx && editor.sendDMX) {
+        editor.sendDMX(Object.assign({ source: model.getId() }, message.dmx));
+      }
+      if (message.midi && editor.sendMIDI) editor.sendMIDI(message.midi);
+    },
+
+    setClass: function (name, on) {
+      // Straight onto the element, never onto the model: a class added to the
+      // model is saved into the project file, so a surface stored while a
+      // toggle happened to be on would reload wearing its on state.
+      if (on) view.el.classList.add(name);
+      else view.el.classList.remove(name);
+    },
+
+    onChange: function (keys, fn) {
+      var event = changeEvent(keys);
+      model.on(event, fn);
+      return function () {
+        model.off(event, fn);
+      };
+    },
+  };
+
+  // What the canvas followed, for the editor's network log (oscar_editor.js
+  // sets editor.noteHeard); asked at call time, so the order they load in
+  // does not matter, and a page with no log -- the preview -- says nothing.
+  ctx.noteHeard = function (protocol, what, device) {
+    if (typeof editor.noteHeard === "function") editor.noteHeard(protocol, what, device);
+  };
+
+  // Only a host that can receive offers onOsc at all; the widgets check for
+  // it (through follow() in lib/widgets/incoming.js) rather than assume it.
+  if (editor.onOscIn) {
+    ctx.onOsc = function (fn) {
+      return editor.onOscIn(function (message) {
+        delivering++;
+        try {
+          fn(message);
+        } finally {
+          delivering--;
+        }
+      });
+    };
+  }
+
+  // Likewise share and onShared: only where the socket plugin put the other
+  // devices within reach. The state is keyed by the component's id, which
+  // is written into the project (see pinId), so the same widget carries the
+  // same id on every device the layout was pushed to.
+  if (editor.shareState) {
+    ctx.share = function (state, how) {
+      if (adopting) {
+        console.warn("OSCAR: a widget tried to re-share the state it was handed; dropped", state);
+        return;
+      }
+      // A yielded widget shares nothing either: its id is the published
+      // copy's, and a shared move would walk every phone's fader with no
+      // output behind it.
+      if (publishedOwners(editor, model.getId()).length) return;
+      // Whatever is shared while the rig's message is being delivered is
+      // something every device heard, whether or not the widget said so:
+      // it is recorded and nobody is told (lib/shared-sync.js).
+      var heard = delivering > 0 || !!(how && how.heard === true);
+      editor.shareState(model.getId(), state, { heard: heard, release: how && how.release });
+    };
+  }
+
+  // A state handed to the widget, from wherever, with the doors shut.
+  var adopt = function (deliver) {
+    adopting++;
+    try {
+      deliver();
+    } finally {
+      adopting--;
+    }
+  };
+  var sources = [];
+  if (editor.onSharedState) {
+    sources.push(function (fn) {
+      return editor.onSharedState(model.getId(), function (state) {
+        adopt(function () {
+          fn(state);
+        });
+      });
+    });
+  }
+  // A MIDI controller reaches the widget the same way, here in the editor's
+  // canvas too, so a knob can be seen to work the moment it has been learned.
+  var definition = byType(model.get("type"));
+  var fromMidi = midiSource(
+    editor,
+    definition,
+    model.getId(),
+    function () {
+      return configOf(model, definition);
+    },
+    function () {
+      return { value: model.get("value"), x: model.get("x"), y: model.get("y"), on: view.el.classList.contains("toggle") };
+    },
+    adopt,
+    function (changed) {
+      var event = "change:enabled change:midiListen change:midiInPort";
+      model.on(event, changed);
+      return function () {
+        model.off(event, changed);
+      };
+    }
+  );
+  if (fromMidi) sources.push(fromMidi);
+  if (sources.length) {
+    ctx.onShared = function (fn) {
+      var stops = sources.map(function (source) {
+        return source(fn);
+      });
+      return function () {
+        stops.forEach(function (stop) {
+          stop();
+        });
+      };
+    };
+  }
+
+  return ctx;
+}
+
+// The widget types that follow the rig, by component type name.
+var RECEIVERS = {};
+WIDGETS.forEach(function (definition) {
+  if (definition.receives) RECEIVERS[definition.name] = definition;
+});
+
+// editor -> Map(component model -> detach), for the widgets kept running
+// without a view. Per editor, like the deletions above.
+var offstageByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
+
+/** Stop the viewless copy of one widget, if there is one: its view has arrived. */
+function stopOffstage(editor, model) {
+  var running = offstageByEditor && offstageByEditor.get(editor);
+  var detach = running && running.get(model);
+  if (!detach) return;
+  running.delete(model);
+  detach();
+}
+
+/**
+ * Keep the widgets of the pages that are not showing listening to the rig.
+ *
+ * GrapesJS only builds views for the page on the canvas, and a widget only
+ * runs while it has a view. So on a surface with several pages, what the rig
+ * said to a fader on page two while page one was up reached nobody: with a
+ * single tablet -- the usual rig -- no device anywhere was running that
+ * fader, the value was never stored or recorded, and the fader came back
+ * where it had been left, disagreeing with the rig. The next touch then sent
+ * from the stale position, which is a jump on the rig.
+ *
+ * The components of every page exist whether or not they are showing; only
+ * their views do not. So each widget that can receive is attached to an
+ * element that is never put on screen, against the same ctx a view would
+ * get. It does what it always does with what it hears -- stores it with
+ * set(), shares it as heard -- and because nothing can touch an element that
+ * is not in any document, it never sends. When its page is turned to, the
+ * view's own attach takes over (onRender stops this copy first) and starts
+ * from the stored value and, on a sharing device, the shared state.
+ *
+ * Widgets that only send are left alone: they have nothing to hear, and what
+ * other devices do to them is cached by the socket plugin without them.
+ *
+ *   var offstage = runOffstage(editor, { document: document });
+ *   offstage.start() / offstage.refresh() / offstage.stop()
+ *
+ * start() doubles as the refresh after a project load, which replaces every
+ * component without necessarily announcing a page change.
+ */
+function runOffstage(editor, options) {
+  var doc = (options && options.document) || (typeof document === "undefined" ? null : document);
+  var running = new Map();
+  var started = false;
+  if (offstageByEditor) offstageByEditor.set(editor, running);
+
+  function attach(model, definition) {
+    var el = doc.createElement(definition.tag);
+    var attributes = definition.attributes || {};
+    Object.keys(attributes).forEach(function (name) {
+      el.setAttribute(name, attributes[name]);
+    });
+    try {
+      running.set(model, definition.attach(el, contextFor({ model: model, el: el }, editor)) || function () {});
+    } catch (err) {
+      // One widget that cannot run without a view must not stop the page
+      // from turning, or the rest from listening.
+      console.warn("OSCAR: a widget could not be kept listening off its page:", err && err.message);
+    }
+  }
+
+  function refresh() {
+    var wanted = new Map();
+    if (started && doc && editor.Pages) {
+      var selected = editor.Pages.getSelected();
+      editor.Pages.getAll().forEach(function (page) {
+        if (page === selected || typeof page.getMainComponent !== "function") return;
+        var main = page.getMainComponent();
+        if (!main || typeof main.onAll !== "function") return;
+        main.onAll(function (model) {
+          var definition = RECEIVERS[model.get("type")];
+          if (definition) wanted.set(model, definition);
+        });
+      });
+    }
+
+    // Whatever is no longer off stage goes first: the page turned to, and
+    // after a load every component of the project that was replaced.
+    Array.from(running.keys()).forEach(function (model) {
+      if (!wanted.has(model)) stopOffstage(editor, model);
+    });
+    wanted.forEach(function (definition, model) {
+      if (!running.has(model)) attach(model, definition);
+    });
+  }
+
+  // A host that cannot receive has nothing for these widgets to hear.
+  if (typeof editor.on === "function" && editor.onOscIn) {
+    editor.on("page:select page:add page:remove", refresh);
+  }
+
+  return {
+    refresh: refresh,
+    start: function () {
+      started = !!editor.onOscIn;
+      refresh();
+    },
+    stop: function () {
+      started = false;
+      refresh();
+    },
+    get size() {
+      return running.size;
+    },
+  };
+}
+
+/**
+ * Write the component's id into the project.
+ *
+ * GrapesJS only saves a component's id when something refers to it -- a
+ * style rule, a script; otherwise the id is made up afresh on every load,
+ * and made up differently on every device. Widgets placed on the canvas
+ * pick up a style rule and keep their id that way, but one pasted in from
+ * an imported template does not, and the state the tablets share for it
+ * would be keyed by an id no other tablet has. Pinning it as an attribute
+ * makes the id part of the project on every path.
+ */
+function pinId(model) {
+  var attributes = model.get("attributes") || {};
+  if (attributes.id || typeof model.setId !== "function") return;
+  model.setId(model.getId());
+}
+
+/**
+ * Empty a component whose widget builds its own children.
+ *
+ * What the widget draws lives on the view's element only and GrapesJS never
+ * hears of it, which is the whole arrangement: no component, so nothing to
+ * save, select, move or delete. This is for children that got into the model
+ * some other way -- a project file edited by hand, or written by something
+ * that stored them.
+ */
+function disown(model) {
+  if (typeof model.components !== "function") return;
+  var children = model.components();
+  if (children && children.length) model.components("");
+}
+
+/** Let the widget put back what GrapesJS just wiped off its element. */
+function rewritten(view) {
+  (view.oscarRewrites || []).forEach(function (fn) {
+    fn();
+  });
+}
+
+/**
+ * Register one widget definition with GrapesJS.
+ *
+ * Returns a plugin function, which is what the editor's `plugins` list takes.
+ */
+function register(definition) {
+  return function (editor, options) {
+    var ipserver = (options && options.ipserver) || "localhost";
+    var deletions = definition.dmx ? deletionsOf(editor) : null;
+    var ownClass = definition.attributes && definition.attributes.class;
+
+    // A widget with an Ip setting starts pointed at this machine. One without
+    // -- a label, or a meter, which listens and never sends -- has nowhere to
+    // point, and must not carry a hidden ip that nothing shows or checks. The
+    // test is the setting itself rather than the sends flag, so the hidden
+    // value and the visible field cannot come apart.
+    var defaults = Object.assign(
+      {},
+      definition.defaults,
+      "ip" in (definition.defaults || {}) ? { ip: ipserver } : {}
+    );
+
+    editor.DomComponents.addType(definition.name, {
+      isComponent: function (el) {
+        return parsed(definition, el);
+      },
+
+      model: {
+        defaults: Object.assign(
+          {
+            tagName: definition.tag,
+            attributes: Object.assign({}, definition.attributes),
+            droppable: false,
+            resizable: true,
+            traits: traitsFor(definition, defaults),
+          },
+          defaults,
+          // A widget whose label is its text content renders that text as its
+          // only child; anything else starts empty.
+          definition.text ? { components: String(defaults[definition.text] || "") } : {}
+        ),
+
+        init: function () {
+          var model = this;
+
+          // The id is what the other devices know this widget by; it has to
+          // reach the project file, or it never reaches them.
+          pinId(model);
+
+          // A widget's own class is how its stylesheet finds it and how a
+          // project's HTML is recognised, not something to style through.
+          // GrapesJS styles a component through its classes whenever it has
+          // any, so every edit to one XY pad -- a resize, a move, a colour --
+          // went to the rule all pads share, and they changed together.
+          // Private keeps the class on the element but out of styling, so
+          // edits land on this one component; protected stops it being
+          // removed from the Classes list by accident.
+          //
+          // Flagged here, per component, rather than once when the plugin
+          // loads: loading a project creates the selector afresh, and a flag
+          // set on the earlier one is lost with it.
+          // A host that keeps no class list has nothing to flag.
+          var classes = ownClass ? model.get("classes") : null;
+          if (classes && typeof classes.forEach === "function") {
+            classes.forEach(function (selector) {
+              if (selector.get("name") === ownClass) {
+                selector.set({ private: true, protected: true });
+              }
+            });
+          }
+
+          if (definition.ownsChildren) disown(model);
+
+          // The type's trait list was built from its defaults. A component
+          // read back from a saved project may be set to DMX already, and
+          // switching Output has to bring the right half of the panel with
+          // it. GrapesJS rebuilds its traits on change:traits and redraws the
+          // panel itself, so the list is only ever set when it would differ --
+          // judged by which fields it holds, since two states of a widget can
+          // show the same number of different fields.
+          var reveals = revealKeys(definition);
+          if (reveals.length) {
+            var refresh = function () {
+              var wanted = visibleFields(definition, configOf(model, definition));
+              if (traitKeys(model.get("traits")) === traitKeys(wanted)) return;
+              model.set(
+                "traits",
+                wanted.map(function (field) {
+                  return toTrait(field, configOf(model, definition));
+                })
+              );
+            };
+            refresh();
+            model.on(changeEvent(reveals), refresh);
+          }
+
+          // A widget switched away from DMX must hand its channels back, or
+          // the rig holds that widget's last look with nothing left able to
+          // change it. Enabled off does not release: a disabled fader holds
+          // its level the way a silent OSC fader leaves the software where it
+          // was, and a blackout is not "no change".
+          if (definition.dmx) {
+            // A project saved while the choice was one Output setting says
+            // osc, dmx or both. Turn that into the two checkboxes the panel
+            // now shows, or they would sit at their defaults and lie about a
+            // widget that is driving DMX. Silent: opening a project is not
+            // an edit, and nothing has changed about what the widget does.
+            var upgraded = upgradeRouting({ transport: model.get("transport") });
+            if (upgraded) {
+              model.set(upgraded, { silent: true });
+              model.unset("transport", { silent: true });
+            }
+
+            // The type's panel was built with DMX off, so its DMX section
+            // starts closed. One that is driving DMX opens on it.
+            if (sendsDmx(configOf(model, definition))) {
+              model.set("traits", traitsFor(definition, configOf(model, definition)));
+            }
+
+            model.on("change:dmxEnabled", function () {
+              if (!sendsDmx(configOf(model, definition)) && editor.stopDMX) editor.stopDMX(model.getId());
+            });
+          }
+
+          // Ticking MIDI's Data in with no In port named listens on the first
+          // port there is. Which one that is is written into the box, so it
+          // is there to be read and changed. Learn names the one touched.
+          // Every port has to be asked for, in words (lib/midi/spec.js).
+          if (definition.fields.some(function (field) { return field.key === "midiListen"; })) {
+            model.on("change:midiListen", function () {
+              var port = namedMidiInput(configOf(model, definition));
+              if (port) model.set("midiInPort", port);
+            });
+          }
+
+          if (definition.text) {
+            model.on("change:" + definition.text, function () {
+              model.components(String(model.get(definition.text) || ""));
+            });
+          }
+
+          // Validation runs only on edits made through the settings panel.
+          // Values the widget writes back go through ctx.set, which is silent.
+          Object.keys(definition.checks || {}).forEach(function (key) {
+            model.on("change:" + key, function () {
+              var complaint = definition.checks[key](model.get(key), configOf(model, definition));
+              if (!complaint) return;
+              alert(complaint);
+              model.set(key, model.previous(key), { silent: true });
+              // The panel is already showing the rejected text; make it show
+              // what the component actually holds.
+              editor.trigger("component:toggled");
+            });
+          });
+        },
+      },
+
+      // GrapesJS's own updateAttributes strips every attribute off the element
+      // and re-applies the model's copy, and updateClasses does the same for
+      // the class list, on every class or style edit. Whatever the widget
+      // wrote straight onto the element goes with them, so each runs the
+      // widget's onRewrite handlers afterwards (extendFnView calls the
+      // original first).
+      extendFnView: ["updateAttributes", "updateClasses"],
+
+      view: {
+        updateAttributes: function () {
+          rewritten(this);
+        },
+
+        updateClasses: function () {
+          rewritten(this);
+        },
+
+        onRender: function () {
+          // The view takes over from the copy that listened while this page
+          // was not showing (runOffstage); two of them would share twice.
+          stopOffstage(editor, this.model);
+          if (this.oscarDetach) this.oscarDetach();
+          this.oscarDetach = definition.attach(this.el, contextFor(this, editor));
+        },
+
+        removed: function () {
+          // DMX is a stream: a deleted widget that was driving channels hands
+          // them back, or the rig holds its last look with nothing on the
+          // surface able to change it. Only a deletion, though (see
+          // deletionsOf): a surface being reloaded keeps every channel where
+          // it is, and so does a browser merely disconnecting -- that is the
+          // server's rule, and a phone locking its screen must not black out
+          // a show.
+          if (deletions && deletions.has(this.model)) {
+            deletions.delete(this.model);
+            if (editor.stopDMX) editor.stopDMX(this.model.getId());
+          }
+
+          if (!this.oscarDetach) return;
+          this.oscarDetach();
+          this.oscarDetach = null;
+        },
+      },
+    });
+
+    // A widget the OSCAR app alone can run is not in the palette unless
+    // asked for (lib/features.js APP_WIDGETS); its type stays registered, so
+    // a project that already has one still opens. Offered, it wears a badge,
+    // so nobody draws one for a browser and wonders.
+    if (definition.block.app && !features.APP_WIDGETS) return;
+    editor.BlockManager.add(definition.name, {
+      label: definition.block.app ? definition.block.label + ' <span class="oscar-block-app" title="Works in the OSCAR app on a phone or tablet, not in a browser">App</span>' : definition.block.label,
+      // GrapesJS 0.21+ no longer ships Font Awesome, so icons are inline SVG.
+      media: definition.block.icon,
+      category: definition.block.category,
+      content: { type: definition.name },
+    });
+  };
+}
+
+/**
+ * One plugin per registered widget, each told the address other devices
+ * should send to. This is the whole of what an entry point needs to do to get
+ * every widget: spread it into the editor's `plugins` list.
+ */
+function widgetPlugins(ipServer) {
+  return WIDGETS.map(function (definition) {
+    var plugin = register(definition);
+    return function (editor) {
+      plugin(editor, { ipserver: ipServer });
+    };
+  });
+}
+
+/**
+ * Recognise an element as this widget when a project is parsed.
+ *
+ * Matching on the tag alone is too greedy: every <input> in an imported form
+ * would become a slider, so a widget that shares its tag is identified by the
+ * attributes it was defined with.
+ */
+function matches(definition, el) {
+  if (!el || !el.tagName) return false;
+  if (el.tagName.toLowerCase() !== definition.tag) return false;
+
+  var attributes = definition.attributes || {};
+  if (attributes.type && el.getAttribute("type") !== attributes.type) return false;
+  if (attributes.class && !(el.classList && el.classList.contains(attributes.class))) return false;
+  return true;
+}
+
+/**
+ * The markup and stylesheet an export is built from, with every widget's
+ * settings written into the markup.
+ *
+ * The settings are handed to getHtml() as it serialises each component (its
+ * `attributes` option is called per component, children included) and exist
+ * only in the string it returns. They are never set on a model, not even for
+ * the length of the call, so there is nothing to strip afterwards and no
+ * moment at which an autosave, an undo step or a crash could catch a project
+ * holding a second copy of its settings -- the thing toTrait's comment rules
+ * out. Writing them on and taking them off again would also have GrapesJS
+ * rewrite every widget's element twice per export, mid-show.
+ *
+ * Which components are widgets, and which keys travel, comes from WIDGETS by
+ * way of lib/export/config.js; nothing here lists a widget.
+ *
+ * Only the first page: an exported file is one surface, and the dialog says
+ * so when the project has more.
+ */
+function exportSnapshot(editor) {
+  var pages = editor.Pages.getAll();
+  var component = pages[0].getMainComponent();
+  var widgets = 0;
+
+  var html = editor.getHtml({
+    component: component,
+    attributes: function (model, attributes) {
+      var settings = exportAttributes(model.get("type"), function (key) {
+        return model.get(key);
+      });
+      if (!settings) return attributes;
+      widgets++;
+      // The id is the widget's name on the wire: its claim on DMX channels
+      // and the key the devices share its state under. pinId writes it into
+      // every widget that has been through init; this covers one that has
+      // not, in the output only.
+      var id = attributes && attributes.id ? null : typeof model.getId === "function" && model.getId();
+      return Object.assign({}, attributes, id ? { id: id } : null, settings);
+    },
+  });
+
+  return {
+    html: html,
+    css: editor.getCss({ component: component }) || "",
+    pages: pages.length,
+    widgets: widgets,
+  };
+}
+
+/**
+ * What an element parsed from HTML becomes: this widget, or nothing.
+ *
+ * A widget whose label is its text takes the label from the element too, so
+ * pasted or templated code such as <button>Strobe</button> is a button called
+ * Strobe in its settings, not one showing Strobe while its Label field says
+ * something else.
+ *
+ * A widget that builds its own children (ownsChildren, lib/widgets/index.js)
+ * has none as far as the project goes. Markup pasted in or imported -- a page
+ * saved from a browser, with the tiles the widget drew still inside it --
+ * would otherwise have them parsed into components: stored, selectable,
+ * draggable out, and drawn a second time next to the ones the widget builds.
+ * The parser only descends into an element whose components are already given.
+ */
+function parsed(definition, el) {
+  if (!matches(definition, el)) return undefined;
+  var result = { type: definition.name };
+  if (definition.ownsChildren) result.components = [];
+  if (definition.text) {
+    var label = String(el.textContent || "").trim();
+    if (label) result[definition.text] = label;
+  }
+  return result;
+}
+
+/**
+ * Keep the canvas body in the surface's style. The style is saved on the
+ * wrapper component, but the body is outside anything GrapesJS stores, so it
+ * is brought back in line on every canvas load, project load, page turn (each
+ * page has its own wrapper, and so its own style) and attribute change.
+ * `copy(attributes, body)` does the copying.
+ */
+function followSurfaceStyle(editor, copy) {
+  function sync() {
+    var doc = editor.Canvas.getDocument();
+    var wrapper = editor.getWrapper();
+    if (doc && doc.body && wrapper) copy(wrapper.getAttributes(), doc.body);
+  }
+  editor.on("load canvas:frame:load project:load page:select", sync);
+  editor.on("component:update:attributes", function (component) {
+    if (component === editor.getWrapper()) sync();
+  });
+  sync();
+}
+
+/**
+ * What the settings panel shows beyond what GrapesJS draws: lights on each
+ * protocol section's title, one per direction the widget has (IN and OUT for
+ * OSC, OUT alone for DMX, IN alone for a meter), green while that direction
+ * is live on the selected widget and grey while it is not, so a collapsed
+ * section still says what it is doing; and the hint of any setting that has
+ * one, on its label.
+ *
+ * GrapesJS rebuilds the panel whenever the selection or a widget's trait list
+ * changes and has no hook for after it has, so the panel is watched and
+ * decorated again when its contents change. Only child elements are watched,
+ * and a repaint changes attributes, so decorating cannot set itself off.
+ */
+var DIRECTIONS = [
+  { id: "in", tag: "IN", label: "Data in", field: "listen" },
+  { id: "out", tag: "OUT", label: "Data out", field: "oscEnabled" },
+];
+
+// How long Learn waits for OSC. For MIDI the server keeps the time (lib/midi).
+var LEARN_MS = 15000;
+
+/**
+ * Learn, per section: what is needed to start listening, and the settings to
+ * write from what was heard. A section is offered Learn when the selected
+ * widget has the section's Data in setting and the editor can hear that way.
+ */
+var LEARNERS = {
+  osc: {
+    field: "listen",
+    can: function (editor) {
+      return typeof editor.onOscIn === "function";
+    },
+    start: function (editor, config, done) {
+      var timer = null;
+      var stop = editor.onOscIn(function (message) {
+        var address = message.address;
+        // A pad sending its axes apart listens on /address/x and /address/y,
+        // and one of those is what arrives. The setting is the part before.
+        if (config.sendMode === "two") address = address.replace(/\/[xy]$/, "");
+        finish({ message: address, listen: true });
+      });
+      function finish(settings) {
+        clearTimeout(timer);
+        stop();
+        done(settings);
+      }
+      timer = setTimeout(function () {
+        finish(null);
+      }, LEARN_MS);
+      return function () {
+        clearTimeout(timer);
+        stop();
+      };
+    },
+  },
+  midi: {
+    field: "midiListen",
+    can: function (editor) {
+      return typeof editor.learnMidi === "function";
+    },
+    start: function (editor, config, done) {
+      return editor.learnMidi(function (result) {
+        if (!result || result.error) return done(null, result && result.error);
+        done({ midiInPort: result.port, midiChannel: result.channel, midiType: result.type, midiNumber: result.number, midiListen: true });
+      });
+    },
+  },
+};
+
+function sectionLights(editor, options) {
+  var doc = (options && options.document) || document;
+  var root = (options && options.root) || doc;
+  // The one Learn in progress, if any: { section, model, stop }, and the last
+  // thing to tell about one that ended: { section, model, text }.
+  var learning = null;
+  var told = null;
+
+  function endLearning() {
+    if (learning) learning.stop();
+    learning = null;
+  }
+
+  function learn(sectionId, model, definition) {
+    var same = learning && learning.section === sectionId && learning.model === model;
+    endLearning();
+    told = null;
+    // A second click calls it off.
+    if (same) return paint();
+    var entry = { section: sectionId, model: model, stop: function () {} };
+    learning = entry;
+    entry.stop = LEARNERS[sectionId].start(editor, configOf(model, definition), function (settings, complaint) {
+      if (learning !== entry) return;
+      learning = null;
+      if (settings) model.set(settings);
+      told = { section: sectionId, model: model, text: settings ? "Learned" : complaint || "Nothing heard" };
+      paint();
+    });
+    paint();
+  }
+  // What the server said of itself: { listeningPort }, the one OSC in port.
+  var server = { listeningPort: options && options.listeningPort };
+  // And the serial cable: what the host says of it ({ path, state, error },
+  // told through options.serial.state) and how to pick a board
+  // (options.serial.pick(path)). The adapter knows no routes.
+  var serial = (options && options.serial) || null;
+  var watched = null;
+  var unwatch = null;
+
+  function paint() {
+    var model = editor.getSelected();
+    var definition = model && byType(model.get("type"));
+    var config = definition ? configOf(model, definition) : {};
+    var status = definition ? sectionStatus(definition.fields, config) : {};
+
+    var sections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + "]");
+    Array.prototype.forEach.call(sections, function (section) {
+      var title = section.querySelector("[data-title]");
+      if (!title) return;
+      var directions = status[section.getAttribute(SECTION_ATTRIBUTE)] || {};
+
+      // One holder per title, made once; the lights in it are redrawn, since
+      // which directions exist changes with the widget selected.
+      var holder = title.querySelector(".oscar-section-lights");
+      if (!holder) {
+        holder = doc.createElement("span");
+        holder.className = "oscar-section-lights";
+        title.appendChild(holder);
+      }
+      paintLearn(holder, section.getAttribute(SECTION_ATTRIBUTE), model, definition);
+      DIRECTIONS.forEach(function (direction) {
+        var light = holder.querySelector('[data-direction="' + direction.id + '"]');
+        if (!(direction.id in directions)) {
+          // The widget has no such direction: a meter never sends, DMX never listens.
+          if (light) holder.removeChild(light);
+          return;
+        }
+        if (!light) {
+          light = doc.createElement("span");
+          light.className = "oscar-section-light";
+          light.setAttribute("data-direction", direction.id);
+          // Two unlabelled dots would be a guess; the tag says which is which.
+          light.textContent = direction.tag;
+          holder.appendChild(light);
+        }
+        var on = directions[direction.id] === true;
+        var words = direction.label + (on ? ": on" : ": off");
+        // OSC's lights also say where: the port OSCAR listens on, or the
+        // address this widget sends to.
+        var where = section.getAttribute(SECTION_ATTRIBUTE) === "osc" ? oscEndpoint(direction.field, config, server) : "";
+        if (where) words += ". " + where;
+        light.setAttribute("data-on", String(on));
+        // In words as well as colour, for a reader and for anyone who cannot
+        // tell the two colours apart.
+        light.setAttribute("title", words);
+        light.setAttribute("role", "img");
+        light.setAttribute("aria-label", words);
+      });
+    });
+
+    // OSC's Port in: the one port OSCAR hears on, for every widget alike. It
+    // is the server's, not a setting, so it is drawn as a row of the panel
+    // that cannot be edited, under Data in while Data in is on.
+    var oscSections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + '="osc"]');
+    var oscSection = oscSections && oscSections.length ? oscSections[0] : null;
+    if (oscSection && typeof oscSection.querySelector === "function") {
+      var anchor = oscSection.querySelector('[data-oscar-field="listen"]');
+      var portInRow = oscSection.querySelector(".oscar-port-in");
+      var listening = config.listen === true || config.listen === "true";
+      var showPortIn = !!(definition && fieldOf(definition, "listen") && listening && server.listeningPort && anchor);
+      if (!showPortIn) {
+        if (portInRow) portInRow.parentNode.removeChild(portInRow);
+      } else {
+        if (!portInRow) {
+          portInRow = doc.createElement("div");
+          portInRow.className = "gjs-trt-trait__wrp oscar-port-in";
+          var traitBox = doc.createElement("div");
+          traitBox.className = "gjs-trt-trait gjs-trt-trait--number";
+          var labelBox = doc.createElement("div");
+          labelBox.className = "gjs-label-wrp";
+          var label = doc.createElement("div");
+          label.className = "gjs-label";
+          label.textContent = "Port in";
+          labelBox.appendChild(label);
+          var fieldBox = doc.createElement("div");
+          fieldBox.className = "gjs-field-wrp gjs-field-wrp--number";
+          var fieldEl = doc.createElement("div");
+          fieldEl.className = "gjs-field gjs-field-number";
+          var input = doc.createElement("input");
+          input.type = "text";
+          input.disabled = true;
+          fieldEl.appendChild(input);
+          fieldBox.appendChild(fieldEl);
+          traitBox.appendChild(labelBox);
+          traitBox.appendChild(fieldBox);
+          portInRow.appendChild(traitBox);
+          portInRow.setAttribute(
+            "title",
+            "Where OSCAR hears OSC, for every widget's Data in alike. It is OSCAR's port, not this widget's: start OSCAR with OSCAR_OSC_IN_PORT to move it."
+          );
+        }
+        if (anchor.nextSibling !== portInRow) anchor.parentNode.insertBefore(portInRow, anchor.nextSibling);
+        var portInInput = portInRow.querySelector("input");
+        if (portInInput.value !== String(server.listeningPort)) portInInput.value = String(server.listeningPort);
+      }
+    }
+
+    // The Board: the one serial cable, picked where it is used. Drawn while
+    // the selected widget's Via says Serial cable, right under the Via row,
+    // as Port in is drawn under Data in. Picking writes through to the host,
+    // and every widget's Board row shows the same cable: one board, said in
+    // every place that depends on it.
+    if (oscSection && typeof oscSection.querySelector === "function" && serial) {
+      var viaRow = oscSection.querySelector('[data-oscar-field="oscVia"]');
+      var boardRow = oscSection.querySelector(".oscar-board");
+      var onCable = config.oscVia === "serial";
+      if (!onCable || !viaRow) {
+        if (boardRow) boardRow.parentNode.removeChild(boardRow);
+      } else {
+        if (!boardRow) {
+          boardRow = doc.createElement("div");
+          boardRow.className = "gjs-trt-trait__wrp oscar-board";
+          var boardTrait = doc.createElement("div");
+          boardTrait.className = "gjs-trt-trait gjs-trt-trait--select";
+          var boardLabelBox = doc.createElement("div");
+          boardLabelBox.className = "gjs-label-wrp";
+          var boardLabel = doc.createElement("div");
+          boardLabel.className = "gjs-label";
+          boardLabel.textContent = "Board";
+          boardLabelBox.appendChild(boardLabel);
+          var boardFieldBox = doc.createElement("div");
+          boardFieldBox.className = "gjs-field-wrp gjs-field-wrp--select";
+          var boardField = doc.createElement("div");
+          boardField.className = "gjs-field gjs-field-select";
+          var select = doc.createElement("select");
+          select.addEventListener("change", function () {
+            serial.pick(select.value);
+          });
+          boardField.appendChild(select);
+          boardFieldBox.appendChild(boardField);
+          boardTrait.appendChild(boardLabelBox);
+          boardTrait.appendChild(boardFieldBox);
+          boardRow.appendChild(boardTrait);
+        }
+        if (viaRow.nextSibling !== boardRow) viaRow.parentNode.insertBefore(boardRow, viaRow.nextSibling);
+        var link = serial.state() || {};
+        var choices = [{ id: "", name: "Pick a board..." }];
+        (suggestions["serial-ports"] || []).forEach(function (entry) {
+          choices.push({ id: entry.id, name: entry.name });
+        });
+        if (link.path && !choices.some(function (choice) { return choice.id === link.path; })) {
+          choices.push({ id: link.path, name: link.path + " (not connected)" });
+        }
+        var boardSelect = boardRow.querySelector("select");
+        var ids = choices.map(function (choice) { return choice.id; }).join("|");
+        if (boardSelect.getAttribute("data-choices") !== ids) {
+          boardSelect.setAttribute("data-choices", ids);
+          boardSelect.textContent = "";
+          choices.forEach(function (choice) {
+            var option = doc.createElement("option");
+            option.value = choice.id;
+            option.textContent = choice.name;
+            boardSelect.appendChild(option);
+          });
+        }
+        if (boardSelect.value !== (link.path || "")) boardSelect.value = link.path || "";
+        var said =
+          link.state === "open"
+            ? "Connected to " + link.path + " at " + link.bitrate + " baud."
+            : link.state === "waiting"
+            ? "Waiting for " + link.path + (link.error ? " (" + link.error + ")" : "") + "."
+            : "No board yet: pick the port it is on. One cable for the whole of OSCAR.";
+        boardRow.setAttribute("title", said);
+        boardRow.setAttribute("data-serial-state", link.state || "idle");
+      }
+    }
+
+    // GrapesJS puts a trait's attributes on the wrapper around its row.
+    var hinted = root.querySelectorAll(".gjs-trt-trait__wrp[title]");
+    Array.prototype.forEach.call(hinted, function (row) {
+      var key = row.getAttribute("data-oscar-field");
+      var field = key && definition ? fieldOf(definition, key) : null;
+      if (field && field.hint) {
+        // Written from the field's own hint each time, so a changed port
+        // replaces the old one rather than piling up after it.
+        var where = oscEndpoint(key, config, server);
+        row.setAttribute("title", where ? field.hint + " " + where : field.hint);
+      }
+      var label = row.querySelector(".gjs-label");
+      if (label) label.setAttribute("title", row.getAttribute("title"));
+    });
+  }
+
+  /** The section's Learn button: there if the widget can be taught that way, and saying how it is going. */
+  function paintLearn(holder, sectionId, model, definition) {
+    var learner = LEARNERS[sectionId];
+    var offered = !!(learner && definition && fieldOf(definition, learner.field) && learner.can(editor));
+    var button = holder.querySelector(".oscar-learn");
+    if (!offered) {
+      if (button) holder.removeChild(button);
+      return;
+    }
+    if (!button) {
+      button = doc.createElement("button");
+      button.className = "oscar-learn";
+      button.setAttribute("type", "button");
+      button.addEventListener("click", function (event) {
+        // The title it sits on folds the section when clicked.
+        event.stopPropagation();
+        var selected = editor.getSelected();
+        var type = selected && byType(selected.get("type"));
+        if (type) learn(holder.getAttribute("data-learn-section"), selected, type);
+      });
+      holder.appendChild(button);
+    }
+    holder.setAttribute("data-learn-section", sectionId);
+    var busy = !!(learning && learning.section === sectionId && learning.model === model);
+    var said = told && told.section === sectionId && told.model === model ? told.text : null;
+    var text = busy ? "Listening..." : said || "Learn";
+    // Written only when it differs: the panel is watched for changes, and a
+    // button rewritten on every look would be one.
+    if (button.textContent !== text) button.textContent = text;
+    if (button.getAttribute("data-busy") !== String(busy)) button.setAttribute("data-busy", String(busy));
+    button.setAttribute(
+      "title",
+      busy
+        ? "Waiting for a message. Click to stop."
+        : sectionId === "midi"
+        ? "Touch a control on your MIDI controller and this widget takes its port, channel, type and number."
+        : "Send an OSC message from your software and this widget takes its address."
+    );
+  }
+
+  function watch(model) {
+    if (unwatch) unwatch();
+    unwatch = null;
+    watched = model || null;
+    if (!watched || typeof watched.on !== "function") return;
+    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:midiListen change:ip change:port change:oscVia";
+    watched.on(events, paint);
+    unwatch = function () {
+      watched.off(events, paint);
+    };
+  }
+
+  editor.on("component:selected component:deselected", function () {
+    // Learn belongs to the widget it was started on.
+    endLearning();
+    told = null;
+    watch(editor.getSelected());
+    // The panel is drawn after the selection is announced.
+    setTimeout(paint, 0);
+  });
+
+  if (typeof MutationObserver === "function" && root.nodeType) {
+    var pending = false;
+    new MutationObserver(function () {
+      if (pending) return;
+      pending = true;
+      setTimeout(function () {
+        pending = false;
+        paint();
+      }, 0);
+    }).observe(root, { childList: true, subtree: true });
+  }
+
+  return paint;
+}
+
+/**
+ * What the computer has, for the settings that choose from it: the MIDI ports,
+ * by the name a field gives as its `source`. The editor fills them (choices());
+ * kept here, not fetched here: the adapter knows no routes.
+ */
+var suggestions = {};
+
+/**
+ * A dropdown's choices: the field's own, then what the computer has, then the
+ * widget's own value if it is none of those. A port unplugged for the night
+ * is still this widget's port, and a dropdown that could not show it would
+ * show another, which the next edit would save.
+ */
+function choicesFor(field, value) {
+  var options = (field.options || []).slice();
+  var has = function (id) {
+    return options.some(function (option) {
+      return option.id === id;
+    });
+  };
+  (suggestions[field.source] || []).forEach(function (entry) {
+    // MIDI suggests names; serial suggests { id, name }, a path and its label.
+    var id = entry && typeof entry === "object" ? entry.id : entry;
+    var name = entry && typeof entry === "object" ? entry.name : entry;
+    if (!has(id)) options.push({ id: id, name: name });
+  });
+  var own = value === undefined || value === null ? "" : String(value);
+  if (!has(own)) options.push({ id: own, name: own + " (not connected)" });
+  return options;
+}
+
+/** The In port to give a widget whose Data in was just ticked, or null to leave it as it is. */
+function namedMidiInput(config) {
+  if (!isListening(config) || String(config.midiInPort || "").trim()) return null;
+  var inputs = suggestions["midi-inputs"] || [];
+  return inputs.length ? inputs[0] : null;
+}
+
+/**
+ * Say what the computer has. If that changed and the selected widget has a
+ * setting that chooses from it, its panel is rebuilt, which is the only way
+ * GrapesJS redraws a dropdown's choices.
+ */
+function suggest(source, values, editor) {
+  suggestions[source] = Array.isArray(values) ? values.slice() : [];
+  if (editor) refreshChoices(editor);
+}
+
+/** What a widget's dropdowns that choose from the computer offer, as one comparable string. */
+function choiceIds(traits) {
+  return (traits || [])
+    .map(function (trait) {
+      var read = typeof trait.get === "function";
+      var options = (read ? trait.get("options") : trait.options) || [];
+      return (
+        (read ? trait.get("name") : trait.name) +
+        "=" +
+        options
+          .map(function (option) {
+            return option.id;
+          })
+          .join("|")
+      );
+    })
+    .join("\n");
+}
+
+/**
+ * Give the selected widget's dropdowns the choices there are now. Called when
+ * a widget is picked, since its panel was built before the ports were known,
+ * when the ports change, and when a port is named that the dropdown has not
+ * got. The panel is only rebuilt if a dropdown would differ.
+ */
+function refreshChoices(editor) {
+  if (!editor || typeof editor.getSelected !== "function") return;
+  var model = editor.getSelected();
+  var definition = model && byType(model.get("type"));
+  var chooses =
+    definition &&
+    definition.fields.some(function (field) {
+      return !!field.source;
+    });
+  if (!chooses) return;
+  var wanted = traitsFor(definition, configOf(model, definition));
+  var has = model.get("traits");
+  // A collection once GrapesJS has built it, a plain list before.
+  var list = has && typeof has.map === "function" && !Array.isArray(has) ? has.map(function (trait) { return trait; }) : has;
+  if (choiceIds(list) === choiceIds(wanted)) return;
+  model.set("traits", wanted);
+}
+
+/**
+ * Which published surfaces hold a widget with this id: the owners the canvas
+ * yields to. Told by the editor (tellPublishedWidgets), which polls
+ * /published; empty until it has.
+ */
+function publishedOwners(editor, id) {
+  if (!features.CANVAS_YIELD) return [];
+  var live = editor && editor.oscarPublishedWidgets;
+  return (live && id && live[id]) || [];
+}
+
+/**
+ * The editor's word on what is published: { widgetId: [surface, ...] }.
+ * Repaints the lights, so a publish or an unpublish shows on the widgets
+ * within a poll.
+ */
+function tellPublishedWidgets(editor, rows) {
+  var map = {};
+  (rows || []).forEach(function (row) {
+    (row.widgets || []).forEach(function (id) {
+      (map[id] = map[id] || []).push(row.id);
+    });
+  });
+  editor.oscarPublishedWidgets = map;
+  paintWidgetLights(editor);
+}
+
+/**
+ * A light on each widget of the canvas, top right: green, it sends from
+ * here; red, its id is live on a published surface and the canvas yields.
+ * Nothing on a widget whose master is off -- the panel already says that.
+ *
+ * Drawn as an overlay in the canvas document, because half the widgets are
+ * inputs and an input can hold no child. Repositioned on a slow beat and on
+ * every repaint: layouts barely move while someone is editing.
+ */
+function paintWidgetLights(editor) {
+  if (!features.CANVAS_YIELD) return;
+  var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
+  if (!canvas || !canvas.body) return;
+  var layer = canvas.getElementById("oscar-widget-lights");
+  if (!layer) {
+    layer = canvas.createElement("div");
+    layer.id = "oscar-widget-lights";
+    layer.setAttribute("style", "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483000;");
+    canvas.body.appendChild(layer);
+  }
+  var wanted = [];
+  // By component type, not attribute selector: the canvas models carry the
+  // widget type, and find() over attributes misses them.
+  var models = [];
+  if (editor.getWrapper() && typeof editor.getWrapper().onAll === "function") {
+    editor.getWrapper().onAll(function (model) {
+      if (model.get && byType(model.get("type"))) models.push(model);
+    });
+  }
+  models.forEach(function (model) {
+    var view = model.getView && model.getView();
+    var el = view && view.el;
+    if (!el || typeof el.getBoundingClientRect !== "function") return;
+    var definition = byType(model.get("type"));
+    var config = configOf(model, definition);
+    if (!(config.enabled === true || config.enabled === "true")) return;
+    var owners = publishedOwners(editor, model.getId());
+    var rect = el.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    var doc = canvas;
+    var x = rect.right + (doc.defaultView ? doc.defaultView.scrollX : 0);
+    var y = rect.top + (doc.defaultView ? doc.defaultView.scrollY : 0);
+    wanted.push({
+      model: model,
+      id: model.getId(),
+      x: x,
+      y: y,
+      live: owners.length === 0,
+      title:
+        owners.length === 0
+          ? "Comms on: this control sends from the canvas."
+          : "Published on " +
+            owners
+              .map(function (name) {
+                return '"' + name + '"';
+              })
+              .join(", ") +
+            ": the published interface is playing, so this control sends nothing from the canvas. Publish changes to make your edits the show.",
+    });
+  });
+  // Redrawn whole on membership or colour changes; between paints the dots
+  // are only repositioned (repositionWidgetLights), every frame, so a widget
+  // being dragged carries its light with it.
+  layer.textContent = "";
+  var pairs = [];
+  wanted.forEach(function (dot) {
+    var el = canvas.createElement("span");
+    el.setAttribute("data-oscar-light", dot.id);
+    el.setAttribute("title", dot.title);
+    el.setAttribute(
+      "style",
+      "position:absolute;left:" + Math.round(dot.x - 5) + "px;top:" + Math.round(dot.y - 3) + "px;" +
+        "width:8px;height:8px;border-radius:50%;box-sizing:border-box;border:1px solid rgba(0,0,0,.55);" +
+        "background:" + (dot.live ? "#2fbf5f" : "#e5484d") + ";box-shadow:0 0 4px " + (dot.live ? "rgba(47,191,95,.7)" : "rgba(229,72,77,.8)") + ";"
+    );
+    layer.appendChild(el);
+    pairs.push({ model: dot.model, el: el });
+  });
+  editor.oscarLightPairs = pairs;
+}
+
+/**
+ * Move the existing dots to where their widgets are now: the cheap step,
+ * run every frame, so dragging a widget drags its light. Membership and
+ * colour stay paintWidgetLights' business.
+ */
+function repositionWidgetLights(editor) {
+  var pairs = editor.oscarLightPairs;
+  if (!pairs || !pairs.length) return;
+  var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
+  var view = canvas && canvas.defaultView;
+  for (var i = 0; i < pairs.length; i++) {
+    var pair = pairs[i];
+    var widgetView = pair.model.getView && pair.model.getView();
+    var el = widgetView && widgetView.el;
+    if (!el || typeof el.getBoundingClientRect !== "function") continue;
+    var rect = el.getBoundingClientRect();
+    var left = Math.round(rect.right + (view ? view.scrollX : 0) - 5) + "px";
+    var top = Math.round(rect.top + (view ? view.scrollY : 0) - 3) + "px";
+    if (pair.el.style.left !== left) pair.el.style.left = left;
+    if (pair.el.style.top !== top) pair.el.style.top = top;
+  }
+}
+
+function fieldOf(definition, key) {
+  var fields = definition.fields || [];
+  for (var i = 0; i < fields.length; i++) if (fields[i].key === key) return fields[i];
+  return null;
+}
+
+function byType(type) {
+  for (var i = 0; i < WIDGETS.length; i++) if (WIDGETS[i].name === type) return WIDGETS[i];
+  return null;
+}
+
+/**
+ * Keep GrapesJS's select tool off for as long as the surface is being
+ * previewed.
+ *
+ * Preview mode stops the tool, but GrapesJS starts its default command again
+ * whenever a frame loads -- a page turn, a project load -- without asking
+ * whether a preview is on. While it runs it cancels every click in the
+ * canvas, so that a click selects instead of doing what clicking does. The
+ * one control that depends on a click's default action is the colour picker,
+ * whose dialog then never opens.
+ *
+ * Stopped through the editor's own stopDefault(), not by stopping the command:
+ * that also clears the flag GrapesJS checks when the preview ends, so leaving
+ * preview brings the select tool back as it should.
+ */
+function noSelectingWhile(editor, isPreviewing) {
+  editor.on("command:run:select-comp", function () {
+    if (!isPreviewing()) return;
+    // After the run that announced itself has finished.
+    setTimeout(function () {
+      if (isPreviewing()) editor.getModel().stopDefault();
+    }, 0);
+  });
+}
+
+module.exports = {
+  tellPublishedWidgets: tellPublishedWidgets,
+  paintWidgetLights: paintWidgetLights,
+  publishedOwners: publishedOwners,
+  repositionWidgetLights: repositionWidgetLights,
+  noSelectingWhile: noSelectingWhile,
+  sectionLights: sectionLights,
+  suggest: suggest,
+  refreshChoices: refreshChoices,
+  choicesFor: choicesFor,
+  namedMidiInput: namedMidiInput,
+  parsed: parsed,
+  followSurfaceStyle: followSurfaceStyle,
+  exportSnapshot: exportSnapshot,
+  register: register,
+  widgetPlugins: widgetPlugins,
+  runOffstage: runOffstage,
+  toTrait: toTrait,
+  matches: matches,
+  visibleFields: visibleFields,
+  revealKeys: revealKeys,
+};
+
+},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":26,"../../../lib/widgets/fields":24,"../../../lib/widgets/midi-source":31}],42:[function(require,module,exports){
+"use strict";
+
+/**
+ * The window behind the MCP pill: AI assistants and this OSCAR.
+ *
+ * The pill used to be the switch itself, so one stray click closed the door,
+ * and nothing in the app said how an assistant is connected in the first
+ * place. The window holds the switch, the three ways to connect one (each
+ * with what to copy), and what assistants have lately asked for -- the tool
+ * and when, never what was in the request -- which is both the proof that a
+ * connection works and the reassurance that an assistant only looked.
+ *
+ * What an assistant connects with is the helper on npm, `createwithoscar`
+ * (createwithoscar/ in this repository), or the same thing packed for
+ * Claude Desktop, which the website serves.
+ */
+
+/** What is copied for Claude Code. */
+var CLAUDE_CODE = "claude mcp add oscar -- npx -y createwithoscar";
+
+/** What is copied for every other app that speaks MCP: the same shape in nearly all of them. */
+var OTHER_APPS = '{\n  "mcpServers": {\n    "oscar": {\n      "command": "npx",\n      "args": ["-y", "createwithoscar"]\n    }\n  }\n}';
+
+/** The one-click file for Claude Desktop, and where the steps are written out. */
+var BUNDLE_URL = "https://www.createwithoscar.com/assets/OSCAR.mcpb";
+var HELP_URL = "https://www.createwithoscar.com/how-it-works#ai";
+
+function el(tag, className, text) {
+  var node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function link(text, href, className) {
+  var node = el("a", className, text);
+  node.href = href;
+  node.target = "_blank";
+  node.rel = "noopener";
+  return node;
+}
+
+/** "just now", "3 min ago", "2 h ago": how long since a request, said loosely. */
+function ago(at, now) {
+  var seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 45) return "just now";
+  var minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes + " min ago";
+  var hours = Math.round(minutes / 60);
+  if (hours < 24) return hours + " h ago";
+  return Math.round(hours / 24) + " d ago";
+}
+
+/** A line of something to copy, and its Copy button. */
+function copyLine(text, block) {
+  var row = el("div", "oscar-assist-copy");
+  row.appendChild(el(block ? "pre" : "code", "oscar-assist-code", text));
+  var copy = el("button", "o-btn oscar-publish-copy", "Copy");
+  copy.type = "button";
+  copy.onclick = function () {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(text).then(function () {
+      copy.textContent = "Copied";
+      setTimeout(function () {
+        copy.textContent = "Copy";
+      }, 1500);
+    });
+  };
+  row.appendChild(copy);
+  return row;
+}
+
+/**
+ * @param {object} editor the GrapesJS editor
+ * @param {object} options
+ *   onState(on)  told when the switch is known or thrown, to paint the pill
+ * @returns {{ open, refresh }}
+ */
+function install(editor, options) {
+  var onState = (options && options.onState) || function () {};
+  var state = { on: false, calls: [] };
+  var panel = null;
+  var parts = {};
+
+  function build() {
+    panel = el("div", "oscar-export oscar-assist");
+
+    panel.appendChild(
+      el(
+        "p",
+        "oscar-export-hint",
+        "An AI assistant on this computer, such as Claude, can read this OSCAR and write an interface as a draft for you to check. It never sends anything to your rig, publishes, or changes a project."
+      )
+    );
+
+    // The switch, which the pill itself used to be.
+    var row = el("label", "oscar-assist-switch");
+    parts.box = el("input");
+    parts.box.type = "checkbox";
+    parts.box.onchange = function () {
+      set(parts.box.checked);
+    };
+    row.appendChild(parts.box);
+    parts.says = el("span", null, "");
+    row.appendChild(parts.says);
+    panel.appendChild(row);
+
+    // Two columns where there is room: how to connect, and what comes of it.
+    var columns = el("div", "oscar-assist-columns");
+    var left = el("div");
+    var right = el("div");
+    columns.appendChild(left);
+    columns.appendChild(right);
+    panel.appendChild(columns);
+
+    left.appendChild(el("h4", "oscar-assist-head", "Connect one, once"));
+    var ways = el("div", "oscar-assist-ways");
+
+    var desktop = el("div", "oscar-assist-way");
+    desktop.appendChild(el("strong", null, "Claude Desktop"));
+    var get = el("p", "oscar-assist-note");
+    get.appendChild(link("Download OSCAR.mcpb", BUNDLE_URL));
+    get.appendChild(document.createTextNode(", double-click it, and choose Install."));
+    desktop.appendChild(get);
+    ways.appendChild(desktop);
+
+    var code = el("div", "oscar-assist-way");
+    code.appendChild(el("strong", null, "Claude Code"));
+    code.appendChild(copyLine(CLAUDE_CODE, false));
+    ways.appendChild(code);
+
+    var others = el("div", "oscar-assist-way");
+    others.appendChild(el("strong", null, "Cursor, VS Code, Windsurf, Codex, Gemini CLI and other MCP apps"));
+    others.appendChild(el("p", "oscar-assist-note", "Add this server to the app's MCP settings."));
+    others.appendChild(copyLine(OTHER_APPS, true));
+    ways.appendChild(others);
+    left.appendChild(ways);
+
+    right.appendChild(el("h4", "oscar-assist-head", "Then ask"));
+    var asks = el("ul", "oscar-assist-asks");
+    asks.appendChild(el("li", null, "“Build me an OSCAR interface with four faders and a blackout button.”"));
+    asks.appendChild(el("li", null, "“My OSCAR slider is not moving the light. Can you see why?”"));
+    right.appendChild(asks);
+    right.appendChild(el("p", "oscar-assist-note", "A draft appears under File → Open project or template, marked Draft."));
+
+    right.appendChild(el("h4", "oscar-assist-head", "What assistants lately asked for"));
+    parts.calls = el("ul", "oscar-assist-calls");
+    right.appendChild(parts.calls);
+    parts.none = el("p", "oscar-assist-note", "Nothing since OSCAR started. A request shows here as it happens.");
+    right.appendChild(parts.none);
+
+    var foot = el("p", "oscar-assist-foot");
+    foot.appendChild(link("How this works, step by step", HELP_URL));
+    panel.appendChild(foot);
+  }
+
+  function draw() {
+    if (!panel) return;
+    parts.box.checked = state.on;
+    parts.says.textContent = state.on
+      ? "On: an assistant on this computer may connect."
+      : "Off: no assistant can connect, whatever it was set up with.";
+    panel.classList.toggle("oscar-assist-off", !state.on);
+
+    var now = Date.now();
+    parts.calls.textContent = "";
+    // Newest first.
+    state.calls
+      .slice()
+      .reverse()
+      .slice(0, 8)
+      .forEach(function (call) {
+        var item = el("li");
+        item.appendChild(el("span", "oscar-assist-call", call.title || call.tool));
+        item.appendChild(el("span", "oscar-assist-when", ago(call.at, now)));
+        parts.calls.appendChild(item);
+      });
+    parts.none.style.display = state.calls.length ? "none" : "";
+  }
+
+  function take(answer) {
+    if (!answer) return;
+    if (typeof answer.on === "boolean") state.on = answer.on;
+    if (Array.isArray(answer.calls)) state.calls = answer.calls;
+    onState(state.on);
+    draw();
+  }
+
+  function refresh() {
+    return fetch("/mcp-state")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(take)
+      .catch(function () {});
+  }
+
+  function set(on) {
+    fetch("/mcp-state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: !!on }),
+    })
+      .then(function (res) {
+        return res.json();
+      })
+      .then(take)
+      .catch(function () {
+        // The switch did not move: show it where it stands.
+        draw();
+      });
+  }
+
+  function isOpen() {
+    return !!(panel && panel.isConnected && editor.Modal.isOpen());
+  }
+
+  function open() {
+    if (!panel) build();
+    listen();
+    draw();
+    refresh();
+    editor.Modal.open({
+      title: "AI assistants",
+      content: panel,
+      attributes: { class: "modal-login modal-publish" },
+    });
+  }
+
+  editor.Commands.add("oscar-assistants", open);
+
+  // An assistant asked for something: the list is worth drawing again. The
+  // socket may not be up when this is installed, so it is looked for again
+  // each time the window opens.
+  var listening = false;
+  function listen() {
+    if (listening || !editor.socket) return;
+    listening = true;
+    editor.socket.on("mcp:called", function () {
+      if (isOpen()) refresh();
+    });
+  }
+  listen();
+
+  refresh();
+  return { open: open, refresh: refresh };
+}
+
+module.exports = { install: install, ago: ago, CLAUDE_CODE: CLAUDE_CODE, OTHER_APPS: OTHER_APPS, BUNDLE_URL: BUNDLE_URL, HELP_URL: HELP_URL };
+
+},{}],43:[function(require,module,exports){
+/**
+ * "Publish" in the editor: turning the project on the canvas into a page
+ * phones open, and looking after every such page this OSCAR serves.
+ *
+ * What the toolbar had before is GrapesJS's own export-template command, a
+ * modal of markup to copy out -- labelled "See code", because that is all it
+ * is. It cannot produce a working interface: the settings that say where a
+ * widget sends are not in the markup, and nothing on the page would read
+ * them if they were.
+ *
+ * This asks the adapter for markup with those settings written in, and the
+ * OSCAR server to wrap it around the standalone runtime (POST /publish).
+ *
+ * Two windows, for two questions. Publish is about the project on the
+ * canvas: who can open it, the one code for the address that goes with
+ * that, and one button that says what it does. Running is about OSCAR, the
+ * server in the background: every interface it is serving, whichever
+ * project is open here, with the devices on each. The editor and the server
+ * are one app, and the bar keeps them apart the same way: the project on
+ * the left, OSCAR on the right.
+ *
+ * Not named oscar_*.js: requiring "./oscar_<name>" is how an entry point used
+ * to pull in one widget's file, and test/widgets.test.js refuses that pattern
+ * in the entry points so nobody wires a widget by hand again.
+ */
+
+var { exportSnapshot } = require("./adapters/grapesjs");
+var { surfaceAddress, addressFor } = require("../../lib/published-address");
+var { surfaceStamp } = require("../../lib/export/stamp");
+var features = require("../../lib/features");
+// Draws the code for a published surface's address. Bundled, like everything
+// else here: OSCAR runs at venues with no internet.
+var qrcode = require("qrcode-generator");
+
+var DEFAULT_NAME = "my-interface";
+
+// Addresses OSCAR uses itself (lib/published.js): never offered for a project.
+var RESERVED = ["preview"];
+
+/** A filename someone can find again, from whatever they typed. */
+function fileStem(name) {
+  var stem = String(name == null ? "" : name)
+    .trim()
+    .toLowerCase()
+    .replace(/\.html?$/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  return stem || DEFAULT_NAME;
+}
+
+/**
+ * Hand a blob to the browser as a download. The object URL is released a
+ * moment later rather than at once: revoking it in the same frame as the
+ * click races the download in Safari, and the file arrives empty.
+ */
+function download(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(function () {
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
+function el(tag, className, text) {
+  var node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/**
+ * What a level says when it cannot be chosen now: nothing, a sentence, or a
+ * sentence with the one action that would change that, as
+ * { reason, action: { label, run(editor) } }. A sentence alone greys the row,
+ * as it always did; with an action the row stays pickable, so the pick can
+ * show the reason and the way. An action without a run, or a reason that is
+ * empty, is no action and nothing to say.
+ *
+ * @param {string|{reason?: string, action?: {label?: string, run?: Function}}|null|undefined} said
+ * @returns {{ reason: string, action: { label: string, run: Function }|null }|null}
+ */
+function whyNot(said) {
+  if (!said) return null;
+  if (typeof said === "string") return { reason: said, action: null };
+  var reason = said.reason ? String(said.reason) : "";
+  if (!reason) return null;
+  var action = said.action && typeof said.action.run === "function" && said.action.label ? { label: String(said.action.label), run: said.action.run } : null;
+  return { reason: reason, action: action };
+}
+
+function button(label, className) {
+  var node = el("button", className || "o-btn", label);
+  node.type = "button";
+  return node;
+}
+
+/**
+ * @param {object} editor the GrapesJS editor
+ * @param {object} options
+ *        host, port: what the editor was started with, offered for a download
+ *        only if the server cannot be asked again
+ *        project(): { id, name } -- which project the canvas is (lib/open-project.js)
+ *        beforeOpen(): a promise; the canvas is made a project before the window opens
+ *        newId(): an id for a canvas that had none
+ *        source(name, id): the project on the canvas, as a file would hold it
+ *        openProject({ id, name, data }): Edit -- put that project on the canvas
+ */
+function install(editor, options) {
+  var container = document.getElementById("export-panel");
+  if (!container) return;
+
+  var publishButton = document.getElementById("publish-button");
+  var titleBox = document.getElementById("publish-title");
+  var cardAccess = document.getElementById("publish-card-access");
+  var cardWhere = document.getElementById("publish-card-where");
+  var stateLine = document.getElementById("publish-state");
+  var runningPanel = document.getElementById("running-panel");
+  var runningEmpty = document.getElementById("running-empty");
+  var publishedBox = document.getElementById("published-box");
+  var publishedList = document.getElementById("published-list");
+  var extrasBox = document.getElementById("publish-extras");
+  var errorBox = document.getElementById("export-error");
+  var noteBox = document.getElementById("export-note");
+  var pagesBox = document.getElementById("export-pages");
+  var pageCount = document.getElementById("export-page-count");
+  // The canvas's stamp against its published copy's (lib/export/stamp.js):
+  // the card says "Changes not published", and the toolbar's Publish button
+  // wears a dot meanwhile.
+  var canvasStamp = null; // worked out at most once per wave of edits
+
+  // What an extension adds to the dialog (addSection below): each gets a box
+  // of its own in #publish-extras and is asked to draw whenever the dialog
+  // opens or what is published changes.
+  var sections = [];
+  var latest = null; // the id of the surface published from this dialog, most recently
+  var known = []; // the published surfaces, as GET /published last said
+  var titles = {}; // project id -> what that project is called now, as GET /projects last said
+  var shown = null; // the row whose code is open, by surface id
+  var which = "publish"; // the window a download gives back to: "publish" or "running"
+  // Who can open an interface is one setting. OSCAR itself knows two
+  // answers: off, and this network. An extension may add further ones
+  // (addAccessLevel below): where the interface is reachable beyond it.
+  var levels = [];
+  var levelMaps = {}; // level id -> { surface id: true } as its read() last said, or null: not on offer now
+  // The address other devices reach OSCAR on, and its bridge port, as GET
+  // /connection last said; what a download is told unless it is changed.
+  var lanHost = "";
+  var lanPort = "";
+
+  /** Where a published surface is opened from another device. */
+  function addressOf(path) {
+    return surfaceAddress(lanHost || window.location.hostname, window.location.port || 80, path);
+  }
+
+  function say(box, message) {
+    box.textContent = message;
+    box.style.display = message ? "block" : "none";
+  }
+
+  /**
+   * Ask every section to draw itself. A section that throws loses only its
+   * own box; the dialog and the other sections go on.
+   */
+  function drawSections() {
+    sections.forEach(function (section) {
+      try {
+        section.draw(section.box, {
+          surfaces: known.map(function (page) {
+            return { id: page.id, name: titleOf(page), path: page.path, address: addressOf(page.path) };
+          }),
+          latest: latest,
+          refresh: refreshPublished,
+          show: showAddress,
+          onUnpublish: function (guard) {
+            section.guard = guard;
+          },
+        });
+      } catch (err) {
+        console.error("A section of the Publish dialog failed:", err);
+      }
+    });
+  }
+
+  /**
+   * An address used to be shown on request, in a box of its own with a QR
+   * button beside every link. Each interface now shows the one code for
+   * where it is opened, without being asked, so there is nothing to do here;
+   * the function stays so that a section written for the old dialog still runs.
+   */
+  function showAddress() {}
+
+  /** Which project the canvas is: { id, name }, id null for a canvas that is nobody yet. */
+  function project() {
+    var now = options.project ? options.project() : null;
+    return { id: (now && now.id) || null, name: (now && now.name) || "" };
+  }
+
+  /**
+   * The live interface that is this canvas's own: the one published from the
+   * project it is, whatever either is called now. Not matched by name -- a
+   * name is reused for different designs, and a wrong match would let
+   * Publish changes replace a running show with another one.
+   */
+  function publishedMine() {
+    var id = project().id;
+    if (!id) return null;
+    for (var i = 0; i < known.length; i++) {
+      if (known[i].project === id) return known[i];
+    }
+    return null;
+  }
+
+  /** What an interface is called: its project's title as it is now, else as it was published. */
+  function titleOf(page) {
+    return (page.project && titles[page.project]) || page.name || page.id;
+  }
+
+  function staleNow() {
+    var mine = publishedMine();
+    if (!mine || !mine.stamp || canvasStamp === null) return false;
+    return mine.stamp !== canvasStamp;
+  }
+
+  /**
+   * The Publish button in the toolbar, found by its class. (It was once found
+   * by its tooltip, which paintStale changes: after the first dot it was
+   * never found again, and the dot could not be taken off.)
+   */
+  function toolbarButton() {
+    return document.querySelector(".gjs-pn-btn.oscar-publish-btn");
+  }
+
+  /**
+   * The foot of the card: one button, which says what it does. Publish for
+   * a project that is not live; Publish changes when the canvas is ahead of
+   * what phones see; and no button at all when there is nothing to send.
+   */
+  function paintFoot() {
+    var mine = publishedMine();
+    var stale = staleNow();
+    if (stateLine) {
+      stateLine.textContent = !mine ? "" : stale ? "Changes not published" : "Up to date";
+      stateLine.setAttribute("data-state", !mine ? "none" : stale ? "grace" : "valid");
+    }
+    publishButton.textContent = mine ? "Publish changes" : "Publish";
+    publishButton.style.display = mine && !stale ? "none" : "";
+  }
+
+  function paintStale() {
+    paintFoot();
+    var bar = toolbarButton();
+    if (!bar) return;
+    var stale = staleNow();
+    bar.classList.toggle("oscar-publish-stale", stale);
+    bar.setAttribute("data-tooltip", stale ? "Publish your interface · the published copy is older than your canvas" : "Publish your interface");
+  }
+
+  /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
+  function restamp() {
+    try {
+      // Markup and styles, as sent to publish: a visual edit counts too.
+      var snapshot = exportSnapshot(editor);
+      canvasStamp = surfaceStamp(snapshot.html, snapshot.css || "");
+    } catch (err) {
+      canvasStamp = null;
+    }
+    paintStale();
+  }
+
+  // Any edit may change the stamp; one reading two seconds after the last
+  // edit of a burst is fresh enough for a dot.
+  var restampWait = null;
+  editor.on("update", function () {
+    if (restampWait) clearTimeout(restampWait);
+    restampWait = setTimeout(restamp, 2000);
+  });
+
+  // The dot must not wait for the dialog to have been opened once: what is
+  // published is read soon after the editor is up, into the same list the
+  // dialog uses, and the canvas stamped against it.
+  setTimeout(function () {
+    refreshPublished().then(restamp);
+  }, 3000);
+
+  // ---- who can open it ----------------------------------------------------
+
+  /** The extension level a surface is at, out of what the levels last said, or null. */
+  function levelAt(id) {
+    for (var i = 0; i < levels.length; i++) {
+      var map = levelMaps[levels[i].id];
+      if (map && map[id]) return levels[i];
+    }
+    return null;
+  }
+
+  function postAccess(id, access) {
+    return fetch("/published/" + encodeURIComponent(id) + "/access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access: access }),
+    }).then(function (res) {
+      return res.json().then(function (answer) {
+        if (!res.ok) throw new Error((answer && answer.error) || "That could not be changed.");
+        return answer;
+      });
+    });
+  }
+
+  /**
+   * One setting, three kinds of step. Leaving an extension's level is asked
+   * of that level first; off and network are OSCAR's own; and an extension's
+   * level is chosen with the interface open to the network, which it builds
+   * on. Whatever fails is said, and the window is drawn again as things stand.
+   */
+  function changeAccess(page, at, to, select) {
+    say(errorBox, "");
+    select.disabled = true;
+    var chain = Promise.resolve();
+    if (at && at.id !== to) {
+      chain = chain.then(function () {
+        return at.leave(page.id);
+      });
+    }
+    if (to === "off" || to === "network") {
+      if (page.access !== to) {
+        chain = chain.then(function () {
+          return postAccess(page.id, to);
+        });
+      }
+    } else {
+      var level = levels.filter(function (other) {
+        return other.id === to;
+      })[0];
+      if (page.access === "off") {
+        chain = chain.then(function () {
+          return postAccess(page.id, "network");
+        });
+      }
+      chain = chain.then(function () {
+        return level.choose(page.id);
+      });
+    }
+    chain
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "That could not be changed.");
+      })
+      .then(refreshPublished);
+  }
+
+  /**
+   * A level that cannot be chosen, picked anyway: its reason in words, and
+   * the one action that would change that, both from the extension that
+   * offers the level. A sheet of OSCAR's own over the dialog, never the
+   * browser's alert; the dialog stays as it was underneath, and Not now,
+   * Escape or a click beside the card put it away. The action closes the
+   * sheet first, since what it opens may well replace this dialog.
+   */
+  function askWhy(label, why) {
+    var sheet = el("div", "oscar-export-ask");
+    var card = el("div", "oscar-export-ask-card");
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", label);
+    card.appendChild(el("h3", "oscar-export-ask-title", label));
+    card.appendChild(el("p", "oscar-export-ask-reason", why.reason));
+    var actions = el("div", "oscar-export-ask-actions");
+    var later = button("Not now");
+    var go = button(why.action.label, "o-btn o-btn-primary");
+    function close() {
+      if (sheet.parentNode) sheet.parentNode.removeChild(sheet);
+      document.removeEventListener("keydown", onKey, true);
+    }
+    function onKey(event) {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      close();
+    }
+    later.onclick = close;
+    go.onclick = function () {
+      close();
+      why.action.run(editor);
+    };
+    sheet.onclick = function (event) {
+      if (event.target === sheet) close();
+    };
+    actions.appendChild(later);
+    actions.appendChild(go);
+    card.appendChild(actions);
+    sheet.appendChild(card);
+    (document.querySelector(".gjs-mdl-container") || document.body).appendChild(sheet);
+    document.addEventListener("keydown", onKey, true);
+    go.focus();
+  }
+
+  /** Who can open it: one setting, the interface's own. */
+  function accessSelect(page, at) {
+    var isOff = page.access === "off";
+    var access = el("select", "o-input oscar-published-access");
+    access.setAttribute("aria-label", "Who can open " + titleOf(page));
+    var choices = [{ id: "off", label: "Off", why: null }, { id: "network", label: "This network", why: null }].concat(
+      levels
+        .filter(function (level) {
+          return levelMaps[level.id];
+        })
+        .map(function (level) {
+          // Why it cannot be chosen, when it cannot: on the list, and saying so one way or the other.
+          var why = whyNot(typeof level.disabled === "function" ? level.disabled() : "");
+          return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label, why: why };
+        })
+    );
+    choices.forEach(function (choice) {
+      var option = el("option", "", choice.label);
+      option.value = choice.id;
+      if (choice.why && !choice.why.action) {
+        option.disabled = true;
+        // A browser shows no tooltip for an option: the reason is on the setting itself.
+        access.title = choice.why.reason;
+      }
+      // With an action the row stays pickable: the pick is how the reason gets read.
+      access.appendChild(option);
+    });
+    var was = isOff ? "off" : at ? at.id : "network";
+    access.value = was;
+    access.onclick = function (event) {
+      // On a row, a click anywhere else opens its code; not this one.
+      event.stopPropagation();
+    };
+    access.onchange = function () {
+      var chosen = choices.filter(function (choice) {
+        return choice.id === access.value;
+      })[0];
+      if (chosen && chosen.why && chosen.why.action) {
+        access.value = was;
+        askWhy(chosen.label, chosen.why);
+        return;
+      }
+      changeAccess(page, at, access.value, access);
+    };
+    return access;
+  }
+
+  // ---- where it is opened: the one code, the link, Copy ---------------------
+
+  /** Where an extension's level says an interface is opened, or null: asked for, never trusted not to throw. */
+  function leadOf(page, at) {
+    try {
+      return at && typeof at.link === "function" ? at.link(page.id) : null;
+    } catch (err) {
+      console.error("An access level of the Publish dialog failed:", err);
+      return null;
+    }
+  }
+
+  /**
+   * How many devices have an interface open right now: those on this
+   * network, as OSCAR counts them, and those an extension's level brings.
+   * Said per interface, never as one total for the bar: a number that adds
+   * the lobby's phones to the technician's tablet says nothing.
+   */
+  function devicesOf(page, lead) {
+    var here = Number(page.devices) || 0;
+    var there = lead && Number(lead.devices) > 0 ? Number(lead.devices) : 0;
+    var n = here + there;
+    // The devices that said their name (?device= on the page's address),
+    // under the pointer: a count says a tablet is missing, a name says which.
+    var named = Array.isArray(page.named) ? page.named.filter(Boolean) : [];
+    var title = there ? here + " on this network, " + there + " through the link" : "";
+    if (named.length) title = (title ? title + ": " : "") + named.join(", ");
+    return {
+      n: n,
+      words: n === 0 ? "No devices connected" : n === 1 ? "1 device connected" : n + " devices connected",
+      title: title,
+    };
+  }
+
+  function qrOf(address) {
+    // Drawn by the library from an address OSCAR or an extension built;
+    // nothing a person typed reaches it except a title, reduced to a-z, 0-9 and "-".
+    var code = qrcode(0, "M");
+    code.addData(address);
+    code.make();
+    var box = el("div", "oscar-publish-qr");
+    box.setAttribute("role", "img");
+    box.setAttribute("aria-label", "QR code for " + address);
+    box.innerHTML = code.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    return box;
+  }
+
+  function linkTo(address) {
+    var link = el("a", "o-link oscar-publish-link", address);
+    link.href = address;
+    link.target = "_blank";
+    link.rel = "noopener";
+    return link;
+  }
+
+  /**
+   * Where an interface is opened, as it stands: one code, for the address
+   * that goes with who can open it. An extension's level leads with its own
+   * address (anyone with the link); the local one then stays as text beside
+   * it, for a tablet on the same Wi-Fi. Off has neither.
+   */
+  function whereBlock(page, at) {
+    var where = el("div", "oscar-publish-spot");
+    if (page.access === "off") {
+      where.appendChild(el("p", "oscar-publish-off", "No device can open it. Its schedules and bridges still run."));
+      return where;
+    }
+    var local = addressOf(page.path);
+    var lead = leadOf(page, at);
+    var address = (lead && lead.address) || local;
+
+    where.appendChild(qrOf(address));
+    var lines = el("div", "oscar-publish-lines");
+
+    var first = el("div", "oscar-publish-line");
+    first.appendChild(linkTo(address));
+    var copy = button("Copy", "o-btn oscar-publish-copy");
+    copy.onclick = function (event) {
+      event.stopPropagation();
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(address).then(function () {
+        copy.textContent = "Copied";
+        setTimeout(function () {
+          copy.textContent = "Copy";
+        }, 1500);
+      });
+    };
+    first.appendChild(copy);
+    lines.appendChild(first);
+
+    // How it is doing: an extension's word on its link, and who is on it.
+    var second = el("div", "oscar-publish-line");
+    if (lead && lead.state && lead.state.text) {
+      var state = el("span", "oscar-published-state", lead.state.text);
+      state.setAttribute("data-state", lead.state.tone || "none");
+      if (lead.state.title) state.title = lead.state.title;
+      second.appendChild(state);
+    }
+    var on = devicesOf(page, lead);
+    var count = el("span", "oscar-publish-devices", on.words);
+    if (on.title) count.title = on.title;
+    second.appendChild(count);
+    lines.appendChild(second);
+
+    if (lead && lead.address) {
+      var third = el("div", "oscar-publish-line oscar-publish-local");
+      third.appendChild(document.createTextNode("On this Wi-Fi: "));
+      third.appendChild(linkTo(local));
+      lines.appendChild(third);
+    } else {
+      lines.appendChild(el("div", "oscar-publish-line oscar-publish-local", "Scan it with a phone on this network, or type the address."));
+    }
+
+    // An extension's own part: what it has to say beyond its address.
+    levels.forEach(function (level) {
+      if (!levelMaps[level.id] || typeof level.draw !== "function") return;
+      var box = el("span", "oscar-published-level");
+      try {
+        level.draw(box, { id: page.id, name: titleOf(page), path: page.path, address: local, access: page.access }, {
+          active: !!at && at.id === level.id,
+          show: showAddress,
+          refresh: refreshPublished,
+        });
+      } catch (err) {
+        console.error("An access level of the Publish dialog failed:", err);
+      }
+      lines.appendChild(box);
+    });
+
+    where.appendChild(lines);
+    return where;
+  }
+
+  // ---- what else can be done with one: Download, Take down ------------------
+
+  /** A small menu under a "..." button: built, placed, closed by a click away. */
+  function moreMenu(anchor, items) {
+    var open = document.querySelector(".oscar-open-menu");
+    if (open) open.remove();
+    var at = anchor.getBoundingClientRect();
+    var menu = el("div", "oscar-open-menu");
+    menu.style.top = Math.round(at.bottom + 4) + "px";
+    menu.style.left = Math.round(Math.max(8, at.right - 200)) + "px";
+    items.forEach(function (item) {
+      var row = button(item.label, "oscar-open-menu-item");
+      row.onclick = function () {
+        menu.remove();
+        item.run();
+      };
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+    var away = function (event) {
+      if (menu.contains(event.target)) return;
+      menu.remove();
+      document.removeEventListener("pointerdown", away, true);
+    };
+    setTimeout(function () {
+      document.addEventListener("pointerdown", away, true);
+    }, 0);
+  }
+
+  function moreButton(page) {
+    var more = button("⋯", "o-btn oscar-published-more");
+    more.setAttribute("aria-label", "More for " + titleOf(page));
+    more.onclick = function (event) {
+      event.stopPropagation();
+      moreMenu(more, [
+        {
+          label: "Download as a file…",
+          run: function () {
+            openDownload(page.id);
+          },
+        },
+        {
+          label: "Take down",
+          run: function () {
+            takeDown(page);
+          },
+        },
+      ]);
+    };
+    return more;
+  }
+
+  /**
+   * Take an interface down: stop serving it, and its schedules and bridges
+   * with it. A section may have a reason to think twice (it is open to
+   * anyone with the link, say), and something to do first.
+   */
+  function takeDown(page) {
+    var warnings = sections
+      .map(function (section) {
+        return typeof section.guard === "function" ? section.guard(page.id) : null;
+      })
+      .filter(Boolean);
+    var unpublish = function () {
+      fetch("/published/" + encodeURIComponent(page.id), { method: "DELETE" }).then(function () {
+        refreshPublished();
+      });
+    };
+    if (!warnings.length) return unpublish();
+    var reasons = warnings.map(function (w) {
+      return w.reason;
+    });
+    var proceed = function () {
+      Promise.all(
+        warnings.map(function (w) {
+          return typeof w.first === "function" ? w.first() : null;
+        })
+      ).then(unpublish, function (err) {
+        say(errorBox, (err && err.message) || "That could not be done.");
+      });
+    };
+    if (window.$ && typeof window.$.confirm === "function") {
+      window.$.confirm({
+        title: "Still on the internet",
+        content: reasons.join(" "),
+        // Room for the long button; the theme keeps it on a narrow window.
+        boxWidth: "560px",
+        useBootstrap: false,
+        buttons: {
+          confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
+          cancel: { text: "Keep it published" },
+        },
+      });
+    } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
+      proceed();
+    }
+  }
+
+  /** Edit: fetch the project a live interface was published from, and hand it to the editor. */
+  function openForEdit(page) {
+    say(errorBox, "");
+    fetch("/published/" + encodeURIComponent(page.id) + "/project")
+      .then(function (res) {
+        return res.json().then(function (answer) {
+          if (!res.ok) throw new Error((answer && answer.error) || "That project could not be opened.");
+          return answer;
+        });
+      })
+      .then(function (answer) {
+        options.openProject(answer);
+      })
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
+      });
+  }
+
+  // ---- the card: the project on the canvas -----------------------------------
+
+  function drawCard() {
+    var mine = publishedMine();
+    var now = project();
+    if (titleBox) titleBox.textContent = now.name || "Untitled";
+    cardAccess.textContent = "";
+    cardWhere.textContent = "";
+    if (mine) {
+      var at = mine.access === "off" ? null : levelAt(mine.id);
+      cardAccess.appendChild(accessSelect(mine, at));
+      cardAccess.appendChild(moreButton(mine));
+      cardWhere.appendChild(whereBlock(mine, at));
+    } else {
+      // Not live yet. No address to choose: it is made from the title.
+      var taken = known
+        .map(function (page) {
+          return page.id;
+        })
+        .concat(RESERVED);
+      cardWhere.appendChild(
+        el("p", "oscar-publish-off", "Not published yet. It will open at /show/" + addressFor(now.name, taken) + ", for phones and tablets on this network.")
+      );
+    }
+    paintFoot();
+  }
+
+  // ---- Running: every interface this OSCAR is serving -------------------------
+  // The server's side of the app. Whichever project is on the canvas, these
+  // are what phones can open and what schedules and bridges run from.
+
+  function drawRows() {
+    publishedList.textContent = "";
+    var mine = publishedMine();
+    known.forEach(function (page) {
+      var isMine = !!mine && page.id === mine.id;
+      var isOff = page.access === "off";
+      // The extension level this interface is at, if any: it outranks "network".
+      var at = isOff ? null : levelAt(page.id);
+      var row = el("li");
+
+      // A green dot first: this row is not a file, it is being served
+      // right now -- the same green, and the same breath, as the LIVE
+      // pill in the top bar.
+      var live = document.createElement("span");
+      live.className = "oscar-published-live";
+      live.title = "Published: OSCAR is serving this interface right now.";
+      if (isOff) {
+        // Grey and still: the page is kept, and nobody can open it.
+        live.className = "oscar-published-live oscar-published-off";
+        live.title = "Off: no device can open this interface. Its schedules and bridges still run.";
+      }
+      row.appendChild(live);
+
+      var name = el("span", "oscar-published-name", titleOf(page));
+      name.title = "/show/" + page.id;
+      row.appendChild(name);
+      row.setAttribute("data-surface", page.id);
+      if (isMine) {
+        var here = el("span", "oscar-published-note", "open in the editor");
+        here.title = "This is the project on the canvas. Publish, in the top bar, sends your changes to it.";
+        row.appendChild(here);
+      }
+      // Who is on it, said here and not as one number on the bar.
+      var on = devicesOf(page, leadOf(page, at));
+      var count = el("span", "oscar-published-note oscar-running-devices", on.n === 1 ? "1 device" : on.n + " devices");
+      count.title = on.title || on.words;
+      row.appendChild(count);
+      if (!page.editable) {
+        var bare = el("span", "oscar-published-note", "no project copy to edit");
+        bare.title = "Published before OSCAR kept a copy of the project beside each interface. It runs as it is, and can be taken down.";
+        row.appendChild(bare);
+      }
+
+      row.appendChild(accessSelect(page, at));
+
+      // Edit: the project this was published from, back on the canvas. Not
+      // for the one that is there already.
+      if (page.editable && !isMine && options.openProject) {
+        var editIt = button("Edit");
+        editIt.setAttribute("aria-label", "Edit " + titleOf(page));
+        editIt.onclick = function (event) {
+          event.stopPropagation();
+          openForEdit(page);
+        };
+        row.appendChild(editIt);
+      }
+      row.appendChild(moreButton(page));
+
+      // Click a row to see its code: the same block the card shows, under it.
+      row.classList.add("oscar-published-row");
+      row.tabIndex = 0;
+      row.setAttribute("aria-expanded", String(shown === page.id));
+      var toggle = function () {
+        shown = shown === page.id ? null : page.id;
+        drawRows();
+      };
+      row.onclick = toggle;
+      row.onkeydown = function (event) {
+        if (event.target !== row) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggle();
+        }
+      };
+      if (shown === page.id) {
+        var open = whereBlock(page, at);
+        open.onclick = function (event) {
+          event.stopPropagation();
+        };
+        row.appendChild(open);
+      }
+      publishedList.appendChild(row);
+    });
+    publishedBox.style.display = publishedList.children.length ? "block" : "none";
+    if (runningEmpty) runningEmpty.style.display = publishedList.children.length ? "none" : "";
+  }
+
+  /** A message passed through an interface: its row's light answers, while the window is open. */
+  function activity(ids) {
+    if (!publishedList || !publishedList.isConnected) return;
+    (Array.isArray(ids) ? ids : []).forEach(function (id) {
+      var rows = publishedList.querySelectorAll("li[data-surface]");
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].getAttribute("data-surface") !== id) continue;
+        var light = rows[i].querySelector(".oscar-published-live");
+        if (!light) continue;
+        light.classList.add("oscar-running-active");
+        clearTimeout(light.oscarQuiet);
+        light.oscarQuiet = setTimeout(
+          (function (lit) {
+            return function () {
+              lit.classList.remove("oscar-running-active");
+            };
+          })(light),
+          350
+        );
+      }
+    });
+  }
+
+  function openRunning() {
+    say(errorBox, "");
+    shown = null;
+    fetch("/connection")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (conn) {
+        if (conn && conn.address) lanHost = conn.address;
+        if (conn && conn.socketPort) lanPort = String(conn.socketPort);
+      })
+      .catch(function () {
+        /* the values from startup stand */
+      })
+      .then(refreshPublished);
+    drawRows();
+    runningPanel.style.display = "block";
+    which = "running";
+    editor.Modal.open({
+      title: "Running on this OSCAR",
+      content: runningPanel,
+      attributes: { class: "modal-login modal-publish" },
+    });
+  }
+
+  /** Either window is on screen: what changed on the server is worth drawing. */
+  function isOpen() {
+    return editor.Modal.isOpen() && ((container && container.isConnected) || (runningPanel && runningPanel.isConnected));
+  }
+
+  function refreshPublished() {
+    return Promise.all([
+      fetch("/published").then(function (res) {
+        return res.ok ? res.json() : [];
+      }),
+      // What each project is called now: an interface is shown under its
+      // project's title, not the one it had the day it was published.
+      fetch("/projects")
+        .then(function (res) {
+          return res.ok ? res.json() : [];
+        })
+        .catch(function () {
+          return [];
+        }),
+    ])
+      .then(function (answers) {
+        // Each level says which surfaces are at it. One that fails, or has
+        // nothing to offer now, is left out of this drawing and no more.
+        return Promise.all(
+          levels.map(function (level) {
+            return Promise.resolve()
+              .then(function () {
+                return level.read();
+              })
+              .then(
+                function (map) {
+                  levelMaps[level.id] = map && typeof map === "object" ? map : null;
+                },
+                function () {
+                  levelMaps[level.id] = null;
+                }
+              );
+          })
+        ).then(function () {
+          return answers;
+        });
+      })
+      .then(function (answers) {
+        known = Array.isArray(answers[0]) ? answers[0] : [];
+        titles = {};
+        (Array.isArray(answers[1]) ? answers[1] : []).forEach(function (row) {
+          if (row && !row.template && row.id) titles[row.id] = row.name;
+        });
+        drawCard();
+        drawRows();
+        paintStale();
+        drawSections();
+      })
+      .catch(function () {
+        known = [];
+        drawCard();
+        drawRows();
+        drawSections();
+      });
+  }
+
+  // ---- a published surface as a file -------------------------------------
+  // Its own window, in place of the dialog, which comes back when it closes.
+  var downloadPanel = document.getElementById("download-panel");
+  var hostField = document.getElementById("download-host");
+  var portField = document.getElementById("download-port");
+  var downloadError = document.getElementById("download-error");
+  var downloadButton = document.getElementById("download-button");
+  var downloading = null; // the id of the surface the window is about
+  var returning = false; // whether the dialog comes back when the modal closes
+
+  function openDownload(id) {
+    downloading = id;
+    say(downloadError, "");
+    hostField.value = lanHost || options.host || window.location.hostname || "";
+    portField.value = lanPort || options.port || "";
+    returning = true;
+    downloadPanel.style.display = "block";
+    editor.Modal.open({
+      title: "Download " + id + " as a file",
+      content: downloadPanel,
+      attributes: { class: "modal-login" },
+    });
+  }
+
+  editor.on("modal:close", function () {
+    if (!returning) return;
+    returning = false;
+    // A tick later: the modal is still closing, and would close the dialog with it.
+    setTimeout(function () {
+      if (which === "running") openRunning();
+      else open();
+    }, 0);
+  });
+
+  downloadButton.onclick = function () {
+    var host = (hostField.value || "").trim();
+    var port = (portField.value || "").trim();
+    say(downloadError, "");
+    // The server checks both properly; this only saves a round trip.
+    if (!host) return say(downloadError, "Say where OSCAR can be reached.");
+    if (!port) return say(downloadError, "Say which port OSCAR's bridge is on.");
+    var id = downloading;
+    downloadButton.disabled = true;
+    fetch("/published/" + encodeURIComponent(id) + "/file?host=" + encodeURIComponent(host) + "&port=" + encodeURIComponent(port))
+      .then(function (res) {
+        if (res.ok) return res.blob();
+        return res.json().then(
+          function (body) {
+            throw new Error((body && body.error) || "The download failed.");
+          },
+          function () {
+            throw new Error("The download failed.");
+          }
+        );
+      })
+      .then(function (blob) {
+        download(blob, id + ".html");
+        editor.Modal.close();
+      })
+      .catch(function (err) {
+        say(downloadError, (err && err.message) || "Could not reach the OSCAR server.");
+      })
+      .then(function () {
+        downloadButton.disabled = false;
+      });
+  };
+
+  function open() {
+    say(errorBox, "");
+    say(noteBox, "");
+    latest = null;
+    restamp();
+
+    // A project saved while Pages was on may still hold several; with the
+    // feature off only the first is ever shown, so there is nothing to say.
+    var pages = features.PAGES ? editor.Pages.getAll().length : 1;
+    pageCount.textContent = String(pages);
+    pagesBox.style.display = pages > 1 ? "block" : "none";
+
+    // Asked for now rather than remembered from when the editor loaded: a
+    // laptop that has changed network since then has a new address. The
+    // address OSCAR reports is the one a tablet on the same Wi-Fi can reach
+    // -- not localhost, which would only ever work on this computer.
+    fetch("/connection")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (conn) {
+        if (conn && conn.address) lanHost = conn.address;
+        if (conn && conn.socketPort) lanPort = String(conn.socketPort);
+      })
+      .catch(function () {
+        /* the values from startup stand */
+      })
+      .then(refreshPublished);
+
+    drawCard();
+    container.style.display = "block";
+    which = "publish";
+    editor.Modal.open({
+      title: "Publish",
+      content: container,
+      attributes: { class: "modal-login modal-publish" },
+    });
+  }
+
+  /**
+   * What publishing sends: the surface, its settings written in, and the
+   * project it was made from -- which project it is, and the project itself,
+   * kept beside the page so the interface can be edited later. A published
+   * page is served by OSCAR and finds it by the address it was opened at, so
+   * nothing about where OSCAR is goes with it; the server bakes in its own.
+   *
+   * `as` is who the canvas is published as: { id, name, address }.
+   */
+  function request(as) {
+    say(errorBox, "");
+    say(noteBox, "");
+    var snapshot = exportSnapshot(editor);
+    return {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: as.name,
+        fileName: as.address,
+        html: snapshot.html,
+        css: snapshot.css,
+        project: { id: as.id, name: as.name },
+        source: options.source ? options.source(as.name, as.id) : undefined,
+      }),
+    };
+  }
+
+  /**
+   * Publish the canvas. A project that is live keeps the address it has;
+   * one that is not is given one made from its title, with a number when
+   * that is taken. Nobody is asked for an address, and nothing that is
+   * already live is ever replaced by a project that is not its own.
+   */
+  function publish(tried) {
+    var now = project();
+    var mine = publishedMine();
+    var taken = known
+      .map(function (page) {
+        return page.id;
+      })
+      .concat(RESERVED, tried || []);
+    var as = {
+      id: now.id || (options.newId ? options.newId() : null),
+      name: now.name || "Untitled",
+      address: mine ? mine.id : addressFor(now.name || "Untitled", taken),
+    };
+    publishButton.disabled = true;
+
+    fetch("/publish", request(as))
+      .then(function (res) {
+        return res.json().then(function (answer) {
+          if (!res.ok) throw new Error((answer && answer.error) || "The interface could not be published.");
+          return answer;
+        });
+      })
+      .then(function (answer) {
+        // Somebody published at that address a moment ago: the next number, not their page.
+        if (answer.confirm) {
+          if ((tried || []).length >= 5) throw new Error("No free address could be found for this project.");
+          return publish((tried || []).concat(as.address));
+        }
+        latest = answer.id;
+        if (answer.linked && answer.linked.length) {
+          say(noteBox, "Too large to embed, so these are loaded from OSCAR as the page opens: " + answer.linked.join(", "));
+        }
+        return refreshPublished();
+      })
+      .catch(function (err) {
+        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
+      })
+      .then(function () {
+        publishButton.disabled = false;
+      });
+  }
+
+  publishButton.onclick = function () {
+    publish();
+  };
+
+  // The canvas is made a project first, when it is nobody yet: what is
+  // published has to belong to one. If that cannot be done -- OSCAR is not
+  // answering -- the window opens all the same and says what it can.
+  editor.Commands.add("oscar-export", function () {
+    if (!options.beforeOpen) return open();
+    Promise.resolve()
+      .then(options.beforeOpen)
+      .then(open, open);
+  });
+
+  // What OSCAR is running, as its own window: the RUNNING pill opens it.
+  editor.Commands.add("oscar-running", openRunning);
+
+  return {
+    /** The server says what is published, or who is on it, has changed: draw it, if either window is showing. */
+    refresh: function () {
+      if (isOpen()) refreshPublished();
+    },
+
+    /** A message passed through these interfaces (their ids): the Running window's lights answer. */
+    activity: activity,
+
+    /**
+     * Let an extension add to the dialog. `draw(box, view)` is called with a
+     * box of the extension's own, under the list of what is live, every time
+     * the dialog opens and every time what is published changes. `view` is
+     * { surfaces: [{ id, name, path, address }], latest: the id just
+     * published from here or null, refresh(), show(address, status),
+     * onUnpublish(guard) }: guard(id) is asked before an interface is taken
+     * down and answers null, or { reason, first() } -- a reason to think
+     * twice, put to the person, and what to do first if they go on (first
+     * returns a promise). show() does nothing now: each interface shows its
+     * own code. Drawing again replaces what the box held; the extension
+     * keeps any state it needs.
+     */
+    addSection: function (draw) {
+      if (typeof draw !== "function") throw new Error("A section of the Publish dialog is a draw function");
+      var box = document.createElement("div");
+      box.className = "oscar-publish-section";
+      if (extrasBox) extrasBox.appendChild(box);
+      sections.push({ draw: draw, box: box });
+    },
+
+    /**
+     * Let an extension add an answer to "who can open it", after OSCAR's own
+     * Off and This network: somewhere an interface is reachable beyond the
+     * local network. `level` is:
+     *
+     *   id       a short word, not "off" or "network"
+     *   label    what the setting calls it; a string, or a function giving one
+     *   read()   a promise of { surfaceId: true } for the interfaces at this
+     *            level now, or of null when the level is not on offer at all
+     *   choose(surfaceId)  put the interface at this level; a promise, rejected
+     *            with an Error whose message is for the person when it cannot be
+     *   leave(surfaceId)   take it off this level; a promise
+     *   disabled()         optional: why the level cannot be chosen now, or
+     *            "" when it can. A sentence: the level stays on the list,
+     *            greyed, with the sentence on the setting. Or { reason,
+     *            action: { label, run(editor) } }: the row stays pickable, and
+     *            picking it shows the reason on a sheet over the dialog with
+     *            the action's one button (and Not now), then the setting goes
+     *            back to what it was. run gets the editor, as a menu item's
+     *            does, so the level can open its own dialog. OSCAR draws the
+     *            words and the button; what they mean is the level's
+     *   link(surfaceId)    optional: where an interface at this level is
+     *            opened, { address, state: { text, tone, title }, devices },
+     *            or null. devices is how many it has brought to the
+     *            interface, counted with those on this network.
+     *            Its address is the one the interface's code is drawn for;
+     *            tone is "valid", "grace" or "invalid"
+     *   draw(box, surface, view)  optional: anything more the level has to
+     *            say about an interface, beside where it is opened. surface
+     *            is { id, name, path, address, access }; view is { active,
+     *            show(address, status), refresh() }
+     *
+     * An interface at an extension's level is open to the network as well,
+     * and switching it Off leaves the level first.
+     */
+    addAccessLevel: function (level) {
+      if (!level || typeof level.id !== "string" || !/^[a-z][a-z0-9-]*$/.test(level.id) || level.id === "off" || level.id === "network") {
+        throw new Error("An access level has an id of its own");
+      }
+      if (typeof level.read !== "function" || typeof level.choose !== "function" || typeof level.leave !== "function") {
+        throw new Error("An access level reads, is chosen and is left");
+      }
+      levels = levels
+        .filter(function (other) {
+          return other.id !== level.id;
+        })
+        .concat([level]);
+    },
+  };
+}
+
+module.exports = { install: install, fileStem: fileStem, whyNot: whyNot };
+
+},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":16,"./adapters/grapesjs":41,"qrcode-generator":51}],44:[function(require,module,exports){
+"use strict";
+
+/**
+ * What somebody sees the first time they open OSCAR: the Showcase, a surface
+ * where every widget works, not an empty canvas and a toolbar of icons.
+ *
+ * "The first time" means this browser has never held an OSCAR canvas. The
+ * canvas autosaves into the browser (see storageManager in oscar_editor.js),
+ * so from the first edit on there is an autosave and this never happens
+ * again: not after the canvas has been cleared on purpose, and not after an
+ * autosave was set aside for being unreadable or from a newer OSCAR. Those
+ * people have been here before, and an empty canvas is what they are owed.
+ *
+ * It has to be asked before the editor starts, because starting it is what
+ * writes the first autosave.
+ */
+
+/** The template opened on a first run. Anything else in public/templates would do. */
+var WELCOME = "templates/oscar-showcase.html";
+
+/** The key the canvas autosaves under. */
+var AUTOSAVE_KEY = "oscarProject";
+
+/**
+ * @param {Storage} storage the browser's localStorage, or anything shaped like it
+ * @returns {boolean} false when it cannot be told: better an empty canvas
+ *          than a template loaded over somebody's work
+ */
+function isFirstRun(storage) {
+  try {
+    return !!storage && storage.getItem(AUTOSAVE_KEY) === null;
+  } catch (err) {
+    // Storage that throws when read (a private window, a locked-down kiosk).
+    return false;
+  }
+}
+
+/**
+ * Open the welcome template. Quietly: nobody asked for it, so there is no
+ * "Loaded successfully", and if it cannot be fetched the canvas stays empty
+ * and nothing is said.
+ *
+ * @param {object} deps
+ * @param {(url: string) => Promise<Response>} deps.fetch
+ * @param {(html: string) => void} deps.load what Load uses to open a template
+ * @param {() => boolean} [deps.untouched] whether the canvas is still as it
+ *        started; checked after the fetch, in case somebody was quick
+ * @returns {Promise<boolean>} whether it was opened
+ */
+function openWelcome(deps) {
+  return deps
+    .fetch(WELCOME)
+    .then(function (res) {
+      if (!res.ok) throw new Error("status " + res.status);
+      return res.text();
+    })
+    .then(function (html) {
+      if (deps.untouched && !deps.untouched()) return false;
+      deps.load(html);
+      return true;
+    })
+    .catch(function () {
+      return false;
+    });
+}
+
+module.exports = { isFirstRun: isFirstRun, openWelcome: openWelcome, WELCOME: WELCOME, AUTOSAVE_KEY: AUTOSAVE_KEY };
+
+},{}],45:[function(require,module,exports){
+window.$ = $ = window.jQuery = require("jquery");
+
+// jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
+// carries its own copy of jQuery, so it must be required here rather than
+// loaded as a separate <script> tag -- otherwise it extends the page's jQuery
+// and $.alert/$.confirm go missing on this one. Its CommonJS build exports an
+// initialiser instead of running itself.
+require("jquery-confirm")(window, $);
+// Every $.alert and $.confirm draws with OSCAR's theme (css/oscar_theme.css)
+// without each call site having to ask for it. jquery-confirm sizes its box
+// with Bootstrap grid classes unless told otherwise, and with Bootstrap gone
+// those classes have no width, so a prompt stretched across the whole screen.
+window.jconfirm.defaults = { theme: "oscar", useBootstrap: false, boxWidth: "420px" };
+
+// GrapesJS 0.21+ no longer ships Font Awesome, so OSCAR's icons are inline SVG.
+var ICONS = {
+  // Save and Load are a pair of folders, arrow up to send a project, arrow
+  // down to bring one back. mdi-folder-upload and mdi-folder-download,
+  // @mdi/svg 7.4.47 (Apache-2.0), copied from the package.
+  save: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4H10L12,6H20M10.75,13H14V17H16V13H19.25L15,8.75",
+  open: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H20M19.25,13H16V9H14V13H10.75L15,17.25",
+  // mdi-palette and mdi-restore, @mdi/svg 7.4.47 (Apache-2.0): the widget
+  // style gallery, and putting a widget back on its surface's style.
+  palette: "M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 17.5,12M14.5,8A1.5,1.5 0 0,1 13,6.5A1.5,1.5 0 0,1 14.5,5A1.5,1.5 0 0,1 16,6.5A1.5,1.5 0 0,1 14.5,8M9.5,8A1.5,1.5 0 0,1 8,6.5A1.5,1.5 0 0,1 9.5,5A1.5,1.5 0 0,1 11,6.5A1.5,1.5 0 0,1 9.5,8M6.5,12A1.5,1.5 0 0,1 5,10.5A1.5,1.5 0 0,1 6.5,9A1.5,1.5 0 0,1 8,10.5A1.5,1.5 0 0,1 6.5,12M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A1.5,1.5 0 0,0 13.5,19.5C13.5,19.11 13.35,18.76 13.11,18.5C12.88,18.23 12.73,17.88 12.73,17.5A1.5,1.5 0 0,1 14.23,16H16A5,5 0 0,0 21,11C21,6.58 16.97,3 12,3Z",
+  restore: "M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z",
+  // mdi-export-variant, @mdi/svg 7.4.47 (Apache-2.0): publishing sends the
+  // surface out of the editor, an arrow leaving its box. (A bare up arrow
+  // read as "upload a file".)
+  publish: "M12,1L8,5H11V14H13V5H16M18,23H6C4.89,23 4,22.1 4,21V9A2,2 0 0,1 6,7H9V9H6V21H18V9H15V7H18A2,2 0 0,1 20,9V21A2,2 0 0,1 18,23Z",
+  // OSCAR's own mark, traced from assets/css/logo.png (the jellyfish, not the
+  // word under it) with its strokes thickened to the weight the other icons
+  // draw at. About wears it.
+  jellyfish: "M12.2,8.4L12.2,9.4L12.7,9.8L13.6,9.4L14.4,9.8L15.1,9.3L14.9,8.3L13.9,7.6ZM8.1,8.8L8.1,9.3L8.8,9.8L9.4,9.4L10.4,9.8L10.9,9.4L10.9,8.4L9.8,7.6L8.8,7.9ZM10.4,1L7.9,2L6,3.8L4.1,7.5L4.3,10.4L6,12.7L6,16.9L5,18.5L5,19.5L6,20.2L6.8,19.9L7.8,18.7L8.1,17.5L8.4,20L9.8,20.4L10.4,19.9L10.6,13.2L10.8,18.7L11.4,19.2L12.4,19L12.7,18.7L12.9,13.2L13.1,22.2L14.4,22.8L15.2,22.2L15.2,13.4L15.6,13.2L17,14.9L18,15.4L18.9,15.4L19.7,14.7L19.5,13.7L17.9,12.6L17.9,11.9L19,10.3L19.2,7.6L17.9,4.6L16.1,2.5L13.6,1.2ZM7.8,5.1L9.1,3.8L10.6,3.2L12.6,3.2L14.2,3.8L15.6,5.1L17,8.3L16.7,9.9L15.2,11.1L10.9,10.8L8.6,11.3L7.3,10.8L6.5,9.6L6.3,8.3Z",
+  help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
+  pages:
+    "M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M19,21H8V7H19V21Z",
+  remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
+  locked:
+    "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z",
+  unlocked:
+    "M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V10A2,2 0 0,1 6,8H15V6A3,3 0 0,0 12,3A3,3 0 0,0 9,6H7A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,17A2,2 0 0,0 14,15A2,2 0 0,0 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17Z",
+};
+
+function icon(name, size) {
+  size = size || 18;
+  return (
+    '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '">' +
+    '<path fill="currentColor" d="' + ICONS[name] + '"/></svg>'
+  );
+}
+
+var editor = {};
+
+// One browserify bundle serves both the editor and the preview page, so each
+// entry point only boots when its own container is on the page.
+if (document.getElementById("gjs")) {
+  // Extensions' scripts run as soon as this file has, which is before the
+  // editor has finished loading. They wait here; see the end of this block.
+  var extensionsWaiting = [];
+  window.OSCAR = {
+    api: 1,
+    ready: function (fn) {
+      if (typeof fn === "function") extensionsWaiting.push(fn);
+    },
+  };
+
+  // Ask the server which address it is reachable on, so new widgets default to
+  // an IP that other devices on the network can actually talk to.
+  fetch("/connection")
+    .then(function (res) {
+      return res.json();
+    })
+    .catch(function () {
+      return {};
+    })
+    .then(function (conn) {
+      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081, conn.oscInPort);
+      window.editor = editor;
+    });
+
+  checkForUpdate();
+  loadDiagnostics();
+  wireFeedbackButtons();
+}
+
+// ---- feedback --------------------------------------------------------------
+// Reports are prefilled into GitHub's issue form and opened in the browser, so
+// the person sees exactly what is being sent before submitting. OSCAR itself
+// posts nothing and holds no credentials.
+var ISSUES_URL = "https://github.com/trafalmejo/OSCAR/issues/new";
+
+var diagnostics = null;
+
+function loadDiagnostics() {
+  fetch("/diagnostics")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (info) {
+      diagnostics = info || {};
+      var el = document.getElementById("about-version");
+      if (el && diagnostics.oscar) el.textContent = "OSCAR " + diagnostics.oscar;
+    })
+    .catch(function () {
+      diagnostics = {};
+    });
+}
+
+/** The version details a bug report always ends up asking for. */
+function environmentReport() {
+  var info = diagnostics || {};
+  var lines = [
+    "OSCAR:      " + (info.oscar || "unknown"),
+    "Runs as:    " + (info.electron ? "desktop app (Electron " + info.electron + ")" : "browser"),
+    "System:     " + (info.platform || "?") + " " + (info.arch || ""),
+    "Node:       " + (info.node || "?"),
+    "GrapesJS:   " + (typeof grapesjs !== "undefined" ? grapesjs.version : "?"),
+    "Project:    format " + (info.projectFormat || "?"),
+    // Whether this build can open a serial port at all is the first question
+    // a "my Arduino does nothing" report raises. The port name stays out.
+    "Serial:     " + (info.serial ? (info.serial.supported ? info.serial.state : "not in this build") : "?"),
+    // Counts only: a MIDI port is named after the hardware plugged in.
+    "MIDI:       " +
+      (info.midi
+        ? info.midi.supported
+          ? (info.midi.outputs || []).length + " out, " + (info.midi.inputs || []).length + " in"
+          : "not in this build"
+        : "?"),
+    // Behaviour nobody else sees is sometimes an extension's (lib/extensions.js).
+    "Extensions: " +
+      ((info.extensions || [])
+        .map(function (e) {
+          return e.name + (e.version ? " " + e.version : "");
+        })
+        .join(", ") || "none"),
+    "Browser:    " + navigator.userAgent,
+  ];
+  return lines.join("\n");
+}
+
+function openIssue(template) {
+  var url =
+    ISSUES_URL +
+    "?template=" +
+    encodeURIComponent(template) +
+    "&environment=" +
+    encodeURIComponent(environmentReport());
+  window.open(url, "_blank", "noopener");
+}
+
+function wireFeedbackButtons() {
+  var report = document.getElementById("report-problem");
+  if (report) {
+    report.onclick = function (e) {
+      e.preventDefault();
+      openIssue("bug.yml");
+    };
+  }
+
+  var suggest = document.getElementById("suggest-feature");
+  if (suggest) {
+    suggest.onclick = function (e) {
+      e.preventDefault();
+      // The feature form has no environment field; nothing to prefill.
+      window.open(ISSUES_URL + "?template=feature.yml", "_blank", "noopener");
+    };
+  }
+}
+
+// ---- update notice ---------------------------------------------------------
+// The server does the checking; this only reports what it found. It is a
+// corner toast rather than a modal on purpose: OSCAR is often on screen during
+// a show, and nothing here may steal focus, cover the toolbar, or block work.
+var SKIPPED_KEY = "oscarSkippedUpdate";
+
+function skippedVersion() {
+  try {
+    return localStorage.getItem(SKIPPED_KEY);
+  } catch (err) {
+    return null; // private windows and locked-down browsers
+  }
+}
+
+function showUpdateNotice(info) {
+  var box = document.createElement("div");
+  box.className = "oscar-update";
+
+  var title = document.createElement("div");
+  title.className = "oscar-update-title";
+  title.textContent = "OSCAR " + info.version + " is available";
+
+  var current = document.createElement("div");
+  current.className = "oscar-update-current";
+  current.textContent = info.current
+    ? "You are running " + info.current + "."
+    : "You are running an older version.";
+
+  var actions = document.createElement("div");
+  actions.className = "oscar-update-actions";
+
+  // Only ever link to a GitHub release page, whatever the server replied.
+  var link = document.createElement("a");
+  link.className = "oscar-update-get";
+  link.textContent = "What's new";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.href = /^https:\/\/github\.com\//.test(info.url || "")
+    ? info.url
+    : "https://github.com/trafalmejo/OSCAR/releases/latest";
+
+  var later = document.createElement("button");
+  later.className = "oscar-update-later";
+  later.type = "button";
+  later.textContent = "Later";
+  later.onclick = function () {
+    box.remove();
+  };
+
+  var skip = document.createElement("button");
+  skip.className = "oscar-update-skip";
+  skip.type = "button";
+  skip.textContent = "Skip this version";
+  skip.onclick = function () {
+    try {
+      localStorage.setItem(SKIPPED_KEY, info.version);
+    } catch (err) {
+      /* nothing to do -- it just gets offered again next launch */
+    }
+    box.remove();
+  };
+
+  actions.appendChild(link);
+  actions.appendChild(later);
+  actions.appendChild(skip);
+  box.appendChild(title);
+  box.appendChild(current);
+  box.appendChild(actions);
+  document.body.appendChild(box);
+}
+
+function checkForUpdate() {
+  fetch("/update")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (info) {
+      if (!info || !info.available || !info.version) return;
+      if (info.version === skippedVersion()) return;
+      showUpdateNotice(info);
+    })
+    .catch(function () {
+      // Offline, or the server said nothing. Never worth bothering anyone.
+    });
+}
+
+// The same module the server uses to stamp and check project files, so the
+// format number and the "is this a project?" rule can never drift apart.
+var projectFormat = require("../../lib/project-format");
+var projectsTable = require("../../lib/projects-table");
+var widgetStyles = require("../../lib/widget-styles");
+var htmlDocument = require("../../lib/html-document");
+var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest, refreshChoices } = require("./adapters/grapesjs");
+
+// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
+var adapters = require("./adapters/grapesjs");
+var { widgetPlugins, runOffstage } = adapters;
+
+// Tabs and the page-by-page lock, shared with the /preview page.
+var oscarPages = require("./pages");
+var features = require("../../lib/features");
+var welcome = require("./first_run");
+
+var oscarExport = require("./export_dialog");
+var oscarAssistants = require("./assistants_dialog");
+var { createOpenProject } = require("../../lib/open-project");
+var { createProjectSync } = require("../../lib/project-sync");
+var toolbarOrder = require("../../lib/toolbar-order");
+
+var isProjectData = projectFormat.isGrapesProject;
+
+function postJSON(url, body) {
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(function (res) {
+    return res.json();
+  });
+}
+
+function initGrape(ipServer, socketPort, oscInPort) {
+  // Asked before the editor starts: starting it writes the first autosave.
+  var firstRun = welcome.isFirstRun(window.localStorage);
+
+  editor = grapesjs.init({
+    // GrapesJS fetches Font Awesome from a CDN by default, which fails without
+    // a word at a venue with no internet. The few icons it still draws that
+    // way are supplied by css/oscar_theme.css instead.
+    cssIcons: "",
+    // The outline on a selected component is drawn inside the canvas, which
+    // cannot see the editor's theme variables, so GrapesJS's own light blue
+    // stayed while the handles and toolbar turned pink. canvasCss is added
+    // after GrapesJS's rule and is editor-only: it never reaches a saved or
+    // exported project. The colour is read from the theme, not repeated here.
+    canvasCss:
+      ".gjs-selected { outline: 2px solid " +
+      (getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#ff3663") +
+      " !important; }",
+    dragMode: "absolute",
+    // Style the selected element, not its classes. GrapesJS's default puts
+    // a resize or a style change on the element's class combination, which
+    // silently rewrites every sibling wearing the same classes: scale one
+    // drum and the whole kit grows, and the layout reflows under the
+    // handles ("I scale an element and something else moves"). The classes
+    // stay editable on purpose -- picking one in the Selector panel styles
+    // it deliberately.
+    selectorManager: { componentFirst: true },
+    // Code pasted into Import, and templates, are read with these.
+    //
+    // A whole document is reduced to its CSS and its body first (see
+    // lib/html-document.js for why GrapesJS must not read it as a document),
+    // and the style named on its <body> is put on the surface. data-gjs-min-x
+    // becomes the minX setting, since HTML attribute names cannot hold
+    // capitals. The rest are GrapesJS's own defaults, restated because this
+    // option replaces them.
+    parser: {
+      optionsHtml: {
+        preParser: function (input, context) {
+          var doc = htmlDocument.readDocument(input);
+          // A snippet keeps its shape; only the comments inside its <style>
+          // blocks go, for the reason given at stripCssComments.
+          if (!doc) return htmlDocument.cleanStyleBlocks(input);
+          var wrapper = context && context.editor && context.editor.getWrapper();
+          if (wrapper) {
+            wrapper.setAttributes(widgetStyles.withSurfaceStyle(wrapper.getAttributes(), doc.bodyAttributes));
+          }
+          return doc.html;
+        },
+        htmlType: "text/html",
+        allowScripts: false,
+        allowUnsafeAttr: false,
+        allowUnsafeAttrValue: false,
+        keepEmptyTextNodes: false,
+        convertDataGjsAttributesHyphens: true,
+        convertAttributeValues: false,
+      },
+    },
+    height: "100%",
+    container: "#gjs",
+    fromElement: true,
+    allowScripts: 1,
+    // The canvas is its own document and loads nothing from the editor page:
+    // fonts, every style's tokens and the widgets all come in here.
+    canvas: { styles: widgetStyles.canvasStylesheets() },
+    // The surface follows its style too; see SURFACE_CSS for why this one
+    // rule cannot sit in a layer.
+    protectedCss: widgetStyles.SURFACE_CSS,
+    assetManager: {
+      assets: [
+        "images/fruits/emoji-apple.png",
+        "images/fruits/emoji-apple-click.png",
+        "images/fruits/emoji-orange.png",
+        "images/fruits/emoji-orange-click.png",
+        "images/fruits/emoji-banana.png",
+        "images/fruits/emoji-banana-click.png",
+        "images/fruits/background.png",
+      ],
+    },
+    // The canvas autosaves into this browser. Named projects are a separate,
+    // explicit action that writes JSON files next to the OSCAR server.
+    storageManager: {
+      type: "local",
+      autosave: true,
+      autoload: true,
+      stepsBeforeSave: 1,
+      // A key distinct from 0.16's `gjs-*` entries, so a browser that ran an
+      // older OSCAR ignores that data instead of half-loading it.
+      options: { local: { key: welcome.AUTOSAVE_KEY } },
+      // Stamp the autosave the same way saved files are stamped, and never
+      // let editor state into it.
+      onStore: function (data) {
+        // formatFor, as for a saved file: a single page stays readable by
+        // an older OSCAR sharing this browser's storage.
+        return Object.assign(
+          { oscarFormat: projectFormat.formatFor(data) },
+          projectFormat.namePages(projectFormat.stripEditorState(data))
+        );
+      },
+      onLoad: function (data) {
+        if (!data || !Object.keys(data).length) return data;
+
+        var format = typeof data.oscarFormat === "number" ? data.oscarFormat : 0;
+        delete data.oscarFormat;
+
+        // An autosave from a newer OSCAR would be quietly mangled by this one,
+        // and the next change would save the damage. Start fresh, but keep the
+        // newer copy rather than destroying someone's canvas.
+        if (format > projectFormat.CURRENT_FORMAT) {
+          try {
+            localStorage.setItem("oscarProject.newer", JSON.stringify(data));
+          } catch (err) {
+            /* nothing more we can do */
+          }
+          console.warn(
+            "OSCAR: this browser holds work from a newer OSCAR. Starting fresh; " +
+              "the newer copy is kept under the oscarProject.newer key."
+          );
+          return {};
+        }
+
+        // Repair an autosave that already holds editor state. A build once
+        // wrote the preview lock in here, which left widgets unmovable on
+        // every launch; that data carries the current stamp, so a version
+        // check would not catch it.
+        data = projectFormat.stripEditorState(data);
+
+        // And name its pages, on every load for the same reason: GrapesJS
+        // drops an empty page name when it stores, so page one of an autosave
+        // carrying the current stamp is routinely unnamed.
+        data = projectFormat.namePages(data);
+
+        // An autosave with no pages (from a crash mid-load, say) would leave
+        // the editor blank and unusable on every launch, with no way out short
+        // of clearing browser data. Start fresh -- `{}` is exactly what a
+        // first-ever launch loads.
+        if (isProjectData(data)) return data;
+        console.warn("OSCAR: discarding an unreadable autosave and starting fresh");
+        return {};
+      },
+    },
+    plugins: [
+      "oscar_socket",
+      "oscar_ip",
+      // OSCAR's widgets are bundled rather than loaded as globals, so they go
+      // in as functions. Named plugins are resolved through window[name], which
+      // silently does nothing when the name is wrong -- that is how the
+      // gjs-blocks-basic mismatch went unnoticed.
+      ...widgetPlugins(ipServer),
+      "grapesjs-preset-webpage",
+      "gjs-blocks-basic",
+      "grapesjs-custom-code",
+      "grapesjs-parser-postcss",
+      "grapesjs-touch",
+      "grapesjs-tooltip",
+    ],
+    pluginsOpts: {
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort, from: "canvas" },
+      "grapesjs-tooltip": {},
+      "gjs-blocks-basic": { flexGrid: true },
+      "grapesjs-preset-webpage": {
+        blocks: [],
+        // Keep OSCAR's own palette (css/oscar_theme.css) rather than the
+        // preset's theme.
+        useCustomTheme: false,
+        showStylesOnChange: true,
+        // Not "Import Template": a template is now something in the Load list.
+        modalImportTitle: "Import HTML/CSS",
+        modalImportLabel:
+          '<div style="margin-bottom: 10px; font-size: 13px;">Paste here your HTML/CSS and click Import</div>',
+        modalImportContent: function (editor) {
+          return editor.getHtml() + "<style>" + editor.getCss() + "</style>";
+        },
+      },
+    },
+  });
+
+  // The chosen style is saved on the wrapper; the canvas body follows it.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
+
+  // While previewing, a click has to do what clicking does; see the adapter.
+  noSelectingWhile(editor, function () {
+    return editor.Commands.isActive("preview");
+  });
+
+  // A light on each protocol section of the settings panel, so a collapsed
+  // section still says whether the widget uses it. Watches the views column,
+  // which is where GrapesJS draws and redraws the panel.
+  sectionLights(editor, {
+    root: document.querySelector(".gjs-pn-views-container") || document.body,
+    listeningPort: oscInPort,
+    serial: features.SERIAL
+      ? {
+          state: function () {
+            return window.oscarSerialForPanel ? window.oscarSerialForPanel.state() : {};
+          },
+          pick: function (path) {
+            if (window.oscarSerialForPanel) window.oscarSerialForPanel.pick(path);
+          },
+        }
+      : null,
+  });
+
+  // The MIDI ports this computer has, for a widget's Port setting to suggest.
+  // Asked again whenever a widget is picked, since instruments come and go.
+  if (features.MIDI) {
+    var askForMidiPorts = function () {
+      fetch("/midi/ports")
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (ports) {
+          if (ports) suggest("midi-outputs", ports.outputs, editor);
+          if (ports) suggest("midi-inputs", ports.inputs, editor);
+        })
+        .catch(function () {});
+    };
+    askForMidiPorts();
+    editor.on("component:selected", function () {
+      // With what is known already, at once; then with what the server says.
+      refreshChoices(editor);
+      askForMidiPorts();
+    });
+  }
+
+  // The canvas yields to the show, per widget id: what is published is read
+  // on a slow beat, each widget wears its light (green sends, red yields),
+  // and the dots follow the layout on a faster one (adapters/grapesjs.js).
+  var askForPublished = function () {
+    if (!features.CANVAS_YIELD) return;
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (rows) {
+        if (rows) adapters.tellPublishedWidgets(editor, rows);
+      })
+      .catch(function () {});
+  };
+  askForPublished();
+  setInterval(askForPublished, 5000);
+  // Position follows the layout every frame, so a dragged widget carries
+  // its light; membership and colour repaint on edits, debounced. No
+  // lights while the feature is off: no frame asked for every 16 ms either.
+  if (features.CANVAS_YIELD) {
+    (function beat() {
+      adapters.repositionWidgetLights(editor);
+      window.requestAnimationFrame(beat);
+    })();
+  }
+  var repaintLights = (function () {
+    var wait = null;
+    return function () {
+      if (wait) clearTimeout(wait);
+      wait = setTimeout(function () {
+        adapters.paintWidgetLights(editor);
+      }, 150);
+    };
+  })();
+  editor.on("update component:add component:remove change:device undo redo", repaintLights);
+
+  // The serial ports, for a DMX widget's Interface and the OSC Board to
+  // choose from, and the cable's own state, for the Board row to say. Asked
+  // the same way: dongles come and go with the cable.
+  var serialLink = { path: "", state: "idle", error: null, bitrate: null };
+  {
+    var askForSerialPorts = function () {
+      fetch("/serial")
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (report) {
+          if (!report) return;
+          serialLink = report;
+          if (Array.isArray(report.ports)) {
+            suggest(
+              "serial-ports",
+              report.ports.map(function (port) {
+                return { id: port.path, name: port.label || port.path };
+              }),
+              editor
+            );
+          }
+        })
+        .catch(function () {});
+    };
+    askForSerialPorts();
+    editor.on("component:selected", askForSerialPorts);
+    window.oscarSerialForPanel = {
+      state: function () {
+        return serialLink;
+      },
+      pick: function (path) {
+        fetch("/serial", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(path ? { action: "connect", path: path } : { action: "disconnect" }),
+        })
+          .then(function (res) {
+            return res.json().catch(function () {
+              return {};
+            });
+          })
+          .then(function (answer) {
+            if (answer && answer.error) $.alert(answer.error);
+          })
+          .catch(function () {})
+          .then(askForSerialPorts);
+      },
+    };
+    // Learn, and ticking Data in, can name a port the dropdown has not got.
+  // ---- the bridge's confirmation -------------------------------------------
+  // Only the same protocol both ways can loop: OSC in with OSC bridged out,
+  // MIDI in with MIDI bridged out. Creating such a pair is confirmed, from
+  // whichever side arrives last; a cross-protocol bridge (a knob to OSC) and
+  // DMX (no way in) ask nothing. Only for the selected widget: a project
+  // loading is not a hand in the panel.
+  var BRIDGE_PAIRS = [
+    { input: "listen", when: "oscSendWhen", protocol: "OSC" },
+    { input: "midiListen", when: "midiSendWhen", protocol: "MIDI" },
+  ];
+  var BRIDGE_KEYS = ["listen", "oscSendWhen", "midiListen", "midiSendWhen"];
+  var revertingBridge = false;
+  // GrapesJS says component:update:<key> twice for one change (once from the
+  // model, once from the trait), and the question must not stack.
+  var bridgeAsking = false;
+  function loopedPairs(get) {
+    return BRIDGE_PAIRS.filter(function (pair) {
+      return get(pair.input) === true && get(pair.when) === "data";
+    });
+  }
+  editor.on(
+    BRIDGE_KEYS.map(function (key) {
+      return "component:update:" + key;
+    }).join(" "),
+    function (model) {
+      if (revertingBridge || bridgeAsking || editor.getSelected() !== model) return;
+      var changed = Object.keys(model.changed || {}).filter(function (key) {
+        return BRIDGE_KEYS.indexOf(key) !== -1;
+      })[0];
+      if (!changed) return;
+      var before = model.previous(changed);
+      var was = function (key) {
+        return key === changed ? before : model.get(key);
+      };
+      // Only a pair this very change created asks; each protocol's pair asks
+      // once, and edits near an accepted pair stay quiet.
+      var beforePairs = loopedPairs(was);
+      var pair = loopedPairs(model.get.bind(model)).filter(function (candidate) {
+        return beforePairs.indexOf(candidate) === -1;
+      })[0];
+      if (!pair) return;
+      bridgeAsking = true;
+      $.confirm({
+        title: "This can loop",
+        content:
+          "This control listens to " + pair.protocol + " and will now also send on what it hears. " +
+          "If what it sends comes back -- software that echoes it, or OSCAR's own port -- it goes " +
+          "round in circles. The Loop guard (on) passes only real changes, which stops that.",
+        boxWidth: "460px",
+        useBootstrap: false,
+        onDestroy: function () {
+          bridgeAsking = false;
+        },
+        buttons: {
+          confirm: { text: "Keep it" },
+          cancel: {
+            text: "Undo",
+            action: function () {
+              revertingBridge = true;
+              model.set(changed, before);
+              revertingBridge = false;
+            },
+          },
+        },
+      });
+    }
+  );
+
+    editor.on("component:update:midiInPort component:update:midiPort", function () {
+      refreshChoices(editor);
+    });
+  }
+
+  var pn = editor.Panels;
+  var modal = editor.Modal;
+
+  // ---- modals ------------------------------------------------------------
+  function setModal(title, containerId) {
+    var container = document.getElementById(containerId);
+    container.style.display = "block";
+    modal.open({ title: title, content: container, attributes: { class: "modal-login" } });
+  }
+
+  function showLoader() {
+    $("#table-container").hide();
+    $("#loader-table").show();
+  }
+
+  function hideLoader() {
+    $("#table-container").show();
+    $("#loader-table").hide();
+  }
+
+  function openProjects(mode) {
+    projectsMode = mode;
+    selectedRow = null;
+    // Save leaves templates out of the list, so one picked in Load must not
+    // linger as the name a project is saved under.
+    if (mode === "Save" && selectedTemplate) {
+      selectedTemplate = null;
+      templateUrl = null;
+      $("#project-name").val("");
+    }
+    setModal(mode === "Load" ? "Open a project or template" : mode, "table-panel");
+    $("#save-button").toggle(mode === "Save");
+    $("#load-button").toggle(mode === "Load");
+    refreshProjects();
+  }
+
+  editor.Commands.add("open-projects", function (ed, sender, options) {
+    openProjects((options && options.type) || "Save");
+  });
+
+  // ---- project table -----------------------------------------------------
+  // A plain table rather than a plugin: it is one list with four columns.
+  // Every cell is filled with textContent, because a project's name is text a
+  // person typed. Sorting and formatting live in lib/projects-table.js.
+  var projectRows = [];
+  var projectsMode = "Save";
+  // The template picked in the list, if any. Kept apart from the project id
+  // because a template and a saved project can share a name.
+  var selectedTemplate = null;
+  var projectsProblem = null;
+  var projectSort = projectsTable.DEFAULT_SORT;
+  var projectsBody = document.querySelector("#projects-table tbody");
+
+  function refreshProjects() {
+    return fetch("/projects")
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (rows) {
+        projectRows = Array.isArray(rows) ? rows : [];
+        projectsProblem = null;
+        renderProjects();
+      })
+      .catch(function (err) {
+        console.log("Could not load projects", err);
+        projectRows = [];
+        projectsProblem = "Could not load projects";
+        renderProjects();
+      });
+  }
+
+  function projectCell(text, className) {
+    var td = document.createElement("td");
+    if (className) td.className = className;
+    td.textContent = text === null || text === undefined ? "" : String(text);
+    return td;
+  }
+
+  function renderProjects() {
+    var selectedId = document.getElementById("project-name").getAttribute("id-project");
+
+    document.querySelectorAll("#projects-table th[data-sort]").forEach(function (th) {
+      if (th.getAttribute("data-sort") === projectSort.key) {
+        th.setAttribute("aria-sort", projectSort.direction);
+      } else {
+        th.removeAttribute("aria-sort");
+      }
+    });
+
+    projectsBody.textContent = "";
+
+    // Your projects first, then an assistant's drafts, then the templates,
+    // folded under one row: they are many, and never change.
+    var sections = projectsTable.sectionProjects(projectRows, projectSort.key, projectSort.direction);
+    var showTemplates = projectsTable.templatesOpen(templatesChosen, sections);
+
+    if (projectsProblem) {
+      var failed = document.createElement("tr");
+      failed.className = "o-empty";
+      var message = projectCell(projectsProblem);
+      message.colSpan = 4;
+      failed.appendChild(message);
+      projectsBody.appendChild(failed);
+      return;
+    }
+    if (!sections.projects.length && !sections.drafts.length) {
+      var empty = document.createElement("tr");
+      empty.className = "o-empty";
+      var none = projectCell("No projects yet. Start from a template below, or from File \u2192 New project.");
+      none.colSpan = 4;
+      empty.appendChild(none);
+      projectsBody.appendChild(empty);
+    }
+
+    sections.projects.concat(sections.drafts).forEach(drawRow);
+
+    if (sections.templates.length) {
+      // One row for all of them: click it, or press Enter on it, to unfold.
+      var fold = document.createElement("tr");
+      fold.className = "o-table-fold";
+      fold.tabIndex = 0;
+      fold.setAttribute("aria-expanded", String(showTemplates));
+      var label = projectCell((showTemplates ? "\u25be " : "\u25b8 ") + "Templates (" + sections.templates.length + ")");
+      label.colSpan = 4;
+      fold.appendChild(label);
+      var toggle = function () {
+        templatesChosen = !showTemplates;
+        renderProjects();
+      };
+      fold.onclick = toggle;
+      fold.onkeydown = function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggle();
+        }
+      };
+      projectsBody.appendChild(fold);
+      if (showTemplates) sections.templates.forEach(drawRow);
+    }
+
+    function drawRow(row) {
+        var tr = document.createElement("tr");
+        tr.tabIndex = 0;
+        tr.setAttribute(
+          "aria-selected",
+          String(row.template ? row._id === selectedTemplate : !selectedTemplate && row._id === selectedId)
+        );
+        var name = projectCell(row.name);
+        // An assistant's draft rides the template mechanism but is not one:
+        // it is user data, badged apart and deletable below.
+        var isDraft = row.template && String(row._id).indexOf("assistant:") === 0;
+        if (row.template) {
+          var badge = document.createElement("span");
+          badge.className = isDraft ? "o-badge o-badge-draft" : "o-badge";
+          badge.textContent = isDraft ? "Draft" : "Template";
+          if (isDraft) badge.setAttribute("title", "Written by an assistant through MCP. Review it before it goes anywhere near the rig.");
+          name.appendChild(badge);
+        } else if (row.id && row.id === openProject.get().id) {
+          // The one on the canvas.
+          var here = document.createElement("span");
+          here.className = "o-badge";
+          here.textContent = "Open";
+          name.appendChild(here);
+        }
+        tr.appendChild(name);
+        tr.appendChild(projectCell(projectsTable.formatSize(row.size), "o-num"));
+        tr.appendChild(projectCell(row.date, "o-date"));
+
+        var actions = document.createElement("td");
+        actions.className = "o-actions";
+        tr.appendChild(actions);
+        tr.onclick = function () {
+          selectProject(row, tr);
+        };
+        tr.onkeydown = function (e) {
+          // Enter on the delete button belongs to the button.
+          if (e.target !== tr) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            selectProject(row, tr);
+          }
+        };
+        projectsBody.appendChild(tr);
+
+        // Templates ship with OSCAR and cannot be deleted; a draft can.
+        if (row.template && !isDraft) return;
+
+        var remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "o-icon-btn";
+        remove.title = "Delete " + row.name;
+        remove.setAttribute("aria-label", "Delete " + row.name);
+        // A fixed SVG from ICONS, never anything a person typed.
+        remove.innerHTML = icon("remove", 16);
+        remove.onclick = function (e) {
+          e.stopPropagation();
+          confirmRemove(row);
+        };
+        actions.appendChild(remove);
+    }
+  }
+
+  // Marks the row in place rather than re-rendering, so a keyboard user's
+  // focus stays on the row they just chose.
+  function selectProject(row, tr) {
+    selectedRow = row;
+    selectedTemplate = row.template ? row._id : null;
+    $("#project-name").val(row.name).attr("id-project", row.template ? "" : row._id);
+    templateUrl = row.template ? row.url : null;
+    projectsBody.querySelectorAll("tr[aria-selected]").forEach(function (other) {
+      other.setAttribute("aria-selected", String(other === tr));
+    });
+  }
+
+  document.querySelectorAll("#projects-table th[data-sort] .o-sort").forEach(function (button) {
+    button.onclick = function () {
+      projectSort = projectsTable.nextSort(projectSort, button.parentNode.getAttribute("data-sort"));
+      renderProjects();
+    };
+  });
+
+  function confirmRemove(row) {
+    var draft = row.template && String(row._id).indexOf("assistant:") === 0;
+    if (draft || !row.id) return askRemove(row, draft, null);
+    // A project that is live says so before it goes: its interface keeps
+    // running without it unless it is taken down too.
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : [];
+      })
+      .catch(function () {
+        return [];
+      })
+      .then(function (pages) {
+        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
+          return page.project === row.id;
+        })[0];
+        askRemove(row, false, live || null);
+      });
+  }
+
+  function askRemove(row, draft, live) {
+    var remove = function (takeDown) {
+      var call = draft
+        ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
+        : $.ajax({ type: "DELETE", url: row.id ? "/projects/" + encodeURIComponent(row.id) : "/remove/" + row._id });
+      call
+        .done(function (data) {
+          if (takeDown && live && !data.error) fetch("/published/" + encodeURIComponent(live.id), { method: "DELETE" }).catch(function () {});
+          // The one on the canvas is gone: the canvas starts again as nobody,
+          // and what was on it is not saved back.
+          if (!draft && !data.error && row.id && row.id === openProject.get().id) {
+            projectSync.begin(
+              "",
+              function () {
+                loadTemplate("");
+              },
+              { discard: true }
+            );
+          }
+          refreshProjects();
+          $.alert(data.error || data.msg);
+        })
+        .fail(function () {
+          $.alert(draft ? "Could not delete that draft" : "Could not delete that project");
+        });
+    };
+    var buttons = {
+      confirm: {
+        text: live ? "Delete, keep it published" : "Confirm",
+        action: function () {
+          remove(false);
+        },
+      },
+    };
+    if (live) {
+      buttons.takeDown = {
+        text: "Delete and take it down",
+        btnClass: "btn-red",
+        action: function () {
+          remove(true);
+        },
+      };
+    }
+    buttons.cancel = function () {};
+    $.confirm({
+      title: draft ? "Delete Draft" : "Delete Project",
+      content: draft
+        ? "Delete this assistant-written draft? Anything you loaded from it and saved as a project stays."
+        : "Are you sure you want to delete this project? You won't be able to recover it afterwards." +
+          (live ? " It is published at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
+      boxWidth: live ? "560px" : undefined,
+      useBootstrap: live ? false : undefined,
+      buttons: buttons,
+    });
+  }
+
+  // ---- the project on the canvas -------------------------------------------
+  // A project lives in OSCAR, on the computer it runs on, under one title
+  // (lib/projects.js). The canvas is one of them being edited: every change
+  // is saved a moment after it is made (lib/project-sync.js), and what OSCAR
+  // has not yet confirmed stays in this browser. There is no Save to press.
+  var projectName = document.getElementById("project-name");
+  var openProject = createOpenProject(window.localStorage);
+  var selectedRow = null; // the row picked in the projects list
+  var templatesChosen = null; // whether the person unfolded the templates; null until they say
+
+  /** Text a person typed, made safe to put in a dialog (its content is markup). */
+  function plain(text) {
+    return String(text == null ? "" : text).replace(/[<>&"]/g, "");
+  }
+
+  /** OSCAR's projects over HTTP: each answers { ok, status, body }, and fails only when OSCAR cannot be reached. */
+  function projectCall(method, url, body) {
+    return fetch(url, {
+      method: method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (res) {
+      return res.json().then(
+        function (json) {
+          return { ok: res.ok, status: res.status, body: json };
+        },
+        function () {
+          return { ok: res.ok, status: res.status, body: {} };
+        }
+      );
+    });
+  }
+  var projectApi = {
+    read: function (id) {
+      return projectCall("GET", "/projects/" + encodeURIComponent(id));
+    },
+    create: function (body) {
+      return projectCall("POST", "/projects", body);
+    },
+    write: function (id, body) {
+      return projectCall("PUT", "/projects/" + encodeURIComponent(id), body);
+    },
+    copy: function (id) {
+      return projectCall("POST", "/projects/" + encodeURIComponent(id) + "/copy");
+    },
+  };
+
+  // The project as it was when this window opened it: what File > Revert
+  // goes back to. Kept for this tab only; another tab has its own.
+  var OPENED_KEY = "oscarProject.opened";
+
+  function keepOpened(id, data) {
+    try {
+      sessionStorage.setItem(OPENED_KEY, JSON.stringify({ id: id, data: data }));
+    } catch (err) {
+      // No room, or no storage: Revert has nothing to offer, and says so.
+    }
+  }
+
+  function openedCopy() {
+    try {
+      var held = JSON.parse(sessionStorage.getItem(OPENED_KEY));
+      return held && held.id === openProject.get().id && isProjectData(held.data) ? held.data : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // The title and how it stands, in the top bar beside File and Edit.
+  var SAVE_STATES = {
+    new: ["", "Nothing to save yet: this becomes a project at its first change."],
+    saving: ["Saving\u2026", "Sending your changes to OSCAR."],
+    saved: ["Saved", "Every change is saved in OSCAR as you make it."],
+    unsaved: ["Not saved", "OSCAR could not be reached. Your changes are kept in this browser and sent as soon as it answers."],
+    conflict: ["Changed elsewhere", "This project was saved from another window or device. Change something here to choose which version to keep."],
+  };
+
+  function paintTitle() {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-title-btn");
+    if (el) el.textContent = openProject.get().name || "Untitled";
+  }
+
+  function paintSaveState(status, detail) {
+    var el = document.querySelector(".gjs-pn-devices-c .oscar-save-state");
+    if (!el) return;
+    var words = SAVE_STATES[status] || SAVE_STATES.new;
+    el.textContent = words[0];
+    el.setAttribute("data-state", status);
+    el.setAttribute("data-tooltip", status === "unsaved" && detail ? "Not saved: " + detail + " Your changes are kept in this browser meanwhile." : words[1]);
+    el.setAttribute("data-tooltip-pos", "bottom");
+  }
+
+  /** Saved from two places: which version stays is the person's call, never OSCAR's. */
+  function askConflict(info) {
+    return new Promise(function (resolve) {
+      $.confirm({
+        title: "Changed somewhere else",
+        content: '"' + plain(info.name) + '" was saved from another window or device since this one opened it. Which version do you keep?',
+        boxWidth: "520px",
+        useBootstrap: false,
+        buttons: {
+          mine: {
+            text: "Keep this window's",
+            action: function () {
+              resolve("mine");
+            },
+          },
+          theirs: {
+            text: "Load the other one",
+            action: function () {
+              resolve("theirs");
+            },
+          },
+        },
+      });
+    });
+  }
+
+  var projectSync = createProjectSync({
+    pointer: openProject,
+    api: projectApi,
+    // Tidied as a saved project is: no editor state, every page named.
+    getData: function () {
+      return projectFormat.namePages(projectFormat.stripEditorState(editor.getProjectData()));
+    },
+    loadData: function (data) {
+      editor.loadProjectData(data);
+      editor.UndoManager.clear();
+    },
+    isEmpty: function () {
+      return editor.getWrapper().components().length === 0;
+    },
+    onStatus: paintSaveState,
+    onName: paintTitle,
+    conflict: askConflict,
+    keepOpened: keepOpened,
+    grapesjs: grapesjs.version,
+  });
+
+  // Any change to the project is a change to save.
+  editor.on("update", function () {
+    projectSync.changed();
+  });
+  editor.onReady(function () {
+    projectSync.start();
+  });
+
+  // Ctrl+S is in everybody's fingers. It sends what is waiting, now.
+  document.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && String(event.key).toLowerCase() === "s") {
+      event.preventDefault();
+      projectSync.flush();
+    }
+  });
+
+  /** Click the title: a new one. The address of a published interface does not move with it. */
+  function renameProject() {
+    $.confirm({
+      title: "Rename project",
+      // The title is in the field as the dialog draws, not put there after:
+      // plain() has taken out what could end the attribute.
+      content: '<input type="text" class="o-input oscar-rename-input" maxlength="200" aria-label="Project title" value="' + plain(openProject.get().name || "Untitled") + '" />',
+      onContentReady: function () {
+        var dialog = this;
+        var input = dialog.$content.find("input");
+        input.trigger("focus").trigger("select");
+        input.on("keydown", function (event) {
+          if (event.key === "Enter") dialog.$$confirm.trigger("click");
+        });
+      },
+      buttons: {
+        confirm: {
+          text: "Rename",
+          action: function () {
+            projectSync.rename(this.$content.find("input").val());
+          },
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  /** File > New project: an empty canvas, nobody until its first change. */
+  /**
+   * The right column shows the Blocks: what a new project is built from. A
+   * column left on the styles or the layers of the last project shows the
+   * new one nothing to drag in.
+   */
+  function showBlocks() {
+    var button = pn.getButton("views", "open-blocks");
+    if (button && !button.get("active")) button.set("active", true);
+  }
+
+  function newProject() {
+    projectSync.begin("", function () {
+      loadTemplate("");
+      showBlocks();
+    });
+  }
+
+  /** File > Make a copy: a second project like this one, opened in its place. */
+  function copyProject() {
+    projectSync.copy().then(null, function (err) {
+      $.alert(plain(err && err.message) || "The project could not be copied.");
+    });
+  }
+
+  // ---- revert ------------------------------------------------------------
+  // With every change saved there is no "close without saving". These are
+  // the two ways back: how the project was when this window opened it, and
+  // the version that is published.
+  function revertWith(data, what) {
+    $.confirm({
+      title: "Revert",
+      content: "Put this project back as " + what + "? What you changed since is replaced.",
+      buttons: {
+        confirm: {
+          text: "Revert",
+          action: function () {
+            projectSync.replaceWith(data);
+          },
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function revertToOpened() {
+    var data = openedCopy();
+    if (!data) {
+      $.alert("There is nothing to go back to: this project was not opened in this window, or has only just been made.");
+      return;
+    }
+    revertWith(data, "it was when this window opened it");
+  }
+
+  function revertToPublished() {
+    var id = openProject.get().id;
+    fetch("/published")
+      .then(function (res) {
+        return res.ok ? res.json() : [];
+      })
+      .then(function (pages) {
+        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
+          return id && page.project === id && page.editable;
+        })[0];
+        if (!live) {
+          $.alert("This project has no published version to go back to.");
+          return null;
+        }
+        return fetch("/published/" + encodeURIComponent(live.id) + "/project")
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (answer) {
+            if (!answer || !isProjectData(answer.data)) {
+              $.alert(plain(answer && answer.error) || "The published version could not be read.");
+              return;
+            }
+            revertWith(answer.data, "it is published at /show/" + live.id);
+          });
+      })
+      .catch(function () {
+        $.alert("Could not reach the OSCAR server");
+      });
+  }
+
+  // ---- open, from the list -------------------------------------------------
+  // Nothing asks about unsaved changes any more: there are none to lose.
+  var templateUrl = null;
+
+  document.getElementById("load-button").onclick = function () {
+    var row = selectedRow;
+    if (!row) {
+      $.alert("Pick a project from the list first");
+      return;
+    }
+    if (row.template) {
+      openTemplate(row.url, row.name);
+      return;
+    }
+    showLoader();
+    projectSync.open(row.id).then(
+      function () {
+        hideLoader();
+        modal.close();
+      },
+      function (err) {
+        hideLoader();
+        $.alert(plain(err && err.message) || "That project could not be opened");
+      }
+    );
+  };
+
+  // ---- pages -------------------------------------------------------------
+  // A surface can hold several pages -- a page per fixture group, or per
+  // scene. GrapesJS has had the model for this all along (editor.Pages, and a
+  // pages array in every project); what it lacks is any way to reach it.
+  var pages = editor.Pages;
+
+  function pageLabels() {
+    return oscarPages.pageEntries(pages).map(function (entry) {
+      return entry.label;
+    });
+  }
+
+  function labelOf(page) {
+    return projectFormat.pageLabel(page.getName(), pages.getAll().indexOf(page));
+  }
+
+  /**
+   * Ask for a page name in a jquery-confirm form. Not window.prompt: Electron
+   * does not implement it, so in the desktop app it would silently return
+   * nothing and the page could never be renamed.
+   */
+  function askPageName(title, current, except, onName) {
+    $.confirm({
+      title: title,
+      content:
+        '<form action="" class="oscar-page-name-form">' +
+        '<input class="oscar-page-name-input" type="text" maxlength="40" />' +
+        "</form>",
+      onContentReady: function () {
+        var dialog = this;
+        var input = dialog.$content.find(".oscar-page-name-input");
+        // Set as a value, not written into the markup: a page name is
+        // whatever someone typed.
+        input.val(current).trigger("focus").trigger("select");
+        dialog.$content.find("form").on("submit", function (e) {
+          // Enter submits the form; without this the page would reload.
+          e.preventDefault();
+          dialog.$$confirm.trigger("click");
+        });
+      },
+      buttons: {
+        confirm: function () {
+          var name = (this.$content.find(".oscar-page-name-input").val() || "").trim();
+          if (!name) {
+            $.alert("Give the page a name");
+            return false;
+          }
+          // Two tabs reading the same cannot be told apart on a tablet.
+          if (oscarPages.nameTaken(pageLabels(), name, except)) {
+            $.alert('There is already a page called "' + name + '"');
+            return false;
+          }
+          onName(name);
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function deletePage(page) {
+    // Never the last one: GrapesJS would be left with no page to draw, and a
+    // project with no pages is one OSCAR refuses to open.
+    if (pages.getAll().length < 2) return;
+
+    $.confirm({
+      title: "Delete Page",
+      // Built as text for the same reason as above.
+      content: $("<div>").text(
+        'Delete "' + labelOf(page) + '" and every widget on it? You won\'t be able to recover it afterwards.'
+      ),
+      buttons: {
+        confirm: function () {
+          if (pages.getAll().length < 2) return;
+          // Move off the page first, so the canvas is never showing a page
+          // that no longer exists.
+          if (pages.getSelected() === page) {
+            var all = pages.getAll();
+            var index = all.indexOf(page);
+            pages.select(all[index === 0 ? 1 : index - 1]);
+          }
+          pages.remove(page);
+        },
+        cancel: function () {},
+      },
+    });
+  }
+
+  function pageAction(label, title, onClick) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "oscar-page-action";
+    button.textContent = label;
+    button.setAttribute("aria-label", title);
+    button.onclick = onClick;
+    return button;
+  }
+
+  function renderPages() {
+    var list = document.getElementById("pages-list");
+    if (!list) return;
+
+    var all = pages.getAll();
+    list.innerHTML = "";
+
+    oscarPages.pageEntries(pages).forEach(function (entry, index) {
+      var page = all[index];
+      var row = document.createElement("li");
+      row.className = "oscar-page" + (entry.current ? " oscar-page-current" : "");
+
+      var open = document.createElement("button");
+      open.type = "button";
+      open.className = "oscar-page-open";
+      open.textContent = entry.label;
+      open.onclick = function () {
+        pages.select(page);
+      };
+      row.appendChild(open);
+
+      row.appendChild(
+        pageAction("Rename", "Rename " + entry.label, function () {
+          askPageName("Rename page", entry.label, index, function (name) {
+            page.setName(name);
+          });
+        })
+      );
+
+      if (all.length > 1) {
+        row.appendChild(
+          pageAction("Delete", "Delete " + entry.label, function () {
+            deletePage(page);
+          })
+        );
+      }
+
+      list.appendChild(row);
+    });
+  }
+
+  function addPage() {
+    var input = document.getElementById("new-page-name");
+    var name = ((input && input.value) || "").trim();
+
+    if (name && oscarPages.nameTaken(pageLabels(), name)) {
+      $.alert('There is already a page called "' + name + '"');
+      return;
+    }
+
+    // Naming it is optional; a page left unnamed is given a name, because
+    // GrapesJS would drop an empty one. Not simply "Page <count + 1>": after
+    // a deletion that name may still be on another tab.
+    var page = pages.add({ name: name || oscarPages.freePageName(pageLabels()) }, { select: true });
+    if (!page) {
+      $.alert("That page could not be added");
+      return;
+    }
+    if (input) input.value = "";
+  }
+
+  editor.Commands.add("open-pages", function () {
+    if (!features.PAGES) return;
+    renderPages();
+    setModal("Pages", "pages-panel");
+  });
+
+  document.getElementById("add-page-button").onclick = addPage;
+  document.getElementById("new-page-name").onkeydown = function (e) {
+    if (e.key === "Enter") addPage();
+  };
+
+  // The list may be open while pages change under it (a rename, a load).
+  // page:update is what a rename fires, and it is also what tells the
+  // storage manager the project changed.
+  editor.on("page:add page:remove page:select page:update", renderPages);
+
+  /**
+   * Open a template: an HTML file with its CSS, read exactly the way Import
+   * reads pasted code. It starts a new project, named after the template,
+   * which joins the list at its first change: one that was only looked at
+   * leaves nothing behind. What was on the canvas is a project, and saved.
+   */
+  function openTemplate(url, name) {
+    showLoader();
+    fetch(url)
+      .then(function (res) {
+        if (!res.ok) throw new Error("status " + res.status);
+        return res.text();
+      })
+      .then(function (html) {
+        return projectSync.begin(name || "", function () {
+          loadTemplate(html);
+          showBlocks();
+        });
+      })
+      .then(
+        function () {
+          hideLoader();
+          selectedTemplate = null;
+          templateUrl = null;
+          selectedRow = null;
+          modal.close();
+        },
+        function () {
+          hideLoader();
+          $.alert("That template could not be opened");
+        }
+      );
+  }
+
+  function loadTemplate(html) {
+    editor.select();
+    editor.Css.clear();
+    // Nothing from the surface being replaced carries over; the template's
+    // own style is put back while it is read.
+    editor.getWrapper().setAttributes({});
+    editor.setComponents(html);
+    editor.UndoManager.clear();
+  }
+
+  // ---- the empty canvas says what to do --------------------------------
+  // A new project is a blank page, and a blank page says nothing. This hint
+  // is drawn by the editor over an empty canvas -- it is not part of the
+  // project, so it is never saved, published or exported -- and goes the
+  // moment the first control lands. Hidden in preview, where there is
+  // nothing to drag. Clicks pass through it to the canvas beneath.
+  var emptyHint = null;
+
+  function paintEmptyHint() {
+    var canvas = editor.Canvas.getElement();
+    if (!canvas) return;
+    if (!emptyHint) {
+      emptyHint = document.createElement("div");
+      emptyHint.className = "oscar-canvas-empty";
+      emptyHint.innerHTML =
+        '<div class="oscar-canvas-empty-card">' +
+        '<img class="oscar-canvas-empty-logo" src="images/oscar-circle.png" width="56" height="56" alt="">' +
+        '<p class="oscar-canvas-empty-title">This project is empty</p>' +
+        "<p>Drag a control in from the right, or open a template from File.</p>" +
+        "</div>";
+      canvas.appendChild(emptyHint);
+    }
+    var wrapper = editor.getWrapper();
+    var empty = !!wrapper && wrapper.components().length === 0;
+    emptyHint.style.display = empty && !editor.Commands.isActive("preview") ? "" : "none";
+  }
+  editor.on("load component:add component:remove command:run:preview command:stop:preview", paintEmptyHint);
+
+  // ---- a project as a file --------------------------------------------
+  // A project lives in OSCAR. An .oscar file is a copy of one: to keep as a
+  // backup, to send to a colleague, to carry to another OSCAR. Export a
+  // copy writes one; Open a file brings one in as a project. A .html
+  // template opens through the same door, as a template does.
+
+  function slugName(name) {
+    var slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return slug || "untitled";
+  }
+
+  function projectRecord(name, id) {
+    // The same stamping OSCAR does when it keeps a project, so an exported
+    // file and a project in OSCAR are one format, not two. The id is who the
+    // project is: brought back in, the file is known as this project.
+    var data = projectFormat.stripEditorState(editor.getProjectData());
+    return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version, id: id });
+  }
+
+  /** File > Export a copy: an .oscar file wherever the person says. The project stays in OSCAR. */
+  function exportCopy() {
+    projectSync.flush().then(function () {
+      // Counted, anonymously: the browser is the only one who knows a copy went out.
+      fetch("/counted/file_exported", { method: "POST" }).catch(function () {});
+      var now = openProject.get();
+      var name = now.name || "Untitled";
+      var text = JSON.stringify(projectRecord(name, now.id || undefined), null, 2);
+
+      var fallback = function () {
+        // No file pickers in this browser: the file lands in Downloads.
+        var blob = new Blob([text], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = slugName(name) + ".oscar";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(a.href);
+        }, 5000);
+      };
+
+      if (!window.showSaveFilePicker) return fallback();
+      window
+        .showSaveFilePicker({
+          suggestedName: slugName(name) + ".oscar",
+          types: [{ description: "OSCAR project", accept: { "application/json": [".oscar"] } }],
+        })
+        .then(function (handle) {
+          return handle
+            .createWritable()
+            .then(function (writable) {
+              return writable.write(text).then(function () {
+                return writable.close();
+              });
+            })
+            .then(function () {
+              $.alert('Exported a copy to "' + plain(handle.name) + '". The project itself stays in OSCAR.');
+            });
+        })
+        .catch(function (err) {
+          if (err && err.name === "AbortError") return; // they closed the picker
+          fallback();
+        });
+    });
+  }
+
+  /**
+   * Bring a project in: one more in OSCAR's list, opened. A file says who it
+   * is; when that project is already here the person chooses -- replace it,
+   * or keep both -- because either answer is right for somebody.
+   */
+  function importProject(project, ifExists) {
+    return projectApi
+      .create({ id: project.id, name: project.name, data: project.data, grapesjs: grapesjs.version, ifExists: ifExists, source: "file" })
+      .then(function (res) {
+        if (res.status === 409 && res.body && res.body.exists) {
+          $.confirm({
+            title: "Already in OSCAR",
+            content: '"' + plain(res.body.name) + '" is already one of your projects. Replace it with this file, or keep both?',
+            boxWidth: "520px",
+            useBootstrap: false,
+            buttons: {
+              replace: {
+                text: "Replace it",
+                btnClass: "btn-red",
+                action: function () {
+                  importProject(project, "replace");
+                },
+              },
+              both: {
+                text: "Keep both",
+                action: function () {
+                  importProject(project, "copy");
+                },
+              },
+              cancel: function () {},
+            },
+          });
+          return null;
+        }
+        if (!res.ok) {
+          $.alert(plain(res.body && res.body.error) || "That file could not be brought in.");
+          return null;
+        }
+        // The one on the canvas was replaced: show what it is now, without
+        // first saving what it was over the top of it.
+        if (res.body.id === openProject.get().id) return projectSync.reload();
+        return projectSync.open(res.body.id);
+      })
+      .catch(function () {
+        $.alert("Could not reach the OSCAR server");
+      });
+  }
+
+  function openProjectText(fileName, text) {
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      $.alert('"' + plain(fileName) + '" is not an OSCAR project file.');
+      return;
+    }
+    // openProject answers { status, data }: the project is its data, once
+    // read, migrated and tidied. (This once checked the answer itself for
+    // pages, and refused every file.)
+    var opened = projectFormat.openProject(parsed);
+    if (opened.status === "too-new") {
+      $.alert("This project was saved by a newer OSCAR (format " + opened.format + "). Update OSCAR to open it; nothing here was changed.");
+      return;
+    }
+    var data = opened.status === "ok" ? opened.data : null;
+    if (!isProjectData(data)) {
+      $.alert('"' + plain(fileName) + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
+      return;
+    }
+    importProject({
+      // Who the file says it is; one from before projects had ids is a new project.
+      id: projectFormat.isProjectId(parsed.id) ? parsed.id : undefined,
+      name: (typeof parsed.name === "string" && parsed.name.trim()) || fileName.replace(/\.(oscar|json)$/i, ""),
+      data: data,
+    });
+  }
+
+  function openHtmlText(fileName, text) {
+    // An HTML page is a template: a new project, named after the page.
+    var title = /<title[^>]*>([^<]*)<\/title>/i.exec(text);
+    projectSync.begin((title && title[1].trim()) || fileName.replace(/\.html?$/i, ""), function () {
+      loadTemplate(text);
+    });
+  }
+
+  function openPicked(fileName, text) {
+    if (/\.html?$/i.test(fileName) || (!/^\s*\{/.test(text) && /^\s*</.test(text))) openHtmlText(fileName, text);
+    else openProjectText(fileName, text);
+  }
+
+  // The fallback for browsers without file pickers.
+  var openFileInput = document.createElement("input");
+  openFileInput.type = "file";
+  openFileInput.accept = ".oscar,.json,.html,.htm";
+  openFileInput.style.display = "none";
+  document.body.appendChild(openFileInput);
+  openFileInput.addEventListener("change", function () {
+    var file = openFileInput.files && openFileInput.files[0];
+    openFileInput.value = "";
+    if (!file) return;
+    file.text().then(function (text) {
+      openPicked(file.name, text);
+    });
+  });
+
+  function oscarOpenFile() {
+    if (!window.showOpenFilePicker) return openFileInput.click();
+    window
+      .showOpenFilePicker({
+        types: [{ description: "OSCAR project or template", accept: { "application/json": [".oscar", ".json"], "text/html": [".html", ".htm"] } }],
+      })
+      .then(function (picked) {
+        return picked[0].getFile().then(function (file) {
+          return file.text().then(function (text) {
+            openPicked(file.name, text);
+          });
+        });
+      })
+      .catch(function (err) {
+        if (err && err.name === "AbortError") return;
+        openFileInput.click();
+      });
+  }
+
+  /** One menu under a bar word: built, placed, closed by a click away. */
+  function showBarMenu(anchorSelector, items) {
+    var open = document.querySelector(".oscar-open-menu");
+    if (open) {
+      open.remove();
+      return;
+    }
+    var anchor = document.querySelector(anchorSelector);
+    if (!anchor) return;
+    var at = anchor.getBoundingClientRect();
+    var menu = document.createElement("div");
+    menu.className = "oscar-open-menu";
+    menu.style.left = Math.round(at.left) + "px";
+    menu.style.top = Math.round(at.bottom + 6) + "px";
+    items.forEach(function (item) {
+      if (item.rule) {
+        var line = document.createElement("div");
+        line.className = "oscar-open-menu-rule";
+        menu.appendChild(line);
+        return;
+      }
+      var row = document.createElement("button");
+      row.type = "button";
+      row.className = "oscar-open-menu-item";
+      row.textContent = item.label;
+      // A switch says where it stands: a tick when on, the tick's room when off.
+      if (typeof item.checked === "boolean") {
+        row.setAttribute("role", "menuitemcheckbox");
+        row.setAttribute("aria-checked", String(item.checked));
+      }
+      // An item whose words cannot say it all explains itself on hover, to
+      // the menu's right, where it covers no other item.
+      if (item.hint) {
+        row.setAttribute("data-tooltip", item.hint);
+        row.setAttribute("data-tooltip-pos", "right");
+      }
+      row.onclick = function () {
+        menu.remove();
+        item.run();
+      };
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+    var away = function (event) {
+      // The anchor's own pointerdown is left alone: the click that follows
+      // it toggles the menu closed. Without this, away closed the menu a
+      // breath before the click reopened it, and the word never closed.
+      if (menu.contains(event.target) || anchor.contains(event.target)) return;
+      menu.remove();
+      document.removeEventListener("pointerdown", away, true);
+    };
+    setTimeout(function () {
+      document.addEventListener("pointerdown", away, true);
+    }, 0);
+  }
+
+  /** Fullscreen as the window has it: Esc leaves fullscreen without telling the command. */
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  function toggleFullscreen() {
+    var active = editor.Commands.isActive("fullscreen");
+    if (isFullscreen()) {
+      if (active) editor.stopCommand("fullscreen");
+      else if (document.exitFullscreen) document.exitFullscreen();
+      return;
+    }
+    // A command still marked active after Esc would take this click to stop itself.
+    if (active) editor.stopCommand("fullscreen");
+    // The whole page, not GrapesJS's default of the editor's container: the
+    // browser draws nothing outside the fullscreen element, and File's and
+    // Edit's menus, the alerts and Pro's dialogs all live on the body.
+    editor.runCommand("fullscreen", { target: document.documentElement });
+  }
+
+  // Show borders is remembered in this browser: off until turned on once, and
+  // on after that, refresh after refresh. Off to begin with because the first
+  // thing a new user sees is the Showcase, and dotted boxes round every part
+  // of it read as a fault, not a tool. A browser that keeps nothing (private
+  // window, locked-down storage) gets the default each time.
+  var BORDERS_KEY = "oscarShowBorders";
+
+  function bordersWanted() {
+    try {
+      return localStorage.getItem(BORDERS_KEY) === "on";
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function toggleBorders() {
+    var on = !editor.Commands.isActive("sw-visibility");
+    if (on) editor.runCommand("sw-visibility");
+    else editor.stopCommand("sw-visibility");
+    try {
+      localStorage.setItem(BORDERS_KEY, on ? "on" : "off");
+    } catch (err) {
+      /* shown now, just not remembered */
+    }
+  }
+
+  // Items an extension adds to File or Edit (oscarApi.addMenuItem): Pro's
+  // Schedule, say. Drawn with each opening, so one added or taken away since
+  // shows at once.
+  var menuExtras = { file: [], edit: [] };
+
+  function extraItems(menu) {
+    return menuExtras[menu].map(function (item) {
+      return {
+        label: item.label,
+        run: function () {
+          item.run(editor);
+        },
+      };
+    });
+  }
+
+  // Edit holds what acts on the canvas as a whole: undoing, how it is shown,
+  // its code, its style, locking it, and emptying it. Their icons retired
+  // from the bar, except the padlock.
+  function showEditMenu() {
+    showBarMenu(
+      ".gjs-pn-devices-c .oscar-edit-btn",
+      [
+      {
+        label: "Undo",
+        run: function () {
+          editor.runCommand("core:undo");
+        },
+      },
+      {
+        label: "Redo",
+        run: function () {
+          editor.runCommand("core:redo");
+        },
+      },
+      { rule: true },
+      { label: "Show borders", checked: editor.Commands.isActive("sw-visibility"), run: toggleBorders },
+      { label: "Fullscreen", checked: isFullscreen(), run: toggleFullscreen },
+      { rule: true },
+      {
+        label: "See code",
+        run: function () {
+          editor.runCommand("export-template");
+        },
+      },
+      {
+        label: "Widget style…",
+        run: function () {
+          editor.runCommand("open-styles");
+        },
+      },
+      { rule: true },
+      // Also the padlock on the bar, which stays.
+      {
+        label: "Lock editing",
+        checked: isLockedNow(),
+        hint: "Only this computer can edit. Published interfaces stay open to the network.",
+        run: function () { setLocked(!isLockedNow()); },
+      },
+    ]
+      .concat(extraItems("edit"))
+      .concat([
+      { rule: true },
+      {
+        label: "Clear canvas…",
+        run: function () {
+          editor.runCommand("canvas-clear");
+        },
+      },
+      ])
+    );
+  }
+
+  /** Locked as the padlock on the bar shows it: the server's answer, painted there. */
+  function isLockedNow() {
+    var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
+    return !!(el && el.classList.contains("oscar-locked"));
+  }
+
+  function showFileMenu() {
+    showBarMenu(".gjs-pn-devices-c .oscar-file-btn", [
+      { label: "New project", run: newProject },
+      {
+        label: "Open project or template\u2026",
+        run: function () {
+          editor.runCommand("open-projects", { type: "Load" });
+        },
+      },
+      { label: "Open a file\u2026", run: oscarOpenFile },
+      {
+        label: "Import HTML/CSS\u2026",
+        run: function () {
+          editor.runCommand("gjs-open-import-webpage");
+        },
+      },
+      { rule: true },
+      // No Save: every change is saved in OSCAR as it is made. These are the
+      // ways to a second project, to a file, and back to an earlier version.
+      { label: "Make a copy", run: copyProject },
+      { label: "Export a copy\u2026", run: exportCopy },
+      { label: "Revert to how it was when opened\u2026", run: revertToOpened },
+      { label: "Revert to the published version\u2026", run: revertToPublished },
+      { rule: true },
+      {
+        label: "Publish\u2026",
+        run: function () {
+          editor.runCommand("oscar-export");
+        },
+      },
+      // Both ways the surface leaves the editor, side by side. Its eye on the
+      // bar is retired; GrapesJS's own button over the canvas ends preview.
+      {
+        label: "Push to preview",
+        run: function () {
+          editor.runCommand("preview");
+        },
+        // Where the pushed canvas is seen was nowhere said: the address, in full.
+        hint:
+          "Try the canvas without publishing it. The controls work here, and a phone or tablet on this network shows it at http://" +
+          ipServer +
+          (window.location.port ? ":" + window.location.port : "") +
+          "/preview",
+      },
+      { rule: true },
+    ]
+      // An extension's items open the last group, beside About: Pro's Log in
+      // or Log out, which is done in About.
+      .concat(extraItems("file"))
+      .concat([
+      // Its jellyfish on the bar is retired: this is where people look for it.
+      {
+        label: "About OSCAR",
+        run: function () {
+          editor.runCommand("oscar-about");
+        },
+      },
+      ]));
+  }
+
+  // A file double-clicked in the file manager arrives through the server,
+  // once, and comes in as any picked file does: as a project in OSCAR.
+  fetch("/boot-file")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (file) {
+      if (file && file.name && typeof file.text === "string") openPicked(file.name, file.text);
+    })
+    .catch(function () {});
+
+  // Somebody opening OSCAR for the first time is shown the Showcase, where
+  // every widget works, not an empty canvas (first_run.js).
+  if (firstRun) {
+    editor.onReady(function () {
+      welcome.openWelcome({
+        fetch: function (url) {
+          return fetch(url);
+        },
+        load: function (html) {
+          projectSync.begin("", function () {
+            loadTemplate(html);
+          });
+        },
+        // Anything already on the canvas is somebody's, however quick they were.
+        untouched: function () {
+          return editor.getWrapper().components().length === 0;
+        },
+      });
+    });
+  }
+
+  // ---- preview mode ------------------------------------------------------
+  // GrapesJS's preview hides the panels but leaves components draggable in
+  // absolute mode, so dragging a button in preview pulls it apart.
+  //
+  // This locks the components rather than swallowing events in the canvas. An
+  // earlier version did the latter, and it blocked pointerdown and touchmove
+  // -- which is exactly what a drag-based widget like the XY pad needs, so it
+  // would have been dead in preview. The button survived only because it uses
+  // click, and the slider because its dragging is a browser default action.
+  //
+  // Locking components is what corrupted projects once, by being saved. It is
+  // safe now: editor state is stripped on every path in and out of storage, so
+  // it cannot persist. The /preview page has always worked this way.
+  var PREVIEW_LOCK = {
+    draggable: false,
+    selectable: false,
+    hoverable: false,
+    editable: false,
+    highlightable: false,
+  };
+  // Only the page on the canvas has components to lock. A page switched to
+  // mid-preview arrives unlocked, so it is locked as it comes in; the lock
+  // remembers what it has touched, so coming back to a page does not record
+  // its locked state as the one to restore (see createLock).
+  var previewLock = oscarPages.createLock(PREVIEW_LOCK, { avoidStore: true });
+  var previewing = false;
+
+  // The designer's preview shows the same tabs the tablet does: a surface
+  // with several pages cannot be tried out from page one alone.
+  var previewTabs = oscarPages.pageTabs(editor, {
+    bar: document.getElementById("oscar-page-bar"),
+    body: document.body,
+    windows: function () {
+      return oscarPages.widgetWindows(editor, window);
+    },
+  });
+
+  // Only while previewing: a project being edited changes under a widget in
+  // ways a viewless copy is never told about.
+  var offstage = runOffstage(editor, { document: document });
+
+  editor.on("page:select", function () {
+    if (!previewing) return;
+    editor.select();
+    previewLock.lock(editor.getWrapper());
+  });
+
+  editor.on("command:run:preview", function () {
+    // Hand the canvas to the preview page before locking, so the lock doesn't
+    // travel with it. Every page goes across, not only the one showing, and
+    // named, so a tab never has to guess.
+    postJSON("/save/preview", {
+      project: projectFormat.namePages(editor.getProjectData()),
+    }).catch(function (err) {
+      console.log("Could not hand off preview", err);
+    });
+
+    editor.select();
+    previewing = true;
+    previewLock.lock(editor.getWrapper());
+    previewTabs.show();
+    // As on the tablet: a fader on a page that is not showing still follows
+    // the rig, or trying a surface out here would not show what it does.
+    offstage.start();
+
+    // The selection toolbar, badges and resize handles live outside the canvas
+    // and would otherwise float over the control surface, delete button and
+    // all.
+    editor.getEl().classList.add("oscar-previewing");
+  });
+
+  editor.on("command:stop:preview", function () {
+    previewing = false;
+    offstage.stop();
+    previewLock.release();
+    previewTabs.hide();
+    editor.getEl().classList.remove("oscar-previewing");
+  });
+
+  // ---- panel buttons -----------------------------------------------------
+  // ---- widget styles -----------------------------------------------------
+  // A style is chosen for the whole surface and recorded as two attributes on
+  // its body, so it is saved with the project and reaches the preview and
+  // every tablet with nothing else to set. lib/widget-styles.js lists the
+  // styles; assets/css/styles/ holds their values.
+
+  function surfaceStyle() {
+    var attrs = editor.getWrapper().getAttributes();
+    var style = attrs[widgetStyles.STYLE_ATTRIBUTE];
+    var appearance = attrs[widgetStyles.APPEARANCE_ATTRIBUTE];
+    return {
+      style: widgetStyles.isStyle(style) ? style : widgetStyles.DEFAULT_STYLE,
+      appearance: widgetStyles.isAppearance(appearance) ? appearance : widgetStyles.DEFAULT_APPEARANCE,
+    };
+  }
+
+  function applySurfaceStyle(style, appearance) {
+    var attrs = {};
+    attrs[widgetStyles.STYLE_ATTRIBUTE] = style;
+    attrs[widgetStyles.APPEARANCE_ATTRIBUTE] = appearance;
+    editor.getWrapper().addAttributes(attrs);
+  }
+
+  /**
+   * A small document showing the real widgets in one style: the same fonts,
+   * tokens and widget rules the canvas loads, so a card looks exactly like the
+   * surface will. Everything in it comes from the style registry, never from
+   * anything a person typed.
+   */
+  function stylePreviewDocument(style, appearance) {
+    var links = widgetStyles
+      .canvasStylesheets()
+      .map(function (href) {
+        return '<link rel="stylesheet" href="' + href + '">';
+      })
+      .join("");
+
+    return (
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      links +
+      "<style>" +
+      widgetStyles.SURFACE_CSS +
+      " body { height: 100vh; display: flex; align-items: center; justify-content: center;" +
+      " gap: 10px; padding: 8px; overflow: hidden; }" +
+      " .col { display: flex; flex-direction: column; gap: 8px; }" +
+      " button { min-height: 28px; padding: 0 10px; font-size: 12px; }" +
+      " input[type=range] { width: 64px; height: 22px; }" +
+      " .oscar-xypad { width: 56px; height: 56px; flex-shrink: 0; }" +
+      "</style></head>" +
+      "<body " +
+      widgetStyles.STYLE_ATTRIBUTE + '="' + style + '" ' +
+      widgetStyles.APPEARANCE_ATTRIBUTE + '="' + appearance + '">' +
+      '<div class="col"><button type="button">Off</button>' +
+      '<button type="button" class="toggle">On</button>' +
+      '<input type="range" min="0" max="100" value="60" style="--oscar-fill: 60%"></div>' +
+      '<div class="oscar-xypad" style="--oscar-x: 65%; --oscar-y: 35%"></div>' +
+      "</body></html>"
+    );
+  }
+
+  var stylePanel = null;
+
+  function buildStylePanel() {
+    var panel = document.createElement("div");
+    panel.className = "o-style-panel";
+
+    var segmented = document.createElement("div");
+    segmented.className = "o-segmented";
+    segmented.setAttribute("role", "group");
+    segmented.setAttribute("aria-label", "Appearance");
+    widgetStyles.APPEARANCES.forEach(function (appearance) {
+      var segment = document.createElement("button");
+      segment.type = "button";
+      segment.className = "o-segment";
+      segment.setAttribute("data-appearance", appearance);
+      segment.textContent = appearance === "dark" ? "Dark" : "Light";
+      segment.onclick = function () {
+        applySurfaceStyle(surfaceStyle().style, appearance);
+        refreshStylePanel();
+      };
+      segmented.appendChild(segment);
+    });
+
+    var grid = document.createElement("div");
+    grid.className = "o-style-grid";
+    widgetStyles.CHOICES.forEach(function (entry) {
+      var card = document.createElement("button");
+      card.type = "button";
+      card.className = "o-style-card";
+      card.setAttribute("data-style", entry.id);
+
+      if (entry === widgetStyles.OWN_STYLE) {
+        // Nothing to picture: how it looks is whatever the page says. The
+        // name stands alone in the middle, and the hint says what it means.
+        card.className += " o-style-card-own";
+        card.title = entry.hint;
+      } else {
+        // The preview is only a picture: the card is what gets clicked.
+        var preview = document.createElement("iframe");
+        preview.className = "o-style-preview";
+        preview.tabIndex = -1;
+        preview.setAttribute("aria-hidden", "true");
+        card.appendChild(preview);
+      }
+
+      var name = document.createElement("span");
+      name.className = "o-style-name";
+      name.textContent = entry.label;
+      card.appendChild(name);
+
+      card.onclick = function () {
+        applySurfaceStyle(entry.id, surfaceStyle().appearance);
+        refreshStylePanel();
+      };
+      grid.appendChild(card);
+    });
+
+    panel.appendChild(segmented);
+    panel.appendChild(grid);
+    return panel;
+  }
+
+  function refreshStylePanel() {
+    var current = surfaceStyle();
+
+    stylePanel.querySelectorAll(".o-segment").forEach(function (segment) {
+      segment.setAttribute("aria-pressed", String(segment.getAttribute("data-appearance") === current.appearance));
+    });
+
+    stylePanel.querySelectorAll(".o-style-card").forEach(function (card) {
+      var style = card.getAttribute("data-style");
+      card.setAttribute("aria-pressed", String(style === current.style));
+      var preview = card.querySelector("iframe");
+      if (!preview) return;
+      // Rewriting the document restarts it; only do that when the picture
+      // would actually change.
+      var wanted = style + "/" + current.appearance;
+      if (preview.getAttribute("data-showing") !== wanted) {
+        preview.setAttribute("data-showing", wanted);
+        preview.srcdoc = stylePreviewDocument(style, current.appearance);
+      }
+    });
+  }
+
+  editor.Commands.add("open-styles", function () {
+    if (!stylePanel) stylePanel = buildStylePanel();
+    refreshStylePanel();
+    modal.open({ title: "Widget style", content: stylePanel, attributes: { class: "modal-login" } });
+  });
+
+  // No button of its own: Widget style is under Edit (showEditMenu).
+
+  // Reset to style: a widget someone recoloured by hand keeps that colour when
+  // the surface changes style, which reads as switching "not working". This
+  // takes its own appearance edits away so it follows the style again, and
+  // leaves where it is and how big it is alone.
+  editor.Commands.add("oscar-reset-style", function (ed) {
+    var component = ed.getSelected();
+    if (!component) return;
+    component.setStyle(widgetStyles.withoutAppearance(component.getStyle()));
+  });
+
+  // Offered on OSCAR's own widgets and on the body, in the toolbar over a
+  // selection. GrapesJS never saves a component's toolbar into the project,
+  // so this editor-only button cannot leak into a saved file.
+  editor.on("component:selected", function (component) {
+    if (!widgetStyles.offersReset(component.get("type"))) return;
+    var toolbar = component.get("toolbar") || [];
+    var present = toolbar.some(function (item) {
+      return item.command === "oscar-reset-style";
+    });
+    if (present) return;
+    component.set(
+      "toolbar",
+      toolbar.concat([
+        {
+          label: icon("restore", 16),
+          command: "oscar-reset-style",
+          attributes: { title: "Reset to style" },
+        },
+      ])
+    );
+  });
+
+  // ---- the bar answers through one listener --------------------------------
+  // Every word and pill on the bar registers here instead of binding to its
+  // element: a panel re-render -- an extension adding a button, a silent
+  // reset -- replaces the elements, and a listener bound to a dead element
+  // is the bug this bar has now had three times. The document outlives them
+  // all.
+  var barClicks = [];
+  function onBarClick(selector, run) {
+    barClicks.push([selector, run]);
+  }
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest) return;
+    for (var i = 0; i < barClicks.length; i++) {
+      var found = event.target.closest(barClicks[i][0]);
+      if (found) {
+        event.stopPropagation();
+        barClicks[i][1](found);
+        return;
+      }
+    }
+  });
+
+  // ---- the bar's geography, first half ------------------------------------
+  // The screen sizes leave the left panel NOW, before File and the pills are
+  // created there: pn.removeButton re-renders the whole panel, and any click
+  // listener wired before it would die with its element. A button moves
+  // whole: command, label and state along.
+  // They sit alone at the middle of the bar over the canvas (not of the
+  // window): a panel of their own, which the CSS places there.
+  // Created with the buttons already in it: a panel added empty draws no
+  // buttons that are added to it later.
+  var sizeButtons = [];
+  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
+    var button = pn.getButton("devices-c", id);
+    if (!button) return;
+    sizeButtons.push({
+      id: id,
+      command: button.get("command"),
+      label: button.get("label"),
+      className: button.get("className"),
+      attributes: button.get("attributes"),
+      active: button.get("active"),
+      // A screen size is a choice, not a switch: clicking the chosen one
+      // again stays chosen instead of toggling half-off.
+      togglable: false,
+      context: button.get("context"),
+    });
+    pn.removeButton("devices-c", id);
+  });
+  pn.addPanel({ id: "oscar-sizes", visible: true, buttons: sizeButtons });
+  // Undo and Redo live under Edit at the left edge; their icons retire.
+  // Removed here, early, for the same re-render reason as above.
+  pn.removeButton("options", "undo");
+  pn.removeButton("options", "redo");
+  // Show borders, Fullscreen, See code and Clear canvas join them under Edit
+  // (the widget style too, which is never added to the bar at all).
+  // And the eye: Push to preview is under File.
+  ["sw-visibility", "fullscreen", "export-template", "canvas-clear", "preview"].forEach(function (id) {
+    pn.removeButton("options", id);
+  });
+  // Show borders was on from the start because its button said so; with the
+  // button gone, the editor sets it itself, as it was last left.
+  editor.onReady(function () {
+    var active = editor.Commands.isActive("sw-visibility");
+    if (bordersWanted() && !active) editor.runCommand("sw-visibility");
+    else if (!bordersWanted() && active) editor.stopCommand("sw-visibility");
+  });
+
+  // Open and Save live under one word at the bar's left edge: File.
+
+  // Not offered while the feature is off; see lib/features.js.
+  if (features.PAGES) {
+    pn.addButton("options", {
+      id: "open-pages",
+      label: icon("pages"),
+      command: function () {
+        editor.runCommand("open-pages");
+      },
+      attributes: { title: "Pages", "data-tooltip-pos": "bottom" },
+    });
+  }
+
+  // Disabled to GrapesJS with its own click, like the pills: a command
+  // would toggle the button active, and only every other click would run.
+  pn.addButton("devices-c", {
+    id: "oscar-file",
+    className: "oscar-file-btn",
+    label: "File",
+    command: null,
+    attributes: { title: "Open, export and publish", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  onBarClick(".oscar-file-btn", function () {
+    showFileMenu();
+  });
+
+  pn.addButton("devices-c", {
+    id: "oscar-edit",
+    className: "oscar-edit-btn",
+    label: "Edit",
+    command: null,
+    attributes: { title: "Undo, the canvas and its style", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  onBarClick(".oscar-edit-btn", function () {
+    showEditMenu();
+  });
+
+  // The project's title, beside File and Edit: click it to rename. And how
+  // it stands with OSCAR: Saving, Saved, Not saved.
+  pn.addButton("devices-c", {
+    id: "oscar-title",
+    className: "oscar-title-btn",
+    label: "Untitled",
+    command: null,
+    attributes: { title: "Rename this project", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  onBarClick(".oscar-title-btn", function () {
+    renameProject();
+  });
+  pn.addButton("devices-c", {
+    id: "oscar-save-state",
+    className: "oscar-save-state",
+    label: "",
+    command: null,
+    attributes: { title: "", "data-tooltip-pos": "bottom" },
+    active: false,
+    disable: true,
+  });
+  paintTitle();
+  paintSaveState(projectSync.status());
+
+  // ---- export ------------------------------------------------------------
+  // Distinct from "See code" beside it, which is GrapesJS's own view of the
+  // markup and cannot send anything. This one produces a file that does.
+  var publishDialog = oscarExport.install(editor, {
+    host: ipServer,
+    port: socketPort,
+    // Publishing needs a project to belong to: a canvas that is nobody yet
+    // becomes one as the window opens, and what is waiting is saved.
+    beforeOpen: function () {
+      return projectSync.materialise();
+    },
+    // Who the canvas is: what it publishes is remembered as this project.
+    project: function () {
+      var now = openProject.get();
+      return { id: now.id, name: now.name || "Untitled" };
+    },
+    newId: function () {
+      return openProject.get().id || openProject.newId();
+    },
+    adopt: function () {},
+    // The project itself, kept beside the page: what phones are showing.
+    source: function (name, id) {
+      return projectRecord(name, id);
+    },
+    // Edit, from a live interface's row: its project, on the canvas. One
+    // that is no longer among the projects is brought back from the copy
+    // kept with the live interface.
+    openProject: function (project) {
+      if (!project || !isProjectData(project.data)) {
+        $.alert("That project could not be opened. Your current project has not been changed.");
+        return;
+      }
+      projectSync
+        .open(project.id)
+        .then(null, function () {
+          return importProject({ id: project.id, name: project.name, data: project.data });
+        })
+        .then(function () {
+          modal.close();
+        });
+    },
+  });
+
+  // On the left, with the project: its title, Publish, which is what is
+  // done with it, and how it stands. The right of the bar is OSCAR's.
+  pn.addButton("devices-c", {
+    id: "oscar-export",
+    className: "oscar-publish-btn",
+    // A pill: the icon and the word.
+    label: icon("publish") + '<span class="oscar-bar-pill-word">Publish</span>',
+    command: function () {
+      editor.runCommand("oscar-export");
+    },
+    // Tooltips are drawn from data-tooltip; a title as well would show twice.
+    attributes: { "data-tooltip": "Publish your interface", "data-tooltip-pos": "bottom", "aria-label": "Publish your interface" },
+  });
+
+  // ---- locked mode -------------------------------------------------------
+  // Locking leaves the control surface open to the network while the editor
+  // answers only this computer. A locked OSCAR that looked unlocked would be
+  // its own hazard, so the button states its condition plainly.
+  var lockButtonId = "toggle-lock";
+
+  function paintLockButton(locked) {
+    var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
+    if (!el) return;
+    el.innerHTML = icon(locked ? "locked" : "unlocked");
+    el.setAttribute(
+      "data-tooltip",
+      locked ? "Locked: only this computer can edit. Tap to let other computers in" : "Lock editing: only this computer can edit. Published interfaces stay open"
+    );
+    el.setAttribute("data-tooltip-pos", "bottom");
+    el.classList.toggle("oscar-locked", !!locked);
+  }
+
+  function setLocked(locked) {
+    postJSON("/lock", { locked: locked })
+      .then(function (res) {
+        if (res && res.error) {
+          $.alert(res.error);
+          return;
+        }
+        paintLockButton(res && res.locked);
+      })
+      .catch(function () {
+        $.alert("Could not change the lock");
+      });
+  }
+
+  pn.addButton("options", {
+    id: lockButtonId,
+    className: "oscar-lock-btn",
+    label: icon("unlocked"),
+    command: function () {
+      var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
+      setLocked(!(el && el.classList.contains("oscar-locked")));
+    },
+    attributes: { title: "Lock editing", "data-tooltip-pos": "bottom" },
+  });
+
+  fetch("/lock")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (state) {
+      paintLockButton(state && state.locked);
+    })
+    .catch(function () {});
+
+  // ---- telemetry switch, in About ----------------------------------------
+  // Shown only when this build can speak at all (a key baked in): a switch
+  // for something that sends nothing would only sow doubt. The full list of
+  // what OSCAR can say is lib/telemetry.js; the label links to it.
+  fetch("/telemetry-state")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (state) {
+      if (!state || !state.wired) return;
+      var row = document.getElementById("about-telemetry");
+      var box = document.getElementById("about-telemetry-switch");
+      if (!row || !box) return;
+      row.style.display = "";
+      box.checked = !!state.on;
+      box.addEventListener("change", function () {
+        fetch("/telemetry-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ on: box.checked }),
+        }).catch(function () {});
+      });
+    })
+    .catch(function () {});
+
+  // ---- serial -------------------------------------------------------------
+  // No panel: the cable is picked where it is used, the Board row the
+  // settings panel draws under a widget's Via (adapters/grapesjs.js).
+
+  // About, behind OSCAR's own mark. An extension may add to it, ahead of
+  // OSCAR's words (aboutDialog.addSection below): what this OSCAR is, to whom.
+  var aboutSections = [];
+  var aboutExtras = document.getElementById("about-extras");
+  // A command of its own, so the jellyfish on the bar and File's "About
+  // OSCAR" open the same thing.
+  editor.Commands.add("oscar-about", function () {
+    aboutSections.forEach(function (section) {
+      try {
+        section.draw(section.box);
+      } catch (err) {
+        console.error("A section of About failed:", err);
+      }
+    });
+    setModal("About OSCAR", "info-panel");
+  });
+  // No button of its own: About is under File (showFileMenu).
+
+  // ---- resize keeps its hands off flow parts' coordinates -------------------
+  // GrapesJS writes top and left along with width and height whenever the
+  // resized component's drag mode is truthy -- it only knows "absolute",
+  // "translate" and "", and our templates' dmode="flow" is truthy but
+  // neither. So a resize stamped a flow part with its own coordinates:
+  // harmless on position:static, a jump by its own offset on
+  // position:relative (the drum kit draft made it plain). Strip the
+  // coordinates for flow parts alone; a hand-placed widget (no dmode, the
+  // editor's absolute mode) keeps them, as resizing its left edge must.
+  editor.on("component:resize:update", function (props) {
+    if (!props || !props.style || typeof props.updateStyle !== "function") return;
+    var mode = (props.component && props.component.getDragMode && props.component.getDragMode()) || "";
+    if (!mode || mode === "absolute" || mode === "translate") return;
+    if (!("top" in props.style) && !("left" in props.style)) return;
+    var style = {};
+    Object.keys(props.style).forEach(function (key) {
+      if (key !== "top" && key !== "left") style[key] = props.style[key];
+    });
+    props.updateStyle(style);
+  });
+
+  // ---- the MCP pill --------------------------------------------------------
+  // To the left of the LIVE pill: whether assistants (Claude and friends, by
+  // MCP) may talk to this OSCAR. On, the pill wears the accent and the
+  // server answers /mcp on this machine; off, the word is struck through,
+  // the route refuses, and the handshake file assistants find OSCAR by is
+  // removed. The pill says which; its window (assistants_dialog.js) holds
+  // the switch, how an assistant is connected, and what they lately asked. Added before the LIVE pill on purpose: buttons render in the
+  // order they are added. Same construction as the LIVE pill, for the same
+  // reason: disabled to GrapesJS, its own click, no re-render to wipe it.
+  if (features.MCP) {
+    pn.addButton("options", {
+      id: "oscar-mcp-pill",
+      className: "oscar-mcp-btn",
+      label: '<span class="oscar-mcp-pill"><span class="oscar-mcp-dot"></span><span class="oscar-mcp-word">MCP</span></span>',
+      command: null,
+      active: false,
+      disable: true,
+    });
+
+    (function wireMcpPill() {
+      function paintMcp(on) {
+        var el = document.querySelector(".oscar-mcp-btn");
+        if (!el) return;
+        el.classList.toggle("oscar-mcp-on", !!on);
+        el.setAttribute(
+          "data-tooltip",
+          on
+            ? "Assistants (MCP) are on: an assistant on this computer can read this OSCAR and draft interfaces -- never send. Click for how to connect one."
+            : "Assistants (MCP) are off: the door is closed. Click to turn them on."
+        );
+        el.setAttribute("data-tooltip-pos", "bottom");
+      }
+
+      // The window asks the server where the switch stands as it is
+      // installed, and paints the pill each time it learns or throws it.
+      oscarAssistants.install(editor, { onState: paintMcp });
+
+      // The pill opens the window; it used to be the switch itself, and one
+      // stray click closed the door on an assistant mid-conversation.
+      onBarClick(".oscar-mcp-btn", function () {
+        editor.runCommand("oscar-assistants");
+      });
+    })();
+  }
+
+  // ---- the RUNNING pill ---------------------------------------------------
+  // The editor and the server are one app, and it is easy to forget the
+  // second half: OSCAR serves published interfaces in the background all the
+  // time, whichever project is on the canvas, and the rig is listening to
+  // them too. The bar keeps the two apart. Its left is the project being
+  // edited: File, Edit, its title, Publish and how it stands. Publish sends
+  // it over. Its right is OSCAR, the server: its address, this pill, the lock.
+  //
+  // RUNNING counts the interfaces OSCAR is serving and opens the Running
+  // window, where each is listed with the devices on it. ACTIVITY is the
+  // traffic: IN flickers when the server takes in OSC or MIDI for an
+  // interface, OUT when it sends on one's behalf -- a bridge, a schedule, a
+  // phone -- and it opens the network log.
+  //
+  // Like ipButton it is `disable: true` with its own click handlers: a
+  // command would toggle the button active, and GrapesJS re-renders a button
+  // whose model changed, which would wipe the count and the lights back to
+  // their pristine state.
+  pn.addButton("options", {
+    id: "oscar-live-pill",
+    className: "oscar-live-btn",
+    label:
+      '<span class="oscar-live-pills">' +
+      '<span class="oscar-live-pill oscar-live-zone oscar-live-running" data-zone="running" data-pill="running">' +
+      '<span class="oscar-live-dot"></span>' +
+      '<span class="oscar-live-word">RUNNING</span>' +
+      '<span class="oscar-live-count">0</span>' +
+      "</span>" +
+      '<span class="oscar-live-pill oscar-live-zone oscar-live-server" data-zone="log" data-pill="server">' +
+      '<span class="oscar-live-word">ACTIVITY</span>' +
+      '<span class="oscar-live-led" data-led="in">IN<span class="oscar-live-meter"></span></span>' +
+      '<span class="oscar-live-led" data-led="out">OUT<span class="oscar-live-meter"></span></span>' +
+      "</span>" +
+      "</span>",
+    command: null,
+    active: false,
+    disable: true,
+  });
+
+  // What an extension says is public on the internet (Pro's public links),
+  // said in the RUNNING pill's words: set by oscarApi.setPublicCount below.
+  var livePublic = { set: function () {} };
+
+  (function wireLivePill() {
+    var flashes = { in: null, out: null };
+    // The network log's rows, oldest first, the server's cap mirrored here.
+    var LOG_KEEP = 200;
+    var logRows = [];
+    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, unfollowed: true, dropped: true, canvas: true, local: true, internet: true, schedule: true, bridge: true };
+    // Whose move an outgoing row was (lib/activity.js), as the row says it.
+    var ORIGIN_WORDS = { canvas: "Canvas", local: "Local", internet: "Internet", schedule: "Schedule", bridge: "Bridge" };
+    var ORIGIN_HINTS = {
+      canvas: "Sent from the editor's canvas",
+      local: "Sent from a device on this network",
+      internet: "Sent from a visitor's phone, through the public link",
+      schedule: "Sent by a schedule",
+      bridge: "Passed on from what came in (Send when)",
+    };
+
+    // Auto-scroll: the newest row is kept in view as rows arrive (the list
+    // runs newest first). Off, the rows being read stay where they are while
+    // new ones gather above. Remembered in this browser.
+    var AUTOSCROLL_KEY = "oscarLogAutoScroll";
+    var autoScroll = (function () {
+      try {
+        return localStorage.getItem(AUTOSCROLL_KEY) !== "off";
+      } catch (err) {
+        return true;
+      }
+    })();
+
+    /** An incoming message nothing followed: no published surface, not the canvas. */
+    function unfollowed(row) {
+      return row.dir === "in" && !row.dropped && !row.canvas && !(row.surfaces && row.surfaces.length);
+    }
+
+    /**
+     * A row from the server, new or updated (lib/wire-log.js). An update --
+     * the canvas saying it followed a message, a surface found to follow it --
+     * replaces the row it is about; a new row goes where its own time says.
+     */
+    function takeRow(row) {
+      for (var i = logRows.length - 1; i >= 0 && i >= logRows.length - LOG_KEEP; i--) {
+        if (logRows[i].id === row.id) {
+          logRows[i] = row;
+          return false;
+        }
+      }
+      var at = logRows.length;
+      while (at > 0 && logRows[at - 1].at > row.at) at--;
+      logRows.splice(at, 0, row);
+      if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
+      return true;
+    }
+
+    function span(className, text, title) {
+      var el = document.createElement("span");
+      el.className = className;
+      el.textContent = text;
+      if (title) el.setAttribute("title", title);
+      return el;
+    }
+    var logBox = null;
+    var logList = null;
+
+    function pillEl() {
+      return document.querySelector(".oscar-live-btn");
+    }
+
+    function pill(name) {
+      var el = pillEl();
+      return el ? el.querySelector('[data-pill="' + name + '"]') : null;
+    }
+
+    function say(el, text) {
+      el.setAttribute("data-tooltip", text);
+      el.setAttribute("data-tooltip-pos", "bottom");
+    }
+
+    function quoted(ids) {
+      return ids
+        .map(function (id) {
+          return '"' + id + '"';
+        })
+        .join(", ");
+    }
+
+    // RUNNING: every interface OSCAR is serving, whichever project is open
+    // here. One that is switched off counts too: nobody can open it, and
+    // its schedules and bridges still run. How many devices are on each is
+    // said in the Running window, per interface, not here: one total for
+    // the lobby's phones and the technician's tablet would say nothing.
+    var running = [];
+    var publicState = null; // { surfaces: [{ id, online }] }, as an extension says (Pro's public links)
+
+    function paintRunning() {
+      var el = pill("running");
+      if (!el) return;
+      el.querySelector(".oscar-live-count").textContent = String(running.length);
+      el.classList.toggle("oscar-live-on", running.length > 0);
+      var names = quoted(
+        running.map(function (row) {
+          return row.name || row.id;
+        })
+      );
+      var off = running.filter(function (row) {
+        return row.access === "off";
+      }).length;
+      var anyone = ((publicState && publicState.surfaces) || []).length;
+      say(
+        el,
+        running.length === 0
+          ? "OSCAR is running nothing in the background. Publish a project and it is served from here, whichever project is open. Click to see."
+          : "OSCAR is running " +
+              (running.length === 1 ? names : running.length + " interfaces: " + names) +
+              " in the background, whichever project is open here." +
+              (anyone ? " " + anyone + " open to anyone with the link." : "") +
+              (off ? " " + off + " switched off." : "") +
+              " Click to see them."
+      );
+      paintServer();
+    }
+    livePublic.set = function (state) {
+      publicState = state && Array.isArray(state.surfaces) ? state : { surfaces: [] };
+      paintRunning();
+    };
+
+    // OSCAR SERVER: whether this editor reaches it, and its traffic. The
+    // meters read the network log's rows, which carry how many messages
+    // each gathers: messages a second over the last second, filled on a
+    // log scale (1 a second shows, 100 fills it).
+    var traffic = { in: [], out: [] };
+    function countTraffic(row) {
+      if (traffic[row.dir]) traffic[row.dir].push({ at: Date.now(), n: row.n || 1 });
+    }
+    function rateOf(dir) {
+      var since = Date.now() - 1000;
+      traffic[dir] = traffic[dir].filter(function (t) {
+        return t.at >= since;
+      });
+      return traffic[dir].reduce(function (sum, t) {
+        return sum + t.n;
+      }, 0);
+    }
+    function paintServer() {
+      var el = pill("server");
+      if (!el) return;
+      var connected = !!(editor.socket && editor.socket.connected);
+      el.classList.toggle("oscar-live-on", connected);
+      var rates = { in: rateOf("in"), out: rateOf("out") };
+      ["in", "out"].forEach(function (dir) {
+        var meter = el.querySelector('.oscar-live-led[data-led="' + dir + '"] .oscar-live-meter');
+        if (meter) meter.style.width = Math.round(Math.min(1, Math.log(1 + rates[dir]) / Math.log(101)) * 100) + "%";
+      });
+      say(
+        el,
+        connected
+          ? "What OSCAR is receiving and sending: IN " + rates.in + "/s, OUT " + rates.out + "/s. Click for the network log."
+          : "This editor cannot reach OSCAR. Nothing it shows is current. Click for the network log."
+      );
+    }
+    setInterval(paintServer, 250);
+
+    function refreshLive() {
+      fetch("/published")
+        .then(function (res) {
+          return res.json();
+        })
+        .then(function (rows) {
+          running = Array.isArray(rows) ? rows : [];
+          paintRunning();
+        })
+        .catch(function () {});
+    }
+
+    function flash(dir) {
+      var el = pillEl();
+      var led = el && el.querySelector('.oscar-live-led[data-led="' + dir + '"]');
+      if (!led) return;
+      led.classList.add("oscar-live-led-on");
+      if (flashes[dir]) clearTimeout(flashes[dir]);
+      // A hair longer than the server's throttle, so steady traffic reads as
+      // a steady light instead of a strobe.
+      flashes[dir] = setTimeout(function () {
+        led.classList.remove("oscar-live-led-on");
+        flashes[dir] = null;
+      }, 350);
+    }
+
+    // ---- the network log window ------------------------------------------
+    // What OSCAR's server actually received and sent, newest at the top
+    // (lib/wire-log.js): each message with what it carried, where it came
+    // from or went, and on the same row why -- whose move a send was, which
+    // published surfaces and whether the canvas followed what came in. What
+    // was refused is there too, marked Dropped. Repeats within a moment are
+    // one row with a count. Filters by direction, protocol and origin.
+    //
+    // A floating window, not a modal, on purpose: the log is for debugging,
+    // so the editor has to stay usable while it is open -- move a fader,
+    // watch the row appear. Dragged by its title bar, closed by its own
+    // button or by clicking the pill's lights again.
+
+    function timeOf(at) {
+      var d = new Date(at);
+      return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+    }
+
+    // Clear hides, it does not delete: the server's log is shared with every
+    // editor and with an assistant's recent_activity, so it stays whole, and
+    // a refresh brings it all back. What is hidden is every row up to the
+    // newest one on screen, by the server's own clock -- not this device's,
+    // which on a tablet may be minutes out -- so the backlog fetched when
+    // the window reopens stays cleared too.
+    var clearedThrough = 0;
+    var clearedAtWords = "";
+
+    function clearLog() {
+      for (var i = 0; i < logRows.length; i++) {
+        if (logRows[i].at > clearedThrough) clearedThrough = logRows[i].at;
+      }
+      clearedAtWords = timeOf(Date.now());
+      renderLog();
+    }
+
+    function renderLog() {
+      if (!logList) return;
+      // With auto-scroll off, remember the first row in view and where it
+      // sat, to put it back there once the list is redrawn.
+      var anchor = null;
+      if (!autoScroll) {
+        var top = logList.getBoundingClientRect().top;
+        for (var c = 0; c < logList.children.length; c++) {
+          var at = logList.children[c].getBoundingClientRect();
+          if (at.bottom > top) {
+            anchor = { key: logList.children[c].getAttribute("data-key"), offset: at.top - top };
+            break;
+          }
+        }
+      }
+      logList.textContent = "";
+      var shown = 0;
+      var kept = 0;
+      for (var i = logRows.length - 1; i >= 0; i--) {
+        var row = logRows[i];
+        if (row.at <= clearedThrough) continue;
+        kept++;
+        if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
+        if (row.origin && logFilters[row.origin] === false) continue;
+        if (unfollowed(row) && !logFilters.unfollowed) continue;
+        if (row.dropped && !logFilters.dropped) continue;
+        shown++;
+        var line = document.createElement("div");
+        line.className = "oscar-log-row" + (row.dropped ? " oscar-log-row-dropped" : "");
+        line.setAttribute("data-key", String(row.id));
+        line.appendChild(span("oscar-log-time", timeOf(row.at)));
+        line.appendChild(span("oscar-log-chip oscar-log-" + row.dir, row.dir === "in" ? "IN" : "OUT"));
+        line.appendChild(span("oscar-log-chip oscar-log-protocol", String(row.protocol || "").toUpperCase()));
+        // One label: dropped outranks the rest, then whose send it was, or
+        // for what came in, whether the canvas or nothing at all followed it.
+        if (row.dropped) {
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-dropped", "Dropped", "Not " + (row.dir === "in" ? "acted on" : "sent") + ": " + row.dropped));
+        } else if (row.dir === "out" && row.origin && ORIGIN_WORDS[row.origin]) {
+          // Which tablet, when two share a surface: its address on this network.
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-" + row.origin, ORIGIN_WORDS[row.origin], ORIGIN_HINTS[row.origin] + (row.device ? " (" + row.device + ")" : "")));
+        } else if (row.dir === "in" && row.canvas) {
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-canvas", "Canvas", "Followed by a widget on the editor's canvas"));
+        } else if (unfollowed(row)) {
+          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-unfollowed", "Unfollowed", "Nothing follows this: no published interface, and not the editor's canvas."));
+        }
+        line.appendChild(span("oscar-log-what", String(row.what || "")));
+        // What the latest of them carried.
+        if (row.value) line.appendChild(span("oscar-log-value", "= " + row.value));
+        if (row.dir === "out") {
+          if (row.to) line.appendChild(span("oscar-log-from", "→ " + row.to));
+          if (row.surface) line.appendChild(span("oscar-log-surface", '"' + row.surface + '"', row.widget ? "Sent for " + row.widget : ""));
+        } else {
+          // Who sent what came in: it is the first thing to know about it.
+          if (row.device) line.appendChild(span("oscar-log-from", row.device === "serial" ? "from the serial cable" : "from " + row.device));
+          (row.surfaces || []).forEach(function (surface) {
+            line.appendChild(span("oscar-log-surface", '"' + surface + '"', "Followed on this published interface"));
+          });
+        }
+        if (row.n > 1) {
+          var times = document.createElement("span");
+          times.className = "oscar-log-n";
+          times.textContent = "×" + row.n;
+          line.appendChild(times);
+        }
+        logList.appendChild(line);
+      }
+      if (!shown) {
+        var quiet = document.createElement("div");
+        quiet.className = "oscar-log-quiet";
+        quiet.textContent = kept
+          ? "Nothing matches these filters."
+          : clearedAtWords
+            ? "Cleared at " + clearedAtWords + ". Waiting for new messages."
+            : "Nothing yet: nothing has been sent or heard.";
+        logList.appendChild(quiet);
+      }
+      if (autoScroll) {
+        logList.scrollTop = 0;
+      } else if (anchor) {
+        var again = logList.querySelector('[data-key="' + (window.CSS && CSS.escape ? CSS.escape(anchor.key) : anchor.key) + '"]');
+        if (again) logList.scrollTop += again.getBoundingClientRect().top - logList.getBoundingClientRect().top - anchor.offset;
+      }
+    }
+
+    function buildLogBox() {
+      logBox = document.createElement("div");
+      logBox.className = "oscar-live-log";
+
+      var bar = document.createElement("div");
+      bar.className = "oscar-log-titlebar";
+      var title = document.createElement("span");
+      title.className = "oscar-log-title";
+      title.textContent = "Network log";
+      bar.appendChild(title);
+      var scrollLabel = document.createElement("label");
+      scrollLabel.className = "oscar-log-autoscroll";
+      scrollLabel.setAttribute("title", "Keep the newest message in view as messages arrive");
+      var scrollBox = document.createElement("input");
+      scrollBox.type = "checkbox";
+      scrollBox.checked = autoScroll;
+      scrollBox.addEventListener("change", function () {
+        autoScroll = scrollBox.checked;
+        try {
+          localStorage.setItem(AUTOSCROLL_KEY, autoScroll ? "on" : "off");
+        } catch (err) {
+          /* kept for this session only */
+        }
+        if (autoScroll && logList) logList.scrollTop = 0;
+      });
+      scrollLabel.appendChild(scrollBox);
+      scrollLabel.appendChild(document.createTextNode("Auto-scroll"));
+      bar.appendChild(scrollLabel);
+      var clear = document.createElement("button");
+      clear.className = "oscar-log-clear";
+      clear.type = "button";
+      clear.textContent = "Clear";
+      clear.setAttribute("title", "Hide what is listed so far, to watch only what comes next");
+      clear.addEventListener("click", clearLog);
+      bar.appendChild(clear);
+      var close = document.createElement("button");
+      close.className = "oscar-log-close";
+      close.type = "button";
+      close.textContent = "×";
+      close.setAttribute("title", "Close the log");
+      close.addEventListener("click", function () {
+        logBox.style.display = "none";
+      });
+      bar.appendChild(close);
+      logBox.appendChild(bar);
+
+      // Dragged by the title bar: the window must be movable off whatever
+      // fader is being debugged under it. The moves are listened for on the
+      // window, not the bar, and the canvas iframe is shielded while a drag
+      // holds (the body class below): an iframe eats pointer moves, which
+      // left the drag sticking the moment the pointer crossed the canvas.
+      var hold = null;
+      bar.addEventListener("pointerdown", function (event) {
+        if (close.contains(event.target) || clear.contains(event.target) || scrollLabel.contains(event.target)) return;
+        var at = logBox.getBoundingClientRect();
+        hold = { x: event.clientX - at.left, y: event.clientY - at.top };
+        document.body.classList.add("oscar-log-dragging");
+        event.preventDefault();
+      });
+      window.addEventListener("pointermove", function (event) {
+        if (!hold) return;
+        logBox.style.left = Math.max(0, Math.min(window.innerWidth - 80, event.clientX - hold.x)) + "px";
+        logBox.style.top = Math.max(0, Math.min(window.innerHeight - 40, event.clientY - hold.y)) + "px";
+        logBox.style.right = "auto";
+        event.preventDefault();
+      });
+      window.addEventListener("pointerup", function () {
+        if (!hold) return;
+        hold = null;
+        document.body.classList.remove("oscar-log-dragging");
+      });
+
+      var head = document.createElement("div");
+      head.className = "oscar-log-head";
+      head.textContent = "Server IP: " + ipServer + (oscInPort ? " · Listening Port: " + oscInPort : "");
+      logBox.appendChild(head);
+
+      var filterBar = document.createElement("div");
+      filterBar.className = "oscar-log-filters";
+      [
+        ["in", "Incoming"],
+        ["out", "Outgoing"],
+        ["osc", "OSC"],
+        ["midi", "MIDI"],
+        ["dmx", "DMX"],
+        ["unfollowed", "Unfollowed"],
+        ["dropped", "Dropped"],
+        ["canvas", "Canvas"],
+        ["local", "Local"],
+        ["internet", "Internet"],
+        ["schedule", "Schedule"],
+        ["bridge", "Bridge"],
+      ].forEach(function (pair, index) {
+        if (index === 2 || index === 5) {
+          var gap = document.createElement("span");
+          gap.className = "oscar-log-filter-gap";
+          filterBar.appendChild(gap);
+        }
+        // Whose move it was gets a row of its own, named.
+        if (index === 7) {
+          var rowBreak = document.createElement("span");
+          rowBreak.className = "oscar-log-filter-break";
+          filterBar.appendChild(rowBreak);
+          var fromWord = document.createElement("span");
+          fromWord.className = "oscar-log-filter-word";
+          fromWord.textContent = "Sent from";
+          filterBar.appendChild(fromWord);
+        }
+        var label = document.createElement("label");
+        label.className = "oscar-log-filter";
+        var box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = logFilters[pair[0]];
+        box.addEventListener("change", function () {
+          logFilters[pair[0]] = box.checked;
+          renderLog();
+        });
+        label.appendChild(box);
+        label.appendChild(document.createTextNode(pair[1]));
+        filterBar.appendChild(label);
+      });
+      logBox.appendChild(filterBar);
+
+      logList = document.createElement("div");
+      logList.className = "oscar-log-list";
+      logBox.appendChild(logList);
+      document.body.appendChild(logBox);
+    }
+
+    function logOpen() {
+      return !!(logBox && logBox.style.display !== "none");
+    }
+
+    function openLiveLog() {
+      // The lights toggle it: open to watch, the same click to put it away.
+      if (logOpen()) {
+        logBox.style.display = "none";
+        return;
+      }
+      if (!logBox) buildLogBox();
+      logBox.style.display = "";
+      // Opened in the middle of the screen; a drag moves it from there, and
+      // the window then keeps its place, toggle after toggle.
+      if (!logBox.style.left) {
+        var at = logBox.getBoundingClientRect();
+        logBox.style.left = Math.max(0, Math.round((window.innerWidth - at.width) / 2)) + "px";
+        logBox.style.top = Math.max(0, Math.round((window.innerHeight - at.height) / 2)) + "px";
+        logBox.style.right = "auto";
+      }
+      fetch("/live/log")
+        .then(function (res) {
+          return res.json();
+        })
+        .then(function (rows) {
+          if (Array.isArray(rows)) logRows = rows;
+          renderLog();
+        })
+        .catch(function () {
+          renderLog();
+        });
+      renderLog();
+    }
+
+    // The canvas's own sends are logged by the server like every other
+    // (server.js, origin "canvas"), so every editor and the MCP server see
+    // them, and opening the window keeps them instead of replacing them with
+    // the server's backlog.
+    //
+    // What the canvas follows of what comes in only the canvas knows: its
+    // widgets decide for themselves (follow() in lib/widgets/incoming.js,
+    // midi-source.js) and say so through ctx.noteHeard. Gathered here and
+    // told to the server a few times a second, which logs it as "canvas";
+    // a fader ridden from outside is one line with a count.
+    var heardPending = {};
+    var heardTimer = null;
+    editor.noteHeard = function (protocol, what, device) {
+      if (!editor.socket) return;
+      var key = protocol + "|" + what + "|" + (device || "");
+      if (!heardPending[key]) heardPending[key] = device ? { protocol: protocol, what: String(what), device: String(device) } : { protocol: protocol, what: String(what) };
+      if (!heardTimer) {
+        heardTimer = setTimeout(function () {
+          heardTimer = null;
+          var rows = Object.keys(heardPending).map(function (k) {
+            return heardPending[k];
+          });
+          heardPending = {};
+          if (rows.length) editor.socket.emit("canvas:heard", rows);
+          // Well inside the server's hold (ARRIVAL_HOLD_MS), so the word
+          // lands on the row of the message it is about.
+        }, 150);
+      }
+    };
+
+    // The zones' clicks, through the bar's one listener: re-renders replace
+    // elements, the document does not.
+    onBarClick(".oscar-live-zone", function (zone) {
+      if (zone.getAttribute("data-zone") === "running") editor.runCommand("oscar-running");
+      else openLiveLog();
+    });
+
+    if (editor.socket) {
+      editor.socket.on("live:activity", function (msg) {
+        if (msg && (msg.dir === "in" || msg.dir === "out")) flash(msg.dir);
+      });
+      // The log listens all along, not only while its window is open: what
+      // happened a minute before it was opened is exactly what it is for.
+      editor.socket.on("live:log", function (row) {
+        if (!row || (row.dir !== "in" && row.dir !== "out") || !row.id) return;
+        // An update is the same traffic said again: the meters count it once.
+        if (takeRow(row) && !row.dropped) countTraffic(row);
+        if (logOpen()) renderLog();
+        // The Running window's light for each interface the message passed through.
+        if (publishDialog && !row.dropped) publishDialog.activity((row.surfaces || []).concat(row.surface ? [row.surface] : []));
+      });
+      editor.socket.on("published:changed", function () {
+        refreshLive();
+        if (publishDialog) publishDialog.refresh();
+      });
+      // A device came or went on an interface: the Running window's counts.
+      editor.socket.on("running:changed", function () {
+        if (publishDialog) publishDialog.refresh();
+      });
+      // A server that restarted may have a different roster than the one
+      // this pill last drew.
+      editor.socket.on("connect", refreshLive);
+      editor.socket.on("disconnect", paintServer);
+    }
+    refreshLive();
+  })();
+
+  // On the right, with OSCAR: where it is reached, what it is running, its
+  // traffic, and its lock. The right half is fuller than the left was, and
+  // on a laptop it would run under the screen sizes in the middle: there
+  // the words step aside (oscar_theme.css) and the numbers stay, and on a
+  // small one the port goes too, with the tooltip to say all of it.
+  pn.addButton("options", {
+    id: "ipButton",
+    className: "oscar-ip-label",
+    label:
+      '<span class="oscar-ip-word">Server IP: </span>' +
+      ipServer +
+      (oscInPort ? '<span class="oscar-ip-port"> · <span class="oscar-ip-word">Listening Port: </span>' + oscInPort + "</span>" : ""),
+    command: null,
+    attributes: {
+      title: oscInPort
+        ? "OSCAR's address on this network is " + ipServer + ", and it hears OSC on port " + oscInPort + ". Point other devices at it."
+        : "OSCAR's address on this network is " + ipServer + ". Point other devices at it.",
+      // Below the bar: above it there is no room.
+      "data-tooltip-pos": "bottom",
+    },
+    active: false,
+    disable: true,
+  });
+
+  // ---- tooltips ----------------------------------------------------------
+  // GrapesJS renders the panels during init, before any of this runs, and a
+  // button does not re-render when its attributes change afterwards. Setting
+  // the model alone is silently ignored, so the text is written onto the
+  // elements as well. Buttons render in the order the panel holds them.
+  // Import's dialog lives on behind the Open menu ("Paste HTML / CSS...");
+  // the toolbar button itself retires.
+  pn.removeButton("options", "gjs-open-import-webpage");
+
+  // (The sizes crossed panels earlier, before anything on the left was
+  // wired: removing a button re-renders the whole panel, and listeners
+  // bound to the old elements die with them.)
+
+  // The left half's order, applied the way arrangeToolbar applies the
+  // right's: models and elements moved together, silently, because a reset
+  // that redraws would throw away the pills' painted state.
+  (function orderLeftPanel() {
+    var panel = pn.getPanel("devices-c");
+    var row = document.querySelector(".gjs-pn-devices-c .gjs-pn-buttons");
+    if (!panel || !row) return;
+    var buttons = panel.get("buttons");
+    var models = buttons.models.slice();
+    var els = Array.prototype.slice.call(row.querySelectorAll(".gjs-pn-btn"));
+    if (models.length !== els.length) return;
+    var ids = models.map(function (model) {
+      return model.get("id");
+    });
+    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-export", "oscar-save-state"]
+      .filter(function (id) {
+        return ids.indexOf(id) !== -1;
+      })
+      .concat(
+        ids.filter(function (id) {
+          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-export", "oscar-save-state"].indexOf(id) === -1;
+        })
+      );
+    wanted.forEach(function (id) {
+      row.appendChild(els[ids.indexOf(id)]);
+    });
+    buttons.reset(
+      wanted.map(function (id) {
+        return models[ids.indexOf(id)];
+      }),
+      { silent: true }
+    );
+  })();
+
+  // ---- toolbar order -----------------------------------------------------
+  // Every button exists by now. GrapesJS can only append, so the ones that
+  // belong elsewhere are moved: in the panel's own list and on the page
+  // together, because retitle() below pairs the two by position.
+  /**
+   * Put the toolbar's buttons in the order lib/toolbar-order.js states, or,
+   * given placements, move those alone: an extension's button that belongs
+   * beside one of OSCAR's, added long after the toolbar was drawn.
+   */
+  function arrangeToolbar(placements) {
+    var panel = pn.getPanel("options");
+    var row = document.querySelector(".gjs-pn-options .gjs-pn-buttons");
+    if (!panel || !row) return;
+
+    var buttons = panel.get("buttons");
+    var models = buttons.models.slice();
+    var els = Array.prototype.slice.call(row.querySelectorAll(".gjs-pn-btn"));
+    // If the two ever disagree, moving either would mislabel the rest.
+    if (models.length !== els.length) return;
+
+    var ids = models.map(function (model) {
+      return model.get("id");
+    });
+    var wanted = toolbarOrder.arrange(ids, placements);
+
+    wanted.forEach(function (id) {
+      row.appendChild(els[ids.indexOf(id)]);
+    });
+    // Silent: the panel's view answers a reset by drawing every button again,
+    // which would throw away the elements just moved.
+    buttons.reset(
+      wanted.map(function (id) {
+        return models[ids.indexOf(id)];
+      }),
+      { silent: true }
+    );
+  }
+  arrangeToolbar();
+
+  function retitle(panelId, labels) {
+    var panel = pn.getPanel(panelId);
+    var els = document.querySelectorAll(".gjs-pn-" + panelId + " .gjs-pn-btn");
+    if (!panel || !els.length) return;
+
+    panel.get("buttons").forEach(function (button, index) {
+      var label = labels[button.get("id")];
+      var el = els[index];
+      if (!label || !el) return;
+
+      button.set("attributes", { title: label, "data-tooltip-pos": "bottom" });
+      el.setAttribute("data-tooltip", label);
+      el.setAttribute("data-tooltip-pos", "bottom");
+      el.setAttribute("title", "");
+    });
+  }
+
+  retitle("options", {
+    // "Push", not "Preview": this is also what sends the layout to the
+    // /preview page, which keeps showing the last pushed version until it is.
+    preview: "Push to preview",
+    // something in, and templates -- the other thing one might import -- are
+    // opened from Load.
+    "toggle-lock": null,
+    "open-pages": "Pages",
+    "open-info": "About Oscar",
+  });
+
+  retitle("views", {
+    "open-sm": "Style Manager",
+    "open-tm": "OSC Settings",
+    "open-layers": "Layers",
+    "open-blocks": "Blocks",
+  });
+
+  // ---- extensions ----------------------------------------------------------
+  // What an extension's editor script is handed (lib/extensions.js), through
+  // window.OSCAR.ready(function (oscar) { ... }). Kept small on purpose: every
+  // name here is a promise to code OSCAR cannot see, and api goes up when one
+  // of them changes shape.
+  var oscarApi = {
+    api: 1,
+    /** The GrapesJS editor, for everything not wrapped below. */
+    editor: editor,
+    /** The feature switches as they stand; see lib/features.js. */
+    features: features,
+    /**
+     * A button in the top toolbar: at the end, or straight after one of
+     * OSCAR's own (`after`, a button id such as "toggle-lock").
+     * { id, title, iconPath (the d of a 24x24 SVG path), run(editor), after? }
+     */
+    addToolbarButton: function (button) {
+      if (!button || !button.id || typeof button.run !== "function") {
+        throw new Error("A toolbar button needs an id and a run function");
+      }
+      if (pn.getButton("options", button.id)) return;
+      var title = String(button.title || button.id);
+      pn.addButton("options", {
+        id: button.id,
+        label:
+          '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="' +
+          String(button.iconPath || "").replace(/[^\w\s.,-]/g, "") +
+          '"/></svg>',
+        command: function () {
+          button.run(editor);
+        },
+        // Tooltips are drawn from data-tooltip; a title as well would show twice.
+        attributes: { "data-tooltip": title, "data-tooltip-pos": "bottom", "aria-label": title },
+      });
+      if (button.after) arrangeToolbar([{ id: button.id, after: String(button.after) }]);
+    },
+    /**
+     * An item in File's or Edit's menu: "file" or "edit", { id, label,
+     * run(editor) }. Edit's sit beside Lock editing, File's just above About.
+     * The same id again replaces the item.
+     */
+    addMenuItem: function (menu, item) {
+      if (!menuExtras[menu]) throw new Error('A menu item goes in "file" or "edit"');
+      if (!item || !item.id || typeof item.run !== "function") throw new Error("A menu item needs an id and a run function");
+      oscarApi.removeMenuItem(menu, item.id);
+      menuExtras[menu].push({ id: String(item.id), label: String(item.label || item.id), run: item.run });
+    },
+    /**
+     * What is public on the internet, for the PUBLIC pill: { surfaces: [{ id,
+     * online }] }, every time it changes. Until an extension says, the pill
+     * reads 0 and says public surfaces are OSCAR Pro's.
+     */
+    setPublicCount: function (state) {
+      livePublic.set(state);
+    },
+    /** Take an item of the extension's own out of a menu again. */
+    removeMenuItem: function (menu, id) {
+      if (!menuExtras[menu]) return;
+      menuExtras[menu] = menuExtras[menu].filter(function (item) {
+        return item.id !== String(id);
+      });
+    },
+    /** Take a button of the extension's own out of the toolbar again: one that is only for some accounts. */
+    removeToolbarButton: function (id) {
+      if (!pn.getButton("options", id)) return;
+      if (typeof pn.removeButton === "function") pn.removeButton("options", id);
+    },
+    /** Open OSCAR's modal on an element of the extension's own. */
+    openModal: function (title, content) {
+      modal.open({ title: title, content: content, attributes: { class: "modal-login" } });
+    },
+    /**
+     * Add to the Publish dialog, under what was just published: for what
+     * else a published surface can become. See addSection in export_dialog.js.
+     */
+    publishDialog: {
+      addSection: function (draw) {
+        if (publishDialog) publishDialog.addSection(draw);
+      },
+      /**
+       * Add an answer to "who can open it" on every row, after OSCAR's own
+       * Off and This network. See addAccessLevel in export_dialog.js.
+       */
+      addAccessLevel: function (level) {
+        if (publishDialog) publishDialog.addAccessLevel(level);
+      },
+    },
+    /**
+     * Add to About, ahead of OSCAR's own words. `draw(box)` is called with a
+     * box of the extension's own every time About opens.
+     */
+    aboutDialog: {
+      addSection: function (draw) {
+        if (typeof draw !== "function") throw new Error("A section of About is a draw function");
+        var box = document.createElement("div");
+        box.className = "oscar-about-section";
+        if (aboutExtras) aboutExtras.appendChild(box);
+        aboutSections.push({ draw: draw, box: box });
+      },
+    },
+  };
+
+  // One extension throwing must not cost the others, or the editor, anything.
+  function runExtension(fn) {
+    try {
+      fn(oscarApi);
+    } catch (err) {
+      console.error("An OSCAR extension failed in the editor:", err);
+    }
+  }
+  oscarApi.ready = runExtension;
+  window.OSCAR = oscarApi;
+  extensionsWaiting.splice(0).forEach(runExtension);
+
+  // Anything else that still carries a title (modal contents, for instance).
+  var titles = document.querySelectorAll("*[title]");
+  for (var i = 0; i < titles.length; i++) {
+    var el = titles[i];
+    var title = (el.getAttribute("title") || "").trim();
+    if (!title) continue;
+    el.setAttribute("data-tooltip", title);
+    el.setAttribute("title", "");
+  }
+}
+
+},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/open-project":9,"../../lib/project-format":13,"../../lib/project-sync":14,"../../lib/projects-table":15,"../../lib/toolbar-order":18,"../../lib/widget-styles":19,"./adapters/grapesjs":41,"./assistants_dialog":42,"./export_dialog":43,"./first_run":44,"./pages":47,"jquery":50,"jquery-confirm":49}],46:[function(require,module,exports){
+window.$ = window.jQuery = require("jquery");
+
+// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
+var { widgetPlugins, runOffstage, followSurfaceStyle } = require("./adapters/grapesjs");
+var widgetStyles = require("../../lib/widget-styles");
+
+// Tabs, and the rule for staying on a page across a push; shared with the
+// editor so its preview draws the same thing the tablet does.
+var oscarPages = require("./pages");
+
+var editor;
+var tabs = null;
+var offstage = null;
+
+// One browserify bundle serves both the editor and the preview page, so each
+// entry point only boots when its own container is on the page.
+if (document.getElementById("gjs-oscar-preview")) {
+  // Ask the server which address it is reachable on, so widgets default to
+  // something other devices on the network can actually talk to.
+  fetch("/connection")
+    .then(function (res) {
+      return res.json();
+    })
+    .catch(function () {
+      return {};
+    })
+    .then(function (conn) {
+      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081);
+    });
+}
+
+function initGrape(ipServer, socketPort) {
+  editor = grapesjs.init({
+    // No Font Awesome from a CDN: every tablet would make a request that fails
+    // at a venue with no internet, and nothing on this page uses it.
+    cssIcons: "",
+    height: "100%",
+    container: "#gjs-oscar-preview",
+    allowScripts: 1,
+    panels: { defaults: [] },
+    // No select tool on this page, ever. GrapesJS restarts its default command
+    // whenever a page or project loads, preview mode or not, and that command
+    // cancels every click in the canvas so it can select what was clicked.
+    // A colour picker opens as the default action of a click, so with the tool
+    // running it never opened on a tablet; buttons, sliders and text boxes
+    // work by other means, which is why it went unnoticed.
+    defaultCommand: "",
+    // The same fonts, styles and widgets as the editor, so a tablet shows the
+    // surface in the style it was designed in.
+    canvas: { styles: widgetStyles.canvasStylesheets() },
+    protectedCss: widgetStyles.SURFACE_CSS,
+    // The preview only displays whatever the editor handed over; it must never
+    // write into the editor's autosave.
+    storageManager: false,
+    plugins: [
+      "oscar_socket",
+      "oscar_ip",
+      ...widgetPlugins(ipServer),
+      "grapesjs-touch",
+    ],
+    pluginsOpts: {
+      // `surface`: this page is a device showing the layout, so it agrees with
+      // the others on what each widget shows. The editor never sets it.
+      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true, from: "preview" },
+    },
+  });
+
+  tabs = oscarPages.pageTabs(editor, {
+    bar: document.getElementById("oscar-page-bar"),
+    body: document.body,
+    windows: heldWindows,
+  });
+
+  // A page that is not showing still has to hear the rig, or its faders come
+  // back where they were left rather than where the rig put them.
+  offstage = runOffstage(editor, { document: document });
+
+  // Pages.select brings the next page in with its components unlocked: the
+  // lock was set on the components of the page that was showing, and these
+  // are not those. On every switch, whoever asked for it -- a tab, or the
+  // reselect after a push -- the page that came in is locked before anyone
+  // can put a finger on it.
+  editor.on("page:select", function () {
+    lockDown();
+    // The rig's word on a widget is recorded by the server but told to no
+    // device, since every device showing that widget heard the rig itself
+    // (lib/shared-sync.js). A device that was on another page did not, so
+    // what it has cached for the page coming in may be behind. Ask again.
+    if (editor.syncSharedState) editor.syncSharedState();
+  });
+
+  // The canvas body follows the style the surface was designed in.
+  followSurfaceStyle(editor, widgetStyles.copyToBody);
+
+  editor.on("load", function () {
+    showLatest();
+
+    // The editor's "Push to preview" button tells the server, which tells
+    // every open preview page. Without this a tablet keeps showing the
+    // previous push until someone walks over and reloads it.
+    if (editor.socket) {
+      editor.socket.on("preview:updated", showLatest);
+    }
+  });
+}
+
+function heldWindows() {
+  return oscarPages.widgetWindows(editor, window);
+}
+
+/** Fetch whatever was last pushed and display it, ready to drive a show. */
+function showLatest() {
+  return fetch("/show/preview")
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (data) {
+      // loadProjectData tears down the current page before reading the new
+      // one, so only hand it something shaped like a GrapesJS project.
+      if (!data || !Array.isArray(data.pages) || !data.pages.length) return;
+
+      // A push mid-show must not throw whoever is driving back to page one.
+      var wasOn = oscarPages.currentPageId(editor.Pages);
+
+      // The load tears every view down, exactly as a page turn does: a
+      // button held through a push must send its release first.
+      oscarPages.releaseHeld(heldWindows());
+
+      editor.loadProjectData(data);
+      oscarPages.reselect(editor.Pages, wasOn);
+
+      // Locked here as well as on page:select: a project that opens on the
+      // page it was already on selects nothing.
+      lockDown();
+      tabs.show();
+      // The load replaced every component; the widgets of the pages not
+      // showing are the new project's from here on.
+      offstage.start();
+    })
+    .catch(function (err) {
+      console.log("Could not load the preview", err);
+    });
+}
+
+/**
+ * A preview is for driving the show, not editing it.
+ *
+ * Safe to set on the components here, unlike in the editor: this page never
+ * saves anything (storageManager is off), so none of it can reach a file.
+ *
+ * Only the page on the canvas is reached: getWrapper() is that page's, and
+ * the components of the others are locked as each is switched to.
+ */
+function lockDown() {
+  editor.getWrapper().onAll(function (component) {
+    component.set({
+      editable: false,
+      selectable: false,
+      hoverable: false,
+      draggable: false,
+      highlightable: false,
+    });
+  });
+
+  // GrapesJS's own preview mode hides the panels and makes the canvas full
+  // size. Its "exit preview" button is hidden in preview.ejs.
+  if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
+}
+
+},{"../../lib/widget-styles":19,"./adapters/grapesjs":41,"./pages":47,"jquery":50}],47:[function(require,module,exports){
+/**
+ * Multiple pages: what the editor and the control surface have in common.
+ *
+ * A surface can hold more than one page -- a page per fixture group, or per
+ * scene. The designer manages them in the editor; whoever drives the show
+ * switches between them with a row of tabs. Both entry points require this
+ * file, so the tabs the designer sees while previewing are the ones the
+ * tablet draws.
+ *
+ * Nothing here touches `window` or GrapesJS when it is loaded: every function
+ * is handed what it works on, which is what lets test/pages.test.js run it
+ * under plain Node.
+ */
+
+var projectFormat = require("../../lib/project-format");
+var features = require("../../lib/features");
+
+/**
+ * The pages as a list of { id, label, current }.
+ *
+ * The label comes from lib/project-format.js, the same function that names
+ * pages in a file: GrapesJS drops an empty page name when it saves, so page
+ * one routinely has none, and a tab has to print something.
+ */
+function pageEntries(pages) {
+  var selected = pages.getSelected();
+  var selectedId = selected ? selected.getId() : null;
+  return pages.getAll().map(function (page, index) {
+    return {
+      id: page.getId(),
+      label: projectFormat.pageLabel(page.getName(), index),
+      current: page.getId() === selectedId,
+    };
+  });
+}
+
+/**
+ * Is `name` already the label of a page other than the one at `except`?
+ *
+ * Compared as the tabs print them, so "Page 2" typed by hand meets the
+ * "Page 2" an unnamed second page is shown as.
+ */
+function nameTaken(labels, name, except) {
+  var wanted = String(name).trim();
+  return labels.some(function (label, index) {
+    return index !== except && label === wanted;
+  });
+}
+
+/**
+ * The name for a page added without one: the first "Page N", counting up
+ * from its position, that no tab already carries. By position alone, deleting
+ * "Page 1" of two and adding a page made a second "Page 2".
+ */
+function freePageName(labels) {
+  var index = labels.length;
+  while (nameTaken(labels, projectFormat.defaultPageName(index))) index++;
+  return projectFormat.defaultPageName(index);
+}
+
+/** The id of the page on the canvas, or null before there is one. */
+function currentPageId(pages) {
+  var selected = pages.getSelected();
+  return selected ? selected.getId() : null;
+}
+
+/**
+ * Go back to the page someone was on, if the project still has it.
+ *
+ * A push mid-show reloads the whole project, and GrapesJS opens a loaded
+ * project on its first page. Whoever is driving page three must not be thrown
+ * back to page one with a cue coming. Page ids are saved in the project, so
+ * the same page carries the same id across pushes; one that was deleted in
+ * the meantime is simply not there, and the first page is the honest answer.
+ *
+ * @returns true when the page was found and is now selected
+ */
+function reselect(pages, id) {
+  if (!id) return false;
+  var page = pages.get(id);
+  if (!page) return false;
+  if (currentPageId(pages) !== id) pages.select(page);
+  return true;
+}
+
+/**
+ * A lock that can be taken page by page and undone in one go.
+ *
+ * GrapesJS only builds the components of the page on the canvas, and
+ * Pages.select brings the next page in untouched: whatever locked the first
+ * page has not locked this one. So the lock is applied again on every switch.
+ * Coming back to a page already locked must not record its locked values as
+ * "what it was before", or undoing the lock would restore the lock; each
+ * component is therefore remembered the first time it is touched and never
+ * again.
+ *
+ * `options` is passed to component.set -- the editor passes avoidStore, so
+ * locking never counts as an edit.
+ */
+function createLock(props, options) {
+  var keys = Object.keys(props);
+  // A Map, not a WeakMap: release() has to walk it.
+  var touched = new Map();
+
+  return {
+    /** Lock every component under `root` that is not locked already. */
+    lock: function (root) {
+      if (!root || typeof root.onAll !== "function") return;
+      root.onAll(function (component) {
+        if (!touched.has(component)) {
+          var previous = {};
+          keys.forEach(function (key) {
+            previous[key] = component.get(key);
+          });
+          touched.set(component, previous);
+        }
+        component.set(props, options);
+      });
+    },
+
+    /** Put every component this lock touched back as it was found. */
+    release: function () {
+      touched.forEach(function (previous, component) {
+        component.set(previous, options);
+      });
+      touched.clear();
+    },
+
+    get size() {
+      return touched.size;
+    },
+  };
+}
+
+/**
+ * Let go of every control a finger is on, before the page under it goes.
+ *
+ * Turning the page destroys the views of the page that was showing. A
+ * momentary button held with one finger while another taps a tab has sent
+ * its ON; its element is gone before the finger comes up, so the pointerup
+ * lands nowhere and OFF never reaches the rig -- the fixture stays on, and
+ * every tablet draws the button lit. The widgets already have a word for
+ * "the hand is gone": a drag that loses the window counts as released
+ * (the ctx contract in lib/widgets/index.js), which every widget that can be
+ * held listens for as `blur` on its window. So that is what is said here,
+ * while the widgets are still attached and can still send.
+ *
+ * `windows` is every window a widget may be listening on: the page's own
+ * and the canvas frame's. One that is missing, or cannot dispatch, is
+ * skipped -- a page turn must not fail on it.
+ */
+function releaseHeld(windows) {
+  (windows || []).forEach(function (win) {
+    if (!win || typeof win.dispatchEvent !== "function") return;
+    var EventType = win.Event || (typeof Event === "function" ? Event : null);
+    if (!EventType) return;
+    try {
+      win.dispatchEvent(new EventType("blur"));
+    } catch (err) {
+      console.warn("Could not release the controls being held:", err && err.message);
+    }
+  });
+}
+
+/** The windows a widget of this editor may be listening on. */
+function widgetWindows(editor, top) {
+  var windows = top ? [top] : [];
+  var frame = editor && editor.Canvas && typeof editor.Canvas.getWindow === "function" ? editor.Canvas.getWindow() : null;
+  if (frame && frame !== top) windows.push(frame);
+  return windows;
+}
+
+/**
+ * Draw the tabs into `bar`, and report whether there are any.
+ *
+ * The bar lives outside the GrapesJS canvas on purpose. Anything inside the
+ * canvas loses its events to the preview lock, and a tab drawn as a component
+ * is one the next person to edit the project can drag away or delete.
+ *
+ * A single page gets no bar at all: it would only take room from the
+ * controls, and there is nowhere to switch to.
+ */
+function renderTabs(doc, bar, entries, onPick) {
+  while (bar.firstChild) bar.removeChild(bar.firstChild);
+
+  if (entries.length < 2) {
+    bar.hidden = true;
+    return false;
+  }
+
+  entries.forEach(function (entry) {
+    var tab = doc.createElement("button");
+    tab.type = "button";
+    tab.className = "oscar-page-tab" + (entry.current ? " oscar-page-tab-current" : "");
+    // textContent, never innerHTML: a page name is whatever someone typed.
+    tab.textContent = entry.label;
+    tab.setAttribute("aria-pressed", entry.current ? "true" : "false");
+    tab.onclick = function () {
+      if (!entry.current) onPick(entry.id);
+    };
+    bar.appendChild(tab);
+  });
+
+  bar.hidden = false;
+  return true;
+}
+
+/**
+ * Keep a tab bar in step with the editor's pages.
+ *
+ *   var tabs = pageTabs(editor, { bar, body, onSwitch });
+ *   tabs.show() / tabs.hide() / tabs.render()
+ *
+ * `body` carries the oscar-has-pages class while the bar is up; the
+ * stylesheet shortens the editor by the bar's height on that class, rather
+ * than letting the bar float over the bottom row of someone's controls.
+ * `onSwitch` runs after every page change made through the tabs.
+ * `windows`, a function returning the windows the widgets listen on, is how
+ * a tab lets go of whatever is being held before the page goes (releaseHeld).
+ */
+function pageTabs(editor, options) {
+  // Off with the feature (lib/features.js): the bar then never shows, and a
+  // surface stays on the page it opened on. `enabled` is for the tests.
+  var enabled = options.enabled === undefined ? features.PAGES : !!options.enabled;
+  var bar = options.bar;
+  var body = options.body;
+  var doc = options.document || bar.ownerDocument;
+  var showing = false;
+
+  function pick(id) {
+    var page = editor.Pages.get(id);
+    if (!page) return;
+    // Before the select, not after: by then the held widget is detached and
+    // has nothing left to send its release with.
+    if (options.windows) releaseHeld(options.windows());
+    editor.Pages.select(page);
+    // The page:select listener below redraws; onSwitch is for the caller's
+    // own follow-up (locking the page that came in).
+    if (options.onSwitch) options.onSwitch(page);
+  }
+
+  function render() {
+    var up = showing && renderTabs(doc, bar, pageEntries(editor.Pages), pick);
+    if (!showing) bar.hidden = true;
+    var had = body.classList.contains("oscar-has-pages");
+    body.classList.toggle("oscar-has-pages", !!up);
+    // The canvas measures itself once; tell it the room it has changed.
+    if (had !== !!up && typeof editor.refresh === "function") editor.refresh();
+  }
+
+  if (typeof editor.on === "function") {
+    editor.on("page:select page:add page:remove page:update", render);
+  }
+
+  return {
+    render: render,
+    show: function () {
+      showing = enabled;
+      render();
+    },
+    hide: function () {
+      showing = false;
+      render();
+    },
+  };
+}
+
+module.exports = {
+  pageEntries: pageEntries,
+  currentPageId: currentPageId,
+  reselect: reselect,
+  createLock: createLock,
+  nameTaken: nameTaken,
+  freePageName: freePageName,
+  releaseHeld: releaseHeld,
+  widgetWindows: widgetWindows,
+  renderTabs: renderTabs,
+  pageTabs: pageTabs,
+};
+
+},{"../../lib/features":6,"../../lib/project-format":13}],48:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -8566,7 +15594,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],42:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 /*!
  * jquery-confirm v3.3.4 (http://craftpip.github.io/jquery-confirm/)
  * Author: Boniface Pereira
@@ -8577,7 +15605,7 @@ process.umask = function() { return 0; };
  * Licensed under MIT (https://github.com/craftpip/jquery-confirm/blob/master/LICENSE)
  */
 (function(factory){if(typeof define==="function"&&define.amd){define(["jquery"],factory);}else{if(typeof module==="object"&&module.exports){module.exports=function(root,jQuery){if(jQuery===undefined){if(typeof window!=="undefined"){jQuery=require("jquery");}else{jQuery=require("jquery")(root);}}factory(jQuery);return jQuery;};}else{factory(jQuery);}}}(function($){var w=window;$.fn.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}$(this).each(function(){var $this=$(this);if($this.attr("jc-attached")){console.warn("jConfirm has already been attached to this element ",$this[0]);return;}$this.on("click",function(e){e.preventDefault();var jcOption=$.extend({},options);if($this.attr("data-title")){jcOption.title=$this.attr("data-title");}if($this.attr("data-content")){jcOption.content=$this.attr("data-content");}if(typeof jcOption.buttons==="undefined"){jcOption.buttons={};}jcOption["$target"]=$this;if($this.attr("href")&&Object.keys(jcOption.buttons).length===0){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];jcOption.buttons=buttons;jcOption.buttons[firstBtn].action=function(){location.href=$this.attr("href");};}jcOption.closeIcon=false;var instance=$.confirm(jcOption);});$this.attr("jc-attached",true);});return $(this);};$.confirm=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});options.buttons=buttons;}return w.jconfirm(options);};$.alert=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false};}var putDefaultButtons=!(options.buttons===false);if(typeof options.buttons!=="object"){options.buttons={};}if(Object.keys(options.buttons).length===0&&putDefaultButtons){var buttons=$.extend(true,{},w.jconfirm.pluginDefaults.defaultButtons,(w.jconfirm.defaults||{}).defaultButtons||{});var firstBtn=Object.keys(buttons)[0];options.buttons[firstBtn]=buttons[firstBtn];}return w.jconfirm(options);};$.dialog=function(options,option2){if(typeof options==="undefined"){options={};}if(typeof options==="string"){options={content:options,title:(option2)?option2:false,closeIcon:function(){}};}options.buttons={};if(typeof options.closeIcon==="undefined"){options.closeIcon=function(){};}options.confirmKeys=[13];return w.jconfirm(options);};w.jconfirm=function(options){if(typeof options==="undefined"){options={};}var pluginOptions=$.extend(true,{},w.jconfirm.pluginDefaults);if(w.jconfirm.defaults){pluginOptions=$.extend(true,pluginOptions,w.jconfirm.defaults);}pluginOptions=$.extend(true,{},pluginOptions,options);var instance=new w.Jconfirm(pluginOptions);w.jconfirm.instances.push(instance);return instance;};w.Jconfirm=function(options){$.extend(this,options);this._init();};w.Jconfirm.prototype={_init:function(){var that=this;if(!w.jconfirm.instances.length){w.jconfirm.lastFocused=$("body").find(":focus");}this._id=Math.round(Math.random()*99999);this.contentParsed=$(document.createElement("div"));if(!this.lazyOpen){setTimeout(function(){that.open();},0);}},_buildHTML:function(){var that=this;this._parseAnimation(this.animation,"o");this._parseAnimation(this.closeAnimation,"c");this._parseBgDismissAnimation(this.backgroundDismissAnimation);this._parseColumnClass(this.columnClass);this._parseTheme(this.theme);this._parseType(this.type);var template=$(this.template);template.find(".jconfirm-box").addClass(this.animationParsed).addClass(this.backgroundDismissAnimationParsed).addClass(this.typeParsed);if(this.typeAnimated){template.find(".jconfirm-box").addClass("jconfirm-type-animated");}if(this.useBootstrap){template.find(".jc-bs3-row").addClass(this.bootstrapClasses.row);template.find(".jc-bs3-row").addClass("justify-content-md-center justify-content-sm-center justify-content-xs-center justify-content-lg-center");template.find(".jconfirm-box-container").addClass(this.columnClassParsed);if(this.containerFluid){template.find(".jc-bs3-container").addClass(this.bootstrapClasses.containerFluid);}else{template.find(".jc-bs3-container").addClass(this.bootstrapClasses.container);}}else{template.find(".jconfirm-box").css("width",this.boxWidth);}if(this.titleClass){template.find(".jconfirm-title-c").addClass(this.titleClass);}template.addClass(this.themeParsed);var ariaLabel="jconfirm-box"+this._id;template.find(".jconfirm-box").attr("aria-labelledby",ariaLabel).attr("tabindex",-1);template.find(".jconfirm-content").attr("id",ariaLabel);if(this.bgOpacity!==null){template.find(".jconfirm-bg").css("opacity",this.bgOpacity);}if(this.rtl){template.addClass("jconfirm-rtl");}this.$el=template.appendTo(this.container);this.$jconfirmBoxContainer=this.$el.find(".jconfirm-box-container");this.$jconfirmBox=this.$body=this.$el.find(".jconfirm-box");this.$jconfirmBg=this.$el.find(".jconfirm-bg");this.$title=this.$el.find(".jconfirm-title");this.$titleContainer=this.$el.find(".jconfirm-title-c");this.$content=this.$el.find("div.jconfirm-content");this.$contentPane=this.$el.find(".jconfirm-content-pane");this.$icon=this.$el.find(".jconfirm-icon-c");this.$closeIcon=this.$el.find(".jconfirm-closeIcon");this.$holder=this.$el.find(".jconfirm-holder");this.$btnc=this.$el.find(".jconfirm-buttons");this.$scrollPane=this.$el.find(".jconfirm-scrollpane");that.setStartingPoint();this._contentReady=$.Deferred();this._modalReady=$.Deferred();this.$holder.css({"padding-top":this.offsetTop,"padding-bottom":this.offsetBottom,});this.setTitle();this.setIcon();this._setButtons();this._parseContent();this.initDraggable();if(this.isAjax){this.showLoading(false);}$.when(this._contentReady,this._modalReady).then(function(){if(that.isAjaxLoading){setTimeout(function(){that.isAjaxLoading=false;that.setContent();that.setTitle();that.setIcon();setTimeout(function(){that.hideLoading(false);that._updateContentMaxHeight();},100);if(typeof that.onContentReady==="function"){that.onContentReady();}},50);}else{that._updateContentMaxHeight();that.setTitle();that.setIcon();if(typeof that.onContentReady==="function"){that.onContentReady();}}if(that.autoClose){that._startCountDown();}}).then(function(){that._watchContent();});if(this.animation==="none"){this.animationSpeed=1;this.animationBounce=1;}this.$body.css(this._getCSS(this.animationSpeed,this.animationBounce));this.$contentPane.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBg.css(this._getCSS(this.animationSpeed,1));this.$jconfirmBoxContainer.css(this._getCSS(this.animationSpeed,1));},_typePrefix:"jconfirm-type-",typeParsed:"",_parseType:function(type){this.typeParsed=this._typePrefix+type;},setType:function(type){var oldClass=this.typeParsed;this._parseType(type);this.$jconfirmBox.removeClass(oldClass).addClass(this.typeParsed);},themeParsed:"",_themePrefix:"jconfirm-",setTheme:function(theme){var previous=this.theme;this.theme=theme||this.theme;this._parseTheme(this.theme);if(previous){this.$el.removeClass(previous);}this.$el.addClass(this.themeParsed);this.theme=theme;},_parseTheme:function(theme){var that=this;theme=theme.split(",");$.each(theme,function(k,a){if(a.indexOf(that._themePrefix)===-1){theme[k]=that._themePrefix+$.trim(a);}});this.themeParsed=theme.join(" ").toLowerCase();},backgroundDismissAnimationParsed:"",_bgDismissPrefix:"jconfirm-hilight-",_parseBgDismissAnimation:function(bgDismissAnimation){var animation=bgDismissAnimation.split(",");var that=this;$.each(animation,function(k,a){if(a.indexOf(that._bgDismissPrefix)===-1){animation[k]=that._bgDismissPrefix+$.trim(a);}});this.backgroundDismissAnimationParsed=animation.join(" ").toLowerCase();},animationParsed:"",closeAnimationParsed:"",_animationPrefix:"jconfirm-animation-",setAnimation:function(animation){this.animation=animation||this.animation;this._parseAnimation(this.animation,"o");},_parseAnimation:function(animation,which){which=which||"o";var animations=animation.split(",");var that=this;$.each(animations,function(k,a){if(a.indexOf(that._animationPrefix)===-1){animations[k]=that._animationPrefix+$.trim(a);}});var a_string=animations.join(" ").toLowerCase();if(which==="o"){this.animationParsed=a_string;}else{this.closeAnimationParsed=a_string;}return a_string;},setCloseAnimation:function(closeAnimation){this.closeAnimation=closeAnimation||this.closeAnimation;this._parseAnimation(this.closeAnimation,"c");},setAnimationSpeed:function(speed){this.animationSpeed=speed||this.animationSpeed;},columnClassParsed:"",setColumnClass:function(colClass){if(!this.useBootstrap){console.warn("cannot set columnClass, useBootstrap is set to false");return;}this.columnClass=colClass||this.columnClass;this._parseColumnClass(this.columnClass);this.$jconfirmBoxContainer.addClass(this.columnClassParsed);},_updateContentMaxHeight:function(){var height=$(window).height()-(this.$jconfirmBox.outerHeight()-this.$contentPane.outerHeight())-(this.offsetTop+this.offsetBottom);this.$contentPane.css({"max-height":height+"px"});},setBoxWidth:function(width){if(this.useBootstrap){console.warn("cannot set boxWidth, useBootstrap is set to true");return;}this.boxWidth=width;this.$jconfirmBox.css("width",width);},_parseColumnClass:function(colClass){colClass=colClass.toLowerCase();var p;switch(colClass){case"xl":case"xlarge":p="col-md-12";break;case"l":case"large":p="col-md-8 col-md-offset-2";break;case"m":case"medium":p="col-md-6 col-md-offset-3";break;case"s":case"small":p="col-md-4 col-md-offset-4";break;case"xs":case"xsmall":p="col-md-2 col-md-offset-5";break;default:p=colClass;}this.columnClassParsed=p;},initDraggable:function(){var that=this;var $t=this.$titleContainer;this.resetDrag();if(this.draggable){$t.on("mousedown",function(e){$t.addClass("jconfirm-hand");that.mouseX=e.clientX;that.mouseY=e.clientY;that.isDrag=true;});$(window).on("mousemove."+this._id,function(e){if(that.isDrag){that.movingX=e.clientX-that.mouseX+that.initialX;that.movingY=e.clientY-that.mouseY+that.initialY;that.setDrag();}});$(window).on("mouseup."+this._id,function(){$t.removeClass("jconfirm-hand");if(that.isDrag){that.isDrag=false;that.initialX=that.movingX;that.initialY=that.movingY;}});}},resetDrag:function(){this.isDrag=false;this.initialX=0;this.initialY=0;this.movingX=0;this.movingY=0;this.mouseX=0;this.mouseY=0;this.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");},setDrag:function(){if(!this.draggable){return;}this.alignMiddle=false;var boxWidth=this.$jconfirmBox.outerWidth();var boxHeight=this.$jconfirmBox.outerHeight();var windowWidth=$(window).width();var windowHeight=$(window).height();var that=this;var dragUpdate=1;if(that.movingX%dragUpdate===0||that.movingY%dragUpdate===0){if(that.dragWindowBorder){var leftDistance=(windowWidth/2)-boxWidth/2;var topDistance=(windowHeight/2)-boxHeight/2;topDistance-=that.dragWindowGap;leftDistance-=that.dragWindowGap;if(leftDistance+that.movingX<0){that.movingX=-leftDistance;}else{if(leftDistance-that.movingX<0){that.movingX=leftDistance;}}if(topDistance+that.movingY<0){that.movingY=-topDistance;}else{if(topDistance-that.movingY<0){that.movingY=topDistance;}}}that.$jconfirmBoxContainer.css("transform","translate("+that.movingX+"px, "+that.movingY+"px)");}},_scrollTop:function(){if(typeof pageYOffset!=="undefined"){return pageYOffset;}else{var B=document.body;var D=document.documentElement;D=(D.clientHeight)?D:B;return D.scrollTop;}},_watchContent:function(){var that=this;if(this._timer){clearInterval(this._timer);}var prevContentHeight=0;this._timer=setInterval(function(){if(that.smoothContent){var contentHeight=that.$content.outerHeight()||0;if(contentHeight!==prevContentHeight){prevContentHeight=contentHeight;}var wh=$(window).height();var total=that.offsetTop+that.offsetBottom+that.$jconfirmBox.height()-that.$contentPane.height()+that.$content.height();if(total<wh){that.$contentPane.addClass("no-scroll");}else{that.$contentPane.removeClass("no-scroll");}}},this.watchInterval);},_overflowClass:"jconfirm-overflow",_hilightAnimating:false,highlight:function(){this.hiLightModal();},hiLightModal:function(){var that=this;if(this._hilightAnimating){return;}that.$body.addClass("hilight");var duration=parseFloat(that.$body.css("animation-duration"))||2;this._hilightAnimating=true;setTimeout(function(){that._hilightAnimating=false;that.$body.removeClass("hilight");},duration*1000);},_bindEvents:function(){var that=this;this.boxClicked=false;this.$scrollPane.click(function(e){if(!that.boxClicked){var buttonName=false;var shouldClose=false;var str;if(typeof that.backgroundDismiss==="function"){str=that.backgroundDismiss();}else{str=that.backgroundDismiss;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}else{that.hiLightModal();}}that.boxClicked=false;});this.$jconfirmBox.click(function(e){that.boxClicked=true;});var isKeyDown=false;$(window).on("jcKeyDown."+that._id,function(e){if(!isKeyDown){isKeyDown=true;}});$(window).on("keyup."+that._id,function(e){if(isKeyDown){that.reactOnKey(e);isKeyDown=false;}});$(window).on("resize."+this._id,function(){that._updateContentMaxHeight();setTimeout(function(){that.resetDrag();},100);});},_cubic_bezier:"0.36, 0.55, 0.19",_getCSS:function(speed,bounce){return{"-webkit-transition-duration":speed/1000+"s","transition-duration":speed/1000+"s","-webkit-transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")","transition-timing-function":"cubic-bezier("+this._cubic_bezier+", "+bounce+")"};},_setButtons:function(){var that=this;var total_buttons=0;if(typeof this.buttons!=="object"){this.buttons={};}$.each(this.buttons,function(key,button){total_buttons+=1;if(typeof button==="function"){that.buttons[key]=button={action:button};}that.buttons[key].text=button.text||key;that.buttons[key].btnClass=button.btnClass||"btn-default";that.buttons[key].action=button.action||function(){};that.buttons[key].keys=button.keys||[];that.buttons[key].isHidden=button.isHidden||false;that.buttons[key].isDisabled=button.isDisabled||false;$.each(that.buttons[key].keys,function(i,a){that.buttons[key].keys[i]=a.toLowerCase();});var button_element=$('<button type="button" class="btn"></button>').html(that.buttons[key].text).addClass(that.buttons[key].btnClass).prop("disabled",that.buttons[key].isDisabled).css("display",that.buttons[key].isHidden?"none":"").click(function(e){e.preventDefault();var res=that.buttons[key].action.apply(that,[that.buttons[key]]);that.onAction.apply(that,[key,that.buttons[key]]);that._stopCountDown();if(typeof res==="undefined"||res){that.close();}});that.buttons[key].el=button_element;that.buttons[key].setText=function(text){button_element.html(text);};that.buttons[key].addClass=function(className){button_element.addClass(className);};that.buttons[key].removeClass=function(className){button_element.removeClass(className);};that.buttons[key].disable=function(){that.buttons[key].isDisabled=true;button_element.prop("disabled",true);};that.buttons[key].enable=function(){that.buttons[key].isDisabled=false;button_element.prop("disabled",false);};that.buttons[key].show=function(){that.buttons[key].isHidden=false;button_element.css("display","");};that.buttons[key].hide=function(){that.buttons[key].isHidden=true;button_element.css("display","none");};that["$_"+key]=that["$$"+key]=button_element;that.$btnc.append(button_element);});if(total_buttons===0){this.$btnc.hide();}if(this.closeIcon===null&&total_buttons===0){this.closeIcon=true;}if(this.closeIcon){if(this.closeIconClass){var closeHtml='<i class="'+this.closeIconClass+'"></i>';this.$closeIcon.html(closeHtml);}this.$closeIcon.click(function(e){e.preventDefault();var buttonName=false;var shouldClose=false;var str;if(typeof that.closeIcon==="function"){str=that.closeIcon();}else{str=that.closeIcon;}if(typeof str==="string"&&typeof that.buttons[str]!=="undefined"){buttonName=str;shouldClose=false;}else{if(typeof str==="undefined"||!!(str)===true){shouldClose=true;}else{shouldClose=false;}}if(buttonName){var btnResponse=that.buttons[buttonName].action.apply(that);shouldClose=(typeof btnResponse==="undefined")||!!(btnResponse);}if(shouldClose){that.close();}});this.$closeIcon.show();}else{this.$closeIcon.hide();}},setTitle:function(string,force){force=force||false;if(typeof string!=="undefined"){if(typeof string==="string"){this.title=string;}else{if(typeof string==="function"){if(typeof string.promise==="function"){console.error("Promise was returned from title function, this is not supported.");}var response=string();if(typeof response==="string"){this.title=response;}else{this.title=false;}}else{this.title=false;}}}if(this.isAjaxLoading&&!force){return;}this.$title.html(this.title||"");this.updateTitleContainer();},setIcon:function(iconClass,force){force=force||false;if(typeof iconClass!=="undefined"){if(typeof iconClass==="string"){this.icon=iconClass;}else{if(typeof iconClass==="function"){var response=iconClass();if(typeof response==="string"){this.icon=response;}else{this.icon=false;}}else{this.icon=false;}}}if(this.isAjaxLoading&&!force){return;}this.$icon.html(this.icon?'<i class="'+this.icon+'"></i>':"");this.updateTitleContainer();},updateTitleContainer:function(){if(!this.title&&!this.icon){this.$titleContainer.hide();}else{this.$titleContainer.show();}},setContentPrepend:function(content,force){if(!content){return;}this.contentParsed.prepend(content);},setContentAppend:function(content){if(!content){return;}this.contentParsed.append(content);},setContent:function(content,force){force=!!force;var that=this;if(content){this.contentParsed.html("").append(content);}if(this.isAjaxLoading&&!force){return;}this.$content.html("");this.$content.append(this.contentParsed);setTimeout(function(){that.$body.find("input[autofocus]:visible:first").focus();},100);},loadingSpinner:false,showLoading:function(disableButtons){this.loadingSpinner=true;this.$jconfirmBox.addClass("loading");if(disableButtons){this.$btnc.find("button").prop("disabled",true);}},hideLoading:function(enableButtons){this.loadingSpinner=false;this.$jconfirmBox.removeClass("loading");if(enableButtons){this.$btnc.find("button").prop("disabled",false);}},ajaxResponse:false,contentParsed:"",isAjax:false,isAjaxLoading:false,_parseContent:function(){var that=this;var e="&nbsp;";if(typeof this.content==="function"){var res=this.content.apply(this);if(typeof res==="string"){this.content=res;}else{if(typeof res==="object"&&typeof res.always==="function"){this.isAjax=true;this.isAjaxLoading=true;res.always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});this.content=e;}else{this.content=e;}}}if(typeof this.content==="string"&&this.content.substr(0,4).toLowerCase()==="url:"){this.isAjax=true;this.isAjaxLoading=true;var u=this.content.substring(4,this.content.length);$.get(u).done(function(html){that.contentParsed.html(html);}).always(function(data,status,xhr){that.ajaxResponse={data:data,status:status,xhr:xhr};that._contentReady.resolve(data,status,xhr);if(typeof that.contentLoaded==="function"){that.contentLoaded(data,status,xhr);}});}if(!this.content){this.content=e;}if(!this.isAjax){this.contentParsed.html(this.content);this.setContent();that._contentReady.resolve();}},_stopCountDown:function(){clearInterval(this.autoCloseInterval);if(this.$cd){this.$cd.remove();}},_startCountDown:function(){var that=this;var opt=this.autoClose.split("|");if(opt.length!==2){console.error("Invalid option for autoClose. example 'close|10000'");return false;}var button_key=opt[0];var time=parseInt(opt[1]);if(typeof this.buttons[button_key]==="undefined"){console.error("Invalid button key '"+button_key+"' for autoClose");return false;}var seconds=Math.ceil(time/1000);this.$cd=$('<span class="countdown"> ('+seconds+")</span>").appendTo(this["$_"+button_key]);this.autoCloseInterval=setInterval(function(){that.$cd.html(" ("+(seconds-=1)+") ");if(seconds<=0){that["$$"+button_key].trigger("click");that._stopCountDown();}},1000);},_getKey:function(key){switch(key){case 192:return"tilde";case 13:return"enter";case 16:return"shift";case 9:return"tab";case 20:return"capslock";case 17:return"ctrl";case 91:return"win";case 18:return"alt";case 27:return"esc";case 32:return"space";}var initial=String.fromCharCode(key);if(/^[A-z0-9]+$/.test(initial)){return initial.toLowerCase();}else{return false;}},reactOnKey:function(e){var that=this;var a=$(".jconfirm");if(a.eq(a.length-1)[0]!==this.$el[0]){return false;}var key=e.which;if(this.$content.find(":input").is(":focus")&&/13|32/.test(key)){return false;}var keyChar=this._getKey(key);if(keyChar==="esc"&&this.escapeKey){if(this.escapeKey===true){this.$scrollPane.trigger("click");}else{if(typeof this.escapeKey==="string"||typeof this.escapeKey==="function"){var buttonKey;if(typeof this.escapeKey==="function"){buttonKey=this.escapeKey();}else{buttonKey=this.escapeKey;}if(buttonKey){if(typeof this.buttons[buttonKey]==="undefined"){console.warn("Invalid escapeKey, no buttons found with key "+buttonKey);}else{this["$_"+buttonKey].trigger("click");}}}}}$.each(this.buttons,function(key,button){if(button.keys.indexOf(keyChar)!==-1){that["$_"+key].trigger("click");}});},setDialogCenter:function(){console.info("setDialogCenter is deprecated, dialogs are centered with CSS3 tables");},_unwatchContent:function(){clearInterval(this._timer);},close:function(onClosePayload){var that=this;if(typeof this.onClose==="function"){this.onClose(onClosePayload);}this._unwatchContent();$(window).unbind("resize."+this._id);$(window).unbind("keyup."+this._id);$(window).unbind("jcKeyDown."+this._id);if(this.draggable){$(window).unbind("mousemove."+this._id);$(window).unbind("mouseup."+this._id);this.$titleContainer.unbind("mousedown");}that.$el.removeClass(that.loadedClass);$("body").removeClass("jconfirm-no-scroll-"+that._id);that.$jconfirmBoxContainer.removeClass("jconfirm-no-transition");setTimeout(function(){that.$body.addClass(that.closeAnimationParsed);that.$jconfirmBg.addClass("jconfirm-bg-h");var closeTimer=(that.closeAnimation==="none")?1:that.animationSpeed;setTimeout(function(){that.$el.remove();var l=w.jconfirm.instances;var i=w.jconfirm.instances.length-1;for(i;i>=0;i--){if(w.jconfirm.instances[i]._id===that._id){w.jconfirm.instances.splice(i,1);}}if(!w.jconfirm.instances.length){if(that.scrollToPreviousElement&&w.jconfirm.lastFocused&&w.jconfirm.lastFocused.length&&$.contains(document,w.jconfirm.lastFocused[0])){var $lf=w.jconfirm.lastFocused;if(that.scrollToPreviousElementAnimate){var st=$(window).scrollTop();var ot=w.jconfirm.lastFocused.offset().top;var wh=$(window).height();if(!(ot>st&&ot<(st+wh))){var scrollTo=(ot-Math.round((wh/3)));$("html, body").animate({scrollTop:scrollTo},that.animationSpeed,"swing",function(){$lf.focus();});}else{$lf.focus();}}else{$lf.focus();}w.jconfirm.lastFocused=false;}}if(typeof that.onDestroy==="function"){that.onDestroy();}},closeTimer*0.4);},50);return true;},open:function(){if(this.isOpen()){return false;}this._buildHTML();this._bindEvents();this._open();return true;},setStartingPoint:function(){var el=false;if(this.animateFromElement!==true&&this.animateFromElement){el=this.animateFromElement;w.jconfirm.lastClicked=false;}else{if(w.jconfirm.lastClicked&&this.animateFromElement===true){el=w.jconfirm.lastClicked;w.jconfirm.lastClicked=false;}else{return false;}}if(!el){return false;}var offset=el.offset();var iTop=el.outerHeight()/2;var iLeft=el.outerWidth()/2;iTop-=this.$jconfirmBox.outerHeight()/2;iLeft-=this.$jconfirmBox.outerWidth()/2;var sourceTop=offset.top+iTop;sourceTop=sourceTop-this._scrollTop();var sourceLeft=offset.left+iLeft;var wh=$(window).height()/2;var ww=$(window).width()/2;var targetH=wh-this.$jconfirmBox.outerHeight()/2;var targetW=ww-this.$jconfirmBox.outerWidth()/2;sourceTop-=targetH;sourceLeft-=targetW;if(Math.abs(sourceTop)>wh||Math.abs(sourceLeft)>ww){return false;}this.$jconfirmBoxContainer.css("transform","translate("+sourceLeft+"px, "+sourceTop+"px)");},_open:function(){var that=this;if(typeof that.onOpenBefore==="function"){that.onOpenBefore();}this.$body.removeClass(this.animationParsed);this.$jconfirmBg.removeClass("jconfirm-bg-h");this.$body.focus();that.$jconfirmBoxContainer.css("transform","translate("+0+"px, "+0+"px)");setTimeout(function(){that.$body.css(that._getCSS(that.animationSpeed,1));that.$body.css({"transition-property":that.$body.css("transition-property")+", margin"});that.$jconfirmBoxContainer.addClass("jconfirm-no-transition");that._modalReady.resolve();if(typeof that.onOpen==="function"){that.onOpen();}that.$el.addClass(that.loadedClass);},this.animationSpeed);},loadedClass:"jconfirm-open",isClosed:function(){return !this.$el||this.$el.parent().length===0;},isOpen:function(){return !this.isClosed();},toggle:function(){if(!this.isOpen()){this.open();}else{this.close();}}};w.jconfirm.instances=[];w.jconfirm.lastFocused=false;w.jconfirm.pluginDefaults={template:'<div class="jconfirm"><div class="jconfirm-bg jconfirm-bg-h"></div><div class="jconfirm-scrollpane"><div class="jconfirm-row"><div class="jconfirm-cell"><div class="jconfirm-holder"><div class="jc-bs3-container"><div class="jc-bs3-row"><div class="jconfirm-box-container jconfirm-animated"><div class="jconfirm-box" role="dialog" aria-labelledby="labelled" tabindex="-1"><div class="jconfirm-closeIcon">&times;</div><div class="jconfirm-title-c"><span class="jconfirm-icon-c"></span><span class="jconfirm-title"></span></div><div class="jconfirm-content-pane"><div class="jconfirm-content"></div></div><div class="jconfirm-buttons"></div><div class="jconfirm-clear"></div></div></div></div></div></div></div></div></div></div>',title:"Hello",titleClass:"",type:"default",typeAnimated:true,draggable:true,dragWindowGap:15,dragWindowBorder:true,animateFromElement:true,alignMiddle:true,smoothContent:true,content:"Are you sure to continue?",buttons:{},defaultButtons:{ok:{action:function(){}},close:{action:function(){}}},contentLoaded:function(){},icon:"",lazyOpen:false,bgOpacity:null,theme:"light",animation:"scale",closeAnimation:"scale",animationSpeed:400,animationBounce:1,escapeKey:true,rtl:false,container:"body",containerFluid:false,backgroundDismiss:false,backgroundDismissAnimation:"shake",autoClose:false,closeIcon:null,closeIconClass:false,watchInterval:100,columnClass:"col-md-4 col-md-offset-4 col-sm-6 col-sm-offset-3 col-xs-10 col-xs-offset-1",boxWidth:"50%",scrollToPreviousElement:true,scrollToPreviousElementAnimate:true,useBootstrap:true,offsetTop:40,offsetBottom:40,bootstrapClasses:{container:"container",containerFluid:"container-fluid",row:"row"},onContentReady:function(){},onOpenBefore:function(){},onOpen:function(){},onClose:function(){},onDestroy:function(){},onAction:function(){}};var keyDown=false;$(window).on("keydown",function(e){if(!keyDown){var $target=$(e.target);var pass=false;if($target.closest(".jconfirm-box").length){pass=true;}if(pass){$(window).trigger("jcKeyDown");}keyDown=true;}});$(window).on("keyup",function(){keyDown=false;});w.jconfirm.lastClicked=false;$(document).on("mousedown","button, a, [jc-source]",function(){w.jconfirm.lastClicked=$(this);});}));
-},{"jquery":43}],43:[function(require,module,exports){
+},{"jquery":50}],50:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -19295,7 +26323,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],44:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -21594,6939 +28622,4 @@ var qrcode = function() {
     return qrcode;
 }));
 
-},{}],45:[function(require,module,exports){
-/**
- * The GrapesJS adapter: the only file in OSCAR that knows what editor we use.
- *
- * It translates a neutral widget definition (lib/widgets/) into the things
- * GrapesJS wants -- a component type, a trait list, a block -- and supplies the
- * `ctx` the widget's behaviour runs against. Swapping editors means rewriting
- * this file; the widgets themselves do not change.
- */
-
-var { WIDGETS } = require("../../../lib/widgets");
-var { sendsDmx, sendsMidi, upgradeRouting, sectionStatus, oscEndpoint, SECTIONS } = require("../../../lib/widgets/fields");
-var features = require("../../../lib/features");
-var { isListening } = require("../../../lib/midi/spec");
-var { midiSource } = require("../../../lib/widgets/midi-source");
-var { exportAttributes } = require("../../../lib/export/config");
-
-/**
- * The collapsible section a field is drawn in. GrapesJS draws every trait
- * that has a category above every trait that has none, so the widget's own
- * settings get a section too -- first, because Enabled is the first field --
- * rather than ending up underneath the protocols.
- *
- * A protocol's section starts open when the widget uses that protocol. The
- * DMX section of a plain OSC button is one closed line, which keeps its panel
- * as short as it was before DMX existed.
- */
-var WIDGET_SECTION = { id: "widget", label: "Widget" };
-var SECTION_ATTRIBUTE = "data-oscar-section";
-
-function categoryOf(field, config) {
-  var section = null;
-  SECTIONS.forEach(function (candidate) {
-    if (candidate.id === field.section) section = candidate;
-  });
-  if (!section) return { id: WIDGET_SECTION.id, label: WIDGET_SECTION.label, open: true };
-  // A protocol that is off starts folded away, so the panel of a widget that
-  // only speaks OSC stays as short as it was before the others existed.
-  var open = section.id === "dmx" ? sendsDmx(config || {}) : section.id === "midi" ? sendsMidi(config || {}) || isListening(config || {}) : true;
-  // The attribute lands on the section's element, which is how the status
-  // light finds it: by what it is, not by what its title happens to say.
-  var attributes = {};
-  attributes[SECTION_ATTRIBUTE] = section.id;
-  return { id: section.id, label: section.label, open: open, attributes: attributes };
-}
-
-/** Neutral field descriptor -> GrapesJS trait. `config` decides which sections start open. */
-function toTrait(field, config) {
-  var trait = {
-    // Every setting is a component property rather than an HTML attribute.
-    // Attributes would end up in the exported markup, where they are noise at
-    // best and a stale copy of the truth at worst.
-    changeProp: true,
-    name: field.key,
-    label: field.label,
-    type: field.type,
-    category: categoryOf(field, config),
-  };
-
-  if (field.type === "select") {
-    // GrapesJS wants { id, name }, which is the shape lib/widgets uses too.
-    trait.options = field.source ? choicesFor(field, config && config[field.key]) : field.options;
-  }
-  if (field.placeholder) trait.placeholder = field.placeholder;
-  // Shown by the browser on hover. decoratePanel() copies it onto the label
-  // too, which GrapesJS titles with the label's own text.
-  // The field's name goes along so the panel can add to the hints that say
-  // where data goes (see sectionLights).
-  if (field.hint) trait.attributes = { title: field.hint, "data-oscar-field": field.key };
-  if (field.min !== undefined) trait.min = field.min;
-  if (field.max !== undefined) trait.max = field.max;
-  if (field.step !== undefined) trait.step = field.step;
-
-  return trait;
-}
-
-/** The whole panel for a widget in a given state. */
-function traitsFor(definition, config) {
-  return visibleFields(definition, config).map(function (field) {
-    return toTrait(field, config);
-  });
-}
-
-/** The fields a trait list holds, in order, as one comparable string. */
-function traitKeys(traits) {
-  if (!traits || typeof traits.map !== "function") return null;
-  return traits
-    .map(function (trait) {
-      // A GrapesJS trait is a model once the component has built it, and a
-      // plain descriptor before. The label rides along because one key can
-      // wear two faces -- DMX's Node and Interface -- and a change of face
-      // with the same keys still has to redraw the panel.
-      var read = typeof trait.get === "function";
-      var name = trait.key || (read ? trait.get("name") : trait.name);
-      var label = read ? trait.get("label") : trait.label;
-      return name + "=" + (label || "");
-    })
-    .join(" ");
-}
-
-/** Read every configured value off a component, for validators that need context. */
-function configOf(model, definition) {
-  var config = {};
-  for (var key in definition.defaults) {
-    if (Object.prototype.hasOwnProperty.call(definition.defaults, key)) {
-      config[key] = model.get(key);
-    }
-  }
-  return config;
-}
-
-/**
- * Which settings switch each section's directions on. A section of the panel
- * opens on its Data in and Data out checkboxes alone; every field tagged with
- * `dir` (lib/widgets/fields.js) appears only while its direction is on, so an
- * Out port is not on screen when nothing goes out.
- */
-var SECTION_DIRECTIONS = {
-  osc: { in: "listen", out: "oscEnabled" },
-  midi: { in: "midiListen", out: "midiEnabled" },
-  dmx: { out: "dmxEnabled" },
-};
-
-function directionOn(config, section, dir) {
-  if (dir === "both") return directionOn(config, section, "in") || directionOn(config, section, "out");
-  var key = (SECTION_DIRECTIONS[section] || {})[dir];
-  var value = key ? config[key] : undefined;
-  return value === true || value === "true";
-}
-
-/**
- * The fields that apply to a widget as it is currently configured.
- *
- * A field may carry `dir` -- shown while its section's direction is on --
- * and `showIf: { key, in: [...] }` -- shown while that setting holds one of
- * the listed values (lib/widgets/fields.js). Both are data rather than
- * callbacks so this file can also work out which settings it has to watch
- * for the panel to keep up.
- */
-function visibleFields(definition, config) {
-  return definition.fields.filter(function (field) {
-    // A protocol that is switched off (lib/features.js) has no section, and
-    // with no serial there is no Via to choose and no door to pick with From:
-    // everything is the network.
-    if (field.section === "midi" && !features.MIDI) return false;
-    if ((field.key === "oscVia" || field.key === "oscListenFrom") && !features.SERIAL) return false;
-    if (field.dir && !directionOn(config, field.section, field.dir)) return false;
-    var rule = field.showIf;
-    return !rule || rule.in.indexOf(config[rule.key]) !== -1;
-  });
-}
-
-/** The settings some field's visibility depends on. */
-function revealKeys(definition) {
-  var keys = [];
-  var add = function (key) {
-    if (key && keys.indexOf(key) === -1) keys.push(key);
-  };
-  definition.fields.forEach(function (field) {
-    if (field.showIf) add(field.showIf.key);
-    if (field.dir) {
-      var section = SECTION_DIRECTIONS[field.section] || {};
-      add(section.in);
-      add(section.out);
-    }
-  });
-  return keys;
-}
-
-function changeEvent(keys) {
-  return keys
-    .map(function (key) {
-      return "change:" + key;
-    })
-    .join(" ");
-}
-
-/**
- * Which components are on their way out because someone deleted them.
- *
- * GrapesJS removes a widget's view for more reasons than deletion: opening a
- * project, and the preview page taking a push, tear the whole surface down
- * and build the new one (an undo does the same). Releasing DMX on every one
- * of those would black the stage out on "Push to preview" while a tablet is
- * mid-show. Only an actual deletion -- the trash icon, the Delete key, a
- * script calling remove() -- goes through Component.remove(), which announces
- * itself with component:remove:before; a load resets the wrapper's children
- * and never does -- what it does remove that way is the wrapper itself, the
- * page's body, and the whole surface going is not a widget being deleted.
- * A move is a remove-and-append flagged `temporary`, so it does not count
- * either. The set is per editor and filled once, however many widgets
- * register against it.
- */
-// The widget types that can hold DMX channels, by component type name.
-var DMX_TYPES = {};
-WIDGETS.forEach(function (definition) {
-  if (definition.dmx) DMX_TYPES[definition.name] = true;
-});
-
-var deletionsByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
-
-function deletionsOf(editor) {
-  var marked = deletionsByEditor && deletionsByEditor.get(editor);
-  if (marked) return marked;
-
-  marked = new WeakSet();
-  if (deletionsByEditor) deletionsByEditor.set(editor, marked);
-
-  // A host without events cannot tell a deletion from a reload, and holding
-  // the rig is the safe answer to not knowing.
-  if (typeof editor.on !== "function") return marked;
-
-  // Deleting a whole page is a deletion of everything on it, and GrapesJS
-  // announces it differently: the only component:remove:before is for the
-  // page's wrapper, which is rightly ignored below, and a page that is not
-  // showing has no views whose removal could hand anything back. So the
-  // channels are given up here, by id, before the page's components are gone
-  // (by page:remove they already are). A widget that holds no channels costs
-  // a message the server answers with "not known".
-  editor.on("page:remove:before", function (page) {
-    if (!page || typeof page.getMainComponent !== "function" || !editor.stopDMX) return;
-    var main = page.getMainComponent();
-    if (!main || typeof main.onAll !== "function") return;
-    main.onAll(function (model) {
-      if (DMX_TYPES[model.get("type")]) editor.stopDMX(model.getId());
-    });
-  });
-
-  editor.on("component:remove:before", function (component, remove, opts) {
-    if (!component || (opts && opts.temporary)) return;
-    if (typeof component.get === "function" && component.get("type") === "wrapper") return;
-    var mark = function (model) {
-      marked.add(model);
-    };
-    // A deleted container takes the widgets inside it with it.
-    if (typeof component.onAll === "function") component.onAll(mark);
-    else mark(component);
-  });
-
-  return marked;
-}
-
-/**
- * Build the `ctx` a widget's behaviour runs against.
- *
- * `set` writes with `silent` so that storing a value mid-drag cannot trigger
- * the validators or a re-render -- the old slider needed a `fromView` flag
- * threaded through its model to dodge exactly that, and the pad would have
- * fought its own handle.
- *
- * `onOsc` is the network coming the other way, and `send` is shut for as long
- * as a message is being delivered through it. That is the host's half of the
- * loop guard: a widget has no way to lift it, so a value that arrived from
- * outside cannot be bounced straight back out by any widget, however it is
- * written. (The widgets' half is in lib/widgets/incoming.js.)
- *
- * `onShared` is the other devices on the surface, and while their state is
- * being delivered both `send` and `share` are shut: the device that acted
- * already put the message on the wire, and a device that re-shared what it
- * was handed would hand it straight back. `share` stays open while OSC is
- * being delivered, on purpose -- a value the rig sent is recorded, so a
- * device joining later starts where the rig left things -- but it goes out
- * marked as heard, and the server tells nobody: the other devices were sent
- * the same OSC message (lib/shared-sync.js).
- *
- * Only the pages that show the surface take part. The editor is handed no
- * shareState (see oscar_socket.js), so neither method exists there.
- *
- * A message may carry an OSC half, a DMX half, or both (lib/widgets/outgoing.js);
- * each goes out on its own bridge. The DMX half is stamped with the
- * component's id on the way, which is what names this widget's claim on its
- * channels: the same widget replaces its own claim on every move, and hands
- * it back when deleted. The id lives in the project file, so a tablet that
- * reloads the surface resumes driving the same channels instead of turning
- * up as a second source fighting the first.
- */
-function contextFor(view, editor) {
-  var model = view.model;
-  // How deep this widget is in taking an incoming OSC message, and in
-  // taking another device's state. Each shuts a different door.
-  var delivering = 0;
-  var adopting = 0;
-
-  var ctx = {
-    onRewrite: function (fn) {
-      view.oscarRewrites = (view.oscarRewrites || []).concat([fn]);
-      return function () {
-        view.oscarRewrites = (view.oscarRewrites || []).filter(function (f) {
-          return f !== fn;
-        });
-      };
-    },
-
-    get: function (key) {
-      return model.get(key);
-    },
-
-    set: function (key, value) {
-      model.set(key, value, { silent: true });
-    },
-
-    send: function (message) {
-      if (delivering) {
-        console.warn("OSCAR: a widget tried to answer incoming OSC with outgoing OSC; dropped", message);
-        return;
-      }
-      // The canvas yields to the show: a widget whose id is live on a
-      // published surface sends nothing from here -- the published copy is
-      // playing, and two masters on one id fight on the wire. The light on
-      // the widget says so (publishedOwners below); publishing again is what
-      // makes the canvas the show.
-      if (publishedOwners(editor, model.getId()).length) return;
-      if (adopting) {
-        // The device that acted already sent this; a second copy from every
-        // tablet watching would be a retrigger downstream.
-        console.warn("OSCAR: a widget tried to answer another device's state by sending; dropped", message);
-        return;
-      }
-      if (!message) return;
-      if (message.address && editor.sendOSC) {
-        editor.sendOSC(message.ip, message.port, message.address, message.args);
-      }
-      if (message.dmx && editor.sendDMX) {
-        editor.sendDMX(Object.assign({ source: model.getId() }, message.dmx));
-      }
-      if (message.midi && editor.sendMIDI) editor.sendMIDI(message.midi);
-    },
-
-    setClass: function (name, on) {
-      // Straight onto the element, never onto the model: a class added to the
-      // model is saved into the project file, so a surface stored while a
-      // toggle happened to be on would reload wearing its on state.
-      if (on) view.el.classList.add(name);
-      else view.el.classList.remove(name);
-    },
-
-    onChange: function (keys, fn) {
-      var event = changeEvent(keys);
-      model.on(event, fn);
-      return function () {
-        model.off(event, fn);
-      };
-    },
-  };
-
-  // What the canvas followed, for the editor's network log (oscar_editor.js
-  // sets editor.noteHeard); asked at call time, so the order they load in
-  // does not matter, and a page with no log -- the preview -- says nothing.
-  ctx.noteHeard = function (protocol, what, device) {
-    if (typeof editor.noteHeard === "function") editor.noteHeard(protocol, what, device);
-  };
-
-  // Only a host that can receive offers onOsc at all; the widgets check for
-  // it (through follow() in lib/widgets/incoming.js) rather than assume it.
-  if (editor.onOscIn) {
-    ctx.onOsc = function (fn) {
-      return editor.onOscIn(function (message) {
-        delivering++;
-        try {
-          fn(message);
-        } finally {
-          delivering--;
-        }
-      });
-    };
-  }
-
-  // Likewise share and onShared: only where the socket plugin put the other
-  // devices within reach. The state is keyed by the component's id, which
-  // is written into the project (see pinId), so the same widget carries the
-  // same id on every device the layout was pushed to.
-  if (editor.shareState) {
-    ctx.share = function (state, how) {
-      if (adopting) {
-        console.warn("OSCAR: a widget tried to re-share the state it was handed; dropped", state);
-        return;
-      }
-      // A yielded widget shares nothing either: its id is the published
-      // copy's, and a shared move would walk every phone's fader with no
-      // output behind it.
-      if (publishedOwners(editor, model.getId()).length) return;
-      // Whatever is shared while the rig's message is being delivered is
-      // something every device heard, whether or not the widget said so:
-      // it is recorded and nobody is told (lib/shared-sync.js).
-      var heard = delivering > 0 || !!(how && how.heard === true);
-      editor.shareState(model.getId(), state, { heard: heard, release: how && how.release });
-    };
-  }
-
-  // A state handed to the widget, from wherever, with the doors shut.
-  var adopt = function (deliver) {
-    adopting++;
-    try {
-      deliver();
-    } finally {
-      adopting--;
-    }
-  };
-  var sources = [];
-  if (editor.onSharedState) {
-    sources.push(function (fn) {
-      return editor.onSharedState(model.getId(), function (state) {
-        adopt(function () {
-          fn(state);
-        });
-      });
-    });
-  }
-  // A MIDI controller reaches the widget the same way, here in the editor's
-  // canvas too, so a knob can be seen to work the moment it has been learned.
-  var definition = byType(model.get("type"));
-  var fromMidi = midiSource(
-    editor,
-    definition,
-    model.getId(),
-    function () {
-      return configOf(model, definition);
-    },
-    function () {
-      return { value: model.get("value"), x: model.get("x"), y: model.get("y"), on: view.el.classList.contains("toggle") };
-    },
-    adopt,
-    function (changed) {
-      var event = "change:enabled change:midiListen change:midiInPort";
-      model.on(event, changed);
-      return function () {
-        model.off(event, changed);
-      };
-    }
-  );
-  if (fromMidi) sources.push(fromMidi);
-  if (sources.length) {
-    ctx.onShared = function (fn) {
-      var stops = sources.map(function (source) {
-        return source(fn);
-      });
-      return function () {
-        stops.forEach(function (stop) {
-          stop();
-        });
-      };
-    };
-  }
-
-  return ctx;
-}
-
-// The widget types that follow the rig, by component type name.
-var RECEIVERS = {};
-WIDGETS.forEach(function (definition) {
-  if (definition.receives) RECEIVERS[definition.name] = definition;
-});
-
-// editor -> Map(component model -> detach), for the widgets kept running
-// without a view. Per editor, like the deletions above.
-var offstageByEditor = typeof WeakMap === "function" ? new WeakMap() : null;
-
-/** Stop the viewless copy of one widget, if there is one: its view has arrived. */
-function stopOffstage(editor, model) {
-  var running = offstageByEditor && offstageByEditor.get(editor);
-  var detach = running && running.get(model);
-  if (!detach) return;
-  running.delete(model);
-  detach();
-}
-
-/**
- * Keep the widgets of the pages that are not showing listening to the rig.
- *
- * GrapesJS only builds views for the page on the canvas, and a widget only
- * runs while it has a view. So on a surface with several pages, what the rig
- * said to a fader on page two while page one was up reached nobody: with a
- * single tablet -- the usual rig -- no device anywhere was running that
- * fader, the value was never stored or recorded, and the fader came back
- * where it had been left, disagreeing with the rig. The next touch then sent
- * from the stale position, which is a jump on the rig.
- *
- * The components of every page exist whether or not they are showing; only
- * their views do not. So each widget that can receive is attached to an
- * element that is never put on screen, against the same ctx a view would
- * get. It does what it always does with what it hears -- stores it with
- * set(), shares it as heard -- and because nothing can touch an element that
- * is not in any document, it never sends. When its page is turned to, the
- * view's own attach takes over (onRender stops this copy first) and starts
- * from the stored value and, on a sharing device, the shared state.
- *
- * Widgets that only send are left alone: they have nothing to hear, and what
- * other devices do to them is cached by the socket plugin without them.
- *
- *   var offstage = runOffstage(editor, { document: document });
- *   offstage.start() / offstage.refresh() / offstage.stop()
- *
- * start() doubles as the refresh after a project load, which replaces every
- * component without necessarily announcing a page change.
- */
-function runOffstage(editor, options) {
-  var doc = (options && options.document) || (typeof document === "undefined" ? null : document);
-  var running = new Map();
-  var started = false;
-  if (offstageByEditor) offstageByEditor.set(editor, running);
-
-  function attach(model, definition) {
-    var el = doc.createElement(definition.tag);
-    var attributes = definition.attributes || {};
-    Object.keys(attributes).forEach(function (name) {
-      el.setAttribute(name, attributes[name]);
-    });
-    try {
-      running.set(model, definition.attach(el, contextFor({ model: model, el: el }, editor)) || function () {});
-    } catch (err) {
-      // One widget that cannot run without a view must not stop the page
-      // from turning, or the rest from listening.
-      console.warn("OSCAR: a widget could not be kept listening off its page:", err && err.message);
-    }
-  }
-
-  function refresh() {
-    var wanted = new Map();
-    if (started && doc && editor.Pages) {
-      var selected = editor.Pages.getSelected();
-      editor.Pages.getAll().forEach(function (page) {
-        if (page === selected || typeof page.getMainComponent !== "function") return;
-        var main = page.getMainComponent();
-        if (!main || typeof main.onAll !== "function") return;
-        main.onAll(function (model) {
-          var definition = RECEIVERS[model.get("type")];
-          if (definition) wanted.set(model, definition);
-        });
-      });
-    }
-
-    // Whatever is no longer off stage goes first: the page turned to, and
-    // after a load every component of the project that was replaced.
-    Array.from(running.keys()).forEach(function (model) {
-      if (!wanted.has(model)) stopOffstage(editor, model);
-    });
-    wanted.forEach(function (definition, model) {
-      if (!running.has(model)) attach(model, definition);
-    });
-  }
-
-  // A host that cannot receive has nothing for these widgets to hear.
-  if (typeof editor.on === "function" && editor.onOscIn) {
-    editor.on("page:select page:add page:remove", refresh);
-  }
-
-  return {
-    refresh: refresh,
-    start: function () {
-      started = !!editor.onOscIn;
-      refresh();
-    },
-    stop: function () {
-      started = false;
-      refresh();
-    },
-    get size() {
-      return running.size;
-    },
-  };
-}
-
-/**
- * Write the component's id into the project.
- *
- * GrapesJS only saves a component's id when something refers to it -- a
- * style rule, a script; otherwise the id is made up afresh on every load,
- * and made up differently on every device. Widgets placed on the canvas
- * pick up a style rule and keep their id that way, but one pasted in from
- * an imported template does not, and the state the tablets share for it
- * would be keyed by an id no other tablet has. Pinning it as an attribute
- * makes the id part of the project on every path.
- */
-function pinId(model) {
-  var attributes = model.get("attributes") || {};
-  if (attributes.id || typeof model.setId !== "function") return;
-  model.setId(model.getId());
-}
-
-/**
- * Empty a component whose widget builds its own children.
- *
- * What the widget draws lives on the view's element only and GrapesJS never
- * hears of it, which is the whole arrangement: no component, so nothing to
- * save, select, move or delete. This is for children that got into the model
- * some other way -- a project file edited by hand, or written by something
- * that stored them.
- */
-function disown(model) {
-  if (typeof model.components !== "function") return;
-  var children = model.components();
-  if (children && children.length) model.components("");
-}
-
-/** Let the widget put back what GrapesJS just wiped off its element. */
-function rewritten(view) {
-  (view.oscarRewrites || []).forEach(function (fn) {
-    fn();
-  });
-}
-
-/**
- * Register one widget definition with GrapesJS.
- *
- * Returns a plugin function, which is what the editor's `plugins` list takes.
- */
-function register(definition) {
-  return function (editor, options) {
-    var ipserver = (options && options.ipserver) || "localhost";
-    var deletions = definition.dmx ? deletionsOf(editor) : null;
-    var ownClass = definition.attributes && definition.attributes.class;
-
-    // A widget with an Ip setting starts pointed at this machine. One without
-    // -- a label, or a meter, which listens and never sends -- has nowhere to
-    // point, and must not carry a hidden ip that nothing shows or checks. The
-    // test is the setting itself rather than the sends flag, so the hidden
-    // value and the visible field cannot come apart.
-    var defaults = Object.assign(
-      {},
-      definition.defaults,
-      "ip" in (definition.defaults || {}) ? { ip: ipserver } : {}
-    );
-
-    editor.DomComponents.addType(definition.name, {
-      isComponent: function (el) {
-        return parsed(definition, el);
-      },
-
-      model: {
-        defaults: Object.assign(
-          {
-            tagName: definition.tag,
-            attributes: Object.assign({}, definition.attributes),
-            droppable: false,
-            resizable: true,
-            traits: traitsFor(definition, defaults),
-          },
-          defaults,
-          // A widget whose label is its text content renders that text as its
-          // only child; anything else starts empty.
-          definition.text ? { components: String(defaults[definition.text] || "") } : {}
-        ),
-
-        init: function () {
-          var model = this;
-
-          // The id is what the other devices know this widget by; it has to
-          // reach the project file, or it never reaches them.
-          pinId(model);
-
-          // A widget's own class is how its stylesheet finds it and how a
-          // project's HTML is recognised, not something to style through.
-          // GrapesJS styles a component through its classes whenever it has
-          // any, so every edit to one XY pad -- a resize, a move, a colour --
-          // went to the rule all pads share, and they changed together.
-          // Private keeps the class on the element but out of styling, so
-          // edits land on this one component; protected stops it being
-          // removed from the Classes list by accident.
-          //
-          // Flagged here, per component, rather than once when the plugin
-          // loads: loading a project creates the selector afresh, and a flag
-          // set on the earlier one is lost with it.
-          // A host that keeps no class list has nothing to flag.
-          var classes = ownClass ? model.get("classes") : null;
-          if (classes && typeof classes.forEach === "function") {
-            classes.forEach(function (selector) {
-              if (selector.get("name") === ownClass) {
-                selector.set({ private: true, protected: true });
-              }
-            });
-          }
-
-          if (definition.ownsChildren) disown(model);
-
-          // The type's trait list was built from its defaults. A component
-          // read back from a saved project may be set to DMX already, and
-          // switching Output has to bring the right half of the panel with
-          // it. GrapesJS rebuilds its traits on change:traits and redraws the
-          // panel itself, so the list is only ever set when it would differ --
-          // judged by which fields it holds, since two states of a widget can
-          // show the same number of different fields.
-          var reveals = revealKeys(definition);
-          if (reveals.length) {
-            var refresh = function () {
-              var wanted = visibleFields(definition, configOf(model, definition));
-              if (traitKeys(model.get("traits")) === traitKeys(wanted)) return;
-              model.set(
-                "traits",
-                wanted.map(function (field) {
-                  return toTrait(field, configOf(model, definition));
-                })
-              );
-            };
-            refresh();
-            model.on(changeEvent(reveals), refresh);
-          }
-
-          // A widget switched away from DMX must hand its channels back, or
-          // the rig holds that widget's last look with nothing left able to
-          // change it. Enabled off does not release: a disabled fader holds
-          // its level the way a silent OSC fader leaves the software where it
-          // was, and a blackout is not "no change".
-          if (definition.dmx) {
-            // A project saved while the choice was one Output setting says
-            // osc, dmx or both. Turn that into the two checkboxes the panel
-            // now shows, or they would sit at their defaults and lie about a
-            // widget that is driving DMX. Silent: opening a project is not
-            // an edit, and nothing has changed about what the widget does.
-            var upgraded = upgradeRouting({ transport: model.get("transport") });
-            if (upgraded) {
-              model.set(upgraded, { silent: true });
-              model.unset("transport", { silent: true });
-            }
-
-            // The type's panel was built with DMX off, so its DMX section
-            // starts closed. One that is driving DMX opens on it.
-            if (sendsDmx(configOf(model, definition))) {
-              model.set("traits", traitsFor(definition, configOf(model, definition)));
-            }
-
-            model.on("change:dmxEnabled", function () {
-              if (!sendsDmx(configOf(model, definition)) && editor.stopDMX) editor.stopDMX(model.getId());
-            });
-          }
-
-          // Ticking MIDI's Data in with no In port named listens on the first
-          // port there is. Which one that is is written into the box, so it
-          // is there to be read and changed. Learn names the one touched.
-          // Every port has to be asked for, in words (lib/midi/spec.js).
-          if (definition.fields.some(function (field) { return field.key === "midiListen"; })) {
-            model.on("change:midiListen", function () {
-              var port = namedMidiInput(configOf(model, definition));
-              if (port) model.set("midiInPort", port);
-            });
-          }
-
-          if (definition.text) {
-            model.on("change:" + definition.text, function () {
-              model.components(String(model.get(definition.text) || ""));
-            });
-          }
-
-          // Validation runs only on edits made through the settings panel.
-          // Values the widget writes back go through ctx.set, which is silent.
-          Object.keys(definition.checks || {}).forEach(function (key) {
-            model.on("change:" + key, function () {
-              var complaint = definition.checks[key](model.get(key), configOf(model, definition));
-              if (!complaint) return;
-              alert(complaint);
-              model.set(key, model.previous(key), { silent: true });
-              // The panel is already showing the rejected text; make it show
-              // what the component actually holds.
-              editor.trigger("component:toggled");
-            });
-          });
-        },
-      },
-
-      // GrapesJS's own updateAttributes strips every attribute off the element
-      // and re-applies the model's copy, and updateClasses does the same for
-      // the class list, on every class or style edit. Whatever the widget
-      // wrote straight onto the element goes with them, so each runs the
-      // widget's onRewrite handlers afterwards (extendFnView calls the
-      // original first).
-      extendFnView: ["updateAttributes", "updateClasses"],
-
-      view: {
-        updateAttributes: function () {
-          rewritten(this);
-        },
-
-        updateClasses: function () {
-          rewritten(this);
-        },
-
-        onRender: function () {
-          // The view takes over from the copy that listened while this page
-          // was not showing (runOffstage); two of them would share twice.
-          stopOffstage(editor, this.model);
-          if (this.oscarDetach) this.oscarDetach();
-          this.oscarDetach = definition.attach(this.el, contextFor(this, editor));
-        },
-
-        removed: function () {
-          // DMX is a stream: a deleted widget that was driving channels hands
-          // them back, or the rig holds its last look with nothing on the
-          // surface able to change it. Only a deletion, though (see
-          // deletionsOf): a surface being reloaded keeps every channel where
-          // it is, and so does a browser merely disconnecting -- that is the
-          // server's rule, and a phone locking its screen must not black out
-          // a show.
-          if (deletions && deletions.has(this.model)) {
-            deletions.delete(this.model);
-            if (editor.stopDMX) editor.stopDMX(this.model.getId());
-          }
-
-          if (!this.oscarDetach) return;
-          this.oscarDetach();
-          this.oscarDetach = null;
-        },
-      },
-    });
-
-    // A widget the OSCAR app alone can run is not in the palette unless
-    // asked for (lib/features.js APP_WIDGETS); its type stays registered, so
-    // a project that already has one still opens. Offered, it wears a badge,
-    // so nobody draws one for a browser and wonders.
-    if (definition.block.app && !features.APP_WIDGETS) return;
-    editor.BlockManager.add(definition.name, {
-      label: definition.block.app ? definition.block.label + ' <span class="oscar-block-app" title="Works in the OSCAR app on a phone or tablet, not in a browser">App</span>' : definition.block.label,
-      // GrapesJS 0.21+ no longer ships Font Awesome, so icons are inline SVG.
-      media: definition.block.icon,
-      category: definition.block.category,
-      content: { type: definition.name },
-    });
-  };
-}
-
-/**
- * One plugin per registered widget, each told the address other devices
- * should send to. This is the whole of what an entry point needs to do to get
- * every widget: spread it into the editor's `plugins` list.
- */
-function widgetPlugins(ipServer) {
-  return WIDGETS.map(function (definition) {
-    var plugin = register(definition);
-    return function (editor) {
-      plugin(editor, { ipserver: ipServer });
-    };
-  });
-}
-
-/**
- * Recognise an element as this widget when a project is parsed.
- *
- * Matching on the tag alone is too greedy: every <input> in an imported form
- * would become a slider, so a widget that shares its tag is identified by the
- * attributes it was defined with.
- */
-function matches(definition, el) {
-  if (!el || !el.tagName) return false;
-  if (el.tagName.toLowerCase() !== definition.tag) return false;
-
-  var attributes = definition.attributes || {};
-  if (attributes.type && el.getAttribute("type") !== attributes.type) return false;
-  if (attributes.class && !(el.classList && el.classList.contains(attributes.class))) return false;
-  return true;
-}
-
-/**
- * The markup and stylesheet an export is built from, with every widget's
- * settings written into the markup.
- *
- * The settings are handed to getHtml() as it serialises each component (its
- * `attributes` option is called per component, children included) and exist
- * only in the string it returns. They are never set on a model, not even for
- * the length of the call, so there is nothing to strip afterwards and no
- * moment at which an autosave, an undo step or a crash could catch a project
- * holding a second copy of its settings -- the thing toTrait's comment rules
- * out. Writing them on and taking them off again would also have GrapesJS
- * rewrite every widget's element twice per export, mid-show.
- *
- * Which components are widgets, and which keys travel, comes from WIDGETS by
- * way of lib/export/config.js; nothing here lists a widget.
- *
- * Only the first page: an exported file is one surface, and the dialog says
- * so when the project has more.
- */
-function exportSnapshot(editor) {
-  var pages = editor.Pages.getAll();
-  var component = pages[0].getMainComponent();
-  var widgets = 0;
-
-  var html = editor.getHtml({
-    component: component,
-    attributes: function (model, attributes) {
-      var settings = exportAttributes(model.get("type"), function (key) {
-        return model.get(key);
-      });
-      if (!settings) return attributes;
-      widgets++;
-      // The id is the widget's name on the wire: its claim on DMX channels
-      // and the key the devices share its state under. pinId writes it into
-      // every widget that has been through init; this covers one that has
-      // not, in the output only.
-      var id = attributes && attributes.id ? null : typeof model.getId === "function" && model.getId();
-      return Object.assign({}, attributes, id ? { id: id } : null, settings);
-    },
-  });
-
-  return {
-    html: html,
-    css: editor.getCss({ component: component }) || "",
-    pages: pages.length,
-    widgets: widgets,
-  };
-}
-
-/**
- * What an element parsed from HTML becomes: this widget, or nothing.
- *
- * A widget whose label is its text takes the label from the element too, so
- * pasted or templated code such as <button>Strobe</button> is a button called
- * Strobe in its settings, not one showing Strobe while its Label field says
- * something else.
- *
- * A widget that builds its own children (ownsChildren, lib/widgets/index.js)
- * has none as far as the project goes. Markup pasted in or imported -- a page
- * saved from a browser, with the tiles the widget drew still inside it --
- * would otherwise have them parsed into components: stored, selectable,
- * draggable out, and drawn a second time next to the ones the widget builds.
- * The parser only descends into an element whose components are already given.
- */
-function parsed(definition, el) {
-  if (!matches(definition, el)) return undefined;
-  var result = { type: definition.name };
-  if (definition.ownsChildren) result.components = [];
-  if (definition.text) {
-    var label = String(el.textContent || "").trim();
-    if (label) result[definition.text] = label;
-  }
-  return result;
-}
-
-/**
- * Keep the canvas body in the surface's style. The style is saved on the
- * wrapper component, but the body is outside anything GrapesJS stores, so it
- * is brought back in line on every canvas load, project load, page turn (each
- * page has its own wrapper, and so its own style) and attribute change.
- * `copy(attributes, body)` does the copying.
- */
-function followSurfaceStyle(editor, copy) {
-  function sync() {
-    var doc = editor.Canvas.getDocument();
-    var wrapper = editor.getWrapper();
-    if (doc && doc.body && wrapper) copy(wrapper.getAttributes(), doc.body);
-  }
-  editor.on("load canvas:frame:load project:load page:select", sync);
-  editor.on("component:update:attributes", function (component) {
-    if (component === editor.getWrapper()) sync();
-  });
-  sync();
-}
-
-/**
- * What the settings panel shows beyond what GrapesJS draws: lights on each
- * protocol section's title, one per direction the widget has (IN and OUT for
- * OSC, OUT alone for DMX, IN alone for a meter), green while that direction
- * is live on the selected widget and grey while it is not, so a collapsed
- * section still says what it is doing; and the hint of any setting that has
- * one, on its label.
- *
- * GrapesJS rebuilds the panel whenever the selection or a widget's trait list
- * changes and has no hook for after it has, so the panel is watched and
- * decorated again when its contents change. Only child elements are watched,
- * and a repaint changes attributes, so decorating cannot set itself off.
- */
-var DIRECTIONS = [
-  { id: "in", tag: "IN", label: "Data in", field: "listen" },
-  { id: "out", tag: "OUT", label: "Data out", field: "oscEnabled" },
-];
-
-// How long Learn waits for OSC. For MIDI the server keeps the time (lib/midi).
-var LEARN_MS = 15000;
-
-/**
- * Learn, per section: what is needed to start listening, and the settings to
- * write from what was heard. A section is offered Learn when the selected
- * widget has the section's Data in setting and the editor can hear that way.
- */
-var LEARNERS = {
-  osc: {
-    field: "listen",
-    can: function (editor) {
-      return typeof editor.onOscIn === "function";
-    },
-    start: function (editor, config, done) {
-      var timer = null;
-      var stop = editor.onOscIn(function (message) {
-        var address = message.address;
-        // A pad sending its axes apart listens on /address/x and /address/y,
-        // and one of those is what arrives. The setting is the part before.
-        if (config.sendMode === "two") address = address.replace(/\/[xy]$/, "");
-        finish({ message: address, listen: true });
-      });
-      function finish(settings) {
-        clearTimeout(timer);
-        stop();
-        done(settings);
-      }
-      timer = setTimeout(function () {
-        finish(null);
-      }, LEARN_MS);
-      return function () {
-        clearTimeout(timer);
-        stop();
-      };
-    },
-  },
-  midi: {
-    field: "midiListen",
-    can: function (editor) {
-      return typeof editor.learnMidi === "function";
-    },
-    start: function (editor, config, done) {
-      return editor.learnMidi(function (result) {
-        if (!result || result.error) return done(null, result && result.error);
-        done({ midiInPort: result.port, midiChannel: result.channel, midiType: result.type, midiNumber: result.number, midiListen: true });
-      });
-    },
-  },
-};
-
-function sectionLights(editor, options) {
-  var doc = (options && options.document) || document;
-  var root = (options && options.root) || doc;
-  // The one Learn in progress, if any: { section, model, stop }, and the last
-  // thing to tell about one that ended: { section, model, text }.
-  var learning = null;
-  var told = null;
-
-  function endLearning() {
-    if (learning) learning.stop();
-    learning = null;
-  }
-
-  function learn(sectionId, model, definition) {
-    var same = learning && learning.section === sectionId && learning.model === model;
-    endLearning();
-    told = null;
-    // A second click calls it off.
-    if (same) return paint();
-    var entry = { section: sectionId, model: model, stop: function () {} };
-    learning = entry;
-    entry.stop = LEARNERS[sectionId].start(editor, configOf(model, definition), function (settings, complaint) {
-      if (learning !== entry) return;
-      learning = null;
-      if (settings) model.set(settings);
-      told = { section: sectionId, model: model, text: settings ? "Learned" : complaint || "Nothing heard" };
-      paint();
-    });
-    paint();
-  }
-  // What the server said of itself: { listeningPort }, the one OSC in port.
-  var server = { listeningPort: options && options.listeningPort };
-  // And the serial cable: what the host says of it ({ path, state, error },
-  // told through options.serial.state) and how to pick a board
-  // (options.serial.pick(path)). The adapter knows no routes.
-  var serial = (options && options.serial) || null;
-  var watched = null;
-  var unwatch = null;
-
-  function paint() {
-    var model = editor.getSelected();
-    var definition = model && byType(model.get("type"));
-    var config = definition ? configOf(model, definition) : {};
-    var status = definition ? sectionStatus(definition.fields, config) : {};
-
-    var sections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + "]");
-    Array.prototype.forEach.call(sections, function (section) {
-      var title = section.querySelector("[data-title]");
-      if (!title) return;
-      var directions = status[section.getAttribute(SECTION_ATTRIBUTE)] || {};
-
-      // One holder per title, made once; the lights in it are redrawn, since
-      // which directions exist changes with the widget selected.
-      var holder = title.querySelector(".oscar-section-lights");
-      if (!holder) {
-        holder = doc.createElement("span");
-        holder.className = "oscar-section-lights";
-        title.appendChild(holder);
-      }
-      paintLearn(holder, section.getAttribute(SECTION_ATTRIBUTE), model, definition);
-      DIRECTIONS.forEach(function (direction) {
-        var light = holder.querySelector('[data-direction="' + direction.id + '"]');
-        if (!(direction.id in directions)) {
-          // The widget has no such direction: a meter never sends, DMX never listens.
-          if (light) holder.removeChild(light);
-          return;
-        }
-        if (!light) {
-          light = doc.createElement("span");
-          light.className = "oscar-section-light";
-          light.setAttribute("data-direction", direction.id);
-          // Two unlabelled dots would be a guess; the tag says which is which.
-          light.textContent = direction.tag;
-          holder.appendChild(light);
-        }
-        var on = directions[direction.id] === true;
-        var words = direction.label + (on ? ": on" : ": off");
-        // OSC's lights also say where: the port OSCAR listens on, or the
-        // address this widget sends to.
-        var where = section.getAttribute(SECTION_ATTRIBUTE) === "osc" ? oscEndpoint(direction.field, config, server) : "";
-        if (where) words += ". " + where;
-        light.setAttribute("data-on", String(on));
-        // In words as well as colour, for a reader and for anyone who cannot
-        // tell the two colours apart.
-        light.setAttribute("title", words);
-        light.setAttribute("role", "img");
-        light.setAttribute("aria-label", words);
-      });
-    });
-
-    // OSC's Port in: the one port OSCAR hears on, for every widget alike. It
-    // is the server's, not a setting, so it is drawn as a row of the panel
-    // that cannot be edited, under Data in while Data in is on.
-    var oscSections = root.querySelectorAll("[" + SECTION_ATTRIBUTE + '="osc"]');
-    var oscSection = oscSections && oscSections.length ? oscSections[0] : null;
-    if (oscSection && typeof oscSection.querySelector === "function") {
-      var anchor = oscSection.querySelector('[data-oscar-field="listen"]');
-      var portInRow = oscSection.querySelector(".oscar-port-in");
-      var listening = config.listen === true || config.listen === "true";
-      var showPortIn = !!(definition && fieldOf(definition, "listen") && listening && server.listeningPort && anchor);
-      if (!showPortIn) {
-        if (portInRow) portInRow.parentNode.removeChild(portInRow);
-      } else {
-        if (!portInRow) {
-          portInRow = doc.createElement("div");
-          portInRow.className = "gjs-trt-trait__wrp oscar-port-in";
-          var traitBox = doc.createElement("div");
-          traitBox.className = "gjs-trt-trait gjs-trt-trait--number";
-          var labelBox = doc.createElement("div");
-          labelBox.className = "gjs-label-wrp";
-          var label = doc.createElement("div");
-          label.className = "gjs-label";
-          label.textContent = "Port in";
-          labelBox.appendChild(label);
-          var fieldBox = doc.createElement("div");
-          fieldBox.className = "gjs-field-wrp gjs-field-wrp--number";
-          var fieldEl = doc.createElement("div");
-          fieldEl.className = "gjs-field gjs-field-number";
-          var input = doc.createElement("input");
-          input.type = "text";
-          input.disabled = true;
-          fieldEl.appendChild(input);
-          fieldBox.appendChild(fieldEl);
-          traitBox.appendChild(labelBox);
-          traitBox.appendChild(fieldBox);
-          portInRow.appendChild(traitBox);
-          portInRow.setAttribute(
-            "title",
-            "Where OSCAR hears OSC, for every widget's Data in alike. It is OSCAR's port, not this widget's: start OSCAR with OSCAR_OSC_IN_PORT to move it."
-          );
-        }
-        if (anchor.nextSibling !== portInRow) anchor.parentNode.insertBefore(portInRow, anchor.nextSibling);
-        var portInInput = portInRow.querySelector("input");
-        if (portInInput.value !== String(server.listeningPort)) portInInput.value = String(server.listeningPort);
-      }
-    }
-
-    // The Board: the one serial cable, picked where it is used. Drawn while
-    // the selected widget's Via says Serial cable, right under the Via row,
-    // as Port in is drawn under Data in. Picking writes through to the host,
-    // and every widget's Board row shows the same cable: one board, said in
-    // every place that depends on it.
-    if (oscSection && typeof oscSection.querySelector === "function" && serial) {
-      var viaRow = oscSection.querySelector('[data-oscar-field="oscVia"]');
-      var boardRow = oscSection.querySelector(".oscar-board");
-      var onCable = config.oscVia === "serial";
-      if (!onCable || !viaRow) {
-        if (boardRow) boardRow.parentNode.removeChild(boardRow);
-      } else {
-        if (!boardRow) {
-          boardRow = doc.createElement("div");
-          boardRow.className = "gjs-trt-trait__wrp oscar-board";
-          var boardTrait = doc.createElement("div");
-          boardTrait.className = "gjs-trt-trait gjs-trt-trait--select";
-          var boardLabelBox = doc.createElement("div");
-          boardLabelBox.className = "gjs-label-wrp";
-          var boardLabel = doc.createElement("div");
-          boardLabel.className = "gjs-label";
-          boardLabel.textContent = "Board";
-          boardLabelBox.appendChild(boardLabel);
-          var boardFieldBox = doc.createElement("div");
-          boardFieldBox.className = "gjs-field-wrp gjs-field-wrp--select";
-          var boardField = doc.createElement("div");
-          boardField.className = "gjs-field gjs-field-select";
-          var select = doc.createElement("select");
-          select.addEventListener("change", function () {
-            serial.pick(select.value);
-          });
-          boardField.appendChild(select);
-          boardFieldBox.appendChild(boardField);
-          boardTrait.appendChild(boardLabelBox);
-          boardTrait.appendChild(boardFieldBox);
-          boardRow.appendChild(boardTrait);
-        }
-        if (viaRow.nextSibling !== boardRow) viaRow.parentNode.insertBefore(boardRow, viaRow.nextSibling);
-        var link = serial.state() || {};
-        var choices = [{ id: "", name: "Pick a board..." }];
-        (suggestions["serial-ports"] || []).forEach(function (entry) {
-          choices.push({ id: entry.id, name: entry.name });
-        });
-        if (link.path && !choices.some(function (choice) { return choice.id === link.path; })) {
-          choices.push({ id: link.path, name: link.path + " (not connected)" });
-        }
-        var boardSelect = boardRow.querySelector("select");
-        var ids = choices.map(function (choice) { return choice.id; }).join("|");
-        if (boardSelect.getAttribute("data-choices") !== ids) {
-          boardSelect.setAttribute("data-choices", ids);
-          boardSelect.textContent = "";
-          choices.forEach(function (choice) {
-            var option = doc.createElement("option");
-            option.value = choice.id;
-            option.textContent = choice.name;
-            boardSelect.appendChild(option);
-          });
-        }
-        if (boardSelect.value !== (link.path || "")) boardSelect.value = link.path || "";
-        var said =
-          link.state === "open"
-            ? "Connected to " + link.path + " at " + link.bitrate + " baud."
-            : link.state === "waiting"
-            ? "Waiting for " + link.path + (link.error ? " (" + link.error + ")" : "") + "."
-            : "No board yet: pick the port it is on. One cable for the whole of OSCAR.";
-        boardRow.setAttribute("title", said);
-        boardRow.setAttribute("data-serial-state", link.state || "idle");
-      }
-    }
-
-    // GrapesJS puts a trait's attributes on the wrapper around its row.
-    var hinted = root.querySelectorAll(".gjs-trt-trait__wrp[title]");
-    Array.prototype.forEach.call(hinted, function (row) {
-      var key = row.getAttribute("data-oscar-field");
-      var field = key && definition ? fieldOf(definition, key) : null;
-      if (field && field.hint) {
-        // Written from the field's own hint each time, so a changed port
-        // replaces the old one rather than piling up after it.
-        var where = oscEndpoint(key, config, server);
-        row.setAttribute("title", where ? field.hint + " " + where : field.hint);
-      }
-      var label = row.querySelector(".gjs-label");
-      if (label) label.setAttribute("title", row.getAttribute("title"));
-    });
-  }
-
-  /** The section's Learn button: there if the widget can be taught that way, and saying how it is going. */
-  function paintLearn(holder, sectionId, model, definition) {
-    var learner = LEARNERS[sectionId];
-    var offered = !!(learner && definition && fieldOf(definition, learner.field) && learner.can(editor));
-    var button = holder.querySelector(".oscar-learn");
-    if (!offered) {
-      if (button) holder.removeChild(button);
-      return;
-    }
-    if (!button) {
-      button = doc.createElement("button");
-      button.className = "oscar-learn";
-      button.setAttribute("type", "button");
-      button.addEventListener("click", function (event) {
-        // The title it sits on folds the section when clicked.
-        event.stopPropagation();
-        var selected = editor.getSelected();
-        var type = selected && byType(selected.get("type"));
-        if (type) learn(holder.getAttribute("data-learn-section"), selected, type);
-      });
-      holder.appendChild(button);
-    }
-    holder.setAttribute("data-learn-section", sectionId);
-    var busy = !!(learning && learning.section === sectionId && learning.model === model);
-    var said = told && told.section === sectionId && told.model === model ? told.text : null;
-    var text = busy ? "Listening..." : said || "Learn";
-    // Written only when it differs: the panel is watched for changes, and a
-    // button rewritten on every look would be one.
-    if (button.textContent !== text) button.textContent = text;
-    if (button.getAttribute("data-busy") !== String(busy)) button.setAttribute("data-busy", String(busy));
-    button.setAttribute(
-      "title",
-      busy
-        ? "Waiting for a message. Click to stop."
-        : sectionId === "midi"
-        ? "Touch a control on your MIDI controller and this widget takes its port, channel, type and number."
-        : "Send an OSC message from your software and this widget takes its address."
-    );
-  }
-
-  function watch(model) {
-    if (unwatch) unwatch();
-    unwatch = null;
-    watched = model || null;
-    if (!watched || typeof watched.on !== "function") return;
-    var events = "change:enabled change:listen change:oscEnabled change:dmxEnabled change:midiEnabled change:midiListen change:ip change:port change:oscVia";
-    watched.on(events, paint);
-    unwatch = function () {
-      watched.off(events, paint);
-    };
-  }
-
-  editor.on("component:selected component:deselected", function () {
-    // Learn belongs to the widget it was started on.
-    endLearning();
-    told = null;
-    watch(editor.getSelected());
-    // The panel is drawn after the selection is announced.
-    setTimeout(paint, 0);
-  });
-
-  if (typeof MutationObserver === "function" && root.nodeType) {
-    var pending = false;
-    new MutationObserver(function () {
-      if (pending) return;
-      pending = true;
-      setTimeout(function () {
-        pending = false;
-        paint();
-      }, 0);
-    }).observe(root, { childList: true, subtree: true });
-  }
-
-  return paint;
-}
-
-/**
- * What the computer has, for the settings that choose from it: the MIDI ports,
- * by the name a field gives as its `source`. The editor fills them (choices());
- * kept here, not fetched here: the adapter knows no routes.
- */
-var suggestions = {};
-
-/**
- * A dropdown's choices: the field's own, then what the computer has, then the
- * widget's own value if it is none of those. A port unplugged for the night
- * is still this widget's port, and a dropdown that could not show it would
- * show another, which the next edit would save.
- */
-function choicesFor(field, value) {
-  var options = (field.options || []).slice();
-  var has = function (id) {
-    return options.some(function (option) {
-      return option.id === id;
-    });
-  };
-  (suggestions[field.source] || []).forEach(function (entry) {
-    // MIDI suggests names; serial suggests { id, name }, a path and its label.
-    var id = entry && typeof entry === "object" ? entry.id : entry;
-    var name = entry && typeof entry === "object" ? entry.name : entry;
-    if (!has(id)) options.push({ id: id, name: name });
-  });
-  var own = value === undefined || value === null ? "" : String(value);
-  if (!has(own)) options.push({ id: own, name: own + " (not connected)" });
-  return options;
-}
-
-/** The In port to give a widget whose Data in was just ticked, or null to leave it as it is. */
-function namedMidiInput(config) {
-  if (!isListening(config) || String(config.midiInPort || "").trim()) return null;
-  var inputs = suggestions["midi-inputs"] || [];
-  return inputs.length ? inputs[0] : null;
-}
-
-/**
- * Say what the computer has. If that changed and the selected widget has a
- * setting that chooses from it, its panel is rebuilt, which is the only way
- * GrapesJS redraws a dropdown's choices.
- */
-function suggest(source, values, editor) {
-  suggestions[source] = Array.isArray(values) ? values.slice() : [];
-  if (editor) refreshChoices(editor);
-}
-
-/** What a widget's dropdowns that choose from the computer offer, as one comparable string. */
-function choiceIds(traits) {
-  return (traits || [])
-    .map(function (trait) {
-      var read = typeof trait.get === "function";
-      var options = (read ? trait.get("options") : trait.options) || [];
-      return (
-        (read ? trait.get("name") : trait.name) +
-        "=" +
-        options
-          .map(function (option) {
-            return option.id;
-          })
-          .join("|")
-      );
-    })
-    .join("\n");
-}
-
-/**
- * Give the selected widget's dropdowns the choices there are now. Called when
- * a widget is picked, since its panel was built before the ports were known,
- * when the ports change, and when a port is named that the dropdown has not
- * got. The panel is only rebuilt if a dropdown would differ.
- */
-function refreshChoices(editor) {
-  if (!editor || typeof editor.getSelected !== "function") return;
-  var model = editor.getSelected();
-  var definition = model && byType(model.get("type"));
-  var chooses =
-    definition &&
-    definition.fields.some(function (field) {
-      return !!field.source;
-    });
-  if (!chooses) return;
-  var wanted = traitsFor(definition, configOf(model, definition));
-  var has = model.get("traits");
-  // A collection once GrapesJS has built it, a plain list before.
-  var list = has && typeof has.map === "function" && !Array.isArray(has) ? has.map(function (trait) { return trait; }) : has;
-  if (choiceIds(list) === choiceIds(wanted)) return;
-  model.set("traits", wanted);
-}
-
-/**
- * Which published surfaces hold a widget with this id: the owners the canvas
- * yields to. Told by the editor (tellPublishedWidgets), which polls
- * /published; empty until it has.
- */
-function publishedOwners(editor, id) {
-  if (!features.CANVAS_YIELD) return [];
-  var live = editor && editor.oscarPublishedWidgets;
-  return (live && id && live[id]) || [];
-}
-
-/**
- * The editor's word on what is published: { widgetId: [surface, ...] }.
- * Repaints the lights, so a publish or an unpublish shows on the widgets
- * within a poll.
- */
-function tellPublishedWidgets(editor, rows) {
-  var map = {};
-  (rows || []).forEach(function (row) {
-    (row.widgets || []).forEach(function (id) {
-      (map[id] = map[id] || []).push(row.id);
-    });
-  });
-  editor.oscarPublishedWidgets = map;
-  paintWidgetLights(editor);
-}
-
-/**
- * A light on each widget of the canvas, top right: green, it sends from
- * here; red, its id is live on a published surface and the canvas yields.
- * Nothing on a widget whose master is off -- the panel already says that.
- *
- * Drawn as an overlay in the canvas document, because half the widgets are
- * inputs and an input can hold no child. Repositioned on a slow beat and on
- * every repaint: layouts barely move while someone is editing.
- */
-function paintWidgetLights(editor) {
-  if (!features.CANVAS_YIELD) return;
-  var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
-  if (!canvas || !canvas.body) return;
-  var layer = canvas.getElementById("oscar-widget-lights");
-  if (!layer) {
-    layer = canvas.createElement("div");
-    layer.id = "oscar-widget-lights";
-    layer.setAttribute("style", "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483000;");
-    canvas.body.appendChild(layer);
-  }
-  var wanted = [];
-  // By component type, not attribute selector: the canvas models carry the
-  // widget type, and find() over attributes misses them.
-  var models = [];
-  if (editor.getWrapper() && typeof editor.getWrapper().onAll === "function") {
-    editor.getWrapper().onAll(function (model) {
-      if (model.get && byType(model.get("type"))) models.push(model);
-    });
-  }
-  models.forEach(function (model) {
-    var view = model.getView && model.getView();
-    var el = view && view.el;
-    if (!el || typeof el.getBoundingClientRect !== "function") return;
-    var definition = byType(model.get("type"));
-    var config = configOf(model, definition);
-    if (!(config.enabled === true || config.enabled === "true")) return;
-    var owners = publishedOwners(editor, model.getId());
-    var rect = el.getBoundingClientRect();
-    if (!rect.width && !rect.height) return;
-    var doc = canvas;
-    var x = rect.right + (doc.defaultView ? doc.defaultView.scrollX : 0);
-    var y = rect.top + (doc.defaultView ? doc.defaultView.scrollY : 0);
-    wanted.push({
-      model: model,
-      id: model.getId(),
-      x: x,
-      y: y,
-      live: owners.length === 0,
-      title:
-        owners.length === 0
-          ? "Comms on: this control sends from the canvas."
-          : "Published on " +
-            owners
-              .map(function (name) {
-                return '"' + name + '"';
-              })
-              .join(", ") +
-            ": the published interface is playing, so this control sends nothing from the canvas. Publish changes to make your edits the show.",
-    });
-  });
-  // Redrawn whole on membership or colour changes; between paints the dots
-  // are only repositioned (repositionWidgetLights), every frame, so a widget
-  // being dragged carries its light with it.
-  layer.textContent = "";
-  var pairs = [];
-  wanted.forEach(function (dot) {
-    var el = canvas.createElement("span");
-    el.setAttribute("data-oscar-light", dot.id);
-    el.setAttribute("title", dot.title);
-    el.setAttribute(
-      "style",
-      "position:absolute;left:" + Math.round(dot.x - 5) + "px;top:" + Math.round(dot.y - 3) + "px;" +
-        "width:8px;height:8px;border-radius:50%;box-sizing:border-box;border:1px solid rgba(0,0,0,.55);" +
-        "background:" + (dot.live ? "#2fbf5f" : "#e5484d") + ";box-shadow:0 0 4px " + (dot.live ? "rgba(47,191,95,.7)" : "rgba(229,72,77,.8)") + ";"
-    );
-    layer.appendChild(el);
-    pairs.push({ model: dot.model, el: el });
-  });
-  editor.oscarLightPairs = pairs;
-}
-
-/**
- * Move the existing dots to where their widgets are now: the cheap step,
- * run every frame, so dragging a widget drags its light. Membership and
- * colour stay paintWidgetLights' business.
- */
-function repositionWidgetLights(editor) {
-  var pairs = editor.oscarLightPairs;
-  if (!pairs || !pairs.length) return;
-  var canvas = editor.Canvas && typeof editor.Canvas.getDocument === "function" ? editor.Canvas.getDocument() : null;
-  var view = canvas && canvas.defaultView;
-  for (var i = 0; i < pairs.length; i++) {
-    var pair = pairs[i];
-    var widgetView = pair.model.getView && pair.model.getView();
-    var el = widgetView && widgetView.el;
-    if (!el || typeof el.getBoundingClientRect !== "function") continue;
-    var rect = el.getBoundingClientRect();
-    var left = Math.round(rect.right + (view ? view.scrollX : 0) - 5) + "px";
-    var top = Math.round(rect.top + (view ? view.scrollY : 0) - 3) + "px";
-    if (pair.el.style.left !== left) pair.el.style.left = left;
-    if (pair.el.style.top !== top) pair.el.style.top = top;
-  }
-}
-
-function fieldOf(definition, key) {
-  var fields = definition.fields || [];
-  for (var i = 0; i < fields.length; i++) if (fields[i].key === key) return fields[i];
-  return null;
-}
-
-function byType(type) {
-  for (var i = 0; i < WIDGETS.length; i++) if (WIDGETS[i].name === type) return WIDGETS[i];
-  return null;
-}
-
-/**
- * Keep GrapesJS's select tool off for as long as the surface is being
- * previewed.
- *
- * Preview mode stops the tool, but GrapesJS starts its default command again
- * whenever a frame loads -- a page turn, a project load -- without asking
- * whether a preview is on. While it runs it cancels every click in the
- * canvas, so that a click selects instead of doing what clicking does. The
- * one control that depends on a click's default action is the colour picker,
- * whose dialog then never opens.
- *
- * Stopped through the editor's own stopDefault(), not by stopping the command:
- * that also clears the flag GrapesJS checks when the preview ends, so leaving
- * preview brings the select tool back as it should.
- */
-function noSelectingWhile(editor, isPreviewing) {
-  editor.on("command:run:select-comp", function () {
-    if (!isPreviewing()) return;
-    // After the run that announced itself has finished.
-    setTimeout(function () {
-      if (isPreviewing()) editor.getModel().stopDefault();
-    }, 0);
-  });
-}
-
-module.exports = {
-  tellPublishedWidgets: tellPublishedWidgets,
-  paintWidgetLights: paintWidgetLights,
-  publishedOwners: publishedOwners,
-  repositionWidgetLights: repositionWidgetLights,
-  noSelectingWhile: noSelectingWhile,
-  sectionLights: sectionLights,
-  suggest: suggest,
-  refreshChoices: refreshChoices,
-  choicesFor: choicesFor,
-  namedMidiInput: namedMidiInput,
-  parsed: parsed,
-  followSurfaceStyle: followSurfaceStyle,
-  exportSnapshot: exportSnapshot,
-  register: register,
-  widgetPlugins: widgetPlugins,
-  runOffstage: runOffstage,
-  toTrait: toTrait,
-  matches: matches,
-  visibleFields: visibleFields,
-  revealKeys: revealKeys,
-};
-
-},{"../../../lib/export/config":4,"../../../lib/features":6,"../../../lib/midi/spec":8,"../../../lib/widgets":26,"../../../lib/widgets/fields":24,"../../../lib/widgets/midi-source":31}],46:[function(require,module,exports){
-"use strict";
-
-/**
- * The window behind the MCP pill: AI assistants and this OSCAR.
- *
- * The pill used to be the switch itself, so one stray click closed the door,
- * and nothing in the app said how an assistant is connected in the first
- * place. The window holds the switch, the three ways to connect one (each
- * with what to copy), and what assistants have lately asked for -- the tool
- * and when, never what was in the request -- which is both the proof that a
- * connection works and the reassurance that an assistant only looked.
- *
- * What an assistant connects with is the helper on npm, `createwithoscar`
- * (createwithoscar/ in this repository), or the same thing packed for
- * Claude Desktop, which the website serves.
- */
-
-/** What is copied for Claude Code. */
-var CLAUDE_CODE = "claude mcp add oscar -- npx -y createwithoscar";
-
-/** What is copied for every other app that speaks MCP: the same shape in nearly all of them. */
-var OTHER_APPS = '{\n  "mcpServers": {\n    "oscar": {\n      "command": "npx",\n      "args": ["-y", "createwithoscar"]\n    }\n  }\n}';
-
-/** The one-click file for Claude Desktop, and where the steps are written out. */
-var BUNDLE_URL = "https://www.createwithoscar.com/assets/OSCAR.mcpb";
-var HELP_URL = "https://www.createwithoscar.com/how-it-works#ai";
-
-function el(tag, className, text) {
-  var node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function link(text, href, className) {
-  var node = el("a", className, text);
-  node.href = href;
-  node.target = "_blank";
-  node.rel = "noopener";
-  return node;
-}
-
-/** "just now", "3 min ago", "2 h ago": how long since a request, said loosely. */
-function ago(at, now) {
-  var seconds = Math.max(0, Math.round((now - at) / 1000));
-  if (seconds < 45) return "just now";
-  var minutes = Math.round(seconds / 60);
-  if (minutes < 60) return minutes + " min ago";
-  var hours = Math.round(minutes / 60);
-  if (hours < 24) return hours + " h ago";
-  return Math.round(hours / 24) + " d ago";
-}
-
-/** A line of something to copy, and its Copy button. */
-function copyLine(text, block) {
-  var row = el("div", "oscar-assist-copy");
-  row.appendChild(el(block ? "pre" : "code", "oscar-assist-code", text));
-  var copy = el("button", "o-btn oscar-publish-copy", "Copy");
-  copy.type = "button";
-  copy.onclick = function () {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(text).then(function () {
-      copy.textContent = "Copied";
-      setTimeout(function () {
-        copy.textContent = "Copy";
-      }, 1500);
-    });
-  };
-  row.appendChild(copy);
-  return row;
-}
-
-/**
- * @param {object} editor the GrapesJS editor
- * @param {object} options
- *   onState(on)  told when the switch is known or thrown, to paint the pill
- * @returns {{ open, refresh }}
- */
-function install(editor, options) {
-  var onState = (options && options.onState) || function () {};
-  var state = { on: false, calls: [] };
-  var panel = null;
-  var parts = {};
-
-  function build() {
-    panel = el("div", "oscar-export oscar-assist");
-
-    panel.appendChild(
-      el(
-        "p",
-        "oscar-export-hint",
-        "An AI assistant on this computer, such as Claude, can read this OSCAR and write an interface as a draft for you to check. It never sends anything to your rig, publishes, or changes a project."
-      )
-    );
-
-    // The switch, which the pill itself used to be.
-    var row = el("label", "oscar-assist-switch");
-    parts.box = el("input");
-    parts.box.type = "checkbox";
-    parts.box.onchange = function () {
-      set(parts.box.checked);
-    };
-    row.appendChild(parts.box);
-    parts.says = el("span", null, "");
-    row.appendChild(parts.says);
-    panel.appendChild(row);
-
-    // Two columns where there is room: how to connect, and what comes of it.
-    var columns = el("div", "oscar-assist-columns");
-    var left = el("div");
-    var right = el("div");
-    columns.appendChild(left);
-    columns.appendChild(right);
-    panel.appendChild(columns);
-
-    left.appendChild(el("h4", "oscar-assist-head", "Connect one, once"));
-    var ways = el("div", "oscar-assist-ways");
-
-    var desktop = el("div", "oscar-assist-way");
-    desktop.appendChild(el("strong", null, "Claude Desktop"));
-    var get = el("p", "oscar-assist-note");
-    get.appendChild(link("Download OSCAR.mcpb", BUNDLE_URL));
-    get.appendChild(document.createTextNode(", double-click it, and choose Install."));
-    desktop.appendChild(get);
-    ways.appendChild(desktop);
-
-    var code = el("div", "oscar-assist-way");
-    code.appendChild(el("strong", null, "Claude Code"));
-    code.appendChild(copyLine(CLAUDE_CODE, false));
-    ways.appendChild(code);
-
-    var others = el("div", "oscar-assist-way");
-    others.appendChild(el("strong", null, "Cursor, VS Code, Windsurf, Codex, Gemini CLI and other MCP apps"));
-    others.appendChild(el("p", "oscar-assist-note", "Add this server to the app's MCP settings."));
-    others.appendChild(copyLine(OTHER_APPS, true));
-    ways.appendChild(others);
-    left.appendChild(ways);
-
-    right.appendChild(el("h4", "oscar-assist-head", "Then ask"));
-    var asks = el("ul", "oscar-assist-asks");
-    asks.appendChild(el("li", null, "“Build me an OSCAR interface with four faders and a blackout button.”"));
-    asks.appendChild(el("li", null, "“My OSCAR slider is not moving the light. Can you see why?”"));
-    right.appendChild(asks);
-    right.appendChild(el("p", "oscar-assist-note", "A draft appears under File → Open project or template, marked Draft."));
-
-    right.appendChild(el("h4", "oscar-assist-head", "What assistants lately asked for"));
-    parts.calls = el("ul", "oscar-assist-calls");
-    right.appendChild(parts.calls);
-    parts.none = el("p", "oscar-assist-note", "Nothing since OSCAR started. A request shows here as it happens.");
-    right.appendChild(parts.none);
-
-    var foot = el("p", "oscar-assist-foot");
-    foot.appendChild(link("How this works, step by step", HELP_URL));
-    panel.appendChild(foot);
-  }
-
-  function draw() {
-    if (!panel) return;
-    parts.box.checked = state.on;
-    parts.says.textContent = state.on
-      ? "On: an assistant on this computer may connect."
-      : "Off: no assistant can connect, whatever it was set up with.";
-    panel.classList.toggle("oscar-assist-off", !state.on);
-
-    var now = Date.now();
-    parts.calls.textContent = "";
-    // Newest first.
-    state.calls
-      .slice()
-      .reverse()
-      .slice(0, 8)
-      .forEach(function (call) {
-        var item = el("li");
-        item.appendChild(el("span", "oscar-assist-call", call.title || call.tool));
-        item.appendChild(el("span", "oscar-assist-when", ago(call.at, now)));
-        parts.calls.appendChild(item);
-      });
-    parts.none.style.display = state.calls.length ? "none" : "";
-  }
-
-  function take(answer) {
-    if (!answer) return;
-    if (typeof answer.on === "boolean") state.on = answer.on;
-    if (Array.isArray(answer.calls)) state.calls = answer.calls;
-    onState(state.on);
-    draw();
-  }
-
-  function refresh() {
-    return fetch("/mcp-state")
-      .then(function (res) {
-        return res.json();
-      })
-      .then(take)
-      .catch(function () {});
-  }
-
-  function set(on) {
-    fetch("/mcp-state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ on: !!on }),
-    })
-      .then(function (res) {
-        return res.json();
-      })
-      .then(take)
-      .catch(function () {
-        // The switch did not move: show it where it stands.
-        draw();
-      });
-  }
-
-  function isOpen() {
-    return !!(panel && panel.isConnected && editor.Modal.isOpen());
-  }
-
-  function open() {
-    if (!panel) build();
-    listen();
-    draw();
-    refresh();
-    editor.Modal.open({
-      title: "AI assistants",
-      content: panel,
-      attributes: { class: "modal-login modal-publish" },
-    });
-  }
-
-  editor.Commands.add("oscar-assistants", open);
-
-  // An assistant asked for something: the list is worth drawing again. The
-  // socket may not be up when this is installed, so it is looked for again
-  // each time the window opens.
-  var listening = false;
-  function listen() {
-    if (listening || !editor.socket) return;
-    listening = true;
-    editor.socket.on("mcp:called", function () {
-      if (isOpen()) refresh();
-    });
-  }
-  listen();
-
-  refresh();
-  return { open: open, refresh: refresh };
-}
-
-module.exports = { install: install, ago: ago, CLAUDE_CODE: CLAUDE_CODE, OTHER_APPS: OTHER_APPS, BUNDLE_URL: BUNDLE_URL, HELP_URL: HELP_URL };
-
-},{}],47:[function(require,module,exports){
-/**
- * "Publish" in the editor: turning the project on the canvas into a page
- * phones open, and looking after every such page this OSCAR serves.
- *
- * What the toolbar had before is GrapesJS's own export-template command, a
- * modal of markup to copy out -- labelled "See code", because that is all it
- * is. It cannot produce a working interface: the settings that say where a
- * widget sends are not in the markup, and nothing on the page would read
- * them if they were.
- *
- * This asks the adapter for markup with those settings written in, and the
- * OSCAR server to wrap it around the standalone runtime (POST /publish).
- *
- * Two windows, for two questions. Publish is about the project on the
- * canvas: who can open it, the one code for the address that goes with
- * that, and one button that says what it does. Running is about OSCAR, the
- * server in the background: every interface it is serving, whichever
- * project is open here, with the devices on each. The editor and the server
- * are one app, and the bar keeps them apart the same way: the project on
- * the left, OSCAR on the right.
- *
- * Not named oscar_*.js: requiring "./oscar_<name>" is how an entry point used
- * to pull in one widget's file, and test/widgets.test.js refuses that pattern
- * in the entry points so nobody wires a widget by hand again.
- */
-
-var { exportSnapshot } = require("./adapters/grapesjs");
-var { surfaceAddress, addressFor } = require("../../lib/published-address");
-var { surfaceStamp } = require("../../lib/export/stamp");
-var features = require("../../lib/features");
-// Draws the code for a published surface's address. Bundled, like everything
-// else here: OSCAR runs at venues with no internet.
-var qrcode = require("qrcode-generator");
-
-var DEFAULT_NAME = "my-interface";
-
-// Addresses OSCAR uses itself (lib/published.js): never offered for a project.
-var RESERVED = ["preview"];
-
-/** A filename someone can find again, from whatever they typed. */
-function fileStem(name) {
-  var stem = String(name == null ? "" : name)
-    .trim()
-    .toLowerCase()
-    .replace(/\.html?$/, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60)
-    .replace(/-+$/g, "");
-  return stem || DEFAULT_NAME;
-}
-
-/**
- * Hand a blob to the browser as a download. The object URL is released a
- * moment later rather than at once: revoking it in the same frame as the
- * click races the download in Safari, and the file arrives empty.
- */
-function download(blob, filename) {
-  var url = URL.createObjectURL(blob);
-  var link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(function () {
-    URL.revokeObjectURL(url);
-  }, 1000);
-}
-
-function el(tag, className, text) {
-  var node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function button(label, className) {
-  var node = el("button", className || "o-btn", label);
-  node.type = "button";
-  return node;
-}
-
-/**
- * @param {object} editor the GrapesJS editor
- * @param {object} options
- *        host, port: what the editor was started with, offered for a download
- *        only if the server cannot be asked again
- *        project(): { id, name } -- which project the canvas is (lib/open-project.js)
- *        beforeOpen(): a promise; the canvas is made a project before the window opens
- *        newId(): an id for a canvas that had none
- *        source(name, id): the project on the canvas, as a file would hold it
- *        openProject({ id, name, data }): Edit -- put that project on the canvas
- */
-function install(editor, options) {
-  var container = document.getElementById("export-panel");
-  if (!container) return;
-
-  var publishButton = document.getElementById("publish-button");
-  var titleBox = document.getElementById("publish-title");
-  var cardAccess = document.getElementById("publish-card-access");
-  var cardWhere = document.getElementById("publish-card-where");
-  var stateLine = document.getElementById("publish-state");
-  var runningPanel = document.getElementById("running-panel");
-  var runningEmpty = document.getElementById("running-empty");
-  var publishedBox = document.getElementById("published-box");
-  var publishedList = document.getElementById("published-list");
-  var extrasBox = document.getElementById("publish-extras");
-  var errorBox = document.getElementById("export-error");
-  var noteBox = document.getElementById("export-note");
-  var pagesBox = document.getElementById("export-pages");
-  var pageCount = document.getElementById("export-page-count");
-  // The canvas's stamp against its published copy's (lib/export/stamp.js):
-  // the card says "Changes not published", and the toolbar's Publish button
-  // wears a dot meanwhile.
-  var canvasStamp = null; // worked out at most once per wave of edits
-
-  // What an extension adds to the dialog (addSection below): each gets a box
-  // of its own in #publish-extras and is asked to draw whenever the dialog
-  // opens or what is published changes.
-  var sections = [];
-  var latest = null; // the id of the surface published from this dialog, most recently
-  var known = []; // the published surfaces, as GET /published last said
-  var titles = {}; // project id -> what that project is called now, as GET /projects last said
-  var shown = null; // the row whose code is open, by surface id
-  var which = "publish"; // the window a download gives back to: "publish" or "running"
-  // Who can open an interface is one setting. OSCAR itself knows two
-  // answers: off, and this network. An extension may add further ones
-  // (addAccessLevel below): where the interface is reachable beyond it.
-  var levels = [];
-  var levelMaps = {}; // level id -> { surface id: true } as its read() last said, or null: not on offer now
-  // The address other devices reach OSCAR on, and its bridge port, as GET
-  // /connection last said; what a download is told unless it is changed.
-  var lanHost = "";
-  var lanPort = "";
-
-  /** Where a published surface is opened from another device. */
-  function addressOf(path) {
-    return surfaceAddress(lanHost || window.location.hostname, window.location.port || 80, path);
-  }
-
-  function say(box, message) {
-    box.textContent = message;
-    box.style.display = message ? "block" : "none";
-  }
-
-  /**
-   * Ask every section to draw itself. A section that throws loses only its
-   * own box; the dialog and the other sections go on.
-   */
-  function drawSections() {
-    sections.forEach(function (section) {
-      try {
-        section.draw(section.box, {
-          surfaces: known.map(function (page) {
-            return { id: page.id, name: titleOf(page), path: page.path, address: addressOf(page.path) };
-          }),
-          latest: latest,
-          refresh: refreshPublished,
-          show: showAddress,
-          onUnpublish: function (guard) {
-            section.guard = guard;
-          },
-        });
-      } catch (err) {
-        console.error("A section of the Publish dialog failed:", err);
-      }
-    });
-  }
-
-  /**
-   * An address used to be shown on request, in a box of its own with a QR
-   * button beside every link. Each interface now shows the one code for
-   * where it is opened, without being asked, so there is nothing to do here;
-   * the function stays so that a section written for the old dialog still runs.
-   */
-  function showAddress() {}
-
-  /** Which project the canvas is: { id, name }, id null for a canvas that is nobody yet. */
-  function project() {
-    var now = options.project ? options.project() : null;
-    return { id: (now && now.id) || null, name: (now && now.name) || "" };
-  }
-
-  /**
-   * The live interface that is this canvas's own: the one published from the
-   * project it is, whatever either is called now. Not matched by name -- a
-   * name is reused for different designs, and a wrong match would let
-   * Publish changes replace a running show with another one.
-   */
-  function publishedMine() {
-    var id = project().id;
-    if (!id) return null;
-    for (var i = 0; i < known.length; i++) {
-      if (known[i].project === id) return known[i];
-    }
-    return null;
-  }
-
-  /** What an interface is called: its project's title as it is now, else as it was published. */
-  function titleOf(page) {
-    return (page.project && titles[page.project]) || page.name || page.id;
-  }
-
-  function staleNow() {
-    var mine = publishedMine();
-    if (!mine || !mine.stamp || canvasStamp === null) return false;
-    return mine.stamp !== canvasStamp;
-  }
-
-  /**
-   * The Publish button in the toolbar, found by its class. (It was once found
-   * by its tooltip, which paintStale changes: after the first dot it was
-   * never found again, and the dot could not be taken off.)
-   */
-  function toolbarButton() {
-    return document.querySelector(".gjs-pn-btn.oscar-publish-btn");
-  }
-
-  /**
-   * The foot of the card: one button, which says what it does. Publish for
-   * a project that is not live; Publish changes when the canvas is ahead of
-   * what phones see; and no button at all when there is nothing to send.
-   */
-  function paintFoot() {
-    var mine = publishedMine();
-    var stale = staleNow();
-    if (stateLine) {
-      stateLine.textContent = !mine ? "" : stale ? "Changes not published" : "Up to date";
-      stateLine.setAttribute("data-state", !mine ? "none" : stale ? "grace" : "valid");
-    }
-    publishButton.textContent = mine ? "Publish changes" : "Publish";
-    publishButton.style.display = mine && !stale ? "none" : "";
-  }
-
-  function paintStale() {
-    paintFoot();
-    var bar = toolbarButton();
-    if (!bar) return;
-    var stale = staleNow();
-    bar.classList.toggle("oscar-publish-stale", stale);
-    bar.setAttribute("data-tooltip", stale ? "Publish your interface · the published copy is older than your canvas" : "Publish your interface");
-  }
-
-  /** Work the canvas's stamp out afresh; heavier than a click, so debounced below. */
-  function restamp() {
-    try {
-      // Markup and styles, as sent to publish: a visual edit counts too.
-      var snapshot = exportSnapshot(editor);
-      canvasStamp = surfaceStamp(snapshot.html, snapshot.css || "");
-    } catch (err) {
-      canvasStamp = null;
-    }
-    paintStale();
-  }
-
-  // Any edit may change the stamp; one reading two seconds after the last
-  // edit of a burst is fresh enough for a dot.
-  var restampWait = null;
-  editor.on("update", function () {
-    if (restampWait) clearTimeout(restampWait);
-    restampWait = setTimeout(restamp, 2000);
-  });
-
-  // The dot must not wait for the dialog to have been opened once: what is
-  // published is read soon after the editor is up, into the same list the
-  // dialog uses, and the canvas stamped against it.
-  setTimeout(function () {
-    refreshPublished().then(restamp);
-  }, 3000);
-
-  // ---- who can open it ----------------------------------------------------
-
-  /** The extension level a surface is at, out of what the levels last said, or null. */
-  function levelAt(id) {
-    for (var i = 0; i < levels.length; i++) {
-      var map = levelMaps[levels[i].id];
-      if (map && map[id]) return levels[i];
-    }
-    return null;
-  }
-
-  function postAccess(id, access) {
-    return fetch("/published/" + encodeURIComponent(id) + "/access", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access: access }),
-    }).then(function (res) {
-      return res.json().then(function (answer) {
-        if (!res.ok) throw new Error((answer && answer.error) || "That could not be changed.");
-        return answer;
-      });
-    });
-  }
-
-  /**
-   * One setting, three kinds of step. Leaving an extension's level is asked
-   * of that level first; off and network are OSCAR's own; and an extension's
-   * level is chosen with the interface open to the network, which it builds
-   * on. Whatever fails is said, and the window is drawn again as things stand.
-   */
-  function changeAccess(page, at, to, select) {
-    say(errorBox, "");
-    select.disabled = true;
-    var chain = Promise.resolve();
-    if (at && at.id !== to) {
-      chain = chain.then(function () {
-        return at.leave(page.id);
-      });
-    }
-    if (to === "off" || to === "network") {
-      if (page.access !== to) {
-        chain = chain.then(function () {
-          return postAccess(page.id, to);
-        });
-      }
-    } else {
-      var level = levels.filter(function (other) {
-        return other.id === to;
-      })[0];
-      if (page.access === "off") {
-        chain = chain.then(function () {
-          return postAccess(page.id, "network");
-        });
-      }
-      chain = chain.then(function () {
-        return level.choose(page.id);
-      });
-    }
-    chain
-      .catch(function (err) {
-        say(errorBox, (err && err.message) || "That could not be changed.");
-      })
-      .then(refreshPublished);
-  }
-
-  /** Who can open it: one setting, the interface's own. */
-  function accessSelect(page, at) {
-    var isOff = page.access === "off";
-    var access = el("select", "o-input oscar-published-access");
-    access.setAttribute("aria-label", "Who can open " + titleOf(page));
-    [{ id: "off", label: "Off" }, { id: "network", label: "This network" }]
-      .concat(
-        levels
-          .filter(function (level) {
-            return levelMaps[level.id];
-          })
-          .map(function (level) {
-            // Why it cannot be chosen, when it cannot: it is on the list, greyed, and says so.
-            var why = typeof level.disabled === "function" ? level.disabled() : "";
-            return { id: level.id, label: typeof level.label === "function" ? level.label() : level.label, why: why || "" };
-          })
-      )
-      .forEach(function (choice) {
-        var option = el("option", "", choice.label);
-        option.value = choice.id;
-        if (choice.why) {
-          option.disabled = true;
-          // A browser shows no tooltip for an option: the reason is on the setting itself.
-          access.title = choice.why;
-        }
-        access.appendChild(option);
-      });
-    access.value = isOff ? "off" : at ? at.id : "network";
-    access.onclick = function (event) {
-      // On a row, a click anywhere else opens its code; not this one.
-      event.stopPropagation();
-    };
-    access.onchange = function () {
-      changeAccess(page, at, access.value, access);
-    };
-    return access;
-  }
-
-  // ---- where it is opened: the one code, the link, Copy ---------------------
-
-  /** Where an extension's level says an interface is opened, or null: asked for, never trusted not to throw. */
-  function leadOf(page, at) {
-    try {
-      return at && typeof at.link === "function" ? at.link(page.id) : null;
-    } catch (err) {
-      console.error("An access level of the Publish dialog failed:", err);
-      return null;
-    }
-  }
-
-  /**
-   * How many devices have an interface open right now: those on this
-   * network, as OSCAR counts them, and those an extension's level brings.
-   * Said per interface, never as one total for the bar: a number that adds
-   * the lobby's phones to the technician's tablet says nothing.
-   */
-  function devicesOf(page, lead) {
-    var here = Number(page.devices) || 0;
-    var there = lead && Number(lead.devices) > 0 ? Number(lead.devices) : 0;
-    var n = here + there;
-    // The devices that said their name (?device= on the page's address),
-    // under the pointer: a count says a tablet is missing, a name says which.
-    var named = Array.isArray(page.named) ? page.named.filter(Boolean) : [];
-    var title = there ? here + " on this network, " + there + " through the link" : "";
-    if (named.length) title = (title ? title + ": " : "") + named.join(", ");
-    return {
-      n: n,
-      words: n === 0 ? "No devices connected" : n === 1 ? "1 device connected" : n + " devices connected",
-      title: title,
-    };
-  }
-
-  function qrOf(address) {
-    // Drawn by the library from an address OSCAR or an extension built;
-    // nothing a person typed reaches it except a title, reduced to a-z, 0-9 and "-".
-    var code = qrcode(0, "M");
-    code.addData(address);
-    code.make();
-    var box = el("div", "oscar-publish-qr");
-    box.setAttribute("role", "img");
-    box.setAttribute("aria-label", "QR code for " + address);
-    box.innerHTML = code.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
-    return box;
-  }
-
-  function linkTo(address) {
-    var link = el("a", "o-link oscar-publish-link", address);
-    link.href = address;
-    link.target = "_blank";
-    link.rel = "noopener";
-    return link;
-  }
-
-  /**
-   * Where an interface is opened, as it stands: one code, for the address
-   * that goes with who can open it. An extension's level leads with its own
-   * address (anyone with the link); the local one then stays as text beside
-   * it, for a tablet on the same Wi-Fi. Off has neither.
-   */
-  function whereBlock(page, at) {
-    var where = el("div", "oscar-publish-spot");
-    if (page.access === "off") {
-      where.appendChild(el("p", "oscar-publish-off", "No device can open it. Its schedules and bridges still run."));
-      return where;
-    }
-    var local = addressOf(page.path);
-    var lead = leadOf(page, at);
-    var address = (lead && lead.address) || local;
-
-    where.appendChild(qrOf(address));
-    var lines = el("div", "oscar-publish-lines");
-
-    var first = el("div", "oscar-publish-line");
-    first.appendChild(linkTo(address));
-    var copy = button("Copy", "o-btn oscar-publish-copy");
-    copy.onclick = function (event) {
-      event.stopPropagation();
-      if (!navigator.clipboard) return;
-      navigator.clipboard.writeText(address).then(function () {
-        copy.textContent = "Copied";
-        setTimeout(function () {
-          copy.textContent = "Copy";
-        }, 1500);
-      });
-    };
-    first.appendChild(copy);
-    lines.appendChild(first);
-
-    // How it is doing: an extension's word on its link, and who is on it.
-    var second = el("div", "oscar-publish-line");
-    if (lead && lead.state && lead.state.text) {
-      var state = el("span", "oscar-published-state", lead.state.text);
-      state.setAttribute("data-state", lead.state.tone || "none");
-      if (lead.state.title) state.title = lead.state.title;
-      second.appendChild(state);
-    }
-    var on = devicesOf(page, lead);
-    var count = el("span", "oscar-publish-devices", on.words);
-    if (on.title) count.title = on.title;
-    second.appendChild(count);
-    lines.appendChild(second);
-
-    if (lead && lead.address) {
-      var third = el("div", "oscar-publish-line oscar-publish-local");
-      third.appendChild(document.createTextNode("On this Wi-Fi: "));
-      third.appendChild(linkTo(local));
-      lines.appendChild(third);
-    } else {
-      lines.appendChild(el("div", "oscar-publish-line oscar-publish-local", "Scan it with a phone on this network, or type the address."));
-    }
-
-    // An extension's own part: what it has to say beyond its address.
-    levels.forEach(function (level) {
-      if (!levelMaps[level.id] || typeof level.draw !== "function") return;
-      var box = el("span", "oscar-published-level");
-      try {
-        level.draw(box, { id: page.id, name: titleOf(page), path: page.path, address: local, access: page.access }, {
-          active: !!at && at.id === level.id,
-          show: showAddress,
-          refresh: refreshPublished,
-        });
-      } catch (err) {
-        console.error("An access level of the Publish dialog failed:", err);
-      }
-      lines.appendChild(box);
-    });
-
-    where.appendChild(lines);
-    return where;
-  }
-
-  // ---- what else can be done with one: Download, Take down ------------------
-
-  /** A small menu under a "..." button: built, placed, closed by a click away. */
-  function moreMenu(anchor, items) {
-    var open = document.querySelector(".oscar-open-menu");
-    if (open) open.remove();
-    var at = anchor.getBoundingClientRect();
-    var menu = el("div", "oscar-open-menu");
-    menu.style.top = Math.round(at.bottom + 4) + "px";
-    menu.style.left = Math.round(Math.max(8, at.right - 200)) + "px";
-    items.forEach(function (item) {
-      var row = button(item.label, "oscar-open-menu-item");
-      row.onclick = function () {
-        menu.remove();
-        item.run();
-      };
-      menu.appendChild(row);
-    });
-    document.body.appendChild(menu);
-    var away = function (event) {
-      if (menu.contains(event.target)) return;
-      menu.remove();
-      document.removeEventListener("pointerdown", away, true);
-    };
-    setTimeout(function () {
-      document.addEventListener("pointerdown", away, true);
-    }, 0);
-  }
-
-  function moreButton(page) {
-    var more = button("⋯", "o-btn oscar-published-more");
-    more.setAttribute("aria-label", "More for " + titleOf(page));
-    more.onclick = function (event) {
-      event.stopPropagation();
-      moreMenu(more, [
-        {
-          label: "Download as a file…",
-          run: function () {
-            openDownload(page.id);
-          },
-        },
-        {
-          label: "Take down",
-          run: function () {
-            takeDown(page);
-          },
-        },
-      ]);
-    };
-    return more;
-  }
-
-  /**
-   * Take an interface down: stop serving it, and its schedules and bridges
-   * with it. A section may have a reason to think twice (it is open to
-   * anyone with the link, say), and something to do first.
-   */
-  function takeDown(page) {
-    var warnings = sections
-      .map(function (section) {
-        return typeof section.guard === "function" ? section.guard(page.id) : null;
-      })
-      .filter(Boolean);
-    var unpublish = function () {
-      fetch("/published/" + encodeURIComponent(page.id), { method: "DELETE" }).then(function () {
-        refreshPublished();
-      });
-    };
-    if (!warnings.length) return unpublish();
-    var reasons = warnings.map(function (w) {
-      return w.reason;
-    });
-    var proceed = function () {
-      Promise.all(
-        warnings.map(function (w) {
-          return typeof w.first === "function" ? w.first() : null;
-        })
-      ).then(unpublish, function (err) {
-        say(errorBox, (err && err.message) || "That could not be done.");
-      });
-    };
-    if (window.$ && typeof window.$.confirm === "function") {
-      window.$.confirm({
-        title: "Still on the internet",
-        content: reasons.join(" "),
-        // Room for the long button; the theme keeps it on a narrow window.
-        boxWidth: "560px",
-        useBootstrap: false,
-        buttons: {
-          confirm: { text: "Take it off the internet and take it down", btnClass: "btn-red", action: proceed },
-          cancel: { text: "Keep it published" },
-        },
-      });
-    } else if (window.confirm(reasons.join(" ") + " Take it off the internet and take it down?")) {
-      proceed();
-    }
-  }
-
-  /** Edit: fetch the project a live interface was published from, and hand it to the editor. */
-  function openForEdit(page) {
-    say(errorBox, "");
-    fetch("/published/" + encodeURIComponent(page.id) + "/project")
-      .then(function (res) {
-        return res.json().then(function (answer) {
-          if (!res.ok) throw new Error((answer && answer.error) || "That project could not be opened.");
-          return answer;
-        });
-      })
-      .then(function (answer) {
-        options.openProject(answer);
-      })
-      .catch(function (err) {
-        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
-      });
-  }
-
-  // ---- the card: the project on the canvas -----------------------------------
-
-  function drawCard() {
-    var mine = publishedMine();
-    var now = project();
-    if (titleBox) titleBox.textContent = now.name || "Untitled";
-    cardAccess.textContent = "";
-    cardWhere.textContent = "";
-    if (mine) {
-      var at = mine.access === "off" ? null : levelAt(mine.id);
-      cardAccess.appendChild(accessSelect(mine, at));
-      cardAccess.appendChild(moreButton(mine));
-      cardWhere.appendChild(whereBlock(mine, at));
-    } else {
-      // Not live yet. No address to choose: it is made from the title.
-      var taken = known
-        .map(function (page) {
-          return page.id;
-        })
-        .concat(RESERVED);
-      cardWhere.appendChild(
-        el("p", "oscar-publish-off", "Not published yet. It will open at /show/" + addressFor(now.name, taken) + ", for phones and tablets on this network.")
-      );
-    }
-    paintFoot();
-  }
-
-  // ---- Running: every interface this OSCAR is serving -------------------------
-  // The server's side of the app. Whichever project is on the canvas, these
-  // are what phones can open and what schedules and bridges run from.
-
-  function drawRows() {
-    publishedList.textContent = "";
-    var mine = publishedMine();
-    known.forEach(function (page) {
-      var isMine = !!mine && page.id === mine.id;
-      var isOff = page.access === "off";
-      // The extension level this interface is at, if any: it outranks "network".
-      var at = isOff ? null : levelAt(page.id);
-      var row = el("li");
-
-      // A green dot first: this row is not a file, it is being served
-      // right now -- the same green, and the same breath, as the LIVE
-      // pill in the top bar.
-      var live = document.createElement("span");
-      live.className = "oscar-published-live";
-      live.title = "Published: OSCAR is serving this interface right now.";
-      if (isOff) {
-        // Grey and still: the page is kept, and nobody can open it.
-        live.className = "oscar-published-live oscar-published-off";
-        live.title = "Off: no device can open this interface. Its schedules and bridges still run.";
-      }
-      row.appendChild(live);
-
-      var name = el("span", "oscar-published-name", titleOf(page));
-      name.title = "/show/" + page.id;
-      row.appendChild(name);
-      row.setAttribute("data-surface", page.id);
-      if (isMine) {
-        var here = el("span", "oscar-published-note", "open in the editor");
-        here.title = "This is the project on the canvas. Publish, in the top bar, sends your changes to it.";
-        row.appendChild(here);
-      }
-      // Who is on it, said here and not as one number on the bar.
-      var on = devicesOf(page, leadOf(page, at));
-      var count = el("span", "oscar-published-note oscar-running-devices", on.n === 1 ? "1 device" : on.n + " devices");
-      count.title = on.title || on.words;
-      row.appendChild(count);
-      if (!page.editable) {
-        var bare = el("span", "oscar-published-note", "no project copy to edit");
-        bare.title = "Published before OSCAR kept a copy of the project beside each interface. It runs as it is, and can be taken down.";
-        row.appendChild(bare);
-      }
-
-      row.appendChild(accessSelect(page, at));
-
-      // Edit: the project this was published from, back on the canvas. Not
-      // for the one that is there already.
-      if (page.editable && !isMine && options.openProject) {
-        var editIt = button("Edit");
-        editIt.setAttribute("aria-label", "Edit " + titleOf(page));
-        editIt.onclick = function (event) {
-          event.stopPropagation();
-          openForEdit(page);
-        };
-        row.appendChild(editIt);
-      }
-      row.appendChild(moreButton(page));
-
-      // Click a row to see its code: the same block the card shows, under it.
-      row.classList.add("oscar-published-row");
-      row.tabIndex = 0;
-      row.setAttribute("aria-expanded", String(shown === page.id));
-      var toggle = function () {
-        shown = shown === page.id ? null : page.id;
-        drawRows();
-      };
-      row.onclick = toggle;
-      row.onkeydown = function (event) {
-        if (event.target !== row) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          toggle();
-        }
-      };
-      if (shown === page.id) {
-        var open = whereBlock(page, at);
-        open.onclick = function (event) {
-          event.stopPropagation();
-        };
-        row.appendChild(open);
-      }
-      publishedList.appendChild(row);
-    });
-    publishedBox.style.display = publishedList.children.length ? "block" : "none";
-    if (runningEmpty) runningEmpty.style.display = publishedList.children.length ? "none" : "";
-  }
-
-  /** A message passed through an interface: its row's light answers, while the window is open. */
-  function activity(ids) {
-    if (!publishedList || !publishedList.isConnected) return;
-    (Array.isArray(ids) ? ids : []).forEach(function (id) {
-      var rows = publishedList.querySelectorAll("li[data-surface]");
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].getAttribute("data-surface") !== id) continue;
-        var light = rows[i].querySelector(".oscar-published-live");
-        if (!light) continue;
-        light.classList.add("oscar-running-active");
-        clearTimeout(light.oscarQuiet);
-        light.oscarQuiet = setTimeout(
-          (function (lit) {
-            return function () {
-              lit.classList.remove("oscar-running-active");
-            };
-          })(light),
-          350
-        );
-      }
-    });
-  }
-
-  function openRunning() {
-    say(errorBox, "");
-    shown = null;
-    fetch("/connection")
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (conn) {
-        if (conn && conn.address) lanHost = conn.address;
-        if (conn && conn.socketPort) lanPort = String(conn.socketPort);
-      })
-      .catch(function () {
-        /* the values from startup stand */
-      })
-      .then(refreshPublished);
-    drawRows();
-    runningPanel.style.display = "block";
-    which = "running";
-    editor.Modal.open({
-      title: "Running on this OSCAR",
-      content: runningPanel,
-      attributes: { class: "modal-login modal-publish" },
-    });
-  }
-
-  /** Either window is on screen: what changed on the server is worth drawing. */
-  function isOpen() {
-    return editor.Modal.isOpen() && ((container && container.isConnected) || (runningPanel && runningPanel.isConnected));
-  }
-
-  function refreshPublished() {
-    return Promise.all([
-      fetch("/published").then(function (res) {
-        return res.ok ? res.json() : [];
-      }),
-      // What each project is called now: an interface is shown under its
-      // project's title, not the one it had the day it was published.
-      fetch("/projects")
-        .then(function (res) {
-          return res.ok ? res.json() : [];
-        })
-        .catch(function () {
-          return [];
-        }),
-    ])
-      .then(function (answers) {
-        // Each level says which surfaces are at it. One that fails, or has
-        // nothing to offer now, is left out of this drawing and no more.
-        return Promise.all(
-          levels.map(function (level) {
-            return Promise.resolve()
-              .then(function () {
-                return level.read();
-              })
-              .then(
-                function (map) {
-                  levelMaps[level.id] = map && typeof map === "object" ? map : null;
-                },
-                function () {
-                  levelMaps[level.id] = null;
-                }
-              );
-          })
-        ).then(function () {
-          return answers;
-        });
-      })
-      .then(function (answers) {
-        known = Array.isArray(answers[0]) ? answers[0] : [];
-        titles = {};
-        (Array.isArray(answers[1]) ? answers[1] : []).forEach(function (row) {
-          if (row && !row.template && row.id) titles[row.id] = row.name;
-        });
-        drawCard();
-        drawRows();
-        paintStale();
-        drawSections();
-      })
-      .catch(function () {
-        known = [];
-        drawCard();
-        drawRows();
-        drawSections();
-      });
-  }
-
-  // ---- a published surface as a file -------------------------------------
-  // Its own window, in place of the dialog, which comes back when it closes.
-  var downloadPanel = document.getElementById("download-panel");
-  var hostField = document.getElementById("download-host");
-  var portField = document.getElementById("download-port");
-  var downloadError = document.getElementById("download-error");
-  var downloadButton = document.getElementById("download-button");
-  var downloading = null; // the id of the surface the window is about
-  var returning = false; // whether the dialog comes back when the modal closes
-
-  function openDownload(id) {
-    downloading = id;
-    say(downloadError, "");
-    hostField.value = lanHost || options.host || window.location.hostname || "";
-    portField.value = lanPort || options.port || "";
-    returning = true;
-    downloadPanel.style.display = "block";
-    editor.Modal.open({
-      title: "Download " + id + " as a file",
-      content: downloadPanel,
-      attributes: { class: "modal-login" },
-    });
-  }
-
-  editor.on("modal:close", function () {
-    if (!returning) return;
-    returning = false;
-    // A tick later: the modal is still closing, and would close the dialog with it.
-    setTimeout(function () {
-      if (which === "running") openRunning();
-      else open();
-    }, 0);
-  });
-
-  downloadButton.onclick = function () {
-    var host = (hostField.value || "").trim();
-    var port = (portField.value || "").trim();
-    say(downloadError, "");
-    // The server checks both properly; this only saves a round trip.
-    if (!host) return say(downloadError, "Say where OSCAR can be reached.");
-    if (!port) return say(downloadError, "Say which port OSCAR's bridge is on.");
-    var id = downloading;
-    downloadButton.disabled = true;
-    fetch("/published/" + encodeURIComponent(id) + "/file?host=" + encodeURIComponent(host) + "&port=" + encodeURIComponent(port))
-      .then(function (res) {
-        if (res.ok) return res.blob();
-        return res.json().then(
-          function (body) {
-            throw new Error((body && body.error) || "The download failed.");
-          },
-          function () {
-            throw new Error("The download failed.");
-          }
-        );
-      })
-      .then(function (blob) {
-        download(blob, id + ".html");
-        editor.Modal.close();
-      })
-      .catch(function (err) {
-        say(downloadError, (err && err.message) || "Could not reach the OSCAR server.");
-      })
-      .then(function () {
-        downloadButton.disabled = false;
-      });
-  };
-
-  function open() {
-    say(errorBox, "");
-    say(noteBox, "");
-    latest = null;
-    restamp();
-
-    // A project saved while Pages was on may still hold several; with the
-    // feature off only the first is ever shown, so there is nothing to say.
-    var pages = features.PAGES ? editor.Pages.getAll().length : 1;
-    pageCount.textContent = String(pages);
-    pagesBox.style.display = pages > 1 ? "block" : "none";
-
-    // Asked for now rather than remembered from when the editor loaded: a
-    // laptop that has changed network since then has a new address. The
-    // address OSCAR reports is the one a tablet on the same Wi-Fi can reach
-    // -- not localhost, which would only ever work on this computer.
-    fetch("/connection")
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (conn) {
-        if (conn && conn.address) lanHost = conn.address;
-        if (conn && conn.socketPort) lanPort = String(conn.socketPort);
-      })
-      .catch(function () {
-        /* the values from startup stand */
-      })
-      .then(refreshPublished);
-
-    drawCard();
-    container.style.display = "block";
-    which = "publish";
-    editor.Modal.open({
-      title: "Publish",
-      content: container,
-      attributes: { class: "modal-login modal-publish" },
-    });
-  }
-
-  /**
-   * What publishing sends: the surface, its settings written in, and the
-   * project it was made from -- which project it is, and the project itself,
-   * kept beside the page so the interface can be edited later. A published
-   * page is served by OSCAR and finds it by the address it was opened at, so
-   * nothing about where OSCAR is goes with it; the server bakes in its own.
-   *
-   * `as` is who the canvas is published as: { id, name, address }.
-   */
-  function request(as) {
-    say(errorBox, "");
-    say(noteBox, "");
-    var snapshot = exportSnapshot(editor);
-    return {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: as.name,
-        fileName: as.address,
-        html: snapshot.html,
-        css: snapshot.css,
-        project: { id: as.id, name: as.name },
-        source: options.source ? options.source(as.name, as.id) : undefined,
-      }),
-    };
-  }
-
-  /**
-   * Publish the canvas. A project that is live keeps the address it has;
-   * one that is not is given one made from its title, with a number when
-   * that is taken. Nobody is asked for an address, and nothing that is
-   * already live is ever replaced by a project that is not its own.
-   */
-  function publish(tried) {
-    var now = project();
-    var mine = publishedMine();
-    var taken = known
-      .map(function (page) {
-        return page.id;
-      })
-      .concat(RESERVED, tried || []);
-    var as = {
-      id: now.id || (options.newId ? options.newId() : null),
-      name: now.name || "Untitled",
-      address: mine ? mine.id : addressFor(now.name || "Untitled", taken),
-    };
-    publishButton.disabled = true;
-
-    fetch("/publish", request(as))
-      .then(function (res) {
-        return res.json().then(function (answer) {
-          if (!res.ok) throw new Error((answer && answer.error) || "The interface could not be published.");
-          return answer;
-        });
-      })
-      .then(function (answer) {
-        // Somebody published at that address a moment ago: the next number, not their page.
-        if (answer.confirm) {
-          if ((tried || []).length >= 5) throw new Error("No free address could be found for this project.");
-          return publish((tried || []).concat(as.address));
-        }
-        latest = answer.id;
-        if (answer.linked && answer.linked.length) {
-          say(noteBox, "Too large to embed, so these are loaded from OSCAR as the page opens: " + answer.linked.join(", "));
-        }
-        return refreshPublished();
-      })
-      .catch(function (err) {
-        say(errorBox, (err && err.message) || "Could not reach the OSCAR server.");
-      })
-      .then(function () {
-        publishButton.disabled = false;
-      });
-  }
-
-  publishButton.onclick = function () {
-    publish();
-  };
-
-  // The canvas is made a project first, when it is nobody yet: what is
-  // published has to belong to one. If that cannot be done -- OSCAR is not
-  // answering -- the window opens all the same and says what it can.
-  editor.Commands.add("oscar-export", function () {
-    if (!options.beforeOpen) return open();
-    Promise.resolve()
-      .then(options.beforeOpen)
-      .then(open, open);
-  });
-
-  // What OSCAR is running, as its own window: the RUNNING pill opens it.
-  editor.Commands.add("oscar-running", openRunning);
-
-  return {
-    /** The server says what is published, or who is on it, has changed: draw it, if either window is showing. */
-    refresh: function () {
-      if (isOpen()) refreshPublished();
-    },
-
-    /** A message passed through these interfaces (their ids): the Running window's lights answer. */
-    activity: activity,
-
-    /**
-     * Let an extension add to the dialog. `draw(box, view)` is called with a
-     * box of the extension's own, under the list of what is live, every time
-     * the dialog opens and every time what is published changes. `view` is
-     * { surfaces: [{ id, name, path, address }], latest: the id just
-     * published from here or null, refresh(), show(address, status),
-     * onUnpublish(guard) }: guard(id) is asked before an interface is taken
-     * down and answers null, or { reason, first() } -- a reason to think
-     * twice, put to the person, and what to do first if they go on (first
-     * returns a promise). show() does nothing now: each interface shows its
-     * own code. Drawing again replaces what the box held; the extension
-     * keeps any state it needs.
-     */
-    addSection: function (draw) {
-      if (typeof draw !== "function") throw new Error("A section of the Publish dialog is a draw function");
-      var box = document.createElement("div");
-      box.className = "oscar-publish-section";
-      if (extrasBox) extrasBox.appendChild(box);
-      sections.push({ draw: draw, box: box });
-    },
-
-    /**
-     * Let an extension add an answer to "who can open it", after OSCAR's own
-     * Off and This network: somewhere an interface is reachable beyond the
-     * local network. `level` is:
-     *
-     *   id       a short word, not "off" or "network"
-     *   label    what the setting calls it; a string, or a function giving one
-     *   read()   a promise of { surfaceId: true } for the interfaces at this
-     *            level now, or of null when the level is not on offer at all
-     *   choose(surfaceId)  put the interface at this level; a promise, rejected
-     *            with an Error whose message is for the person when it cannot be
-     *   leave(surfaceId)   take it off this level; a promise
-     *   disabled()         optional: why the level cannot be chosen now, as a
-     *            sentence for the person, or "" when it can. It stays on the
-     *            list, greyed, with that sentence on the setting
-     *   link(surfaceId)    optional: where an interface at this level is
-     *            opened, { address, state: { text, tone, title }, devices },
-     *            or null. devices is how many it has brought to the
-     *            interface, counted with those on this network.
-     *            Its address is the one the interface's code is drawn for;
-     *            tone is "valid", "grace" or "invalid"
-     *   draw(box, surface, view)  optional: anything more the level has to
-     *            say about an interface, beside where it is opened. surface
-     *            is { id, name, path, address, access }; view is { active,
-     *            show(address, status), refresh() }
-     *
-     * An interface at an extension's level is open to the network as well,
-     * and switching it Off leaves the level first.
-     */
-    addAccessLevel: function (level) {
-      if (!level || typeof level.id !== "string" || !/^[a-z][a-z0-9-]*$/.test(level.id) || level.id === "off" || level.id === "network") {
-        throw new Error("An access level has an id of its own");
-      }
-      if (typeof level.read !== "function" || typeof level.choose !== "function" || typeof level.leave !== "function") {
-        throw new Error("An access level reads, is chosen and is left");
-      }
-      levels = levels
-        .filter(function (other) {
-          return other.id !== level.id;
-        })
-        .concat([level]);
-    },
-  };
-}
-
-module.exports = { install: install, fileStem: fileStem };
-
-},{"../../lib/export/stamp":5,"../../lib/features":6,"../../lib/published-address":16,"./adapters/grapesjs":45,"qrcode-generator":44}],48:[function(require,module,exports){
-"use strict";
-
-/**
- * What somebody sees the first time they open OSCAR: the Showcase, a surface
- * where every widget works, not an empty canvas and a toolbar of icons.
- *
- * "The first time" means this browser has never held an OSCAR canvas. The
- * canvas autosaves into the browser (see storageManager in oscar_editor.js),
- * so from the first edit on there is an autosave and this never happens
- * again: not after the canvas has been cleared on purpose, and not after an
- * autosave was set aside for being unreadable or from a newer OSCAR. Those
- * people have been here before, and an empty canvas is what they are owed.
- *
- * It has to be asked before the editor starts, because starting it is what
- * writes the first autosave.
- */
-
-/** The template opened on a first run. Anything else in public/templates would do. */
-var WELCOME = "templates/oscar-showcase.html";
-
-/** The key the canvas autosaves under. */
-var AUTOSAVE_KEY = "oscarProject";
-
-/**
- * @param {Storage} storage the browser's localStorage, or anything shaped like it
- * @returns {boolean} false when it cannot be told: better an empty canvas
- *          than a template loaded over somebody's work
- */
-function isFirstRun(storage) {
-  try {
-    return !!storage && storage.getItem(AUTOSAVE_KEY) === null;
-  } catch (err) {
-    // Storage that throws when read (a private window, a locked-down kiosk).
-    return false;
-  }
-}
-
-/**
- * Open the welcome template. Quietly: nobody asked for it, so there is no
- * "Loaded successfully", and if it cannot be fetched the canvas stays empty
- * and nothing is said.
- *
- * @param {object} deps
- * @param {(url: string) => Promise<Response>} deps.fetch
- * @param {(html: string) => void} deps.load what Load uses to open a template
- * @param {() => boolean} [deps.untouched] whether the canvas is still as it
- *        started; checked after the fetch, in case somebody was quick
- * @returns {Promise<boolean>} whether it was opened
- */
-function openWelcome(deps) {
-  return deps
-    .fetch(WELCOME)
-    .then(function (res) {
-      if (!res.ok) throw new Error("status " + res.status);
-      return res.text();
-    })
-    .then(function (html) {
-      if (deps.untouched && !deps.untouched()) return false;
-      deps.load(html);
-      return true;
-    })
-    .catch(function () {
-      return false;
-    });
-}
-
-module.exports = { isFirstRun: isFirstRun, openWelcome: openWelcome, WELCOME: WELCOME, AUTOSAVE_KEY: AUTOSAVE_KEY };
-
-},{}],49:[function(require,module,exports){
-window.$ = $ = window.jQuery = require("jquery");
-
-// jquery-confirm attaches itself to whichever jQuery it is handed. The bundle
-// carries its own copy of jQuery, so it must be required here rather than
-// loaded as a separate <script> tag -- otherwise it extends the page's jQuery
-// and $.alert/$.confirm go missing on this one. Its CommonJS build exports an
-// initialiser instead of running itself.
-require("jquery-confirm")(window, $);
-// Every $.alert and $.confirm draws with OSCAR's theme (css/oscar_theme.css)
-// without each call site having to ask for it. jquery-confirm sizes its box
-// with Bootstrap grid classes unless told otherwise, and with Bootstrap gone
-// those classes have no width, so a prompt stretched across the whole screen.
-window.jconfirm.defaults = { theme: "oscar", useBootstrap: false, boxWidth: "420px" };
-
-// GrapesJS 0.21+ no longer ships Font Awesome, so OSCAR's icons are inline SVG.
-var ICONS = {
-  // Save and Load are a pair of folders, arrow up to send a project, arrow
-  // down to bring one back. mdi-folder-upload and mdi-folder-download,
-  // @mdi/svg 7.4.47 (Apache-2.0), copied from the package.
-  save: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4H10L12,6H20M10.75,13H14V17H16V13H19.25L15,8.75",
-  open: "M20,6A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H20M19.25,13H16V9H14V13H10.75L15,17.25",
-  // mdi-palette and mdi-restore, @mdi/svg 7.4.47 (Apache-2.0): the widget
-  // style gallery, and putting a widget back on its surface's style.
-  palette: "M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 17.5,12M14.5,8A1.5,1.5 0 0,1 13,6.5A1.5,1.5 0 0,1 14.5,5A1.5,1.5 0 0,1 16,6.5A1.5,1.5 0 0,1 14.5,8M9.5,8A1.5,1.5 0 0,1 8,6.5A1.5,1.5 0 0,1 9.5,5A1.5,1.5 0 0,1 11,6.5A1.5,1.5 0 0,1 9.5,8M6.5,12A1.5,1.5 0 0,1 5,10.5A1.5,1.5 0 0,1 6.5,9A1.5,1.5 0 0,1 8,10.5A1.5,1.5 0 0,1 6.5,12M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A1.5,1.5 0 0,0 13.5,19.5C13.5,19.11 13.35,18.76 13.11,18.5C12.88,18.23 12.73,17.88 12.73,17.5A1.5,1.5 0 0,1 14.23,16H16A5,5 0 0,0 21,11C21,6.58 16.97,3 12,3Z",
-  restore: "M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z",
-  // mdi-export-variant, @mdi/svg 7.4.47 (Apache-2.0): publishing sends the
-  // surface out of the editor, an arrow leaving its box. (A bare up arrow
-  // read as "upload a file".)
-  publish: "M12,1L8,5H11V14H13V5H16M18,23H6C4.89,23 4,22.1 4,21V9A2,2 0 0,1 6,7H9V9H6V21H18V9H15V7H18A2,2 0 0,1 20,9V21A2,2 0 0,1 18,23Z",
-  // OSCAR's own mark, traced from assets/css/logo.png (the jellyfish, not the
-  // word under it) with its strokes thickened to the weight the other icons
-  // draw at. About wears it.
-  jellyfish: "M12.2,8.4L12.2,9.4L12.7,9.8L13.6,9.4L14.4,9.8L15.1,9.3L14.9,8.3L13.9,7.6ZM8.1,8.8L8.1,9.3L8.8,9.8L9.4,9.4L10.4,9.8L10.9,9.4L10.9,8.4L9.8,7.6L8.8,7.9ZM10.4,1L7.9,2L6,3.8L4.1,7.5L4.3,10.4L6,12.7L6,16.9L5,18.5L5,19.5L6,20.2L6.8,19.9L7.8,18.7L8.1,17.5L8.4,20L9.8,20.4L10.4,19.9L10.6,13.2L10.8,18.7L11.4,19.2L12.4,19L12.7,18.7L12.9,13.2L13.1,22.2L14.4,22.8L15.2,22.2L15.2,13.4L15.6,13.2L17,14.9L18,15.4L18.9,15.4L19.7,14.7L19.5,13.7L17.9,12.6L17.9,11.9L19,10.3L19.2,7.6L17.9,4.6L16.1,2.5L13.6,1.2ZM7.8,5.1L9.1,3.8L10.6,3.2L12.6,3.2L14.2,3.8L15.6,5.1L17,8.3L16.7,9.9L15.2,11.1L10.9,10.8L8.6,11.3L7.3,10.8L6.5,9.6L6.3,8.3Z",
-  help: "M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z",
-  pages:
-    "M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M19,21H8V7H19V21Z",
-  remove: "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
-  locked:
-    "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z",
-  unlocked:
-    "M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V10A2,2 0 0,1 6,8H15V6A3,3 0 0,0 12,3A3,3 0 0,0 9,6H7A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,17A2,2 0 0,0 14,15A2,2 0 0,0 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17Z",
-};
-
-function icon(name, size) {
-  size = size || 18;
-  return (
-    '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '">' +
-    '<path fill="currentColor" d="' + ICONS[name] + '"/></svg>'
-  );
-}
-
-var editor = {};
-
-// One browserify bundle serves both the editor and the preview page, so each
-// entry point only boots when its own container is on the page.
-if (document.getElementById("gjs")) {
-  // Extensions' scripts run as soon as this file has, which is before the
-  // editor has finished loading. They wait here; see the end of this block.
-  var extensionsWaiting = [];
-  window.OSCAR = {
-    api: 1,
-    ready: function (fn) {
-      if (typeof fn === "function") extensionsWaiting.push(fn);
-    },
-  };
-
-  // Ask the server which address it is reachable on, so new widgets default to
-  // an IP that other devices on the network can actually talk to.
-  fetch("/connection")
-    .then(function (res) {
-      return res.json();
-    })
-    .catch(function () {
-      return {};
-    })
-    .then(function (conn) {
-      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081, conn.oscInPort);
-      window.editor = editor;
-    });
-
-  checkForUpdate();
-  loadDiagnostics();
-  wireFeedbackButtons();
-}
-
-// ---- feedback --------------------------------------------------------------
-// Reports are prefilled into GitHub's issue form and opened in the browser, so
-// the person sees exactly what is being sent before submitting. OSCAR itself
-// posts nothing and holds no credentials.
-var ISSUES_URL = "https://github.com/trafalmejo/OSCAR/issues/new";
-
-var diagnostics = null;
-
-function loadDiagnostics() {
-  fetch("/diagnostics")
-    .then(function (res) {
-      return res.json();
-    })
-    .then(function (info) {
-      diagnostics = info || {};
-      var el = document.getElementById("about-version");
-      if (el && diagnostics.oscar) el.textContent = "OSCAR " + diagnostics.oscar;
-    })
-    .catch(function () {
-      diagnostics = {};
-    });
-}
-
-/** The version details a bug report always ends up asking for. */
-function environmentReport() {
-  var info = diagnostics || {};
-  var lines = [
-    "OSCAR:      " + (info.oscar || "unknown"),
-    "Runs as:    " + (info.electron ? "desktop app (Electron " + info.electron + ")" : "browser"),
-    "System:     " + (info.platform || "?") + " " + (info.arch || ""),
-    "Node:       " + (info.node || "?"),
-    "GrapesJS:   " + (typeof grapesjs !== "undefined" ? grapesjs.version : "?"),
-    "Project:    format " + (info.projectFormat || "?"),
-    // Whether this build can open a serial port at all is the first question
-    // a "my Arduino does nothing" report raises. The port name stays out.
-    "Serial:     " + (info.serial ? (info.serial.supported ? info.serial.state : "not in this build") : "?"),
-    // Counts only: a MIDI port is named after the hardware plugged in.
-    "MIDI:       " +
-      (info.midi
-        ? info.midi.supported
-          ? (info.midi.outputs || []).length + " out, " + (info.midi.inputs || []).length + " in"
-          : "not in this build"
-        : "?"),
-    // Behaviour nobody else sees is sometimes an extension's (lib/extensions.js).
-    "Extensions: " +
-      ((info.extensions || [])
-        .map(function (e) {
-          return e.name + (e.version ? " " + e.version : "");
-        })
-        .join(", ") || "none"),
-    "Browser:    " + navigator.userAgent,
-  ];
-  return lines.join("\n");
-}
-
-function openIssue(template) {
-  var url =
-    ISSUES_URL +
-    "?template=" +
-    encodeURIComponent(template) +
-    "&environment=" +
-    encodeURIComponent(environmentReport());
-  window.open(url, "_blank", "noopener");
-}
-
-function wireFeedbackButtons() {
-  var report = document.getElementById("report-problem");
-  if (report) {
-    report.onclick = function (e) {
-      e.preventDefault();
-      openIssue("bug.yml");
-    };
-  }
-
-  var suggest = document.getElementById("suggest-feature");
-  if (suggest) {
-    suggest.onclick = function (e) {
-      e.preventDefault();
-      // The feature form has no environment field; nothing to prefill.
-      window.open(ISSUES_URL + "?template=feature.yml", "_blank", "noopener");
-    };
-  }
-}
-
-// ---- update notice ---------------------------------------------------------
-// The server does the checking; this only reports what it found. It is a
-// corner toast rather than a modal on purpose: OSCAR is often on screen during
-// a show, and nothing here may steal focus, cover the toolbar, or block work.
-var SKIPPED_KEY = "oscarSkippedUpdate";
-
-function skippedVersion() {
-  try {
-    return localStorage.getItem(SKIPPED_KEY);
-  } catch (err) {
-    return null; // private windows and locked-down browsers
-  }
-}
-
-function showUpdateNotice(info) {
-  var box = document.createElement("div");
-  box.className = "oscar-update";
-
-  var title = document.createElement("div");
-  title.className = "oscar-update-title";
-  title.textContent = "OSCAR " + info.version + " is available";
-
-  var current = document.createElement("div");
-  current.className = "oscar-update-current";
-  current.textContent = info.current
-    ? "You are running " + info.current + "."
-    : "You are running an older version.";
-
-  var actions = document.createElement("div");
-  actions.className = "oscar-update-actions";
-
-  // Only ever link to a GitHub release page, whatever the server replied.
-  var link = document.createElement("a");
-  link.className = "oscar-update-get";
-  link.textContent = "What's new";
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.href = /^https:\/\/github\.com\//.test(info.url || "")
-    ? info.url
-    : "https://github.com/trafalmejo/OSCAR/releases/latest";
-
-  var later = document.createElement("button");
-  later.className = "oscar-update-later";
-  later.type = "button";
-  later.textContent = "Later";
-  later.onclick = function () {
-    box.remove();
-  };
-
-  var skip = document.createElement("button");
-  skip.className = "oscar-update-skip";
-  skip.type = "button";
-  skip.textContent = "Skip this version";
-  skip.onclick = function () {
-    try {
-      localStorage.setItem(SKIPPED_KEY, info.version);
-    } catch (err) {
-      /* nothing to do -- it just gets offered again next launch */
-    }
-    box.remove();
-  };
-
-  actions.appendChild(link);
-  actions.appendChild(later);
-  actions.appendChild(skip);
-  box.appendChild(title);
-  box.appendChild(current);
-  box.appendChild(actions);
-  document.body.appendChild(box);
-}
-
-function checkForUpdate() {
-  fetch("/update")
-    .then(function (res) {
-      return res.json();
-    })
-    .then(function (info) {
-      if (!info || !info.available || !info.version) return;
-      if (info.version === skippedVersion()) return;
-      showUpdateNotice(info);
-    })
-    .catch(function () {
-      // Offline, or the server said nothing. Never worth bothering anyone.
-    });
-}
-
-// The same module the server uses to stamp and check project files, so the
-// format number and the "is this a project?" rule can never drift apart.
-var projectFormat = require("../../lib/project-format");
-var projectsTable = require("../../lib/projects-table");
-var widgetStyles = require("../../lib/widget-styles");
-var htmlDocument = require("../../lib/html-document");
-var { followSurfaceStyle, sectionLights, noSelectingWhile, suggest, refreshChoices } = require("./adapters/grapesjs");
-
-// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
-var adapters = require("./adapters/grapesjs");
-var { widgetPlugins, runOffstage } = adapters;
-
-// Tabs and the page-by-page lock, shared with the /preview page.
-var oscarPages = require("./pages");
-var features = require("../../lib/features");
-var welcome = require("./first_run");
-
-var oscarExport = require("./export_dialog");
-var oscarAssistants = require("./assistants_dialog");
-var { createOpenProject } = require("../../lib/open-project");
-var { createProjectSync } = require("../../lib/project-sync");
-var toolbarOrder = require("../../lib/toolbar-order");
-
-var isProjectData = projectFormat.isGrapesProject;
-
-function postJSON(url, body) {
-  return fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }).then(function (res) {
-    return res.json();
-  });
-}
-
-function initGrape(ipServer, socketPort, oscInPort) {
-  // Asked before the editor starts: starting it writes the first autosave.
-  var firstRun = welcome.isFirstRun(window.localStorage);
-
-  editor = grapesjs.init({
-    // GrapesJS fetches Font Awesome from a CDN by default, which fails without
-    // a word at a venue with no internet. The few icons it still draws that
-    // way are supplied by css/oscar_theme.css instead.
-    cssIcons: "",
-    // The outline on a selected component is drawn inside the canvas, which
-    // cannot see the editor's theme variables, so GrapesJS's own light blue
-    // stayed while the handles and toolbar turned pink. canvasCss is added
-    // after GrapesJS's rule and is editor-only: it never reaches a saved or
-    // exported project. The colour is read from the theme, not repeated here.
-    canvasCss:
-      ".gjs-selected { outline: 2px solid " +
-      (getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#ff3663") +
-      " !important; }",
-    dragMode: "absolute",
-    // Style the selected element, not its classes. GrapesJS's default puts
-    // a resize or a style change on the element's class combination, which
-    // silently rewrites every sibling wearing the same classes: scale one
-    // drum and the whole kit grows, and the layout reflows under the
-    // handles ("I scale an element and something else moves"). The classes
-    // stay editable on purpose -- picking one in the Selector panel styles
-    // it deliberately.
-    selectorManager: { componentFirst: true },
-    // Code pasted into Import, and templates, are read with these.
-    //
-    // A whole document is reduced to its CSS and its body first (see
-    // lib/html-document.js for why GrapesJS must not read it as a document),
-    // and the style named on its <body> is put on the surface. data-gjs-min-x
-    // becomes the minX setting, since HTML attribute names cannot hold
-    // capitals. The rest are GrapesJS's own defaults, restated because this
-    // option replaces them.
-    parser: {
-      optionsHtml: {
-        preParser: function (input, context) {
-          var doc = htmlDocument.readDocument(input);
-          // A snippet keeps its shape; only the comments inside its <style>
-          // blocks go, for the reason given at stripCssComments.
-          if (!doc) return htmlDocument.cleanStyleBlocks(input);
-          var wrapper = context && context.editor && context.editor.getWrapper();
-          if (wrapper) {
-            wrapper.setAttributes(widgetStyles.withSurfaceStyle(wrapper.getAttributes(), doc.bodyAttributes));
-          }
-          return doc.html;
-        },
-        htmlType: "text/html",
-        allowScripts: false,
-        allowUnsafeAttr: false,
-        allowUnsafeAttrValue: false,
-        keepEmptyTextNodes: false,
-        convertDataGjsAttributesHyphens: true,
-        convertAttributeValues: false,
-      },
-    },
-    height: "100%",
-    container: "#gjs",
-    fromElement: true,
-    allowScripts: 1,
-    // The canvas is its own document and loads nothing from the editor page:
-    // fonts, every style's tokens and the widgets all come in here.
-    canvas: { styles: widgetStyles.canvasStylesheets() },
-    // The surface follows its style too; see SURFACE_CSS for why this one
-    // rule cannot sit in a layer.
-    protectedCss: widgetStyles.SURFACE_CSS,
-    assetManager: {
-      assets: [
-        "images/fruits/emoji-apple.png",
-        "images/fruits/emoji-apple-click.png",
-        "images/fruits/emoji-orange.png",
-        "images/fruits/emoji-orange-click.png",
-        "images/fruits/emoji-banana.png",
-        "images/fruits/emoji-banana-click.png",
-        "images/fruits/background.png",
-      ],
-    },
-    // The canvas autosaves into this browser. Named projects are a separate,
-    // explicit action that writes JSON files next to the OSCAR server.
-    storageManager: {
-      type: "local",
-      autosave: true,
-      autoload: true,
-      stepsBeforeSave: 1,
-      // A key distinct from 0.16's `gjs-*` entries, so a browser that ran an
-      // older OSCAR ignores that data instead of half-loading it.
-      options: { local: { key: welcome.AUTOSAVE_KEY } },
-      // Stamp the autosave the same way saved files are stamped, and never
-      // let editor state into it.
-      onStore: function (data) {
-        // formatFor, as for a saved file: a single page stays readable by
-        // an older OSCAR sharing this browser's storage.
-        return Object.assign(
-          { oscarFormat: projectFormat.formatFor(data) },
-          projectFormat.namePages(projectFormat.stripEditorState(data))
-        );
-      },
-      onLoad: function (data) {
-        if (!data || !Object.keys(data).length) return data;
-
-        var format = typeof data.oscarFormat === "number" ? data.oscarFormat : 0;
-        delete data.oscarFormat;
-
-        // An autosave from a newer OSCAR would be quietly mangled by this one,
-        // and the next change would save the damage. Start fresh, but keep the
-        // newer copy rather than destroying someone's canvas.
-        if (format > projectFormat.CURRENT_FORMAT) {
-          try {
-            localStorage.setItem("oscarProject.newer", JSON.stringify(data));
-          } catch (err) {
-            /* nothing more we can do */
-          }
-          console.warn(
-            "OSCAR: this browser holds work from a newer OSCAR. Starting fresh; " +
-              "the newer copy is kept under the oscarProject.newer key."
-          );
-          return {};
-        }
-
-        // Repair an autosave that already holds editor state. A build once
-        // wrote the preview lock in here, which left widgets unmovable on
-        // every launch; that data carries the current stamp, so a version
-        // check would not catch it.
-        data = projectFormat.stripEditorState(data);
-
-        // And name its pages, on every load for the same reason: GrapesJS
-        // drops an empty page name when it stores, so page one of an autosave
-        // carrying the current stamp is routinely unnamed.
-        data = projectFormat.namePages(data);
-
-        // An autosave with no pages (from a crash mid-load, say) would leave
-        // the editor blank and unusable on every launch, with no way out short
-        // of clearing browser data. Start fresh -- `{}` is exactly what a
-        // first-ever launch loads.
-        if (isProjectData(data)) return data;
-        console.warn("OSCAR: discarding an unreadable autosave and starting fresh");
-        return {};
-      },
-    },
-    plugins: [
-      "oscar_socket",
-      "oscar_ip",
-      // OSCAR's widgets are bundled rather than loaded as globals, so they go
-      // in as functions. Named plugins are resolved through window[name], which
-      // silently does nothing when the name is wrong -- that is how the
-      // gjs-blocks-basic mismatch went unnoticed.
-      ...widgetPlugins(ipServer),
-      "grapesjs-preset-webpage",
-      "gjs-blocks-basic",
-      "grapesjs-custom-code",
-      "grapesjs-parser-postcss",
-      "grapesjs-touch",
-      "grapesjs-tooltip",
-    ],
-    pluginsOpts: {
-      oscar_socket: { ipserver: ipServer, socketPort: socketPort, from: "canvas" },
-      "grapesjs-tooltip": {},
-      "gjs-blocks-basic": { flexGrid: true },
-      "grapesjs-preset-webpage": {
-        blocks: [],
-        // Keep OSCAR's own palette (css/oscar_theme.css) rather than the
-        // preset's theme.
-        useCustomTheme: false,
-        showStylesOnChange: true,
-        // Not "Import Template": a template is now something in the Load list.
-        modalImportTitle: "Import HTML/CSS",
-        modalImportLabel:
-          '<div style="margin-bottom: 10px; font-size: 13px;">Paste here your HTML/CSS and click Import</div>',
-        modalImportContent: function (editor) {
-          return editor.getHtml() + "<style>" + editor.getCss() + "</style>";
-        },
-      },
-    },
-  });
-
-  // The chosen style is saved on the wrapper; the canvas body follows it.
-  followSurfaceStyle(editor, widgetStyles.copyToBody);
-
-  // While previewing, a click has to do what clicking does; see the adapter.
-  noSelectingWhile(editor, function () {
-    return editor.Commands.isActive("preview");
-  });
-
-  // A light on each protocol section of the settings panel, so a collapsed
-  // section still says whether the widget uses it. Watches the views column,
-  // which is where GrapesJS draws and redraws the panel.
-  sectionLights(editor, {
-    root: document.querySelector(".gjs-pn-views-container") || document.body,
-    listeningPort: oscInPort,
-    serial: features.SERIAL
-      ? {
-          state: function () {
-            return window.oscarSerialForPanel ? window.oscarSerialForPanel.state() : {};
-          },
-          pick: function (path) {
-            if (window.oscarSerialForPanel) window.oscarSerialForPanel.pick(path);
-          },
-        }
-      : null,
-  });
-
-  // The MIDI ports this computer has, for a widget's Port setting to suggest.
-  // Asked again whenever a widget is picked, since instruments come and go.
-  if (features.MIDI) {
-    var askForMidiPorts = function () {
-      fetch("/midi/ports")
-        .then(function (res) {
-          return res.ok ? res.json() : null;
-        })
-        .then(function (ports) {
-          if (ports) suggest("midi-outputs", ports.outputs, editor);
-          if (ports) suggest("midi-inputs", ports.inputs, editor);
-        })
-        .catch(function () {});
-    };
-    askForMidiPorts();
-    editor.on("component:selected", function () {
-      // With what is known already, at once; then with what the server says.
-      refreshChoices(editor);
-      askForMidiPorts();
-    });
-  }
-
-  // The canvas yields to the show, per widget id: what is published is read
-  // on a slow beat, each widget wears its light (green sends, red yields),
-  // and the dots follow the layout on a faster one (adapters/grapesjs.js).
-  var askForPublished = function () {
-    if (!features.CANVAS_YIELD) return;
-    fetch("/published")
-      .then(function (res) {
-        return res.ok ? res.json() : null;
-      })
-      .then(function (rows) {
-        if (rows) adapters.tellPublishedWidgets(editor, rows);
-      })
-      .catch(function () {});
-  };
-  askForPublished();
-  setInterval(askForPublished, 5000);
-  // Position follows the layout every frame, so a dragged widget carries
-  // its light; membership and colour repaint on edits, debounced. No
-  // lights while the feature is off: no frame asked for every 16 ms either.
-  if (features.CANVAS_YIELD) {
-    (function beat() {
-      adapters.repositionWidgetLights(editor);
-      window.requestAnimationFrame(beat);
-    })();
-  }
-  var repaintLights = (function () {
-    var wait = null;
-    return function () {
-      if (wait) clearTimeout(wait);
-      wait = setTimeout(function () {
-        adapters.paintWidgetLights(editor);
-      }, 150);
-    };
-  })();
-  editor.on("update component:add component:remove change:device undo redo", repaintLights);
-
-  // The serial ports, for a DMX widget's Interface and the OSC Board to
-  // choose from, and the cable's own state, for the Board row to say. Asked
-  // the same way: dongles come and go with the cable.
-  var serialLink = { path: "", state: "idle", error: null, bitrate: null };
-  {
-    var askForSerialPorts = function () {
-      fetch("/serial")
-        .then(function (res) {
-          return res.ok ? res.json() : null;
-        })
-        .then(function (report) {
-          if (!report) return;
-          serialLink = report;
-          if (Array.isArray(report.ports)) {
-            suggest(
-              "serial-ports",
-              report.ports.map(function (port) {
-                return { id: port.path, name: port.label || port.path };
-              }),
-              editor
-            );
-          }
-        })
-        .catch(function () {});
-    };
-    askForSerialPorts();
-    editor.on("component:selected", askForSerialPorts);
-    window.oscarSerialForPanel = {
-      state: function () {
-        return serialLink;
-      },
-      pick: function (path) {
-        fetch("/serial", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(path ? { action: "connect", path: path } : { action: "disconnect" }),
-        })
-          .then(function (res) {
-            return res.json().catch(function () {
-              return {};
-            });
-          })
-          .then(function (answer) {
-            if (answer && answer.error) $.alert(answer.error);
-          })
-          .catch(function () {})
-          .then(askForSerialPorts);
-      },
-    };
-    // Learn, and ticking Data in, can name a port the dropdown has not got.
-  // ---- the bridge's confirmation -------------------------------------------
-  // Only the same protocol both ways can loop: OSC in with OSC bridged out,
-  // MIDI in with MIDI bridged out. Creating such a pair is confirmed, from
-  // whichever side arrives last; a cross-protocol bridge (a knob to OSC) and
-  // DMX (no way in) ask nothing. Only for the selected widget: a project
-  // loading is not a hand in the panel.
-  var BRIDGE_PAIRS = [
-    { input: "listen", when: "oscSendWhen", protocol: "OSC" },
-    { input: "midiListen", when: "midiSendWhen", protocol: "MIDI" },
-  ];
-  var BRIDGE_KEYS = ["listen", "oscSendWhen", "midiListen", "midiSendWhen"];
-  var revertingBridge = false;
-  // GrapesJS says component:update:<key> twice for one change (once from the
-  // model, once from the trait), and the question must not stack.
-  var bridgeAsking = false;
-  function loopedPairs(get) {
-    return BRIDGE_PAIRS.filter(function (pair) {
-      return get(pair.input) === true && get(pair.when) === "data";
-    });
-  }
-  editor.on(
-    BRIDGE_KEYS.map(function (key) {
-      return "component:update:" + key;
-    }).join(" "),
-    function (model) {
-      if (revertingBridge || bridgeAsking || editor.getSelected() !== model) return;
-      var changed = Object.keys(model.changed || {}).filter(function (key) {
-        return BRIDGE_KEYS.indexOf(key) !== -1;
-      })[0];
-      if (!changed) return;
-      var before = model.previous(changed);
-      var was = function (key) {
-        return key === changed ? before : model.get(key);
-      };
-      // Only a pair this very change created asks; each protocol's pair asks
-      // once, and edits near an accepted pair stay quiet.
-      var beforePairs = loopedPairs(was);
-      var pair = loopedPairs(model.get.bind(model)).filter(function (candidate) {
-        return beforePairs.indexOf(candidate) === -1;
-      })[0];
-      if (!pair) return;
-      bridgeAsking = true;
-      $.confirm({
-        title: "This can loop",
-        content:
-          "This control listens to " + pair.protocol + " and will now also send on what it hears. " +
-          "If what it sends comes back -- software that echoes it, or OSCAR's own port -- it goes " +
-          "round in circles. The Loop guard (on) passes only real changes, which stops that.",
-        boxWidth: "460px",
-        useBootstrap: false,
-        onDestroy: function () {
-          bridgeAsking = false;
-        },
-        buttons: {
-          confirm: { text: "Keep it" },
-          cancel: {
-            text: "Undo",
-            action: function () {
-              revertingBridge = true;
-              model.set(changed, before);
-              revertingBridge = false;
-            },
-          },
-        },
-      });
-    }
-  );
-
-    editor.on("component:update:midiInPort component:update:midiPort", function () {
-      refreshChoices(editor);
-    });
-  }
-
-  var pn = editor.Panels;
-  var modal = editor.Modal;
-
-  // ---- modals ------------------------------------------------------------
-  function setModal(title, containerId) {
-    var container = document.getElementById(containerId);
-    container.style.display = "block";
-    modal.open({ title: title, content: container, attributes: { class: "modal-login" } });
-  }
-
-  function showLoader() {
-    $("#table-container").hide();
-    $("#loader-table").show();
-  }
-
-  function hideLoader() {
-    $("#table-container").show();
-    $("#loader-table").hide();
-  }
-
-  function openProjects(mode) {
-    projectsMode = mode;
-    selectedRow = null;
-    // Save leaves templates out of the list, so one picked in Load must not
-    // linger as the name a project is saved under.
-    if (mode === "Save" && selectedTemplate) {
-      selectedTemplate = null;
-      templateUrl = null;
-      $("#project-name").val("");
-    }
-    setModal(mode === "Load" ? "Open a project or template" : mode, "table-panel");
-    $("#save-button").toggle(mode === "Save");
-    $("#load-button").toggle(mode === "Load");
-    refreshProjects();
-  }
-
-  editor.Commands.add("open-projects", function (ed, sender, options) {
-    openProjects((options && options.type) || "Save");
-  });
-
-  // ---- project table -----------------------------------------------------
-  // A plain table rather than a plugin: it is one list with four columns.
-  // Every cell is filled with textContent, because a project's name is text a
-  // person typed. Sorting and formatting live in lib/projects-table.js.
-  var projectRows = [];
-  var projectsMode = "Save";
-  // The template picked in the list, if any. Kept apart from the project id
-  // because a template and a saved project can share a name.
-  var selectedTemplate = null;
-  var projectsProblem = null;
-  var projectSort = projectsTable.DEFAULT_SORT;
-  var projectsBody = document.querySelector("#projects-table tbody");
-
-  function refreshProjects() {
-    return fetch("/projects")
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (rows) {
-        projectRows = Array.isArray(rows) ? rows : [];
-        projectsProblem = null;
-        renderProjects();
-      })
-      .catch(function (err) {
-        console.log("Could not load projects", err);
-        projectRows = [];
-        projectsProblem = "Could not load projects";
-        renderProjects();
-      });
-  }
-
-  function projectCell(text, className) {
-    var td = document.createElement("td");
-    if (className) td.className = className;
-    td.textContent = text === null || text === undefined ? "" : String(text);
-    return td;
-  }
-
-  function renderProjects() {
-    var selectedId = document.getElementById("project-name").getAttribute("id-project");
-
-    document.querySelectorAll("#projects-table th[data-sort]").forEach(function (th) {
-      if (th.getAttribute("data-sort") === projectSort.key) {
-        th.setAttribute("aria-sort", projectSort.direction);
-      } else {
-        th.removeAttribute("aria-sort");
-      }
-    });
-
-    projectsBody.textContent = "";
-
-    // Your projects first, then an assistant's drafts, then the templates,
-    // folded under one row: they are many, and never change.
-    var sections = projectsTable.sectionProjects(projectRows, projectSort.key, projectSort.direction);
-    var showTemplates = projectsTable.templatesOpen(templatesChosen, sections);
-
-    if (projectsProblem) {
-      var failed = document.createElement("tr");
-      failed.className = "o-empty";
-      var message = projectCell(projectsProblem);
-      message.colSpan = 4;
-      failed.appendChild(message);
-      projectsBody.appendChild(failed);
-      return;
-    }
-    if (!sections.projects.length && !sections.drafts.length) {
-      var empty = document.createElement("tr");
-      empty.className = "o-empty";
-      var none = projectCell("No projects yet. Start from a template below, or from File \u2192 New project.");
-      none.colSpan = 4;
-      empty.appendChild(none);
-      projectsBody.appendChild(empty);
-    }
-
-    sections.projects.concat(sections.drafts).forEach(drawRow);
-
-    if (sections.templates.length) {
-      // One row for all of them: click it, or press Enter on it, to unfold.
-      var fold = document.createElement("tr");
-      fold.className = "o-table-fold";
-      fold.tabIndex = 0;
-      fold.setAttribute("aria-expanded", String(showTemplates));
-      var label = projectCell((showTemplates ? "\u25be " : "\u25b8 ") + "Templates (" + sections.templates.length + ")");
-      label.colSpan = 4;
-      fold.appendChild(label);
-      var toggle = function () {
-        templatesChosen = !showTemplates;
-        renderProjects();
-      };
-      fold.onclick = toggle;
-      fold.onkeydown = function (e) {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          toggle();
-        }
-      };
-      projectsBody.appendChild(fold);
-      if (showTemplates) sections.templates.forEach(drawRow);
-    }
-
-    function drawRow(row) {
-        var tr = document.createElement("tr");
-        tr.tabIndex = 0;
-        tr.setAttribute(
-          "aria-selected",
-          String(row.template ? row._id === selectedTemplate : !selectedTemplate && row._id === selectedId)
-        );
-        var name = projectCell(row.name);
-        // An assistant's draft rides the template mechanism but is not one:
-        // it is user data, badged apart and deletable below.
-        var isDraft = row.template && String(row._id).indexOf("assistant:") === 0;
-        if (row.template) {
-          var badge = document.createElement("span");
-          badge.className = isDraft ? "o-badge o-badge-draft" : "o-badge";
-          badge.textContent = isDraft ? "Draft" : "Template";
-          if (isDraft) badge.setAttribute("title", "Written by an assistant through MCP. Review it before it goes anywhere near the rig.");
-          name.appendChild(badge);
-        } else if (row.id && row.id === openProject.get().id) {
-          // The one on the canvas.
-          var here = document.createElement("span");
-          here.className = "o-badge";
-          here.textContent = "Open";
-          name.appendChild(here);
-        }
-        tr.appendChild(name);
-        tr.appendChild(projectCell(projectsTable.formatSize(row.size), "o-num"));
-        tr.appendChild(projectCell(row.date, "o-date"));
-
-        var actions = document.createElement("td");
-        actions.className = "o-actions";
-        tr.appendChild(actions);
-        tr.onclick = function () {
-          selectProject(row, tr);
-        };
-        tr.onkeydown = function (e) {
-          // Enter on the delete button belongs to the button.
-          if (e.target !== tr) return;
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            selectProject(row, tr);
-          }
-        };
-        projectsBody.appendChild(tr);
-
-        // Templates ship with OSCAR and cannot be deleted; a draft can.
-        if (row.template && !isDraft) return;
-
-        var remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "o-icon-btn";
-        remove.title = "Delete " + row.name;
-        remove.setAttribute("aria-label", "Delete " + row.name);
-        // A fixed SVG from ICONS, never anything a person typed.
-        remove.innerHTML = icon("remove", 16);
-        remove.onclick = function (e) {
-          e.stopPropagation();
-          confirmRemove(row);
-        };
-        actions.appendChild(remove);
-    }
-  }
-
-  // Marks the row in place rather than re-rendering, so a keyboard user's
-  // focus stays on the row they just chose.
-  function selectProject(row, tr) {
-    selectedRow = row;
-    selectedTemplate = row.template ? row._id : null;
-    $("#project-name").val(row.name).attr("id-project", row.template ? "" : row._id);
-    templateUrl = row.template ? row.url : null;
-    projectsBody.querySelectorAll("tr[aria-selected]").forEach(function (other) {
-      other.setAttribute("aria-selected", String(other === tr));
-    });
-  }
-
-  document.querySelectorAll("#projects-table th[data-sort] .o-sort").forEach(function (button) {
-    button.onclick = function () {
-      projectSort = projectsTable.nextSort(projectSort, button.parentNode.getAttribute("data-sort"));
-      renderProjects();
-    };
-  });
-
-  function confirmRemove(row) {
-    var draft = row.template && String(row._id).indexOf("assistant:") === 0;
-    if (draft || !row.id) return askRemove(row, draft, null);
-    // A project that is live says so before it goes: its interface keeps
-    // running without it unless it is taken down too.
-    fetch("/published")
-      .then(function (res) {
-        return res.ok ? res.json() : [];
-      })
-      .catch(function () {
-        return [];
-      })
-      .then(function (pages) {
-        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
-          return page.project === row.id;
-        })[0];
-        askRemove(row, false, live || null);
-      });
-  }
-
-  function askRemove(row, draft, live) {
-    var remove = function (takeDown) {
-      var call = draft
-        ? $.ajax({ type: "DELETE", url: "/drafts/" + encodeURIComponent(String(row._id).slice("assistant:".length)) + ".html" })
-        : $.ajax({ type: "DELETE", url: row.id ? "/projects/" + encodeURIComponent(row.id) : "/remove/" + row._id });
-      call
-        .done(function (data) {
-          if (takeDown && live && !data.error) fetch("/published/" + encodeURIComponent(live.id), { method: "DELETE" }).catch(function () {});
-          // The one on the canvas is gone: the canvas starts again as nobody,
-          // and what was on it is not saved back.
-          if (!draft && !data.error && row.id && row.id === openProject.get().id) {
-            projectSync.begin(
-              "",
-              function () {
-                loadTemplate("");
-              },
-              { discard: true }
-            );
-          }
-          refreshProjects();
-          $.alert(data.error || data.msg);
-        })
-        .fail(function () {
-          $.alert(draft ? "Could not delete that draft" : "Could not delete that project");
-        });
-    };
-    var buttons = {
-      confirm: {
-        text: live ? "Delete, keep it published" : "Confirm",
-        action: function () {
-          remove(false);
-        },
-      },
-    };
-    if (live) {
-      buttons.takeDown = {
-        text: "Delete and take it down",
-        btnClass: "btn-red",
-        action: function () {
-          remove(true);
-        },
-      };
-    }
-    buttons.cancel = function () {};
-    $.confirm({
-      title: draft ? "Delete Draft" : "Delete Project",
-      content: draft
-        ? "Delete this assistant-written draft? Anything you loaded from it and saved as a project stays."
-        : "Are you sure you want to delete this project? You won't be able to recover it afterwards." +
-          (live ? " It is published at /show/" + live.id + ": the interface keeps running, and can still be edited from the Publish window, unless you take it down too." : ""),
-      boxWidth: live ? "560px" : undefined,
-      useBootstrap: live ? false : undefined,
-      buttons: buttons,
-    });
-  }
-
-  // ---- the project on the canvas -------------------------------------------
-  // A project lives in OSCAR, on the computer it runs on, under one title
-  // (lib/projects.js). The canvas is one of them being edited: every change
-  // is saved a moment after it is made (lib/project-sync.js), and what OSCAR
-  // has not yet confirmed stays in this browser. There is no Save to press.
-  var projectName = document.getElementById("project-name");
-  var openProject = createOpenProject(window.localStorage);
-  var selectedRow = null; // the row picked in the projects list
-  var templatesChosen = null; // whether the person unfolded the templates; null until they say
-
-  /** Text a person typed, made safe to put in a dialog (its content is markup). */
-  function plain(text) {
-    return String(text == null ? "" : text).replace(/[<>&"]/g, "");
-  }
-
-  /** OSCAR's projects over HTTP: each answers { ok, status, body }, and fails only when OSCAR cannot be reached. */
-  function projectCall(method, url, body) {
-    return fetch(url, {
-      method: method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    }).then(function (res) {
-      return res.json().then(
-        function (json) {
-          return { ok: res.ok, status: res.status, body: json };
-        },
-        function () {
-          return { ok: res.ok, status: res.status, body: {} };
-        }
-      );
-    });
-  }
-  var projectApi = {
-    read: function (id) {
-      return projectCall("GET", "/projects/" + encodeURIComponent(id));
-    },
-    create: function (body) {
-      return projectCall("POST", "/projects", body);
-    },
-    write: function (id, body) {
-      return projectCall("PUT", "/projects/" + encodeURIComponent(id), body);
-    },
-    copy: function (id) {
-      return projectCall("POST", "/projects/" + encodeURIComponent(id) + "/copy");
-    },
-  };
-
-  // The project as it was when this window opened it: what File > Revert
-  // goes back to. Kept for this tab only; another tab has its own.
-  var OPENED_KEY = "oscarProject.opened";
-
-  function keepOpened(id, data) {
-    try {
-      sessionStorage.setItem(OPENED_KEY, JSON.stringify({ id: id, data: data }));
-    } catch (err) {
-      // No room, or no storage: Revert has nothing to offer, and says so.
-    }
-  }
-
-  function openedCopy() {
-    try {
-      var held = JSON.parse(sessionStorage.getItem(OPENED_KEY));
-      return held && held.id === openProject.get().id && isProjectData(held.data) ? held.data : null;
-    } catch (err) {
-      return null;
-    }
-  }
-
-  // The title and how it stands, in the top bar beside File and Edit.
-  var SAVE_STATES = {
-    new: ["", "Nothing to save yet: this becomes a project at its first change."],
-    saving: ["Saving\u2026", "Sending your changes to OSCAR."],
-    saved: ["Saved", "Every change is saved in OSCAR as you make it."],
-    unsaved: ["Not saved", "OSCAR could not be reached. Your changes are kept in this browser and sent as soon as it answers."],
-    conflict: ["Changed elsewhere", "This project was saved from another window or device. Change something here to choose which version to keep."],
-  };
-
-  function paintTitle() {
-    var el = document.querySelector(".gjs-pn-devices-c .oscar-title-btn");
-    if (el) el.textContent = openProject.get().name || "Untitled";
-  }
-
-  function paintSaveState(status, detail) {
-    var el = document.querySelector(".gjs-pn-devices-c .oscar-save-state");
-    if (!el) return;
-    var words = SAVE_STATES[status] || SAVE_STATES.new;
-    el.textContent = words[0];
-    el.setAttribute("data-state", status);
-    el.setAttribute("data-tooltip", status === "unsaved" && detail ? "Not saved: " + detail + " Your changes are kept in this browser meanwhile." : words[1]);
-    el.setAttribute("data-tooltip-pos", "bottom");
-  }
-
-  /** Saved from two places: which version stays is the person's call, never OSCAR's. */
-  function askConflict(info) {
-    return new Promise(function (resolve) {
-      $.confirm({
-        title: "Changed somewhere else",
-        content: '"' + plain(info.name) + '" was saved from another window or device since this one opened it. Which version do you keep?',
-        boxWidth: "520px",
-        useBootstrap: false,
-        buttons: {
-          mine: {
-            text: "Keep this window's",
-            action: function () {
-              resolve("mine");
-            },
-          },
-          theirs: {
-            text: "Load the other one",
-            action: function () {
-              resolve("theirs");
-            },
-          },
-        },
-      });
-    });
-  }
-
-  var projectSync = createProjectSync({
-    pointer: openProject,
-    api: projectApi,
-    // Tidied as a saved project is: no editor state, every page named.
-    getData: function () {
-      return projectFormat.namePages(projectFormat.stripEditorState(editor.getProjectData()));
-    },
-    loadData: function (data) {
-      editor.loadProjectData(data);
-      editor.UndoManager.clear();
-    },
-    isEmpty: function () {
-      return editor.getWrapper().components().length === 0;
-    },
-    onStatus: paintSaveState,
-    onName: paintTitle,
-    conflict: askConflict,
-    keepOpened: keepOpened,
-    grapesjs: grapesjs.version,
-  });
-
-  // Any change to the project is a change to save.
-  editor.on("update", function () {
-    projectSync.changed();
-  });
-  editor.onReady(function () {
-    projectSync.start();
-  });
-
-  // Ctrl+S is in everybody's fingers. It sends what is waiting, now.
-  document.addEventListener("keydown", function (event) {
-    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && String(event.key).toLowerCase() === "s") {
-      event.preventDefault();
-      projectSync.flush();
-    }
-  });
-
-  /** Click the title: a new one. The address of a published interface does not move with it. */
-  function renameProject() {
-    $.confirm({
-      title: "Rename project",
-      // The title is in the field as the dialog draws, not put there after:
-      // plain() has taken out what could end the attribute.
-      content: '<input type="text" class="o-input oscar-rename-input" maxlength="200" aria-label="Project title" value="' + plain(openProject.get().name || "Untitled") + '" />',
-      onContentReady: function () {
-        var dialog = this;
-        var input = dialog.$content.find("input");
-        input.trigger("focus").trigger("select");
-        input.on("keydown", function (event) {
-          if (event.key === "Enter") dialog.$$confirm.trigger("click");
-        });
-      },
-      buttons: {
-        confirm: {
-          text: "Rename",
-          action: function () {
-            projectSync.rename(this.$content.find("input").val());
-          },
-        },
-        cancel: function () {},
-      },
-    });
-  }
-
-  /** File > New project: an empty canvas, nobody until its first change. */
-  /**
-   * The right column shows the Blocks: what a new project is built from. A
-   * column left on the styles or the layers of the last project shows the
-   * new one nothing to drag in.
-   */
-  function showBlocks() {
-    var button = pn.getButton("views", "open-blocks");
-    if (button && !button.get("active")) button.set("active", true);
-  }
-
-  function newProject() {
-    projectSync.begin("", function () {
-      loadTemplate("");
-      showBlocks();
-    });
-  }
-
-  /** File > Make a copy: a second project like this one, opened in its place. */
-  function copyProject() {
-    projectSync.copy().then(null, function (err) {
-      $.alert(plain(err && err.message) || "The project could not be copied.");
-    });
-  }
-
-  // ---- revert ------------------------------------------------------------
-  // With every change saved there is no "close without saving". These are
-  // the two ways back: how the project was when this window opened it, and
-  // the version that is published.
-  function revertWith(data, what) {
-    $.confirm({
-      title: "Revert",
-      content: "Put this project back as " + what + "? What you changed since is replaced.",
-      buttons: {
-        confirm: {
-          text: "Revert",
-          action: function () {
-            projectSync.replaceWith(data);
-          },
-        },
-        cancel: function () {},
-      },
-    });
-  }
-
-  function revertToOpened() {
-    var data = openedCopy();
-    if (!data) {
-      $.alert("There is nothing to go back to: this project was not opened in this window, or has only just been made.");
-      return;
-    }
-    revertWith(data, "it was when this window opened it");
-  }
-
-  function revertToPublished() {
-    var id = openProject.get().id;
-    fetch("/published")
-      .then(function (res) {
-        return res.ok ? res.json() : [];
-      })
-      .then(function (pages) {
-        var live = (Array.isArray(pages) ? pages : []).filter(function (page) {
-          return id && page.project === id && page.editable;
-        })[0];
-        if (!live) {
-          $.alert("This project has no published version to go back to.");
-          return null;
-        }
-        return fetch("/published/" + encodeURIComponent(live.id) + "/project")
-          .then(function (res) {
-            return res.json();
-          })
-          .then(function (answer) {
-            if (!answer || !isProjectData(answer.data)) {
-              $.alert(plain(answer && answer.error) || "The published version could not be read.");
-              return;
-            }
-            revertWith(answer.data, "it is published at /show/" + live.id);
-          });
-      })
-      .catch(function () {
-        $.alert("Could not reach the OSCAR server");
-      });
-  }
-
-  // ---- open, from the list -------------------------------------------------
-  // Nothing asks about unsaved changes any more: there are none to lose.
-  var templateUrl = null;
-
-  document.getElementById("load-button").onclick = function () {
-    var row = selectedRow;
-    if (!row) {
-      $.alert("Pick a project from the list first");
-      return;
-    }
-    if (row.template) {
-      openTemplate(row.url, row.name);
-      return;
-    }
-    showLoader();
-    projectSync.open(row.id).then(
-      function () {
-        hideLoader();
-        modal.close();
-      },
-      function (err) {
-        hideLoader();
-        $.alert(plain(err && err.message) || "That project could not be opened");
-      }
-    );
-  };
-
-  // ---- pages -------------------------------------------------------------
-  // A surface can hold several pages -- a page per fixture group, or per
-  // scene. GrapesJS has had the model for this all along (editor.Pages, and a
-  // pages array in every project); what it lacks is any way to reach it.
-  var pages = editor.Pages;
-
-  function pageLabels() {
-    return oscarPages.pageEntries(pages).map(function (entry) {
-      return entry.label;
-    });
-  }
-
-  function labelOf(page) {
-    return projectFormat.pageLabel(page.getName(), pages.getAll().indexOf(page));
-  }
-
-  /**
-   * Ask for a page name in a jquery-confirm form. Not window.prompt: Electron
-   * does not implement it, so in the desktop app it would silently return
-   * nothing and the page could never be renamed.
-   */
-  function askPageName(title, current, except, onName) {
-    $.confirm({
-      title: title,
-      content:
-        '<form action="" class="oscar-page-name-form">' +
-        '<input class="oscar-page-name-input" type="text" maxlength="40" />' +
-        "</form>",
-      onContentReady: function () {
-        var dialog = this;
-        var input = dialog.$content.find(".oscar-page-name-input");
-        // Set as a value, not written into the markup: a page name is
-        // whatever someone typed.
-        input.val(current).trigger("focus").trigger("select");
-        dialog.$content.find("form").on("submit", function (e) {
-          // Enter submits the form; without this the page would reload.
-          e.preventDefault();
-          dialog.$$confirm.trigger("click");
-        });
-      },
-      buttons: {
-        confirm: function () {
-          var name = (this.$content.find(".oscar-page-name-input").val() || "").trim();
-          if (!name) {
-            $.alert("Give the page a name");
-            return false;
-          }
-          // Two tabs reading the same cannot be told apart on a tablet.
-          if (oscarPages.nameTaken(pageLabels(), name, except)) {
-            $.alert('There is already a page called "' + name + '"');
-            return false;
-          }
-          onName(name);
-        },
-        cancel: function () {},
-      },
-    });
-  }
-
-  function deletePage(page) {
-    // Never the last one: GrapesJS would be left with no page to draw, and a
-    // project with no pages is one OSCAR refuses to open.
-    if (pages.getAll().length < 2) return;
-
-    $.confirm({
-      title: "Delete Page",
-      // Built as text for the same reason as above.
-      content: $("<div>").text(
-        'Delete "' + labelOf(page) + '" and every widget on it? You won\'t be able to recover it afterwards.'
-      ),
-      buttons: {
-        confirm: function () {
-          if (pages.getAll().length < 2) return;
-          // Move off the page first, so the canvas is never showing a page
-          // that no longer exists.
-          if (pages.getSelected() === page) {
-            var all = pages.getAll();
-            var index = all.indexOf(page);
-            pages.select(all[index === 0 ? 1 : index - 1]);
-          }
-          pages.remove(page);
-        },
-        cancel: function () {},
-      },
-    });
-  }
-
-  function pageAction(label, title, onClick) {
-    var button = document.createElement("button");
-    button.type = "button";
-    button.className = "oscar-page-action";
-    button.textContent = label;
-    button.setAttribute("aria-label", title);
-    button.onclick = onClick;
-    return button;
-  }
-
-  function renderPages() {
-    var list = document.getElementById("pages-list");
-    if (!list) return;
-
-    var all = pages.getAll();
-    list.innerHTML = "";
-
-    oscarPages.pageEntries(pages).forEach(function (entry, index) {
-      var page = all[index];
-      var row = document.createElement("li");
-      row.className = "oscar-page" + (entry.current ? " oscar-page-current" : "");
-
-      var open = document.createElement("button");
-      open.type = "button";
-      open.className = "oscar-page-open";
-      open.textContent = entry.label;
-      open.onclick = function () {
-        pages.select(page);
-      };
-      row.appendChild(open);
-
-      row.appendChild(
-        pageAction("Rename", "Rename " + entry.label, function () {
-          askPageName("Rename page", entry.label, index, function (name) {
-            page.setName(name);
-          });
-        })
-      );
-
-      if (all.length > 1) {
-        row.appendChild(
-          pageAction("Delete", "Delete " + entry.label, function () {
-            deletePage(page);
-          })
-        );
-      }
-
-      list.appendChild(row);
-    });
-  }
-
-  function addPage() {
-    var input = document.getElementById("new-page-name");
-    var name = ((input && input.value) || "").trim();
-
-    if (name && oscarPages.nameTaken(pageLabels(), name)) {
-      $.alert('There is already a page called "' + name + '"');
-      return;
-    }
-
-    // Naming it is optional; a page left unnamed is given a name, because
-    // GrapesJS would drop an empty one. Not simply "Page <count + 1>": after
-    // a deletion that name may still be on another tab.
-    var page = pages.add({ name: name || oscarPages.freePageName(pageLabels()) }, { select: true });
-    if (!page) {
-      $.alert("That page could not be added");
-      return;
-    }
-    if (input) input.value = "";
-  }
-
-  editor.Commands.add("open-pages", function () {
-    if (!features.PAGES) return;
-    renderPages();
-    setModal("Pages", "pages-panel");
-  });
-
-  document.getElementById("add-page-button").onclick = addPage;
-  document.getElementById("new-page-name").onkeydown = function (e) {
-    if (e.key === "Enter") addPage();
-  };
-
-  // The list may be open while pages change under it (a rename, a load).
-  // page:update is what a rename fires, and it is also what tells the
-  // storage manager the project changed.
-  editor.on("page:add page:remove page:select page:update", renderPages);
-
-  /**
-   * Open a template: an HTML file with its CSS, read exactly the way Import
-   * reads pasted code. It starts a new project, named after the template,
-   * which joins the list at its first change: one that was only looked at
-   * leaves nothing behind. What was on the canvas is a project, and saved.
-   */
-  function openTemplate(url, name) {
-    showLoader();
-    fetch(url)
-      .then(function (res) {
-        if (!res.ok) throw new Error("status " + res.status);
-        return res.text();
-      })
-      .then(function (html) {
-        return projectSync.begin(name || "", function () {
-          loadTemplate(html);
-          showBlocks();
-        });
-      })
-      .then(
-        function () {
-          hideLoader();
-          selectedTemplate = null;
-          templateUrl = null;
-          selectedRow = null;
-          modal.close();
-        },
-        function () {
-          hideLoader();
-          $.alert("That template could not be opened");
-        }
-      );
-  }
-
-  function loadTemplate(html) {
-    editor.select();
-    editor.Css.clear();
-    // Nothing from the surface being replaced carries over; the template's
-    // own style is put back while it is read.
-    editor.getWrapper().setAttributes({});
-    editor.setComponents(html);
-    editor.UndoManager.clear();
-  }
-
-  // ---- the empty canvas says what to do --------------------------------
-  // A new project is a blank page, and a blank page says nothing. This hint
-  // is drawn by the editor over an empty canvas -- it is not part of the
-  // project, so it is never saved, published or exported -- and goes the
-  // moment the first control lands. Hidden in preview, where there is
-  // nothing to drag. Clicks pass through it to the canvas beneath.
-  var emptyHint = null;
-
-  function paintEmptyHint() {
-    var canvas = editor.Canvas.getElement();
-    if (!canvas) return;
-    if (!emptyHint) {
-      emptyHint = document.createElement("div");
-      emptyHint.className = "oscar-canvas-empty";
-      emptyHint.innerHTML =
-        '<div class="oscar-canvas-empty-card">' +
-        '<img class="oscar-canvas-empty-logo" src="images/oscar-circle.png" width="56" height="56" alt="">' +
-        '<p class="oscar-canvas-empty-title">This project is empty</p>' +
-        "<p>Drag a control in from the right, or open a template from File.</p>" +
-        "</div>";
-      canvas.appendChild(emptyHint);
-    }
-    var wrapper = editor.getWrapper();
-    var empty = !!wrapper && wrapper.components().length === 0;
-    emptyHint.style.display = empty && !editor.Commands.isActive("preview") ? "" : "none";
-  }
-  editor.on("load component:add component:remove command:run:preview command:stop:preview", paintEmptyHint);
-
-  // ---- a project as a file --------------------------------------------
-  // A project lives in OSCAR. An .oscar file is a copy of one: to keep as a
-  // backup, to send to a colleague, to carry to another OSCAR. Export a
-  // copy writes one; Open a file brings one in as a project. A .html
-  // template opens through the same door, as a template does.
-
-  function slugName(name) {
-    var slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    return slug || "untitled";
-  }
-
-  function projectRecord(name, id) {
-    // The same stamping OSCAR does when it keeps a project, so an exported
-    // file and a project in OSCAR are one format, not two. The id is who the
-    // project is: brought back in, the file is known as this project.
-    var data = projectFormat.stripEditorState(editor.getProjectData());
-    return projectFormat.stampProject({ name: name, data: data, grapesjs: grapesjs.version, id: id });
-  }
-
-  /** File > Export a copy: an .oscar file wherever the person says. The project stays in OSCAR. */
-  function exportCopy() {
-    projectSync.flush().then(function () {
-      // Counted, anonymously: the browser is the only one who knows a copy went out.
-      fetch("/counted/file_exported", { method: "POST" }).catch(function () {});
-      var now = openProject.get();
-      var name = now.name || "Untitled";
-      var text = JSON.stringify(projectRecord(name, now.id || undefined), null, 2);
-
-      var fallback = function () {
-        // No file pickers in this browser: the file lands in Downloads.
-        var blob = new Blob([text], { type: "application/json" });
-        var a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = slugName(name) + ".oscar";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () {
-          URL.revokeObjectURL(a.href);
-        }, 5000);
-      };
-
-      if (!window.showSaveFilePicker) return fallback();
-      window
-        .showSaveFilePicker({
-          suggestedName: slugName(name) + ".oscar",
-          types: [{ description: "OSCAR project", accept: { "application/json": [".oscar"] } }],
-        })
-        .then(function (handle) {
-          return handle
-            .createWritable()
-            .then(function (writable) {
-              return writable.write(text).then(function () {
-                return writable.close();
-              });
-            })
-            .then(function () {
-              $.alert('Exported a copy to "' + plain(handle.name) + '". The project itself stays in OSCAR.');
-            });
-        })
-        .catch(function (err) {
-          if (err && err.name === "AbortError") return; // they closed the picker
-          fallback();
-        });
-    });
-  }
-
-  /**
-   * Bring a project in: one more in OSCAR's list, opened. A file says who it
-   * is; when that project is already here the person chooses -- replace it,
-   * or keep both -- because either answer is right for somebody.
-   */
-  function importProject(project, ifExists) {
-    return projectApi
-      .create({ id: project.id, name: project.name, data: project.data, grapesjs: grapesjs.version, ifExists: ifExists, source: "file" })
-      .then(function (res) {
-        if (res.status === 409 && res.body && res.body.exists) {
-          $.confirm({
-            title: "Already in OSCAR",
-            content: '"' + plain(res.body.name) + '" is already one of your projects. Replace it with this file, or keep both?',
-            boxWidth: "520px",
-            useBootstrap: false,
-            buttons: {
-              replace: {
-                text: "Replace it",
-                btnClass: "btn-red",
-                action: function () {
-                  importProject(project, "replace");
-                },
-              },
-              both: {
-                text: "Keep both",
-                action: function () {
-                  importProject(project, "copy");
-                },
-              },
-              cancel: function () {},
-            },
-          });
-          return null;
-        }
-        if (!res.ok) {
-          $.alert(plain(res.body && res.body.error) || "That file could not be brought in.");
-          return null;
-        }
-        // The one on the canvas was replaced: show what it is now, without
-        // first saving what it was over the top of it.
-        if (res.body.id === openProject.get().id) return projectSync.reload();
-        return projectSync.open(res.body.id);
-      })
-      .catch(function () {
-        $.alert("Could not reach the OSCAR server");
-      });
-  }
-
-  function openProjectText(fileName, text) {
-    var parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch (err) {
-      $.alert('"' + plain(fileName) + '" is not an OSCAR project file.');
-      return;
-    }
-    // openProject answers { status, data }: the project is its data, once
-    // read, migrated and tidied. (This once checked the answer itself for
-    // pages, and refused every file.)
-    var opened = projectFormat.openProject(parsed);
-    if (opened.status === "too-new") {
-      $.alert("This project was saved by a newer OSCAR (format " + opened.format + "). Update OSCAR to open it; nothing here was changed.");
-      return;
-    }
-    var data = opened.status === "ok" ? opened.data : null;
-    if (!isProjectData(data)) {
-      $.alert('"' + plain(fileName) + '" is not an OSCAR 2 project, so it cannot be opened. Your current project has not been changed.');
-      return;
-    }
-    importProject({
-      // Who the file says it is; one from before projects had ids is a new project.
-      id: projectFormat.isProjectId(parsed.id) ? parsed.id : undefined,
-      name: (typeof parsed.name === "string" && parsed.name.trim()) || fileName.replace(/\.(oscar|json)$/i, ""),
-      data: data,
-    });
-  }
-
-  function openHtmlText(fileName, text) {
-    // An HTML page is a template: a new project, named after the page.
-    var title = /<title[^>]*>([^<]*)<\/title>/i.exec(text);
-    projectSync.begin((title && title[1].trim()) || fileName.replace(/\.html?$/i, ""), function () {
-      loadTemplate(text);
-    });
-  }
-
-  function openPicked(fileName, text) {
-    if (/\.html?$/i.test(fileName) || (!/^\s*\{/.test(text) && /^\s*</.test(text))) openHtmlText(fileName, text);
-    else openProjectText(fileName, text);
-  }
-
-  // The fallback for browsers without file pickers.
-  var openFileInput = document.createElement("input");
-  openFileInput.type = "file";
-  openFileInput.accept = ".oscar,.json,.html,.htm";
-  openFileInput.style.display = "none";
-  document.body.appendChild(openFileInput);
-  openFileInput.addEventListener("change", function () {
-    var file = openFileInput.files && openFileInput.files[0];
-    openFileInput.value = "";
-    if (!file) return;
-    file.text().then(function (text) {
-      openPicked(file.name, text);
-    });
-  });
-
-  function oscarOpenFile() {
-    if (!window.showOpenFilePicker) return openFileInput.click();
-    window
-      .showOpenFilePicker({
-        types: [{ description: "OSCAR project or template", accept: { "application/json": [".oscar", ".json"], "text/html": [".html", ".htm"] } }],
-      })
-      .then(function (picked) {
-        return picked[0].getFile().then(function (file) {
-          return file.text().then(function (text) {
-            openPicked(file.name, text);
-          });
-        });
-      })
-      .catch(function (err) {
-        if (err && err.name === "AbortError") return;
-        openFileInput.click();
-      });
-  }
-
-  /** One menu under a bar word: built, placed, closed by a click away. */
-  function showBarMenu(anchorSelector, items) {
-    var open = document.querySelector(".oscar-open-menu");
-    if (open) {
-      open.remove();
-      return;
-    }
-    var anchor = document.querySelector(anchorSelector);
-    if (!anchor) return;
-    var at = anchor.getBoundingClientRect();
-    var menu = document.createElement("div");
-    menu.className = "oscar-open-menu";
-    menu.style.left = Math.round(at.left) + "px";
-    menu.style.top = Math.round(at.bottom + 6) + "px";
-    items.forEach(function (item) {
-      if (item.rule) {
-        var line = document.createElement("div");
-        line.className = "oscar-open-menu-rule";
-        menu.appendChild(line);
-        return;
-      }
-      var row = document.createElement("button");
-      row.type = "button";
-      row.className = "oscar-open-menu-item";
-      row.textContent = item.label;
-      // A switch says where it stands: a tick when on, the tick's room when off.
-      if (typeof item.checked === "boolean") {
-        row.setAttribute("role", "menuitemcheckbox");
-        row.setAttribute("aria-checked", String(item.checked));
-      }
-      // An item whose words cannot say it all explains itself on hover, to
-      // the menu's right, where it covers no other item.
-      if (item.hint) {
-        row.setAttribute("data-tooltip", item.hint);
-        row.setAttribute("data-tooltip-pos", "right");
-      }
-      row.onclick = function () {
-        menu.remove();
-        item.run();
-      };
-      menu.appendChild(row);
-    });
-    document.body.appendChild(menu);
-    var away = function (event) {
-      // The anchor's own pointerdown is left alone: the click that follows
-      // it toggles the menu closed. Without this, away closed the menu a
-      // breath before the click reopened it, and the word never closed.
-      if (menu.contains(event.target) || anchor.contains(event.target)) return;
-      menu.remove();
-      document.removeEventListener("pointerdown", away, true);
-    };
-    setTimeout(function () {
-      document.addEventListener("pointerdown", away, true);
-    }, 0);
-  }
-
-  /** Fullscreen as the window has it: Esc leaves fullscreen without telling the command. */
-  function isFullscreen() {
-    return !!(document.fullscreenElement || document.webkitFullscreenElement);
-  }
-
-  function toggleFullscreen() {
-    var active = editor.Commands.isActive("fullscreen");
-    if (isFullscreen()) {
-      if (active) editor.stopCommand("fullscreen");
-      else if (document.exitFullscreen) document.exitFullscreen();
-      return;
-    }
-    // A command still marked active after Esc would take this click to stop itself.
-    if (active) editor.stopCommand("fullscreen");
-    // The whole page, not GrapesJS's default of the editor's container: the
-    // browser draws nothing outside the fullscreen element, and File's and
-    // Edit's menus, the alerts and Pro's dialogs all live on the body.
-    editor.runCommand("fullscreen", { target: document.documentElement });
-  }
-
-  // Show borders is remembered in this browser: off until turned on once, and
-  // on after that, refresh after refresh. Off to begin with because the first
-  // thing a new user sees is the Showcase, and dotted boxes round every part
-  // of it read as a fault, not a tool. A browser that keeps nothing (private
-  // window, locked-down storage) gets the default each time.
-  var BORDERS_KEY = "oscarShowBorders";
-
-  function bordersWanted() {
-    try {
-      return localStorage.getItem(BORDERS_KEY) === "on";
-    } catch (err) {
-      return false;
-    }
-  }
-
-  function toggleBorders() {
-    var on = !editor.Commands.isActive("sw-visibility");
-    if (on) editor.runCommand("sw-visibility");
-    else editor.stopCommand("sw-visibility");
-    try {
-      localStorage.setItem(BORDERS_KEY, on ? "on" : "off");
-    } catch (err) {
-      /* shown now, just not remembered */
-    }
-  }
-
-  // Items an extension adds to File or Edit (oscarApi.addMenuItem): Pro's
-  // Schedule, say. Drawn with each opening, so one added or taken away since
-  // shows at once.
-  var menuExtras = { file: [], edit: [] };
-
-  function extraItems(menu) {
-    return menuExtras[menu].map(function (item) {
-      return {
-        label: item.label,
-        run: function () {
-          item.run(editor);
-        },
-      };
-    });
-  }
-
-  // Edit holds what acts on the canvas as a whole: undoing, how it is shown,
-  // its code, its style, locking it, and emptying it. Their icons retired
-  // from the bar, except the padlock.
-  function showEditMenu() {
-    showBarMenu(
-      ".gjs-pn-devices-c .oscar-edit-btn",
-      [
-      {
-        label: "Undo",
-        run: function () {
-          editor.runCommand("core:undo");
-        },
-      },
-      {
-        label: "Redo",
-        run: function () {
-          editor.runCommand("core:redo");
-        },
-      },
-      { rule: true },
-      { label: "Show borders", checked: editor.Commands.isActive("sw-visibility"), run: toggleBorders },
-      { label: "Fullscreen", checked: isFullscreen(), run: toggleFullscreen },
-      { rule: true },
-      {
-        label: "See code",
-        run: function () {
-          editor.runCommand("export-template");
-        },
-      },
-      {
-        label: "Widget style…",
-        run: function () {
-          editor.runCommand("open-styles");
-        },
-      },
-      { rule: true },
-      // Also the padlock on the bar, which stays.
-      {
-        label: "Lock editing",
-        checked: isLockedNow(),
-        hint: "Only this computer can edit. Published interfaces stay open to the network.",
-        run: function () { setLocked(!isLockedNow()); },
-      },
-    ]
-      .concat(extraItems("edit"))
-      .concat([
-      { rule: true },
-      {
-        label: "Clear canvas…",
-        run: function () {
-          editor.runCommand("canvas-clear");
-        },
-      },
-      ])
-    );
-  }
-
-  /** Locked as the padlock on the bar shows it: the server's answer, painted there. */
-  function isLockedNow() {
-    var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
-    return !!(el && el.classList.contains("oscar-locked"));
-  }
-
-  function showFileMenu() {
-    showBarMenu(".gjs-pn-devices-c .oscar-file-btn", [
-      { label: "New project", run: newProject },
-      {
-        label: "Open project or template\u2026",
-        run: function () {
-          editor.runCommand("open-projects", { type: "Load" });
-        },
-      },
-      { label: "Open a file\u2026", run: oscarOpenFile },
-      {
-        label: "Import HTML/CSS\u2026",
-        run: function () {
-          editor.runCommand("gjs-open-import-webpage");
-        },
-      },
-      { rule: true },
-      // No Save: every change is saved in OSCAR as it is made. These are the
-      // ways to a second project, to a file, and back to an earlier version.
-      { label: "Make a copy", run: copyProject },
-      { label: "Export a copy\u2026", run: exportCopy },
-      { label: "Revert to how it was when opened\u2026", run: revertToOpened },
-      { label: "Revert to the published version\u2026", run: revertToPublished },
-      { rule: true },
-      {
-        label: "Publish\u2026",
-        run: function () {
-          editor.runCommand("oscar-export");
-        },
-      },
-      // Both ways the surface leaves the editor, side by side. Its eye on the
-      // bar is retired; GrapesJS's own button over the canvas ends preview.
-      {
-        label: "Push to preview",
-        run: function () {
-          editor.runCommand("preview");
-        },
-        // Where the pushed canvas is seen was nowhere said: the address, in full.
-        hint:
-          "Try the canvas without publishing it. The controls work here, and a phone or tablet on this network shows it at http://" +
-          ipServer +
-          (window.location.port ? ":" + window.location.port : "") +
-          "/preview",
-      },
-      { rule: true },
-    ]
-      // An extension's items open the last group, beside About: Pro's Log in
-      // or Log out, which is done in About.
-      .concat(extraItems("file"))
-      .concat([
-      // Its jellyfish on the bar is retired: this is where people look for it.
-      {
-        label: "About OSCAR",
-        run: function () {
-          editor.runCommand("oscar-about");
-        },
-      },
-      ]));
-  }
-
-  // A file double-clicked in the file manager arrives through the server,
-  // once, and comes in as any picked file does: as a project in OSCAR.
-  fetch("/boot-file")
-    .then(function (res) {
-      return res.json();
-    })
-    .then(function (file) {
-      if (file && file.name && typeof file.text === "string") openPicked(file.name, file.text);
-    })
-    .catch(function () {});
-
-  // Somebody opening OSCAR for the first time is shown the Showcase, where
-  // every widget works, not an empty canvas (first_run.js).
-  if (firstRun) {
-    editor.onReady(function () {
-      welcome.openWelcome({
-        fetch: function (url) {
-          return fetch(url);
-        },
-        load: function (html) {
-          projectSync.begin("", function () {
-            loadTemplate(html);
-          });
-        },
-        // Anything already on the canvas is somebody's, however quick they were.
-        untouched: function () {
-          return editor.getWrapper().components().length === 0;
-        },
-      });
-    });
-  }
-
-  // ---- preview mode ------------------------------------------------------
-  // GrapesJS's preview hides the panels but leaves components draggable in
-  // absolute mode, so dragging a button in preview pulls it apart.
-  //
-  // This locks the components rather than swallowing events in the canvas. An
-  // earlier version did the latter, and it blocked pointerdown and touchmove
-  // -- which is exactly what a drag-based widget like the XY pad needs, so it
-  // would have been dead in preview. The button survived only because it uses
-  // click, and the slider because its dragging is a browser default action.
-  //
-  // Locking components is what corrupted projects once, by being saved. It is
-  // safe now: editor state is stripped on every path in and out of storage, so
-  // it cannot persist. The /preview page has always worked this way.
-  var PREVIEW_LOCK = {
-    draggable: false,
-    selectable: false,
-    hoverable: false,
-    editable: false,
-    highlightable: false,
-  };
-  // Only the page on the canvas has components to lock. A page switched to
-  // mid-preview arrives unlocked, so it is locked as it comes in; the lock
-  // remembers what it has touched, so coming back to a page does not record
-  // its locked state as the one to restore (see createLock).
-  var previewLock = oscarPages.createLock(PREVIEW_LOCK, { avoidStore: true });
-  var previewing = false;
-
-  // The designer's preview shows the same tabs the tablet does: a surface
-  // with several pages cannot be tried out from page one alone.
-  var previewTabs = oscarPages.pageTabs(editor, {
-    bar: document.getElementById("oscar-page-bar"),
-    body: document.body,
-    windows: function () {
-      return oscarPages.widgetWindows(editor, window);
-    },
-  });
-
-  // Only while previewing: a project being edited changes under a widget in
-  // ways a viewless copy is never told about.
-  var offstage = runOffstage(editor, { document: document });
-
-  editor.on("page:select", function () {
-    if (!previewing) return;
-    editor.select();
-    previewLock.lock(editor.getWrapper());
-  });
-
-  editor.on("command:run:preview", function () {
-    // Hand the canvas to the preview page before locking, so the lock doesn't
-    // travel with it. Every page goes across, not only the one showing, and
-    // named, so a tab never has to guess.
-    postJSON("/save/preview", {
-      project: projectFormat.namePages(editor.getProjectData()),
-    }).catch(function (err) {
-      console.log("Could not hand off preview", err);
-    });
-
-    editor.select();
-    previewing = true;
-    previewLock.lock(editor.getWrapper());
-    previewTabs.show();
-    // As on the tablet: a fader on a page that is not showing still follows
-    // the rig, or trying a surface out here would not show what it does.
-    offstage.start();
-
-    // The selection toolbar, badges and resize handles live outside the canvas
-    // and would otherwise float over the control surface, delete button and
-    // all.
-    editor.getEl().classList.add("oscar-previewing");
-  });
-
-  editor.on("command:stop:preview", function () {
-    previewing = false;
-    offstage.stop();
-    previewLock.release();
-    previewTabs.hide();
-    editor.getEl().classList.remove("oscar-previewing");
-  });
-
-  // ---- panel buttons -----------------------------------------------------
-  // ---- widget styles -----------------------------------------------------
-  // A style is chosen for the whole surface and recorded as two attributes on
-  // its body, so it is saved with the project and reaches the preview and
-  // every tablet with nothing else to set. lib/widget-styles.js lists the
-  // styles; assets/css/styles/ holds their values.
-
-  function surfaceStyle() {
-    var attrs = editor.getWrapper().getAttributes();
-    var style = attrs[widgetStyles.STYLE_ATTRIBUTE];
-    var appearance = attrs[widgetStyles.APPEARANCE_ATTRIBUTE];
-    return {
-      style: widgetStyles.isStyle(style) ? style : widgetStyles.DEFAULT_STYLE,
-      appearance: widgetStyles.isAppearance(appearance) ? appearance : widgetStyles.DEFAULT_APPEARANCE,
-    };
-  }
-
-  function applySurfaceStyle(style, appearance) {
-    var attrs = {};
-    attrs[widgetStyles.STYLE_ATTRIBUTE] = style;
-    attrs[widgetStyles.APPEARANCE_ATTRIBUTE] = appearance;
-    editor.getWrapper().addAttributes(attrs);
-  }
-
-  /**
-   * A small document showing the real widgets in one style: the same fonts,
-   * tokens and widget rules the canvas loads, so a card looks exactly like the
-   * surface will. Everything in it comes from the style registry, never from
-   * anything a person typed.
-   */
-  function stylePreviewDocument(style, appearance) {
-    var links = widgetStyles
-      .canvasStylesheets()
-      .map(function (href) {
-        return '<link rel="stylesheet" href="' + href + '">';
-      })
-      .join("");
-
-    return (
-      '<!doctype html><html><head><meta charset="utf-8">' +
-      links +
-      "<style>" +
-      widgetStyles.SURFACE_CSS +
-      " body { height: 100vh; display: flex; align-items: center; justify-content: center;" +
-      " gap: 10px; padding: 8px; overflow: hidden; }" +
-      " .col { display: flex; flex-direction: column; gap: 8px; }" +
-      " button { min-height: 28px; padding: 0 10px; font-size: 12px; }" +
-      " input[type=range] { width: 64px; height: 22px; }" +
-      " .oscar-xypad { width: 56px; height: 56px; flex-shrink: 0; }" +
-      "</style></head>" +
-      "<body " +
-      widgetStyles.STYLE_ATTRIBUTE + '="' + style + '" ' +
-      widgetStyles.APPEARANCE_ATTRIBUTE + '="' + appearance + '">' +
-      '<div class="col"><button type="button">Off</button>' +
-      '<button type="button" class="toggle">On</button>' +
-      '<input type="range" min="0" max="100" value="60" style="--oscar-fill: 60%"></div>' +
-      '<div class="oscar-xypad" style="--oscar-x: 65%; --oscar-y: 35%"></div>' +
-      "</body></html>"
-    );
-  }
-
-  var stylePanel = null;
-
-  function buildStylePanel() {
-    var panel = document.createElement("div");
-    panel.className = "o-style-panel";
-
-    var segmented = document.createElement("div");
-    segmented.className = "o-segmented";
-    segmented.setAttribute("role", "group");
-    segmented.setAttribute("aria-label", "Appearance");
-    widgetStyles.APPEARANCES.forEach(function (appearance) {
-      var segment = document.createElement("button");
-      segment.type = "button";
-      segment.className = "o-segment";
-      segment.setAttribute("data-appearance", appearance);
-      segment.textContent = appearance === "dark" ? "Dark" : "Light";
-      segment.onclick = function () {
-        applySurfaceStyle(surfaceStyle().style, appearance);
-        refreshStylePanel();
-      };
-      segmented.appendChild(segment);
-    });
-
-    var grid = document.createElement("div");
-    grid.className = "o-style-grid";
-    widgetStyles.CHOICES.forEach(function (entry) {
-      var card = document.createElement("button");
-      card.type = "button";
-      card.className = "o-style-card";
-      card.setAttribute("data-style", entry.id);
-
-      if (entry === widgetStyles.OWN_STYLE) {
-        // Nothing to picture: how it looks is whatever the page says. The
-        // name stands alone in the middle, and the hint says what it means.
-        card.className += " o-style-card-own";
-        card.title = entry.hint;
-      } else {
-        // The preview is only a picture: the card is what gets clicked.
-        var preview = document.createElement("iframe");
-        preview.className = "o-style-preview";
-        preview.tabIndex = -1;
-        preview.setAttribute("aria-hidden", "true");
-        card.appendChild(preview);
-      }
-
-      var name = document.createElement("span");
-      name.className = "o-style-name";
-      name.textContent = entry.label;
-      card.appendChild(name);
-
-      card.onclick = function () {
-        applySurfaceStyle(entry.id, surfaceStyle().appearance);
-        refreshStylePanel();
-      };
-      grid.appendChild(card);
-    });
-
-    panel.appendChild(segmented);
-    panel.appendChild(grid);
-    return panel;
-  }
-
-  function refreshStylePanel() {
-    var current = surfaceStyle();
-
-    stylePanel.querySelectorAll(".o-segment").forEach(function (segment) {
-      segment.setAttribute("aria-pressed", String(segment.getAttribute("data-appearance") === current.appearance));
-    });
-
-    stylePanel.querySelectorAll(".o-style-card").forEach(function (card) {
-      var style = card.getAttribute("data-style");
-      card.setAttribute("aria-pressed", String(style === current.style));
-      var preview = card.querySelector("iframe");
-      if (!preview) return;
-      // Rewriting the document restarts it; only do that when the picture
-      // would actually change.
-      var wanted = style + "/" + current.appearance;
-      if (preview.getAttribute("data-showing") !== wanted) {
-        preview.setAttribute("data-showing", wanted);
-        preview.srcdoc = stylePreviewDocument(style, current.appearance);
-      }
-    });
-  }
-
-  editor.Commands.add("open-styles", function () {
-    if (!stylePanel) stylePanel = buildStylePanel();
-    refreshStylePanel();
-    modal.open({ title: "Widget style", content: stylePanel, attributes: { class: "modal-login" } });
-  });
-
-  // No button of its own: Widget style is under Edit (showEditMenu).
-
-  // Reset to style: a widget someone recoloured by hand keeps that colour when
-  // the surface changes style, which reads as switching "not working". This
-  // takes its own appearance edits away so it follows the style again, and
-  // leaves where it is and how big it is alone.
-  editor.Commands.add("oscar-reset-style", function (ed) {
-    var component = ed.getSelected();
-    if (!component) return;
-    component.setStyle(widgetStyles.withoutAppearance(component.getStyle()));
-  });
-
-  // Offered on OSCAR's own widgets and on the body, in the toolbar over a
-  // selection. GrapesJS never saves a component's toolbar into the project,
-  // so this editor-only button cannot leak into a saved file.
-  editor.on("component:selected", function (component) {
-    if (!widgetStyles.offersReset(component.get("type"))) return;
-    var toolbar = component.get("toolbar") || [];
-    var present = toolbar.some(function (item) {
-      return item.command === "oscar-reset-style";
-    });
-    if (present) return;
-    component.set(
-      "toolbar",
-      toolbar.concat([
-        {
-          label: icon("restore", 16),
-          command: "oscar-reset-style",
-          attributes: { title: "Reset to style" },
-        },
-      ])
-    );
-  });
-
-  // ---- the bar answers through one listener --------------------------------
-  // Every word and pill on the bar registers here instead of binding to its
-  // element: a panel re-render -- an extension adding a button, a silent
-  // reset -- replaces the elements, and a listener bound to a dead element
-  // is the bug this bar has now had three times. The document outlives them
-  // all.
-  var barClicks = [];
-  function onBarClick(selector, run) {
-    barClicks.push([selector, run]);
-  }
-  document.addEventListener("click", function (event) {
-    if (!event.target.closest) return;
-    for (var i = 0; i < barClicks.length; i++) {
-      var found = event.target.closest(barClicks[i][0]);
-      if (found) {
-        event.stopPropagation();
-        barClicks[i][1](found);
-        return;
-      }
-    }
-  });
-
-  // ---- the bar's geography, first half ------------------------------------
-  // The screen sizes leave the left panel NOW, before File and the pills are
-  // created there: pn.removeButton re-renders the whole panel, and any click
-  // listener wired before it would die with its element. A button moves
-  // whole: command, label and state along.
-  // They sit alone at the middle of the bar over the canvas (not of the
-  // window): a panel of their own, which the CSS places there.
-  // Created with the buttons already in it: a panel added empty draws no
-  // buttons that are added to it later.
-  var sizeButtons = [];
-  ["set-device-desktop", "set-device-tablet", "set-device-mobile"].forEach(function (id) {
-    var button = pn.getButton("devices-c", id);
-    if (!button) return;
-    sizeButtons.push({
-      id: id,
-      command: button.get("command"),
-      label: button.get("label"),
-      className: button.get("className"),
-      attributes: button.get("attributes"),
-      active: button.get("active"),
-      // A screen size is a choice, not a switch: clicking the chosen one
-      // again stays chosen instead of toggling half-off.
-      togglable: false,
-      context: button.get("context"),
-    });
-    pn.removeButton("devices-c", id);
-  });
-  pn.addPanel({ id: "oscar-sizes", visible: true, buttons: sizeButtons });
-  // Undo and Redo live under Edit at the left edge; their icons retire.
-  // Removed here, early, for the same re-render reason as above.
-  pn.removeButton("options", "undo");
-  pn.removeButton("options", "redo");
-  // Show borders, Fullscreen, See code and Clear canvas join them under Edit
-  // (the widget style too, which is never added to the bar at all).
-  // And the eye: Push to preview is under File.
-  ["sw-visibility", "fullscreen", "export-template", "canvas-clear", "preview"].forEach(function (id) {
-    pn.removeButton("options", id);
-  });
-  // Show borders was on from the start because its button said so; with the
-  // button gone, the editor sets it itself, as it was last left.
-  editor.onReady(function () {
-    var active = editor.Commands.isActive("sw-visibility");
-    if (bordersWanted() && !active) editor.runCommand("sw-visibility");
-    else if (!bordersWanted() && active) editor.stopCommand("sw-visibility");
-  });
-
-  // Open and Save live under one word at the bar's left edge: File.
-
-  // Not offered while the feature is off; see lib/features.js.
-  if (features.PAGES) {
-    pn.addButton("options", {
-      id: "open-pages",
-      label: icon("pages"),
-      command: function () {
-        editor.runCommand("open-pages");
-      },
-      attributes: { title: "Pages", "data-tooltip-pos": "bottom" },
-    });
-  }
-
-  // Disabled to GrapesJS with its own click, like the pills: a command
-  // would toggle the button active, and only every other click would run.
-  pn.addButton("devices-c", {
-    id: "oscar-file",
-    className: "oscar-file-btn",
-    label: "File",
-    command: null,
-    attributes: { title: "Open, export and publish", "data-tooltip-pos": "bottom" },
-    active: false,
-    disable: true,
-  });
-  onBarClick(".oscar-file-btn", function () {
-    showFileMenu();
-  });
-
-  pn.addButton("devices-c", {
-    id: "oscar-edit",
-    className: "oscar-edit-btn",
-    label: "Edit",
-    command: null,
-    attributes: { title: "Undo, the canvas and its style", "data-tooltip-pos": "bottom" },
-    active: false,
-    disable: true,
-  });
-  onBarClick(".oscar-edit-btn", function () {
-    showEditMenu();
-  });
-
-  // The project's title, beside File and Edit: click it to rename. And how
-  // it stands with OSCAR: Saving, Saved, Not saved.
-  pn.addButton("devices-c", {
-    id: "oscar-title",
-    className: "oscar-title-btn",
-    label: "Untitled",
-    command: null,
-    attributes: { title: "Rename this project", "data-tooltip-pos": "bottom" },
-    active: false,
-    disable: true,
-  });
-  onBarClick(".oscar-title-btn", function () {
-    renameProject();
-  });
-  pn.addButton("devices-c", {
-    id: "oscar-save-state",
-    className: "oscar-save-state",
-    label: "",
-    command: null,
-    attributes: { title: "", "data-tooltip-pos": "bottom" },
-    active: false,
-    disable: true,
-  });
-  paintTitle();
-  paintSaveState(projectSync.status());
-
-  // ---- export ------------------------------------------------------------
-  // Distinct from "See code" beside it, which is GrapesJS's own view of the
-  // markup and cannot send anything. This one produces a file that does.
-  var publishDialog = oscarExport.install(editor, {
-    host: ipServer,
-    port: socketPort,
-    // Publishing needs a project to belong to: a canvas that is nobody yet
-    // becomes one as the window opens, and what is waiting is saved.
-    beforeOpen: function () {
-      return projectSync.materialise();
-    },
-    // Who the canvas is: what it publishes is remembered as this project.
-    project: function () {
-      var now = openProject.get();
-      return { id: now.id, name: now.name || "Untitled" };
-    },
-    newId: function () {
-      return openProject.get().id || openProject.newId();
-    },
-    adopt: function () {},
-    // The project itself, kept beside the page: what phones are showing.
-    source: function (name, id) {
-      return projectRecord(name, id);
-    },
-    // Edit, from a live interface's row: its project, on the canvas. One
-    // that is no longer among the projects is brought back from the copy
-    // kept with the live interface.
-    openProject: function (project) {
-      if (!project || !isProjectData(project.data)) {
-        $.alert("That project could not be opened. Your current project has not been changed.");
-        return;
-      }
-      projectSync
-        .open(project.id)
-        .then(null, function () {
-          return importProject({ id: project.id, name: project.name, data: project.data });
-        })
-        .then(function () {
-          modal.close();
-        });
-    },
-  });
-
-  // On the left, with the project: its title, Publish, which is what is
-  // done with it, and how it stands. The right of the bar is OSCAR's.
-  pn.addButton("devices-c", {
-    id: "oscar-export",
-    className: "oscar-publish-btn",
-    // A pill: the icon and the word.
-    label: icon("publish") + '<span class="oscar-bar-pill-word">Publish</span>',
-    command: function () {
-      editor.runCommand("oscar-export");
-    },
-    // Tooltips are drawn from data-tooltip; a title as well would show twice.
-    attributes: { "data-tooltip": "Publish your interface", "data-tooltip-pos": "bottom", "aria-label": "Publish your interface" },
-  });
-
-  // ---- locked mode -------------------------------------------------------
-  // Locking leaves the control surface open to the network while the editor
-  // answers only this computer. A locked OSCAR that looked unlocked would be
-  // its own hazard, so the button states its condition plainly.
-  var lockButtonId = "toggle-lock";
-
-  function paintLockButton(locked) {
-    var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
-    if (!el) return;
-    el.innerHTML = icon(locked ? "locked" : "unlocked");
-    el.setAttribute(
-      "data-tooltip",
-      locked ? "Locked: only this computer can edit. Tap to let other computers in" : "Lock editing: only this computer can edit. Published interfaces stay open"
-    );
-    el.setAttribute("data-tooltip-pos", "bottom");
-    el.classList.toggle("oscar-locked", !!locked);
-  }
-
-  function setLocked(locked) {
-    postJSON("/lock", { locked: locked })
-      .then(function (res) {
-        if (res && res.error) {
-          $.alert(res.error);
-          return;
-        }
-        paintLockButton(res && res.locked);
-      })
-      .catch(function () {
-        $.alert("Could not change the lock");
-      });
-  }
-
-  pn.addButton("options", {
-    id: lockButtonId,
-    className: "oscar-lock-btn",
-    label: icon("unlocked"),
-    command: function () {
-      var el = document.querySelector(".gjs-pn-options .oscar-lock-btn");
-      setLocked(!(el && el.classList.contains("oscar-locked")));
-    },
-    attributes: { title: "Lock editing", "data-tooltip-pos": "bottom" },
-  });
-
-  fetch("/lock")
-    .then(function (res) {
-      return res.json();
-    })
-    .then(function (state) {
-      paintLockButton(state && state.locked);
-    })
-    .catch(function () {});
-
-  // ---- telemetry switch, in About ----------------------------------------
-  // Shown only when this build can speak at all (a key baked in): a switch
-  // for something that sends nothing would only sow doubt. The full list of
-  // what OSCAR can say is lib/telemetry.js; the label links to it.
-  fetch("/telemetry-state")
-    .then(function (res) {
-      return res.json();
-    })
-    .then(function (state) {
-      if (!state || !state.wired) return;
-      var row = document.getElementById("about-telemetry");
-      var box = document.getElementById("about-telemetry-switch");
-      if (!row || !box) return;
-      row.style.display = "";
-      box.checked = !!state.on;
-      box.addEventListener("change", function () {
-        fetch("/telemetry-state", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ on: box.checked }),
-        }).catch(function () {});
-      });
-    })
-    .catch(function () {});
-
-  // ---- serial -------------------------------------------------------------
-  // No panel: the cable is picked where it is used, the Board row the
-  // settings panel draws under a widget's Via (adapters/grapesjs.js).
-
-  // About, behind OSCAR's own mark. An extension may add to it, ahead of
-  // OSCAR's words (aboutDialog.addSection below): what this OSCAR is, to whom.
-  var aboutSections = [];
-  var aboutExtras = document.getElementById("about-extras");
-  // A command of its own, so the jellyfish on the bar and File's "About
-  // OSCAR" open the same thing.
-  editor.Commands.add("oscar-about", function () {
-    aboutSections.forEach(function (section) {
-      try {
-        section.draw(section.box);
-      } catch (err) {
-        console.error("A section of About failed:", err);
-      }
-    });
-    setModal("About OSCAR", "info-panel");
-  });
-  // No button of its own: About is under File (showFileMenu).
-
-  // ---- resize keeps its hands off flow parts' coordinates -------------------
-  // GrapesJS writes top and left along with width and height whenever the
-  // resized component's drag mode is truthy -- it only knows "absolute",
-  // "translate" and "", and our templates' dmode="flow" is truthy but
-  // neither. So a resize stamped a flow part with its own coordinates:
-  // harmless on position:static, a jump by its own offset on
-  // position:relative (the drum kit draft made it plain). Strip the
-  // coordinates for flow parts alone; a hand-placed widget (no dmode, the
-  // editor's absolute mode) keeps them, as resizing its left edge must.
-  editor.on("component:resize:update", function (props) {
-    if (!props || !props.style || typeof props.updateStyle !== "function") return;
-    var mode = (props.component && props.component.getDragMode && props.component.getDragMode()) || "";
-    if (!mode || mode === "absolute" || mode === "translate") return;
-    if (!("top" in props.style) && !("left" in props.style)) return;
-    var style = {};
-    Object.keys(props.style).forEach(function (key) {
-      if (key !== "top" && key !== "left") style[key] = props.style[key];
-    });
-    props.updateStyle(style);
-  });
-
-  // ---- the MCP pill --------------------------------------------------------
-  // To the left of the LIVE pill: whether assistants (Claude and friends, by
-  // MCP) may talk to this OSCAR. On, the pill wears the accent and the
-  // server answers /mcp on this machine; off, the word is struck through,
-  // the route refuses, and the handshake file assistants find OSCAR by is
-  // removed. The pill says which; its window (assistants_dialog.js) holds
-  // the switch, how an assistant is connected, and what they lately asked. Added before the LIVE pill on purpose: buttons render in the
-  // order they are added. Same construction as the LIVE pill, for the same
-  // reason: disabled to GrapesJS, its own click, no re-render to wipe it.
-  if (features.MCP) {
-    pn.addButton("options", {
-      id: "oscar-mcp-pill",
-      className: "oscar-mcp-btn",
-      label: '<span class="oscar-mcp-pill"><span class="oscar-mcp-dot"></span><span class="oscar-mcp-word">MCP</span></span>',
-      command: null,
-      active: false,
-      disable: true,
-    });
-
-    (function wireMcpPill() {
-      function paintMcp(on) {
-        var el = document.querySelector(".oscar-mcp-btn");
-        if (!el) return;
-        el.classList.toggle("oscar-mcp-on", !!on);
-        el.setAttribute(
-          "data-tooltip",
-          on
-            ? "Assistants (MCP) are on: an assistant on this computer can read this OSCAR and draft interfaces -- never send. Click for how to connect one."
-            : "Assistants (MCP) are off: the door is closed. Click to turn them on."
-        );
-        el.setAttribute("data-tooltip-pos", "bottom");
-      }
-
-      // The window asks the server where the switch stands as it is
-      // installed, and paints the pill each time it learns or throws it.
-      oscarAssistants.install(editor, { onState: paintMcp });
-
-      // The pill opens the window; it used to be the switch itself, and one
-      // stray click closed the door on an assistant mid-conversation.
-      onBarClick(".oscar-mcp-btn", function () {
-        editor.runCommand("oscar-assistants");
-      });
-    })();
-  }
-
-  // ---- the RUNNING pill ---------------------------------------------------
-  // The editor and the server are one app, and it is easy to forget the
-  // second half: OSCAR serves published interfaces in the background all the
-  // time, whichever project is on the canvas, and the rig is listening to
-  // them too. The bar keeps the two apart. Its left is the project being
-  // edited: File, Edit, its title, Publish and how it stands. Publish sends
-  // it over. Its right is OSCAR, the server: its address, this pill, the lock.
-  //
-  // RUNNING counts the interfaces OSCAR is serving and opens the Running
-  // window, where each is listed with the devices on it. ACTIVITY is the
-  // traffic: IN flickers when the server takes in OSC or MIDI for an
-  // interface, OUT when it sends on one's behalf -- a bridge, a schedule, a
-  // phone -- and it opens the network log.
-  //
-  // Like ipButton it is `disable: true` with its own click handlers: a
-  // command would toggle the button active, and GrapesJS re-renders a button
-  // whose model changed, which would wipe the count and the lights back to
-  // their pristine state.
-  pn.addButton("options", {
-    id: "oscar-live-pill",
-    className: "oscar-live-btn",
-    label:
-      '<span class="oscar-live-pills">' +
-      '<span class="oscar-live-pill oscar-live-zone oscar-live-running" data-zone="running" data-pill="running">' +
-      '<span class="oscar-live-dot"></span>' +
-      '<span class="oscar-live-word">RUNNING</span>' +
-      '<span class="oscar-live-count">0</span>' +
-      "</span>" +
-      '<span class="oscar-live-pill oscar-live-zone oscar-live-server" data-zone="log" data-pill="server">' +
-      '<span class="oscar-live-word">ACTIVITY</span>' +
-      '<span class="oscar-live-led" data-led="in">IN<span class="oscar-live-meter"></span></span>' +
-      '<span class="oscar-live-led" data-led="out">OUT<span class="oscar-live-meter"></span></span>' +
-      "</span>" +
-      "</span>",
-    command: null,
-    active: false,
-    disable: true,
-  });
-
-  // What an extension says is public on the internet (Pro's public links),
-  // said in the RUNNING pill's words: set by oscarApi.setPublicCount below.
-  var livePublic = { set: function () {} };
-
-  (function wireLivePill() {
-    var flashes = { in: null, out: null };
-    // The network log's rows, oldest first, the server's cap mirrored here.
-    var LOG_KEEP = 200;
-    var logRows = [];
-    var logFilters = { in: true, out: true, osc: true, midi: true, dmx: true, unfollowed: true, dropped: true, canvas: true, local: true, internet: true, schedule: true, bridge: true };
-    // Whose move an outgoing row was (lib/activity.js), as the row says it.
-    var ORIGIN_WORDS = { canvas: "Canvas", local: "Local", internet: "Internet", schedule: "Schedule", bridge: "Bridge" };
-    var ORIGIN_HINTS = {
-      canvas: "Sent from the editor's canvas",
-      local: "Sent from a device on this network",
-      internet: "Sent from a visitor's phone, through the public link",
-      schedule: "Sent by a schedule",
-      bridge: "Passed on from what came in (Send when)",
-    };
-
-    // Auto-scroll: the newest row is kept in view as rows arrive (the list
-    // runs newest first). Off, the rows being read stay where they are while
-    // new ones gather above. Remembered in this browser.
-    var AUTOSCROLL_KEY = "oscarLogAutoScroll";
-    var autoScroll = (function () {
-      try {
-        return localStorage.getItem(AUTOSCROLL_KEY) !== "off";
-      } catch (err) {
-        return true;
-      }
-    })();
-
-    /** An incoming message nothing followed: no published surface, not the canvas. */
-    function unfollowed(row) {
-      return row.dir === "in" && !row.dropped && !row.canvas && !(row.surfaces && row.surfaces.length);
-    }
-
-    /**
-     * A row from the server, new or updated (lib/wire-log.js). An update --
-     * the canvas saying it followed a message, a surface found to follow it --
-     * replaces the row it is about; a new row goes where its own time says.
-     */
-    function takeRow(row) {
-      for (var i = logRows.length - 1; i >= 0 && i >= logRows.length - LOG_KEEP; i--) {
-        if (logRows[i].id === row.id) {
-          logRows[i] = row;
-          return false;
-        }
-      }
-      var at = logRows.length;
-      while (at > 0 && logRows[at - 1].at > row.at) at--;
-      logRows.splice(at, 0, row);
-      if (logRows.length > LOG_KEEP) logRows.splice(0, logRows.length - LOG_KEEP);
-      return true;
-    }
-
-    function span(className, text, title) {
-      var el = document.createElement("span");
-      el.className = className;
-      el.textContent = text;
-      if (title) el.setAttribute("title", title);
-      return el;
-    }
-    var logBox = null;
-    var logList = null;
-
-    function pillEl() {
-      return document.querySelector(".oscar-live-btn");
-    }
-
-    function pill(name) {
-      var el = pillEl();
-      return el ? el.querySelector('[data-pill="' + name + '"]') : null;
-    }
-
-    function say(el, text) {
-      el.setAttribute("data-tooltip", text);
-      el.setAttribute("data-tooltip-pos", "bottom");
-    }
-
-    function quoted(ids) {
-      return ids
-        .map(function (id) {
-          return '"' + id + '"';
-        })
-        .join(", ");
-    }
-
-    // RUNNING: every interface OSCAR is serving, whichever project is open
-    // here. One that is switched off counts too: nobody can open it, and
-    // its schedules and bridges still run. How many devices are on each is
-    // said in the Running window, per interface, not here: one total for
-    // the lobby's phones and the technician's tablet would say nothing.
-    var running = [];
-    var publicState = null; // { surfaces: [{ id, online }] }, as an extension says (Pro's public links)
-
-    function paintRunning() {
-      var el = pill("running");
-      if (!el) return;
-      el.querySelector(".oscar-live-count").textContent = String(running.length);
-      el.classList.toggle("oscar-live-on", running.length > 0);
-      var names = quoted(
-        running.map(function (row) {
-          return row.name || row.id;
-        })
-      );
-      var off = running.filter(function (row) {
-        return row.access === "off";
-      }).length;
-      var anyone = ((publicState && publicState.surfaces) || []).length;
-      say(
-        el,
-        running.length === 0
-          ? "OSCAR is running nothing in the background. Publish a project and it is served from here, whichever project is open. Click to see."
-          : "OSCAR is running " +
-              (running.length === 1 ? names : running.length + " interfaces: " + names) +
-              " in the background, whichever project is open here." +
-              (anyone ? " " + anyone + " open to anyone with the link." : "") +
-              (off ? " " + off + " switched off." : "") +
-              " Click to see them."
-      );
-      paintServer();
-    }
-    livePublic.set = function (state) {
-      publicState = state && Array.isArray(state.surfaces) ? state : { surfaces: [] };
-      paintRunning();
-    };
-
-    // OSCAR SERVER: whether this editor reaches it, and its traffic. The
-    // meters read the network log's rows, which carry how many messages
-    // each gathers: messages a second over the last second, filled on a
-    // log scale (1 a second shows, 100 fills it).
-    var traffic = { in: [], out: [] };
-    function countTraffic(row) {
-      if (traffic[row.dir]) traffic[row.dir].push({ at: Date.now(), n: row.n || 1 });
-    }
-    function rateOf(dir) {
-      var since = Date.now() - 1000;
-      traffic[dir] = traffic[dir].filter(function (t) {
-        return t.at >= since;
-      });
-      return traffic[dir].reduce(function (sum, t) {
-        return sum + t.n;
-      }, 0);
-    }
-    function paintServer() {
-      var el = pill("server");
-      if (!el) return;
-      var connected = !!(editor.socket && editor.socket.connected);
-      el.classList.toggle("oscar-live-on", connected);
-      var rates = { in: rateOf("in"), out: rateOf("out") };
-      ["in", "out"].forEach(function (dir) {
-        var meter = el.querySelector('.oscar-live-led[data-led="' + dir + '"] .oscar-live-meter');
-        if (meter) meter.style.width = Math.round(Math.min(1, Math.log(1 + rates[dir]) / Math.log(101)) * 100) + "%";
-      });
-      say(
-        el,
-        connected
-          ? "What OSCAR is receiving and sending: IN " + rates.in + "/s, OUT " + rates.out + "/s. Click for the network log."
-          : "This editor cannot reach OSCAR. Nothing it shows is current. Click for the network log."
-      );
-    }
-    setInterval(paintServer, 250);
-
-    function refreshLive() {
-      fetch("/published")
-        .then(function (res) {
-          return res.json();
-        })
-        .then(function (rows) {
-          running = Array.isArray(rows) ? rows : [];
-          paintRunning();
-        })
-        .catch(function () {});
-    }
-
-    function flash(dir) {
-      var el = pillEl();
-      var led = el && el.querySelector('.oscar-live-led[data-led="' + dir + '"]');
-      if (!led) return;
-      led.classList.add("oscar-live-led-on");
-      if (flashes[dir]) clearTimeout(flashes[dir]);
-      // A hair longer than the server's throttle, so steady traffic reads as
-      // a steady light instead of a strobe.
-      flashes[dir] = setTimeout(function () {
-        led.classList.remove("oscar-live-led-on");
-        flashes[dir] = null;
-      }, 350);
-    }
-
-    // ---- the network log window ------------------------------------------
-    // What OSCAR's server actually received and sent, newest at the top
-    // (lib/wire-log.js): each message with what it carried, where it came
-    // from or went, and on the same row why -- whose move a send was, which
-    // published surfaces and whether the canvas followed what came in. What
-    // was refused is there too, marked Dropped. Repeats within a moment are
-    // one row with a count. Filters by direction, protocol and origin.
-    //
-    // A floating window, not a modal, on purpose: the log is for debugging,
-    // so the editor has to stay usable while it is open -- move a fader,
-    // watch the row appear. Dragged by its title bar, closed by its own
-    // button or by clicking the pill's lights again.
-
-    function timeOf(at) {
-      var d = new Date(at);
-      return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
-    }
-
-    // Clear hides, it does not delete: the server's log is shared with every
-    // editor and with an assistant's recent_activity, so it stays whole, and
-    // a refresh brings it all back. What is hidden is every row up to the
-    // newest one on screen, by the server's own clock -- not this device's,
-    // which on a tablet may be minutes out -- so the backlog fetched when
-    // the window reopens stays cleared too.
-    var clearedThrough = 0;
-    var clearedAtWords = "";
-
-    function clearLog() {
-      for (var i = 0; i < logRows.length; i++) {
-        if (logRows[i].at > clearedThrough) clearedThrough = logRows[i].at;
-      }
-      clearedAtWords = timeOf(Date.now());
-      renderLog();
-    }
-
-    function renderLog() {
-      if (!logList) return;
-      // With auto-scroll off, remember the first row in view and where it
-      // sat, to put it back there once the list is redrawn.
-      var anchor = null;
-      if (!autoScroll) {
-        var top = logList.getBoundingClientRect().top;
-        for (var c = 0; c < logList.children.length; c++) {
-          var at = logList.children[c].getBoundingClientRect();
-          if (at.bottom > top) {
-            anchor = { key: logList.children[c].getAttribute("data-key"), offset: at.top - top };
-            break;
-          }
-        }
-      }
-      logList.textContent = "";
-      var shown = 0;
-      var kept = 0;
-      for (var i = logRows.length - 1; i >= 0; i--) {
-        var row = logRows[i];
-        if (row.at <= clearedThrough) continue;
-        kept++;
-        if (!logFilters[row.dir] || !logFilters[row.protocol]) continue;
-        if (row.origin && logFilters[row.origin] === false) continue;
-        if (unfollowed(row) && !logFilters.unfollowed) continue;
-        if (row.dropped && !logFilters.dropped) continue;
-        shown++;
-        var line = document.createElement("div");
-        line.className = "oscar-log-row" + (row.dropped ? " oscar-log-row-dropped" : "");
-        line.setAttribute("data-key", String(row.id));
-        line.appendChild(span("oscar-log-time", timeOf(row.at)));
-        line.appendChild(span("oscar-log-chip oscar-log-" + row.dir, row.dir === "in" ? "IN" : "OUT"));
-        line.appendChild(span("oscar-log-chip oscar-log-protocol", String(row.protocol || "").toUpperCase()));
-        // One label: dropped outranks the rest, then whose send it was, or
-        // for what came in, whether the canvas or nothing at all followed it.
-        if (row.dropped) {
-          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-dropped", "Dropped", "Not " + (row.dir === "in" ? "acted on" : "sent") + ": " + row.dropped));
-        } else if (row.dir === "out" && row.origin && ORIGIN_WORDS[row.origin]) {
-          // Which tablet, when two share a surface: its address on this network.
-          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-" + row.origin, ORIGIN_WORDS[row.origin], ORIGIN_HINTS[row.origin] + (row.device ? " (" + row.device + ")" : "")));
-        } else if (row.dir === "in" && row.canvas) {
-          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-origin-canvas", "Canvas", "Followed by a widget on the editor's canvas"));
-        } else if (unfollowed(row)) {
-          line.appendChild(span("oscar-log-chip oscar-log-origin oscar-log-unfollowed", "Unfollowed", "Nothing follows this: no published interface, and not the editor's canvas."));
-        }
-        line.appendChild(span("oscar-log-what", String(row.what || "")));
-        // What the latest of them carried.
-        if (row.value) line.appendChild(span("oscar-log-value", "= " + row.value));
-        if (row.dir === "out") {
-          if (row.to) line.appendChild(span("oscar-log-from", "→ " + row.to));
-          if (row.surface) line.appendChild(span("oscar-log-surface", '"' + row.surface + '"', row.widget ? "Sent for " + row.widget : ""));
-        } else {
-          // Who sent what came in: it is the first thing to know about it.
-          if (row.device) line.appendChild(span("oscar-log-from", row.device === "serial" ? "from the serial cable" : "from " + row.device));
-          (row.surfaces || []).forEach(function (surface) {
-            line.appendChild(span("oscar-log-surface", '"' + surface + '"', "Followed on this published interface"));
-          });
-        }
-        if (row.n > 1) {
-          var times = document.createElement("span");
-          times.className = "oscar-log-n";
-          times.textContent = "×" + row.n;
-          line.appendChild(times);
-        }
-        logList.appendChild(line);
-      }
-      if (!shown) {
-        var quiet = document.createElement("div");
-        quiet.className = "oscar-log-quiet";
-        quiet.textContent = kept
-          ? "Nothing matches these filters."
-          : clearedAtWords
-            ? "Cleared at " + clearedAtWords + ". Waiting for new messages."
-            : "Nothing yet: nothing has been sent or heard.";
-        logList.appendChild(quiet);
-      }
-      if (autoScroll) {
-        logList.scrollTop = 0;
-      } else if (anchor) {
-        var again = logList.querySelector('[data-key="' + (window.CSS && CSS.escape ? CSS.escape(anchor.key) : anchor.key) + '"]');
-        if (again) logList.scrollTop += again.getBoundingClientRect().top - logList.getBoundingClientRect().top - anchor.offset;
-      }
-    }
-
-    function buildLogBox() {
-      logBox = document.createElement("div");
-      logBox.className = "oscar-live-log";
-
-      var bar = document.createElement("div");
-      bar.className = "oscar-log-titlebar";
-      var title = document.createElement("span");
-      title.className = "oscar-log-title";
-      title.textContent = "Network log";
-      bar.appendChild(title);
-      var scrollLabel = document.createElement("label");
-      scrollLabel.className = "oscar-log-autoscroll";
-      scrollLabel.setAttribute("title", "Keep the newest message in view as messages arrive");
-      var scrollBox = document.createElement("input");
-      scrollBox.type = "checkbox";
-      scrollBox.checked = autoScroll;
-      scrollBox.addEventListener("change", function () {
-        autoScroll = scrollBox.checked;
-        try {
-          localStorage.setItem(AUTOSCROLL_KEY, autoScroll ? "on" : "off");
-        } catch (err) {
-          /* kept for this session only */
-        }
-        if (autoScroll && logList) logList.scrollTop = 0;
-      });
-      scrollLabel.appendChild(scrollBox);
-      scrollLabel.appendChild(document.createTextNode("Auto-scroll"));
-      bar.appendChild(scrollLabel);
-      var clear = document.createElement("button");
-      clear.className = "oscar-log-clear";
-      clear.type = "button";
-      clear.textContent = "Clear";
-      clear.setAttribute("title", "Hide what is listed so far, to watch only what comes next");
-      clear.addEventListener("click", clearLog);
-      bar.appendChild(clear);
-      var close = document.createElement("button");
-      close.className = "oscar-log-close";
-      close.type = "button";
-      close.textContent = "×";
-      close.setAttribute("title", "Close the log");
-      close.addEventListener("click", function () {
-        logBox.style.display = "none";
-      });
-      bar.appendChild(close);
-      logBox.appendChild(bar);
-
-      // Dragged by the title bar: the window must be movable off whatever
-      // fader is being debugged under it. The moves are listened for on the
-      // window, not the bar, and the canvas iframe is shielded while a drag
-      // holds (the body class below): an iframe eats pointer moves, which
-      // left the drag sticking the moment the pointer crossed the canvas.
-      var hold = null;
-      bar.addEventListener("pointerdown", function (event) {
-        if (close.contains(event.target) || clear.contains(event.target) || scrollLabel.contains(event.target)) return;
-        var at = logBox.getBoundingClientRect();
-        hold = { x: event.clientX - at.left, y: event.clientY - at.top };
-        document.body.classList.add("oscar-log-dragging");
-        event.preventDefault();
-      });
-      window.addEventListener("pointermove", function (event) {
-        if (!hold) return;
-        logBox.style.left = Math.max(0, Math.min(window.innerWidth - 80, event.clientX - hold.x)) + "px";
-        logBox.style.top = Math.max(0, Math.min(window.innerHeight - 40, event.clientY - hold.y)) + "px";
-        logBox.style.right = "auto";
-        event.preventDefault();
-      });
-      window.addEventListener("pointerup", function () {
-        if (!hold) return;
-        hold = null;
-        document.body.classList.remove("oscar-log-dragging");
-      });
-
-      var head = document.createElement("div");
-      head.className = "oscar-log-head";
-      head.textContent = "Server IP: " + ipServer + (oscInPort ? " · Listening Port: " + oscInPort : "");
-      logBox.appendChild(head);
-
-      var filterBar = document.createElement("div");
-      filterBar.className = "oscar-log-filters";
-      [
-        ["in", "Incoming"],
-        ["out", "Outgoing"],
-        ["osc", "OSC"],
-        ["midi", "MIDI"],
-        ["dmx", "DMX"],
-        ["unfollowed", "Unfollowed"],
-        ["dropped", "Dropped"],
-        ["canvas", "Canvas"],
-        ["local", "Local"],
-        ["internet", "Internet"],
-        ["schedule", "Schedule"],
-        ["bridge", "Bridge"],
-      ].forEach(function (pair, index) {
-        if (index === 2 || index === 5) {
-          var gap = document.createElement("span");
-          gap.className = "oscar-log-filter-gap";
-          filterBar.appendChild(gap);
-        }
-        // Whose move it was gets a row of its own, named.
-        if (index === 7) {
-          var rowBreak = document.createElement("span");
-          rowBreak.className = "oscar-log-filter-break";
-          filterBar.appendChild(rowBreak);
-          var fromWord = document.createElement("span");
-          fromWord.className = "oscar-log-filter-word";
-          fromWord.textContent = "Sent from";
-          filterBar.appendChild(fromWord);
-        }
-        var label = document.createElement("label");
-        label.className = "oscar-log-filter";
-        var box = document.createElement("input");
-        box.type = "checkbox";
-        box.checked = logFilters[pair[0]];
-        box.addEventListener("change", function () {
-          logFilters[pair[0]] = box.checked;
-          renderLog();
-        });
-        label.appendChild(box);
-        label.appendChild(document.createTextNode(pair[1]));
-        filterBar.appendChild(label);
-      });
-      logBox.appendChild(filterBar);
-
-      logList = document.createElement("div");
-      logList.className = "oscar-log-list";
-      logBox.appendChild(logList);
-      document.body.appendChild(logBox);
-    }
-
-    function logOpen() {
-      return !!(logBox && logBox.style.display !== "none");
-    }
-
-    function openLiveLog() {
-      // The lights toggle it: open to watch, the same click to put it away.
-      if (logOpen()) {
-        logBox.style.display = "none";
-        return;
-      }
-      if (!logBox) buildLogBox();
-      logBox.style.display = "";
-      // Opened in the middle of the screen; a drag moves it from there, and
-      // the window then keeps its place, toggle after toggle.
-      if (!logBox.style.left) {
-        var at = logBox.getBoundingClientRect();
-        logBox.style.left = Math.max(0, Math.round((window.innerWidth - at.width) / 2)) + "px";
-        logBox.style.top = Math.max(0, Math.round((window.innerHeight - at.height) / 2)) + "px";
-        logBox.style.right = "auto";
-      }
-      fetch("/live/log")
-        .then(function (res) {
-          return res.json();
-        })
-        .then(function (rows) {
-          if (Array.isArray(rows)) logRows = rows;
-          renderLog();
-        })
-        .catch(function () {
-          renderLog();
-        });
-      renderLog();
-    }
-
-    // The canvas's own sends are logged by the server like every other
-    // (server.js, origin "canvas"), so every editor and the MCP server see
-    // them, and opening the window keeps them instead of replacing them with
-    // the server's backlog.
-    //
-    // What the canvas follows of what comes in only the canvas knows: its
-    // widgets decide for themselves (follow() in lib/widgets/incoming.js,
-    // midi-source.js) and say so through ctx.noteHeard. Gathered here and
-    // told to the server a few times a second, which logs it as "canvas";
-    // a fader ridden from outside is one line with a count.
-    var heardPending = {};
-    var heardTimer = null;
-    editor.noteHeard = function (protocol, what, device) {
-      if (!editor.socket) return;
-      var key = protocol + "|" + what + "|" + (device || "");
-      if (!heardPending[key]) heardPending[key] = device ? { protocol: protocol, what: String(what), device: String(device) } : { protocol: protocol, what: String(what) };
-      if (!heardTimer) {
-        heardTimer = setTimeout(function () {
-          heardTimer = null;
-          var rows = Object.keys(heardPending).map(function (k) {
-            return heardPending[k];
-          });
-          heardPending = {};
-          if (rows.length) editor.socket.emit("canvas:heard", rows);
-          // Well inside the server's hold (ARRIVAL_HOLD_MS), so the word
-          // lands on the row of the message it is about.
-        }, 150);
-      }
-    };
-
-    // The zones' clicks, through the bar's one listener: re-renders replace
-    // elements, the document does not.
-    onBarClick(".oscar-live-zone", function (zone) {
-      if (zone.getAttribute("data-zone") === "running") editor.runCommand("oscar-running");
-      else openLiveLog();
-    });
-
-    if (editor.socket) {
-      editor.socket.on("live:activity", function (msg) {
-        if (msg && (msg.dir === "in" || msg.dir === "out")) flash(msg.dir);
-      });
-      // The log listens all along, not only while its window is open: what
-      // happened a minute before it was opened is exactly what it is for.
-      editor.socket.on("live:log", function (row) {
-        if (!row || (row.dir !== "in" && row.dir !== "out") || !row.id) return;
-        // An update is the same traffic said again: the meters count it once.
-        if (takeRow(row) && !row.dropped) countTraffic(row);
-        if (logOpen()) renderLog();
-        // The Running window's light for each interface the message passed through.
-        if (publishDialog && !row.dropped) publishDialog.activity((row.surfaces || []).concat(row.surface ? [row.surface] : []));
-      });
-      editor.socket.on("published:changed", function () {
-        refreshLive();
-        if (publishDialog) publishDialog.refresh();
-      });
-      // A device came or went on an interface: the Running window's counts.
-      editor.socket.on("running:changed", function () {
-        if (publishDialog) publishDialog.refresh();
-      });
-      // A server that restarted may have a different roster than the one
-      // this pill last drew.
-      editor.socket.on("connect", refreshLive);
-      editor.socket.on("disconnect", paintServer);
-    }
-    refreshLive();
-  })();
-
-  // On the right, with OSCAR: where it is reached, what it is running, its
-  // traffic, and its lock. The right half is fuller than the left was, and
-  // on a laptop it would run under the screen sizes in the middle: there
-  // the words step aside (oscar_theme.css) and the numbers stay, and on a
-  // small one the port goes too, with the tooltip to say all of it.
-  pn.addButton("options", {
-    id: "ipButton",
-    className: "oscar-ip-label",
-    label:
-      '<span class="oscar-ip-word">Server IP: </span>' +
-      ipServer +
-      (oscInPort ? '<span class="oscar-ip-port"> · <span class="oscar-ip-word">Listening Port: </span>' + oscInPort + "</span>" : ""),
-    command: null,
-    attributes: {
-      title: oscInPort
-        ? "OSCAR's address on this network is " + ipServer + ", and it hears OSC on port " + oscInPort + ". Point other devices at it."
-        : "OSCAR's address on this network is " + ipServer + ". Point other devices at it.",
-      // Below the bar: above it there is no room.
-      "data-tooltip-pos": "bottom",
-    },
-    active: false,
-    disable: true,
-  });
-
-  // ---- tooltips ----------------------------------------------------------
-  // GrapesJS renders the panels during init, before any of this runs, and a
-  // button does not re-render when its attributes change afterwards. Setting
-  // the model alone is silently ignored, so the text is written onto the
-  // elements as well. Buttons render in the order the panel holds them.
-  // Import's dialog lives on behind the Open menu ("Paste HTML / CSS...");
-  // the toolbar button itself retires.
-  pn.removeButton("options", "gjs-open-import-webpage");
-
-  // (The sizes crossed panels earlier, before anything on the left was
-  // wired: removing a button re-renders the whole panel, and listeners
-  // bound to the old elements die with them.)
-
-  // The left half's order, applied the way arrangeToolbar applies the
-  // right's: models and elements moved together, silently, because a reset
-  // that redraws would throw away the pills' painted state.
-  (function orderLeftPanel() {
-    var panel = pn.getPanel("devices-c");
-    var row = document.querySelector(".gjs-pn-devices-c .gjs-pn-buttons");
-    if (!panel || !row) return;
-    var buttons = panel.get("buttons");
-    var models = buttons.models.slice();
-    var els = Array.prototype.slice.call(row.querySelectorAll(".gjs-pn-btn"));
-    if (models.length !== els.length) return;
-    var ids = models.map(function (model) {
-      return model.get("id");
-    });
-    var wanted = ["oscar-file", "oscar-edit", "oscar-title", "oscar-export", "oscar-save-state"]
-      .filter(function (id) {
-        return ids.indexOf(id) !== -1;
-      })
-      .concat(
-        ids.filter(function (id) {
-          return ["oscar-file", "oscar-edit", "oscar-title", "oscar-export", "oscar-save-state"].indexOf(id) === -1;
-        })
-      );
-    wanted.forEach(function (id) {
-      row.appendChild(els[ids.indexOf(id)]);
-    });
-    buttons.reset(
-      wanted.map(function (id) {
-        return models[ids.indexOf(id)];
-      }),
-      { silent: true }
-    );
-  })();
-
-  // ---- toolbar order -----------------------------------------------------
-  // Every button exists by now. GrapesJS can only append, so the ones that
-  // belong elsewhere are moved: in the panel's own list and on the page
-  // together, because retitle() below pairs the two by position.
-  /**
-   * Put the toolbar's buttons in the order lib/toolbar-order.js states, or,
-   * given placements, move those alone: an extension's button that belongs
-   * beside one of OSCAR's, added long after the toolbar was drawn.
-   */
-  function arrangeToolbar(placements) {
-    var panel = pn.getPanel("options");
-    var row = document.querySelector(".gjs-pn-options .gjs-pn-buttons");
-    if (!panel || !row) return;
-
-    var buttons = panel.get("buttons");
-    var models = buttons.models.slice();
-    var els = Array.prototype.slice.call(row.querySelectorAll(".gjs-pn-btn"));
-    // If the two ever disagree, moving either would mislabel the rest.
-    if (models.length !== els.length) return;
-
-    var ids = models.map(function (model) {
-      return model.get("id");
-    });
-    var wanted = toolbarOrder.arrange(ids, placements);
-
-    wanted.forEach(function (id) {
-      row.appendChild(els[ids.indexOf(id)]);
-    });
-    // Silent: the panel's view answers a reset by drawing every button again,
-    // which would throw away the elements just moved.
-    buttons.reset(
-      wanted.map(function (id) {
-        return models[ids.indexOf(id)];
-      }),
-      { silent: true }
-    );
-  }
-  arrangeToolbar();
-
-  function retitle(panelId, labels) {
-    var panel = pn.getPanel(panelId);
-    var els = document.querySelectorAll(".gjs-pn-" + panelId + " .gjs-pn-btn");
-    if (!panel || !els.length) return;
-
-    panel.get("buttons").forEach(function (button, index) {
-      var label = labels[button.get("id")];
-      var el = els[index];
-      if (!label || !el) return;
-
-      button.set("attributes", { title: label, "data-tooltip-pos": "bottom" });
-      el.setAttribute("data-tooltip", label);
-      el.setAttribute("data-tooltip-pos", "bottom");
-      el.setAttribute("title", "");
-    });
-  }
-
-  retitle("options", {
-    // "Push", not "Preview": this is also what sends the layout to the
-    // /preview page, which keeps showing the last pushed version until it is.
-    preview: "Push to preview",
-    // something in, and templates -- the other thing one might import -- are
-    // opened from Load.
-    "toggle-lock": null,
-    "open-pages": "Pages",
-    "open-info": "About Oscar",
-  });
-
-  retitle("views", {
-    "open-sm": "Style Manager",
-    "open-tm": "OSC Settings",
-    "open-layers": "Layers",
-    "open-blocks": "Blocks",
-  });
-
-  // ---- extensions ----------------------------------------------------------
-  // What an extension's editor script is handed (lib/extensions.js), through
-  // window.OSCAR.ready(function (oscar) { ... }). Kept small on purpose: every
-  // name here is a promise to code OSCAR cannot see, and api goes up when one
-  // of them changes shape.
-  var oscarApi = {
-    api: 1,
-    /** The GrapesJS editor, for everything not wrapped below. */
-    editor: editor,
-    /** The feature switches as they stand; see lib/features.js. */
-    features: features,
-    /**
-     * A button in the top toolbar: at the end, or straight after one of
-     * OSCAR's own (`after`, a button id such as "toggle-lock").
-     * { id, title, iconPath (the d of a 24x24 SVG path), run(editor), after? }
-     */
-    addToolbarButton: function (button) {
-      if (!button || !button.id || typeof button.run !== "function") {
-        throw new Error("A toolbar button needs an id and a run function");
-      }
-      if (pn.getButton("options", button.id)) return;
-      var title = String(button.title || button.id);
-      pn.addButton("options", {
-        id: button.id,
-        label:
-          '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="' +
-          String(button.iconPath || "").replace(/[^\w\s.,-]/g, "") +
-          '"/></svg>',
-        command: function () {
-          button.run(editor);
-        },
-        // Tooltips are drawn from data-tooltip; a title as well would show twice.
-        attributes: { "data-tooltip": title, "data-tooltip-pos": "bottom", "aria-label": title },
-      });
-      if (button.after) arrangeToolbar([{ id: button.id, after: String(button.after) }]);
-    },
-    /**
-     * An item in File's or Edit's menu: "file" or "edit", { id, label,
-     * run(editor) }. Edit's sit beside Lock editing, File's just above About.
-     * The same id again replaces the item.
-     */
-    addMenuItem: function (menu, item) {
-      if (!menuExtras[menu]) throw new Error('A menu item goes in "file" or "edit"');
-      if (!item || !item.id || typeof item.run !== "function") throw new Error("A menu item needs an id and a run function");
-      oscarApi.removeMenuItem(menu, item.id);
-      menuExtras[menu].push({ id: String(item.id), label: String(item.label || item.id), run: item.run });
-    },
-    /**
-     * What is public on the internet, for the PUBLIC pill: { surfaces: [{ id,
-     * online }] }, every time it changes. Until an extension says, the pill
-     * reads 0 and says public surfaces are OSCAR Pro's.
-     */
-    setPublicCount: function (state) {
-      livePublic.set(state);
-    },
-    /** Take an item of the extension's own out of a menu again. */
-    removeMenuItem: function (menu, id) {
-      if (!menuExtras[menu]) return;
-      menuExtras[menu] = menuExtras[menu].filter(function (item) {
-        return item.id !== String(id);
-      });
-    },
-    /** Take a button of the extension's own out of the toolbar again: one that is only for some accounts. */
-    removeToolbarButton: function (id) {
-      if (!pn.getButton("options", id)) return;
-      if (typeof pn.removeButton === "function") pn.removeButton("options", id);
-    },
-    /** Open OSCAR's modal on an element of the extension's own. */
-    openModal: function (title, content) {
-      modal.open({ title: title, content: content, attributes: { class: "modal-login" } });
-    },
-    /**
-     * Add to the Publish dialog, under what was just published: for what
-     * else a published surface can become. See addSection in export_dialog.js.
-     */
-    publishDialog: {
-      addSection: function (draw) {
-        if (publishDialog) publishDialog.addSection(draw);
-      },
-      /**
-       * Add an answer to "who can open it" on every row, after OSCAR's own
-       * Off and This network. See addAccessLevel in export_dialog.js.
-       */
-      addAccessLevel: function (level) {
-        if (publishDialog) publishDialog.addAccessLevel(level);
-      },
-    },
-    /**
-     * Add to About, ahead of OSCAR's own words. `draw(box)` is called with a
-     * box of the extension's own every time About opens.
-     */
-    aboutDialog: {
-      addSection: function (draw) {
-        if (typeof draw !== "function") throw new Error("A section of About is a draw function");
-        var box = document.createElement("div");
-        box.className = "oscar-about-section";
-        if (aboutExtras) aboutExtras.appendChild(box);
-        aboutSections.push({ draw: draw, box: box });
-      },
-    },
-  };
-
-  // One extension throwing must not cost the others, or the editor, anything.
-  function runExtension(fn) {
-    try {
-      fn(oscarApi);
-    } catch (err) {
-      console.error("An OSCAR extension failed in the editor:", err);
-    }
-  }
-  oscarApi.ready = runExtension;
-  window.OSCAR = oscarApi;
-  extensionsWaiting.splice(0).forEach(runExtension);
-
-  // Anything else that still carries a title (modal contents, for instance).
-  var titles = document.querySelectorAll("*[title]");
-  for (var i = 0; i < titles.length; i++) {
-    var el = titles[i];
-    var title = (el.getAttribute("title") || "").trim();
-    if (!title) continue;
-    el.setAttribute("data-tooltip", title);
-    el.setAttribute("title", "");
-  }
-}
-
-},{"../../lib/features":6,"../../lib/html-document":7,"../../lib/open-project":9,"../../lib/project-format":13,"../../lib/project-sync":14,"../../lib/projects-table":15,"../../lib/toolbar-order":18,"../../lib/widget-styles":19,"./adapters/grapesjs":45,"./assistants_dialog":46,"./export_dialog":47,"./first_run":48,"./pages":51,"jquery":43,"jquery-confirm":42}],50:[function(require,module,exports){
-window.$ = window.jQuery = require("jquery");
-
-// Every widget in lib/widgets/registry.js, wired to GrapesJS by the adapter.
-var { widgetPlugins, runOffstage, followSurfaceStyle } = require("./adapters/grapesjs");
-var widgetStyles = require("../../lib/widget-styles");
-
-// Tabs, and the rule for staying on a page across a push; shared with the
-// editor so its preview draws the same thing the tablet does.
-var oscarPages = require("./pages");
-
-var editor;
-var tabs = null;
-var offstage = null;
-
-// One browserify bundle serves both the editor and the preview page, so each
-// entry point only boots when its own container is on the page.
-if (document.getElementById("gjs-oscar-preview")) {
-  // Ask the server which address it is reachable on, so widgets default to
-  // something other devices on the network can actually talk to.
-  fetch("/connection")
-    .then(function (res) {
-      return res.json();
-    })
-    .catch(function () {
-      return {};
-    })
-    .then(function (conn) {
-      initGrape(conn.address || window.location.hostname || "localhost", conn.socketPort || 8081);
-    });
-}
-
-function initGrape(ipServer, socketPort) {
-  editor = grapesjs.init({
-    // No Font Awesome from a CDN: every tablet would make a request that fails
-    // at a venue with no internet, and nothing on this page uses it.
-    cssIcons: "",
-    height: "100%",
-    container: "#gjs-oscar-preview",
-    allowScripts: 1,
-    panels: { defaults: [] },
-    // No select tool on this page, ever. GrapesJS restarts its default command
-    // whenever a page or project loads, preview mode or not, and that command
-    // cancels every click in the canvas so it can select what was clicked.
-    // A colour picker opens as the default action of a click, so with the tool
-    // running it never opened on a tablet; buttons, sliders and text boxes
-    // work by other means, which is why it went unnoticed.
-    defaultCommand: "",
-    // The same fonts, styles and widgets as the editor, so a tablet shows the
-    // surface in the style it was designed in.
-    canvas: { styles: widgetStyles.canvasStylesheets() },
-    protectedCss: widgetStyles.SURFACE_CSS,
-    // The preview only displays whatever the editor handed over; it must never
-    // write into the editor's autosave.
-    storageManager: false,
-    plugins: [
-      "oscar_socket",
-      "oscar_ip",
-      ...widgetPlugins(ipServer),
-      "grapesjs-touch",
-    ],
-    pluginsOpts: {
-      // `surface`: this page is a device showing the layout, so it agrees with
-      // the others on what each widget shows. The editor never sets it.
-      oscar_socket: { ipserver: ipServer, socketPort: socketPort, surface: true, from: "preview" },
-    },
-  });
-
-  tabs = oscarPages.pageTabs(editor, {
-    bar: document.getElementById("oscar-page-bar"),
-    body: document.body,
-    windows: heldWindows,
-  });
-
-  // A page that is not showing still has to hear the rig, or its faders come
-  // back where they were left rather than where the rig put them.
-  offstage = runOffstage(editor, { document: document });
-
-  // Pages.select brings the next page in with its components unlocked: the
-  // lock was set on the components of the page that was showing, and these
-  // are not those. On every switch, whoever asked for it -- a tab, or the
-  // reselect after a push -- the page that came in is locked before anyone
-  // can put a finger on it.
-  editor.on("page:select", function () {
-    lockDown();
-    // The rig's word on a widget is recorded by the server but told to no
-    // device, since every device showing that widget heard the rig itself
-    // (lib/shared-sync.js). A device that was on another page did not, so
-    // what it has cached for the page coming in may be behind. Ask again.
-    if (editor.syncSharedState) editor.syncSharedState();
-  });
-
-  // The canvas body follows the style the surface was designed in.
-  followSurfaceStyle(editor, widgetStyles.copyToBody);
-
-  editor.on("load", function () {
-    showLatest();
-
-    // The editor's "Push to preview" button tells the server, which tells
-    // every open preview page. Without this a tablet keeps showing the
-    // previous push until someone walks over and reloads it.
-    if (editor.socket) {
-      editor.socket.on("preview:updated", showLatest);
-    }
-  });
-}
-
-function heldWindows() {
-  return oscarPages.widgetWindows(editor, window);
-}
-
-/** Fetch whatever was last pushed and display it, ready to drive a show. */
-function showLatest() {
-  return fetch("/show/preview")
-    .then(function (res) {
-      return res.json();
-    })
-    .then(function (data) {
-      // loadProjectData tears down the current page before reading the new
-      // one, so only hand it something shaped like a GrapesJS project.
-      if (!data || !Array.isArray(data.pages) || !data.pages.length) return;
-
-      // A push mid-show must not throw whoever is driving back to page one.
-      var wasOn = oscarPages.currentPageId(editor.Pages);
-
-      // The load tears every view down, exactly as a page turn does: a
-      // button held through a push must send its release first.
-      oscarPages.releaseHeld(heldWindows());
-
-      editor.loadProjectData(data);
-      oscarPages.reselect(editor.Pages, wasOn);
-
-      // Locked here as well as on page:select: a project that opens on the
-      // page it was already on selects nothing.
-      lockDown();
-      tabs.show();
-      // The load replaced every component; the widgets of the pages not
-      // showing are the new project's from here on.
-      offstage.start();
-    })
-    .catch(function (err) {
-      console.log("Could not load the preview", err);
-    });
-}
-
-/**
- * A preview is for driving the show, not editing it.
- *
- * Safe to set on the components here, unlike in the editor: this page never
- * saves anything (storageManager is off), so none of it can reach a file.
- *
- * Only the page on the canvas is reached: getWrapper() is that page's, and
- * the components of the others are locked as each is switched to.
- */
-function lockDown() {
-  editor.getWrapper().onAll(function (component) {
-    component.set({
-      editable: false,
-      selectable: false,
-      hoverable: false,
-      draggable: false,
-      highlightable: false,
-    });
-  });
-
-  // GrapesJS's own preview mode hides the panels and makes the canvas full
-  // size. Its "exit preview" button is hidden in preview.ejs.
-  if (!editor.Commands.isActive("preview")) editor.runCommand("preview");
-}
-
-},{"../../lib/widget-styles":19,"./adapters/grapesjs":45,"./pages":51,"jquery":43}],51:[function(require,module,exports){
-/**
- * Multiple pages: what the editor and the control surface have in common.
- *
- * A surface can hold more than one page -- a page per fixture group, or per
- * scene. The designer manages them in the editor; whoever drives the show
- * switches between them with a row of tabs. Both entry points require this
- * file, so the tabs the designer sees while previewing are the ones the
- * tablet draws.
- *
- * Nothing here touches `window` or GrapesJS when it is loaded: every function
- * is handed what it works on, which is what lets test/pages.test.js run it
- * under plain Node.
- */
-
-var projectFormat = require("../../lib/project-format");
-var features = require("../../lib/features");
-
-/**
- * The pages as a list of { id, label, current }.
- *
- * The label comes from lib/project-format.js, the same function that names
- * pages in a file: GrapesJS drops an empty page name when it saves, so page
- * one routinely has none, and a tab has to print something.
- */
-function pageEntries(pages) {
-  var selected = pages.getSelected();
-  var selectedId = selected ? selected.getId() : null;
-  return pages.getAll().map(function (page, index) {
-    return {
-      id: page.getId(),
-      label: projectFormat.pageLabel(page.getName(), index),
-      current: page.getId() === selectedId,
-    };
-  });
-}
-
-/**
- * Is `name` already the label of a page other than the one at `except`?
- *
- * Compared as the tabs print them, so "Page 2" typed by hand meets the
- * "Page 2" an unnamed second page is shown as.
- */
-function nameTaken(labels, name, except) {
-  var wanted = String(name).trim();
-  return labels.some(function (label, index) {
-    return index !== except && label === wanted;
-  });
-}
-
-/**
- * The name for a page added without one: the first "Page N", counting up
- * from its position, that no tab already carries. By position alone, deleting
- * "Page 1" of two and adding a page made a second "Page 2".
- */
-function freePageName(labels) {
-  var index = labels.length;
-  while (nameTaken(labels, projectFormat.defaultPageName(index))) index++;
-  return projectFormat.defaultPageName(index);
-}
-
-/** The id of the page on the canvas, or null before there is one. */
-function currentPageId(pages) {
-  var selected = pages.getSelected();
-  return selected ? selected.getId() : null;
-}
-
-/**
- * Go back to the page someone was on, if the project still has it.
- *
- * A push mid-show reloads the whole project, and GrapesJS opens a loaded
- * project on its first page. Whoever is driving page three must not be thrown
- * back to page one with a cue coming. Page ids are saved in the project, so
- * the same page carries the same id across pushes; one that was deleted in
- * the meantime is simply not there, and the first page is the honest answer.
- *
- * @returns true when the page was found and is now selected
- */
-function reselect(pages, id) {
-  if (!id) return false;
-  var page = pages.get(id);
-  if (!page) return false;
-  if (currentPageId(pages) !== id) pages.select(page);
-  return true;
-}
-
-/**
- * A lock that can be taken page by page and undone in one go.
- *
- * GrapesJS only builds the components of the page on the canvas, and
- * Pages.select brings the next page in untouched: whatever locked the first
- * page has not locked this one. So the lock is applied again on every switch.
- * Coming back to a page already locked must not record its locked values as
- * "what it was before", or undoing the lock would restore the lock; each
- * component is therefore remembered the first time it is touched and never
- * again.
- *
- * `options` is passed to component.set -- the editor passes avoidStore, so
- * locking never counts as an edit.
- */
-function createLock(props, options) {
-  var keys = Object.keys(props);
-  // A Map, not a WeakMap: release() has to walk it.
-  var touched = new Map();
-
-  return {
-    /** Lock every component under `root` that is not locked already. */
-    lock: function (root) {
-      if (!root || typeof root.onAll !== "function") return;
-      root.onAll(function (component) {
-        if (!touched.has(component)) {
-          var previous = {};
-          keys.forEach(function (key) {
-            previous[key] = component.get(key);
-          });
-          touched.set(component, previous);
-        }
-        component.set(props, options);
-      });
-    },
-
-    /** Put every component this lock touched back as it was found. */
-    release: function () {
-      touched.forEach(function (previous, component) {
-        component.set(previous, options);
-      });
-      touched.clear();
-    },
-
-    get size() {
-      return touched.size;
-    },
-  };
-}
-
-/**
- * Let go of every control a finger is on, before the page under it goes.
- *
- * Turning the page destroys the views of the page that was showing. A
- * momentary button held with one finger while another taps a tab has sent
- * its ON; its element is gone before the finger comes up, so the pointerup
- * lands nowhere and OFF never reaches the rig -- the fixture stays on, and
- * every tablet draws the button lit. The widgets already have a word for
- * "the hand is gone": a drag that loses the window counts as released
- * (the ctx contract in lib/widgets/index.js), which every widget that can be
- * held listens for as `blur` on its window. So that is what is said here,
- * while the widgets are still attached and can still send.
- *
- * `windows` is every window a widget may be listening on: the page's own
- * and the canvas frame's. One that is missing, or cannot dispatch, is
- * skipped -- a page turn must not fail on it.
- */
-function releaseHeld(windows) {
-  (windows || []).forEach(function (win) {
-    if (!win || typeof win.dispatchEvent !== "function") return;
-    var EventType = win.Event || (typeof Event === "function" ? Event : null);
-    if (!EventType) return;
-    try {
-      win.dispatchEvent(new EventType("blur"));
-    } catch (err) {
-      console.warn("Could not release the controls being held:", err && err.message);
-    }
-  });
-}
-
-/** The windows a widget of this editor may be listening on. */
-function widgetWindows(editor, top) {
-  var windows = top ? [top] : [];
-  var frame = editor && editor.Canvas && typeof editor.Canvas.getWindow === "function" ? editor.Canvas.getWindow() : null;
-  if (frame && frame !== top) windows.push(frame);
-  return windows;
-}
-
-/**
- * Draw the tabs into `bar`, and report whether there are any.
- *
- * The bar lives outside the GrapesJS canvas on purpose. Anything inside the
- * canvas loses its events to the preview lock, and a tab drawn as a component
- * is one the next person to edit the project can drag away or delete.
- *
- * A single page gets no bar at all: it would only take room from the
- * controls, and there is nowhere to switch to.
- */
-function renderTabs(doc, bar, entries, onPick) {
-  while (bar.firstChild) bar.removeChild(bar.firstChild);
-
-  if (entries.length < 2) {
-    bar.hidden = true;
-    return false;
-  }
-
-  entries.forEach(function (entry) {
-    var tab = doc.createElement("button");
-    tab.type = "button";
-    tab.className = "oscar-page-tab" + (entry.current ? " oscar-page-tab-current" : "");
-    // textContent, never innerHTML: a page name is whatever someone typed.
-    tab.textContent = entry.label;
-    tab.setAttribute("aria-pressed", entry.current ? "true" : "false");
-    tab.onclick = function () {
-      if (!entry.current) onPick(entry.id);
-    };
-    bar.appendChild(tab);
-  });
-
-  bar.hidden = false;
-  return true;
-}
-
-/**
- * Keep a tab bar in step with the editor's pages.
- *
- *   var tabs = pageTabs(editor, { bar, body, onSwitch });
- *   tabs.show() / tabs.hide() / tabs.render()
- *
- * `body` carries the oscar-has-pages class while the bar is up; the
- * stylesheet shortens the editor by the bar's height on that class, rather
- * than letting the bar float over the bottom row of someone's controls.
- * `onSwitch` runs after every page change made through the tabs.
- * `windows`, a function returning the windows the widgets listen on, is how
- * a tab lets go of whatever is being held before the page goes (releaseHeld).
- */
-function pageTabs(editor, options) {
-  // Off with the feature (lib/features.js): the bar then never shows, and a
-  // surface stays on the page it opened on. `enabled` is for the tests.
-  var enabled = options.enabled === undefined ? features.PAGES : !!options.enabled;
-  var bar = options.bar;
-  var body = options.body;
-  var doc = options.document || bar.ownerDocument;
-  var showing = false;
-
-  function pick(id) {
-    var page = editor.Pages.get(id);
-    if (!page) return;
-    // Before the select, not after: by then the held widget is detached and
-    // has nothing left to send its release with.
-    if (options.windows) releaseHeld(options.windows());
-    editor.Pages.select(page);
-    // The page:select listener below redraws; onSwitch is for the caller's
-    // own follow-up (locking the page that came in).
-    if (options.onSwitch) options.onSwitch(page);
-  }
-
-  function render() {
-    var up = showing && renderTabs(doc, bar, pageEntries(editor.Pages), pick);
-    if (!showing) bar.hidden = true;
-    var had = body.classList.contains("oscar-has-pages");
-    body.classList.toggle("oscar-has-pages", !!up);
-    // The canvas measures itself once; tell it the room it has changed.
-    if (had !== !!up && typeof editor.refresh === "function") editor.refresh();
-  }
-
-  if (typeof editor.on === "function") {
-    editor.on("page:select page:add page:remove page:update", render);
-  }
-
-  return {
-    render: render,
-    show: function () {
-      showing = enabled;
-      render();
-    },
-    hide: function () {
-      showing = false;
-      render();
-    },
-  };
-}
-
-module.exports = {
-  pageEntries: pageEntries,
-  currentPageId: currentPageId,
-  reselect: reselect,
-  createLock: createLock,
-  nameTaken: nameTaken,
-  freePageName: freePageName,
-  releaseHeld: releaseHeld,
-  widgetWindows: widgetWindows,
-  renderTabs: renderTabs,
-  pageTabs: pageTabs,
-};
-
-},{"../../lib/features":6,"../../lib/project-format":13}]},{},[50,49]);
+},{}]},{},[46,45]);
