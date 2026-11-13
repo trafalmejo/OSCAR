@@ -27,10 +27,12 @@ function bench(options) {
     settings,
     key: options && "key" in options ? options.key : "phc_test",
     flushMs: 5,
+    sendMs: options && options.sendMs,
     env: (options && options.env) || {},
     now: () => new Date("2026-09-25T20:00:00Z"),
     fetchFn: (url, init) => {
-      posts.push({ url, body: JSON.parse(init.body) });
+      posts.push({ url, body: JSON.parse(init.body), signal: init.signal });
+      if (options && options.hang) return new Promise((resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
       return options && options.fail ? Promise.reject(new Error("down")) : Promise.resolve({ ok: true });
     },
   });
@@ -119,6 +121,20 @@ test("close flushes what is queued, for quitting, and resolves when the send is 
   const failing = bench({ fail: true });
   failing.telemetry.tell("app_start", { version: "1" });
   await assert.doesNotReject(() => failing.telemetry.close());
+});
+
+test("a send nobody answers is abandoned after its timeout, so a quit never waits on the network", async () => {
+  // A service that is down answers at once with an error, which the catch
+  // drops. A network that swallows packets answers never: the signal on the
+  // request ends it, and close resolves instead of hanging the quit.
+  const { telemetry, posts } = bench({ hang: true, sendMs: 10 });
+  telemetry.tell("app_start", { version: "2.2.0" });
+  const began = Date.now();
+  await telemetry.close();
+  assert.ok(Date.now() - began < 1000, "back well before any network timeout");
+  assert.strictEqual(posts.length, 1);
+  assert.ok(posts[0].signal instanceof AbortSignal, "every send carries its own deadline");
+  assert.strictEqual(posts[0].signal.aborted, true, "and this one reached it");
 });
 
 test("an event said at once leaves now, with whatever was waiting, instead of at the next beat", async () => {
