@@ -107,13 +107,30 @@ test("a failed send is dropped in silence, and the queue never grows without bou
   assert.ok(posts[posts.length - 1].body.batch.length <= 100, "capped");
 });
 
-test("close flushes what is queued, for quitting", async () => {
+test("close flushes what is queued, for quitting, and resolves when the send is over", async () => {
   const { telemetry, posts } = bench();
   telemetry.tell("surface_published", { widgets: 9, osc: true, midi: false, dmx: true });
-  telemetry.close();
-  await settle();
+  // Nothing has left yet: the beat is 5 ms away. The quit waits on close, not on luck.
+  assert.strictEqual(posts.length, 0);
+  await telemetry.close();
   assert.strictEqual(posts.length, 1);
   assert.deepStrictEqual(posts[0].body.batch[0].properties.widgets, 9);
+  await assert.doesNotReject(() => bench({ fail: true }).telemetry.close(), "with nothing queued, or a send that fails, close still resolves");
+  const failing = bench({ fail: true });
+  failing.telemetry.tell("app_start", { version: "1" });
+  await assert.doesNotReject(() => failing.telemetry.close());
+});
+
+test("an event said at once leaves now, with whatever was waiting, instead of at the next beat", async () => {
+  const { telemetry, posts } = bench();
+  telemetry.tell("mcp_tool_called", { tool: "status" });
+  assert.strictEqual(posts.length, 0, "queued for the beat");
+  assert.strictEqual(telemetry.tell("app_start", { version: "2.2.0" }, { atOnce: true }), true);
+  assert.strictEqual(posts.length, 1, "gone at once: a look of a few minutes and a quit still counts");
+  assert.deepStrictEqual(posts[0].body.batch.map((e) => e.event), ["mcp_tool_called", "app_start"], "and it took the waiting event along");
+  await settle();
+  assert.strictEqual(posts.length, 1, "the beat found nothing left to send");
+  assert.strictEqual(bench({ key: "" }).telemetry.tell("app_start", { version: "2.2.0" }, { atOnce: true }), false, "off is still off");
 });
 
 // ---- the wiring, read from the sources --------------------------------------
@@ -123,7 +140,9 @@ const readSource = (...parts) => fs.readFileSync(path.join(__dirname, "..", ...p
 test("the events OSCAR speaks are few, named, and where they claim to be", () => {
   assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["access_changed", "app_error", "app_start", "draft_loaded", "file_exported", "file_opened", "mcp_tool_called", "surface_opened", "surface_published", "target_seen", "template_loaded"]);
   const server = readSource("server.js");
-  assert.match(server, /telemetry\.tell\("app_start", Object\.assign\(\{ version: pkg\.version, os: process\.platform, arch: process\.arch \}, counts\)\)/);
+  assert.match(server, /telemetry\.tell\("app_start", Object\.assign\(\{ version: pkg\.version, os: process\.platform, arch: process\.arch \}, counts\), \{ atOnce: true \}\)/, "app_start is said at once, so a short look and a quit still count");
+  assert.match(server, /function shutdown\(\) \{[\s\S]*?Promise\.all\(\[released, extensions\.stop\(\), discovery\.stop\(\), telemetry\.close\(\)\]\)/, "a normal quit waits for the last batch, inside its bound");
+  assert.ok(server.indexOf('telemetry.tell(opened[1] === "drafts" ? "draft_loaded" : "template_loaded"') < server.indexOf('app.use(express.static(path.join(__dirname, "public")))'), "the template counter is mounted above the static files, which end a template's request themselves");
   assert.match(server, /\(\[projects, pages\]\) => \(\{ projects: projects\.length, published: pages\.length \}\), \(\) => \(\{\}\)/, "two counts, or none if they cannot be had");
   assert.match(server, /osc: widgets\.some/, "the publish event carries booleans, never an address");
   for (const word of ["oscIn: widgets\\.some", "midiIn: widgets\\.some", "dmxUsb: widgets\\.some", "bridge: widgets\\.some"]) {

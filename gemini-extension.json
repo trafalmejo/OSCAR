@@ -1,6 +1,6 @@
 {
   "name": "oscar",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "OSCAR: free, open-source control surfaces for OSC, MIDI and DMX on any phone or tablet, designed in the browser, no app on the phone. This plugin: a skill to design interfaces for Resolume, TouchDesigner, QLab, DAWs and lights, Bundles the oscar skill and OSCAR's read-and-draft MCP server; never sends to a rig.",
   "mcpServers": {
     "oscar": {

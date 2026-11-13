@@ -162,6 +162,18 @@ app.set("view engine", "ejs");
 // and phones/tablets on the LAN hit the second form, so keep CORS permissive
 // on what is by design a local-network tool.
 app.use(cors());
+// A template or a draft being fetched for the Load window is the one place
+// the server sees "somebody opened this": counted by name, nothing else.
+// It sits above the static files on purpose: those answer a template's
+// request themselves and end it, so below them this never ran, and no
+// template was ever counted.
+app.use((req, res, next) => {
+  if (req.method === "GET") {
+    const opened = /^\/(templates|drafts)\/([a-z0-9][a-z0-9-]*)\.html$/.exec(req.path);
+    if (opened) telemetry.tell(opened[1] === "drafts" ? "draft_loaded" : "template_loaded", { template: opened[2] });
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
@@ -324,16 +336,6 @@ const reportSerialDrop = atMostOncePer(5000, (address, missed) => {
       ? "the port is not open" + (status.error ? " (" + status.error + ")" : "")
       : "no serial port is connected; pick one in the editor's Serial panel";
   console.error("Not sent to serial: " + address + (missed ? " and " + missed + " more" : "") + " -- " + why);
-});
-
-// A template or a draft being fetched for the Load window is the one place
-// the server sees "somebody opened this": counted by name, nothing else.
-app.use((req, res, next) => {
-  if (req.method === "GET") {
-    const opened = /^\/(templates|drafts)\/([a-z0-9][a-z0-9-]*)\.html$/.exec(req.path);
-    if (opened) telemetry.tell(opened[1] === "drafts" ? "draft_loaded" : "template_loaded", { template: opened[2] });
-  }
-  next();
 });
 
 app.use(
@@ -953,7 +955,9 @@ const httpServer = app.listen(HTTP_PORT, () => {
   // With the two counts an installation can be described by, when they can be had.
   Promise.all([store.list(), published.list()])
     .then(([projects, pages]) => ({ projects: projects.length, published: pages.length }), () => ({}))
-    .then((counts) => telemetry.tell("app_start", Object.assign({ version: pkg.version, os: process.platform, arch: process.arch }, counts)));
+    // Said at once, not at the next beat: a look of a few minutes and a quit
+    // used to send nothing, so short first tries were invisible by construction.
+    .then((counts) => telemetry.tell("app_start", Object.assign({ version: pkg.version, os: process.platform, arch: process.arch }, counts), { atOnce: true }));
   // The MCP handshake: where an assistant's shim finds this OSCAR. Written
   // once the port is certain, readable by this user alone, and gone stale
   // the moment OSCAR restarts (the token dies with the process). Switched
@@ -1017,9 +1021,10 @@ function shutdown() {
   // bounds how long an unreachable node can hold that up.
   const released = (DMX_HOLD_ON_EXIT ? Promise.resolve(dmx.close()) : dmx.stopAll()).then(() => usbDmx.close());
   released.then(() => dmxSocket.close());
-  // Extensions get the same bounded wait the rig does, and so does the
-  // goodbye on the network.
-  const letGo = Promise.all([released, extensions.stop(), discovery.stop()]);
+  // Extensions get the same bounded wait the rig does, and so do the
+  // goodbye on the network and the last batch of telemetry, which a normal
+  // quit used to drop on the floor.
+  const letGo = Promise.all([released, extensions.stop(), discovery.stop(), telemetry.close()]);
   httpServer.close(() => letGo.then(() => process.exit(0)));
   setTimeout(() => process.exit(0), 2000).unref();
 }

@@ -1,7 +1,7 @@
 {
   "name": "oscar",
   "productName": "OSCAR",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "OSCAR is a free, open-source app that turns any phone or tablet into a control surface for show software, lights and gear: design buttons, faders and pads in the browser, open them by QR code with no app to install, and send OSC, MIDI and DMX.",
   "main": "main.js",
   "scripts": {

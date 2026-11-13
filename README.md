@@ -1052,7 +1052,10 @@ treated as an app of its own, and nothing has to be installed:
   address; nothing that is switched off). That is how the OSCAR phone app
   lists your OSCAR and its interfaces with nothing typed. It only says "I am
   here" on pages that were open to the network already; `OSCAR_NO_DISCOVERY=1`
-  keeps it quiet.
+  keeps it quiet. A router that does not pass multicast between its Ethernet
+  and Wi-Fi sides keeps a phone from hearing an OSCAR on a cable: put the
+  computer on the Wi-Fi, switch on multicast (IGMP) passthrough on the router,
+  or scan the QR code in the Publish window, which needs no announcement.
 - **Naming a device.** Add `?device=Bar%20left` to the address a tablet
   opens, or to the QR code you print, and that tablet is "Bar left" in the
   network log and under the device count in the Running window (hover it).

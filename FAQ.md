@@ -48,3 +48,23 @@ any browser on the network can open it.
 The phone has to be on the same network as the computer running OSCAR, and
 that computer's firewall has to let it in. If `/preview` opens on the phone,
 a published page will too.
+
+## Why does the OSCAR app not find my OSCAR?
+
+The app listens for the announcement OSCAR makes on the local network, which
+OSCAR 2.2 and later make; an older OSCAR makes none, and is opened by its QR
+code or its address instead. With 2.2, three things keep a phone from hearing it:
+
+- **A different network.** A phone on mobile data, or on a guest Wi-Fi that
+  keeps devices apart, hears nothing. Both on the same Wi-Fi, with the
+  computer's firewall letting OSCAR in, is where it starts.
+- **The computer on a cable.** Many routers do not pass multicast between
+  their Ethernet and Wi-Fi sides, so a phone on Wi-Fi never hears a computer
+  on Ethernet, though it can still open the page by address. Put the computer
+  on the Wi-Fi, or switch on multicast (IGMP) passthrough, sometimes called
+  mDNS reflection, on the router.
+- **A VPN on the computer.** Its tunnel can take the announcement instead of
+  the Wi-Fi. OSCAR 2.2 announces on its own address to avoid that.
+
+The QR code in the Publish window needs no announcement: scanning it, or
+typing the address, opens the interface whatever the router does.
