@@ -61,6 +61,8 @@ async function startServer(t) {
     OSCAR_DMX_PORT: "0",
     OSCAR_PROJECTS_DIR: path.join(dir, "projects"),
     OSCAR_SETTINGS_FILE: path.join(dir, "settings.json"),
+    // A test is not an installation: nothing it does is counted anywhere.
+    OSCAR_NO_TELEMETRY: "1",
     OSCAR_NO_OPEN: "1",
     OSCAR_NO_UPDATE_CHECK: "1",
   });

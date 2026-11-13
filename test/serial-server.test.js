@@ -100,6 +100,8 @@ test("a remembered board is left alone while serial is hidden; the server still 
     OSCAR_DMX_PORT: "0",
     OSCAR_PROJECTS_DIR: path.join(dir, "projects"),
     OSCAR_SETTINGS_FILE: settingsFile,
+    // A test is not an installation: nothing it does is counted anywhere.
+    OSCAR_NO_TELEMETRY: "1",
     OSCAR_NO_OPEN: "1",
     OSCAR_NO_UPDATE_CHECK: "1",
   });

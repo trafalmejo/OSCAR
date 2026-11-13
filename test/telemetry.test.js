@@ -153,6 +153,19 @@ test("an event said at once leaves now, with whatever was waiting, instead of at
 
 const readSource = (...parts) => fs.readFileSync(path.join(__dirname, "..", ...parts), "utf8").replace(/\r\n/g, "\n");
 
+test("a test that starts the real server is not an installation: it runs with telemetry off", () => {
+  // With app_start sent at once, every test run would have been a fresh
+  // installation in the numbers; before that the queue was lost on quit and
+  // the tests were silent by accident.
+  const dir = path.join(__dirname);
+  // The tests that fork the real server all name it the same way; a mention in prose does not count.
+  const starters = fs.readdirSync(dir).filter((name) => name.endsWith(".test.js") && fs.readFileSync(path.join(dir, name), "utf8").includes('const SERVER = path.join(__dirname, "..", "server.js");'));
+  assert.ok(starters.length >= 3, "the tests that fork server.js: " + starters.join(", "));
+  for (const name of starters) {
+    assert.match(fs.readFileSync(path.join(dir, name), "utf8"), /OSCAR_NO_TELEMETRY: "1"/, name + " starts the server with telemetry off");
+  }
+});
+
 test("the events OSCAR speaks are few, named, and where they claim to be", () => {
   assert.deepStrictEqual(Object.keys(EVENTS).sort(), ["access_changed", "app_error", "app_start", "draft_loaded", "file_exported", "file_opened", "mcp_tool_called", "surface_opened", "surface_published", "target_seen", "template_loaded"]);
   const server = readSource("server.js");
