@@ -129,8 +129,17 @@ test("a send nobody answers is abandoned after its timeout, so a quit never wait
   // request ends it, and close resolves instead of hanging the quit.
   const { telemetry, posts } = bench({ hang: true, sendMs: 10 });
   telemetry.tell("app_start", { version: "2.2.0" });
+  // The deadline's timer is unref'd on purpose (it must never hold a quit
+  // open), and this fake fetch holds no socket, so on Node 22 the loop would
+  // drain before it fired and the runner would cancel the file. A real send
+  // holds a socket; here a timer stands in for it until close resolves.
+  const alive = setInterval(() => {}, 50);
   const began = Date.now();
-  await telemetry.close();
+  try {
+    await telemetry.close();
+  } finally {
+    clearInterval(alive);
+  }
   assert.ok(Date.now() - began < 1000, "back well before any network timeout");
   assert.strictEqual(posts.length, 1);
   assert.ok(posts[0].signal instanceof AbortSignal, "every send carries its own deadline");
