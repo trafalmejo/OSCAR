@@ -9,12 +9,12 @@
     "subfolder": "createwithoscar"
   },
   "websiteUrl": "https://www.createwithoscar.com/how-it-works#ai",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "createwithoscar",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
