@@ -1,0 +1,224 @@
+<!doctype html>
+<html>
+<head>
+<title>Stage Looks</title>
+<!--
+  Stage Looks: a board of pictures, one per look of the room, for the person
+  who runs the evening from a tablet: tap a photo and the show recalls that
+  look. Under the pictures, the master fader and a BLACKOUT key.
+
+  It is here to show the media browser widget: tiles that wear pictures.
+  Each tile is "label|value|image" in the widget's Items setting, and a tap
+  sends the tile's value to the widget's Message; so this board sends
+  /look 1 to /look 6, which a cue list, a lighting desk macro or a Resolume
+  column can answer to. The pictures are OSCAR's own (images/showcase/, see
+  its CREDITS.md); put your own in: a photo of the room in each look is the
+  whole point, and a picture needs no words.
+
+  Open it from File > Open project or template, or paste this whole file into
+  File > Import HTML/CSS. It is ordinary HTML and CSS with two OSCAR additions:
+
+  - data-gjs-* attributes hold each widget's settings (data-gjs-message is its
+    OSC address) and data-gjs-dmode="flow", which makes a part move through
+    the layout when dragged instead of being pulled out of it.
+  - data-osc-style="own" on <body> says the page brings its own look, and the
+    first rule sets the colour tokens for it. Pick another widget style in
+    the editor and the board is redrawn in that style's colours: every rule
+    that paints is written for "own" alone, and a short set of rules further
+    down, made of tokens only, dresses it for the others.
+
+  The layout rearranges at 992px and 480px, the widths of the editor's Tablet
+  and Mobile views, so edits made in those views land in the same media
+  queries: two columns of pictures on a tablet, and still two on a phone, the
+  tiles just smaller, because a look is picked by its picture and a picture
+  wants width.
+
+  OSC addresses:
+    /look <1..6>   /master <0..1>   /blackout 1|0
+-->
+<style>
+[data-osc-style="own"] {
+  --osc-background: #0e0d12;
+  --osc-foreground: #f3efe8;
+  --osc-card: #18161e;
+  --osc-muted: #2a2733;
+  --osc-accent: #e0b25b;
+  --osc-accent-foreground: #16130c;
+  --osc-border: #2f2b3a;
+  --osc-input: #2f2b3a;
+  --osc-primary: #ff6a3d;
+  --osc-primary-foreground: #ffffff;
+  --osc-ring: #ff6a3d;
+  --osc-radius: 14px;
+  --osc-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --osc-control-height: 56px;
+}
+
+/* ---- the board ---- */
+.looks {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 24px;
+  box-sizing: border-box;
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+  font-family: var(--osc-font);
+}
+
+.looks-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.looks-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--osc-accent);
+}
+.looks-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.looks-note {
+  margin: 0;
+  font-size: 13px;
+}
+[data-osc-style="own"] .looks-note {
+  color: #9a93a8;
+}
+
+/* The pictures. The widget lays its tiles out as a grid of its own; here it
+   is only given the whole width and bigger pictures. */
+.looks .oscar-media-browser {
+  width: 100%;
+  gap: 14px;
+  padding: 0;
+  overflow: visible;
+}
+[data-osc-style="own"] .looks .oscar-media-tile {
+  border: 2px solid var(--osc-border);
+  border-radius: 16px;
+  background: var(--osc-card);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+[data-osc-style="own"] .looks .oscar-media-thumb {
+  aspect-ratio: 4 / 3;
+}
+[data-osc-style="own"] .looks .oscar-media-label {
+  padding: 10px 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+[data-osc-style="own"] .looks .oscar-media-tile.oscar-media-selected {
+  border-color: var(--osc-primary);
+  outline-color: var(--osc-primary);
+}
+
+/* ---- the strip under the pictures: master and blackout ---- */
+.looks-strip {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid var(--osc-border);
+  border-radius: 18px;
+  background: var(--osc-card);
+}
+.looks-master {
+  display: grid;
+  gap: 8px;
+}
+.looks-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+[data-osc-style="own"] .looks-label {
+  color: #9a93a8;
+}
+.looks-master input {
+  width: 100%;
+}
+[data-osc-style="own"] .looks-blackout {
+  min-width: 150px;
+  min-height: 64px;
+  border: 2px solid #5a1d1d;
+  border-radius: 14px;
+  background: #2a0f0f;
+  color: #ff8a80;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+[data-osc-style="own"] .looks-blackout.toggle,
+[data-osc-style="own"] .looks-blackout:active {
+  background: #d32f2f;
+  border-color: #ff6659;
+  color: #fff;
+}
+
+@media (max-width: 992px) {
+  .looks { padding: 18px; }
+  .looks-title { font-size: 24px; }
+}
+@media (max-width: 480px) {
+  .looks { padding: 14px; gap: 14px; }
+  .looks-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .looks-note { display: none; }
+  .looks .oscar-media-browser { gap: 10px; }
+  [data-osc-style="own"] .looks .oscar-media-label { font-size: 13px; padding: 8px 10px; }
+  .looks-strip { grid-template-columns: 1fr; }
+  [data-osc-style="own"] .looks-blackout { width: 100%; }
+}
+
+/* Dressed by another widget style: tokens only. */
+body:not([data-osc-style="own"]) .looks {
+  background: var(--osc-background);
+  color: var(--osc-foreground);
+}
+body:not([data-osc-style="own"]) .looks-strip {
+  border-color: var(--osc-border);
+  background: var(--osc-card);
+}
+body:not([data-osc-style="own"]) .looks-eyebrow {
+  color: var(--osc-accent);
+}
+body:not([data-osc-style="own"]) .looks-note,
+body:not([data-osc-style="own"]) .looks-label {
+  color: var(--osc-foreground);
+  opacity: 0.7;
+}
+</style>
+</head>
+<body data-osc-style="own" data-osc-appearance="dark">
+<div id="looks" class="looks" data-gjs-dmode="flow">
+  <div id="looks-head" class="looks-head" data-gjs-dmode="flow">
+    <div id="looks-titles" data-gjs-dmode="flow">
+      <p id="looks-eyebrow" class="looks-eyebrow" data-gjs-dmode="flow">Tonight</p>
+      <h1 id="looks-title" class="looks-title" data-gjs-dmode="flow">Stage Looks</h1>
+    </div>
+    <p id="looks-note" class="looks-note" data-gjs-dmode="flow">Tap a picture to recall that look. Sends /look 1 to 6 on port 7000.</p>
+  </div>
+
+  <div id="looks-grid" class="oscar-media-browser" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/look" data-gjs-columns="2" data-gjs-show-labels="true" data-gjs-arg-type="i" data-gjs-listen="true" data-gjs-items="Beams|1|images/showcase/beams.jpg; Haze|2|images/showcase/smoke.jpg; Festival|3|images/showcase/festival.jpg; Decks|4|images/showcase/decks.jpg; Gallery|5|images/showcase/installation.jpg; Lasers|6|images/showcase/lasers.jpg"></div>
+
+  <div id="looks-strip" class="looks-strip" data-gjs-dmode="flow">
+    <div id="looks-master" class="looks-master" data-gjs-dmode="flow">
+      <span id="looks-master-label" class="looks-label" data-gjs-dmode="flow">Master</span>
+      <input id="looks-master-fader" type="range" step="0.01" min="0" max="1" orient="horizontal" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/master" data-gjs-min="0" data-gjs-max="1" data-gjs-value="1" data-gjs-orientation="horizontal" data-gjs-listen="true" data-gjs-arg-type="f">
+    </div>
+    <button id="looks-blackout" class="looks-blackout" data-gjs-dmode="flow" data-gjs-port="7000" data-gjs-message="/blackout" data-gjs-mode="momentary" data-gjs-value-on="1" data-gjs-value-off="0" data-gjs-arg-type="i">BLACKOUT</button>
+  </div>
+</div>
+</body>
+</html>
