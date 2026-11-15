@@ -25,7 +25,8 @@ Get the installer for your machine from the
 
 From OSCAR 2.1.2 the Mac app is signed and notarized by Apple, and opens like
 any other. The Windows installers aren't code signed yet, so Windows warns you
-the first time: click *More info* then *Run anyway*.
+the first time: click *More info* then *Run anyway*. The copy from the
+Microsoft Store is signed by Microsoft and shows no warning.
 
 The first time OSCAR is opened in a browser, the canvas shows the **Showcase** template, where every widget works, so there is something to try straight away. After that the canvas is whatever you left on it, including empty. It is a template like any other: open **File → Open project or template…** to get it back, or to start from another.
 
@@ -131,15 +132,20 @@ git tag v2.0.0 && git push origin v2.0.0
 Running the workflow by hand from the Actions tab builds the installers and
 leaves them as downloadable run artifacts without creating a release — useful
 for checking a build before tagging. A dry run signs with SignPath's test
-certificate; a tag waits for a maintainer to approve the two signing requests
-(the app, then the installers) in SignPath before the real certificate is
-used, so a release build pauses until that approval arrives.
+certificate. A tag signs only when the repository variable
+`SIGNPATH_RELEASE_READY` is `true`; it then waits for a maintainer to approve
+the two signing requests (the app, then the installers) in SignPath before the
+real certificate is used, so a release build pauses until that approval
+arrives. Until the variable is set, a tag builds unsigned Windows installers
+and does not pause.
 
 From OSCAR 2.1.2 the Mac app is signed with a Developer ID and notarized by
-Apple, so it opens without a warning. The Windows installers are code signed
-from OSCAR 2.2 onward (see the policy below); until then Windows SmartScreen
-warns on first run. Releases up to 2.1.0 are not signed on either system, and
-on macOS you right-click the app and choose Open.
+Apple, so it opens without a warning. The Windows installers are not code
+signed yet: SignPath Foundation accepted OSCAR in October 2026 and the
+certificate is still pending, so Windows SmartScreen warns on first run (see
+the policy below for what happens once it arrives). Releases up to 2.1.0 are
+not signed on either system, and on macOS you right-click the app and choose
+Open.
 
 The Windows job also builds two packages for the Microsoft Store and leaves
 them as the run artifact `store-packages`. They are uploaded in Partner Center
@@ -153,11 +159,13 @@ never shows the Windows firewall prompt that the installer's copy does.
 Free code signing provided by [SignPath.io](https://about.signpath.io),
 certificate by [SignPath Foundation](https://signpath.org).
 
-Windows builds from OSCAR 2.2 onward are signed inside the release workflow
-(`.github/workflows/release.yml`): SignPath checks that the files came out of
-this repository's own GitHub Actions run, and a maintainer approves every
-release before the certificate is used. The artifact configurations that say
-which files may be signed, and at which version, are kept in `build/signpath/`.
+Windows builds are signed inside the release workflow
+(`.github/workflows/release.yml`) once SignPath Foundation has issued the
+certificate: SignPath checks that the files came out of this repository's own
+GitHub Actions run, and a maintainer approves every release before the
+certificate is used. The artifact configurations that say which files may be
+signed, and at which version, are kept in `build/signpath/`. The first
+release signed this way will say so in its notes.
 
 The Mac app is signed in the same workflow with the maintainer's own Apple
 Developer ID certificate and notarized by Apple, under the hardened runtime
