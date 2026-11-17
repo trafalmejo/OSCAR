@@ -92,3 +92,16 @@ test("the ZIP holds the files at its root, whole, as any unzipper reads them", (
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the sign-in values come from the environment first, then from the maintainer's file", () => {
+  const { withLocalValues } = require("../scripts/store-submit");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oscar-store-env-"));
+  try {
+    const file = path.join(dir, "store.env");
+    fs.writeFileSync(file, "MS_STORE_TENANT_ID=tenant\r\nMS_STORE_CLIENT_ID=\nMS_STORE_CLIENT_SECRET=from-file\nOTHER=x\n");
+    assert.deepStrictEqual(withLocalValues({ MS_STORE_CLIENT_SECRET: "from-env" }, file), { MS_STORE_CLIENT_SECRET: "from-env", MS_STORE_TENANT_ID: "tenant" });
+    assert.deepStrictEqual(withLocalValues({ A: "1" }, path.join(dir, "none.env")), { A: "1" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

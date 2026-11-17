@@ -16,6 +16,8 @@
 // (Account settings, with the Manager role), from three values in the
 // environment: MS_STORE_TENANT_ID, MS_STORE_CLIENT_ID, MS_STORE_CLIENT_SECRET.
 // The release workflow has them as secrets; nothing of them is in the repo.
+// Run from the maintainer's computer, values not in the environment are
+// read from ../secrets/microsoft-store/store.env, a folder outside the repo.
 //
 // The notes are build/store/whats-new.txt, written for each release.
 //
@@ -195,6 +197,23 @@ async function call(method, url, token, body) {
   return data;
 }
 
+/** The maintainer's own file of NAME=value lines, when there is one; the environment wins. */
+function withLocalValues(env, file) {
+  const out = Object.assign({}, env);
+  let text = "";
+  try {
+    text = fs.readFileSync(file || path.join(__dirname, "..", "..", "secrets", "microsoft-store", "store.env"), "utf8");
+  } catch (err) {
+    return out;
+  }
+  for (const line of text.split(/?
+/)) {
+    const found = /^(MS_STORE_[A-Z_]+)=(.*)$/.exec(line.trim());
+    if (found && found[2] && !out[found[1]]) out[found[1]] = found[2];
+  }
+  return out;
+}
+
 async function accessToken(env) {
   for (const name of ["MS_STORE_TENANT_ID", "MS_STORE_CLIENT_ID", "MS_STORE_CLIENT_SECRET"]) {
     if (!env[name]) throw new Error(name + " is not set");
@@ -240,7 +259,7 @@ async function main(argv, env) {
   const files = argv.filter((arg) => !arg.startsWith("--")).map((f) => path.resolve(f));
   const version = require("../package.json").version;
 
-  const token = await accessToken(env);
+  const token = await accessToken(withLocalValues(env));
   const app = await call("GET", API, token);
   const pending = app.pendingApplicationSubmission;
   console.log("Signed in. " + (app.primaryName || APP_ID) + ": " + (pending ? "a submission is in progress (" + pending.id + ")" : "no submission in progress") + ".");
@@ -304,7 +323,7 @@ async function main(argv, env) {
   throw new Error("The Store had not answered after 20 minutes; Partner Center shows where submission " + submission.id + " stands");
 }
 
-module.exports = { packagesFor, withNotes, readNotes, versionOf, writeZip, crc32, NOTES_MAX, NOTES_FILE };
+module.exports = { withLocalValues, packagesFor, withNotes, readNotes, versionOf, writeZip, crc32, NOTES_MAX, NOTES_FILE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).catch((err) => {
