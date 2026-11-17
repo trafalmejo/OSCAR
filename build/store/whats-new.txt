@@ -1,0 +1,3 @@
+The OSCAR phone app now finds this computer on every network it is on: Wi-Fi, a wired show network, or both at once. Before, a computer with a virtual machine's network adapter could announce itself where no phone was listening.
+
+The address and QR code OSCAR shows for opening an interface on a phone are also right on those computers.

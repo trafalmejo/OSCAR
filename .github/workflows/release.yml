@@ -265,9 +265,10 @@ jobs:
 
       # The Microsoft Store takes an MSIX package, not an installer, and signs
       # it itself, so these are built unsigned: one per CPU, wrapped around the
-      # same unpacked app as the installers. They are uploaded in Partner
-      # Center by hand and never attached to the release, since nothing but the
-      # Store can install them.
+      # same unpacked app as the installers. They are never attached to the
+      # release, since nothing but the Store can install them: the "store" job
+      # below sends them to Microsoft, or they are uploaded in Partner Center
+      # by hand from this run's artifact.
       - name: Build the Microsoft Store packages (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -323,6 +324,41 @@ jobs:
             release-builds/*.dmg
             release-builds/*.AppImage
             release-builds/*.deb
+
+  # The Store's copy, sent by Microsoft's submission API instead of by hand
+  # (scripts/store-submit.js): the two packages in place of the published
+  # ones, with build/store/whats-new.txt as the notes, into certification. The
+  # Store publishes by itself once it passes, which takes hours to days, so
+  # it starts here and not after the release is written up.
+  #
+  # Only on a tag, and only once the repository variable STORE_SUBMIT_READY
+  # is "true" and the three MS_STORE_* secrets exist: the Entra application
+  # Partner Center knows as a Manager. Until then, and whenever this fails,
+  # the artifact "store-packages" is still there to upload by hand.
+  store:
+    name: Microsoft Store
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') && vars.STORE_SUBMIT_READY == 'true' }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: store-packages
+          path: store-packages
+
+      - name: Submit the packages to the Microsoft Store
+        env:
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+        run: node scripts/store-submit.js store-packages/*.appx
 
   # Only a tag publishes. One job attaches every platform's installers to a
   # draft release, so the signed Windows files go up and no two jobs race to
