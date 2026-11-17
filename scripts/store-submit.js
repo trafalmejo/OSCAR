@@ -206,8 +206,7 @@ function withLocalValues(env, file) {
   } catch (err) {
     return out;
   }
-  for (const line of text.split(/?
-/)) {
+  for (const line of text.split(/\r?\n/)) {
     const found = /^(MS_STORE_[A-Z_]+)=(.*)$/.exec(line.trim());
     if (found && found[2] && !out[found[1]]) out[found[1]] = found[2];
   }
