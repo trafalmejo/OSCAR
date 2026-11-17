@@ -2,3 +2,6 @@
 # Checked out with Windows line endings and published from there, that line
 # breaks the command on macOS and Linux. These files stay as they are written.
 createwithoscar/** text eol=lf
+
+# Shell scripts run under bash, which chokes on CRLF.
+*.sh text eol=lf
