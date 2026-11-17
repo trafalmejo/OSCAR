@@ -8,7 +8,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { createDiscovery, instanceName, addressesOf, SERVICE_TYPE } = require("../lib/discovery");
+const { createDiscovery, instanceName, addressesOf, announcedOn, SERVICE_TYPE } = require("../lib/discovery");
 
 function fakeBonjour() {
   const made = [];
@@ -52,10 +52,13 @@ function fakeBonjour() {
 }
 
 const quiet = { log() {}, error() {} };
+const v4 = (address) => ({ address, family: "IPv4", internal: false });
+// A computer on one network, so a test does not depend on the machine it runs on.
+const oneNet = () => ({ "Wi-Fi": [v4("192.168.2.11")], lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }] });
 
 test("OSCAR announces _oscar._tcp on its HTTP port, with the bridge port and version in the record", async () => {
   const { Bonjour, made } = fakeBonjour();
-  const discovery = createDiscovery({ Bonjour, hostname: "studio-pc", httpPort: 18100, socketPort: 18101, version: "2.1.0", env: {}, log: quiet });
+  const discovery = createDiscovery({ Bonjour, hostname: "studio-pc", httpPort: 18100, socketPort: 18101, version: "2.1.0", env: {}, log: quiet, networkInterfaces: oneNet });
   assert.strictEqual(discovery.silent, "not started");
   assert.strictEqual(discovery.start(), true);
   assert.strictEqual(discovery.silent, null);
@@ -65,6 +68,7 @@ test("OSCAR announces _oscar._tcp on its HTTP port, with the bridge port and ver
     type: SERVICE_TYPE,
     port: 18100,
     txt: { http: "18100", socket: "18101", v: "2.1.0" },
+    probe: false, // several responders in one process would each take the name for taken
   });
   assert.strictEqual(discovery.start(), false, "once");
 
@@ -89,7 +93,7 @@ test("a network that refuses, or a library that throws, costs one line and nothi
   const lines = [];
   const log = { log() {}, error: (line) => lines.push(line) };
   const { Bonjour, made } = fakeBonjour();
-  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log });
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log, networkInterfaces: oneNet });
   discovery.start();
   made[0].published[0].fail(new Error("EADDRINUSE"));
   assert.deepStrictEqual(lines, ["  Not announcing on the network: EADDRINUSE"]);
@@ -118,7 +122,7 @@ test("a failed multicast send is a line in the log, not the end of the server", 
   const lines = [];
   const log = { log() {}, error: (line) => lines.push(line) };
   const { Bonjour, made } = fakeBonjour();
-  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log });
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log, networkInterfaces: oneNet });
   assert.strictEqual(discovery.start(), true);
   assert.strictEqual(typeof made[0].onError, "function", "the library is given somewhere to send socket errors");
   made[0].onError(new Error("send EHOSTUNREACH 224.0.0.251:5353"));
@@ -126,17 +130,43 @@ test("a failed multicast send is a line in the log, not the end of the server", 
   assert.strictEqual(discovery.silent, null, "still announcing: the next beat may well get through");
 });
 
-test("the responder is opened on OSCAR's own interface, bound to every address, and on none while there is no network", () => {
-  // Left to itself the library announces on "0.0.0.0", which is whatever
-  // interface the system likes best: on Windows a VPN's unplugged tunnel
-  // adapter at metric 1 took every announcement on 2026-10-28.
+test("every network the computer is on hears OSCAR, each at the address it can reach", async () => {
+  // OSCAR chose one network once, by guess, and on 2026-11-16 the guess was
+  // a VirtualBox adapter Windows calls "Ethernet 3": the phones on the Wi-Fi
+  // heard nothing. Left to itself the library announces on "0.0.0.0", the
+  // interface the system likes best: a VPN's unplugged tunnel adapter took
+  // every announcement on 2026-10-28. So: one responder per address.
+  const nets = () => ({
+    "Ethernet 3": [v4("192.168.56.1")],
+    "Wi-Fi": [v4("192.168.2.11"), { address: "fe80::1", family: "IPv6", internal: false }],
+    "Local Area Connection": [v4("169.254.125.171")], // no router answered: nobody is there
+    lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }],
+  });
+  assert.deepStrictEqual(announcedOn(nets), ["192.168.56.1", "192.168.2.11"]);
   const { Bonjour, made } = fakeBonjour();
-  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: quiet, address: () => "192.168.2.66" });
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: quiet, networkInterfaces: nets });
   assert.strictEqual(discovery.start(), true);
-  assert.deepStrictEqual(made[0].options, { interface: "192.168.2.66", bind: "0.0.0.0" });
+  assert.deepStrictEqual(made.map((m) => m.options), [{ interface: "192.168.56.1", bind: "0.0.0.0" }, { interface: "192.168.2.11", bind: "0.0.0.0" }]);
+  assert.deepStrictEqual(discovery.on, ["192.168.56.1", "192.168.2.11"]);
+
+  // The library lists every address of the computer in every record set, and
+  // the phone app takes the first: each responder says its own and no other.
+  const all = [{ type: "PTR", name: "_oscar._tcp.local" }, { type: "A", data: "192.168.56.1" }, { type: "A", data: "192.168.2.11" }, { type: "AAAA", data: "fe80::1" }];
+  const wifi = made[1].server.mdns;
+  wifi.respond(all);
+  assert.deepStrictEqual(wifi.said.pop(), [{ type: "PTR", name: "_oscar._tcp.local" }, { type: "A", data: "192.168.2.11" }]);
+  wifi.respond({ answers: all.slice(0, 1), additionals: all.slice(1) }); // an answer to a phone's question
+  assert.deepStrictEqual(wifi.said.pop(), { answers: [all[0]], additionals: [{ type: "A", data: "192.168.2.11" }] });
+  const vbox = made[0].server.mdns;
+  vbox.respond(all);
+  assert.deepStrictEqual(vbox.said.pop(), [{ type: "PTR", name: "_oscar._tcp.local" }, { type: "A", data: "192.168.56.1" }]);
+
+  await discovery.stop();
+  assert.deepStrictEqual(made.map((m) => m.unpublished && m.destroyed), [true, true], "a goodbye on every network");
 
   const alone = fakeBonjour();
-  createDiscovery({ Bonjour: alone.Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: quiet, address: () => "127.0.0.1" }).start();
+  createDiscovery({ Bonjour: alone.Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: quiet, networkInterfaces: () => ({ lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }] }) }).start();
+  assert.strictEqual(alone.made.length, 1);
   assert.strictEqual(alone.made[0].options, undefined, "no network yet: the library's own choice, until an address comes");
 });
 
@@ -144,7 +174,7 @@ test("the announcement is made again when the computer's address changes, and ev
   const { Bonjour, made } = fakeBonjour();
   const lines = [];
   let nets = { "Wi-Fi": [{ address: "192.168.2.11", family: "IPv4", internal: false }, { address: "fe80::1", family: "IPv6", internal: false }], lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }] };
-  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: { log: (l) => lines.push(l), error() {} }, networkInterfaces: () => nets, address: () => nets["Wi-Fi"][0].address, watchMs: 15, refreshMs: 10000 });
+  const discovery = createDiscovery({ Bonjour, hostname: "x", httpPort: 1, socketPort: 2, env: {}, log: { log: (l) => lines.push(l), error() {} }, networkInterfaces: () => nets, watchMs: 15, refreshMs: 10000 });
   assert.strictEqual(discovery.start(), true);
   assert.strictEqual(made[0].options.interface, "192.168.2.11");
   await new Promise((r) => setTimeout(r, 80));

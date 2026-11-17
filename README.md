@@ -1058,7 +1058,9 @@ treated as an app of its own, and nothing has to be installed:
   `_oscar._tcp`, the way printers do, under "OSCAR on *computer name*", and
   answers `GET /show` with the list of interfaces it is serving (name and
   address; nothing that is switched off). That is how the OSCAR phone app
-  lists your OSCAR and its interfaces with nothing typed. It only says "I am
+  lists your OSCAR and its interfaces with nothing typed. A computer on
+  several networks (Wi-Fi and a wired show network, or a virtual machine's
+  adapter) is announced on each, at the address that network can reach. It only says "I am
   here" on pages that were open to the network already; `OSCAR_NO_DISCOVERY=1`
   keeps it quiet. A router that does not pass multicast between its Ethernet
   and Wi-Fi sides keeps a phone from hearing an OSCAR on a cable: put the
